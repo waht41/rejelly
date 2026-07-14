@@ -1,0 +1,73 @@
+{
+  "name": "@rejelly/core",
+  "version": "0.1.0",
+  "author": "waht41",
+  "description": "A React-inspired Agent framework where Agents are functions with Hooks for building LLM applications (Rejelly)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js",
+      "default": "./dist/testing/index.js"
+    },
+    "./policy": {
+      "types": "./dist/policy/index.d.ts",
+      "import": "./dist/policy/index.js",
+      "default": "./dist/policy/index.js"
+    },
+    "./debugger": {
+      "types": "./dist/debugger/index.d.ts",
+      "import": "./dist/debugger/index.js",
+      "default": "./dist/debugger/index.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "clean": "node ../../scripts/clean.mjs",
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint:jelly": "jelly-lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "node -e \"if(process.env.I_KNOW_WHAT_I_AM_DOING !== 'true') { console.error('❌ 防呆拦截：必须带上环境变量才能发布！'); process.exit(1); }\""
+  },
+  "keywords": [
+    "agent",
+    "llm",
+    "ai",
+    "framework",
+    "hooks",
+    "typescript"
+  ],
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "zod-to-json-schema": "^3.25.0"
+  },
+  "peerDependencies": {
+    "zod": "catalog:peer"
+  },
+  "devDependencies": {
+    "@rejelly/jelly-lint": "workspace:*",
+    "@types/node": "catalog:",
+    "ts-node": "^10.9.2",
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:",
+    "zod": "catalog:"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@rejelly/release-tools",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "release:canary": "tsx src/cli/canary.ts",
+    "release:pack-hash": "tsx src/cli/pack-hash.ts",
+    "release:prepare": "tsx src/cli/prepare.ts",
+    "release:check-registry": "tsx src/cli/check-registry.ts"
+  },
+  "dependencies": {
+    "cac": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:"
+  }
+}

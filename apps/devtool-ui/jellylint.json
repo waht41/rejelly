@@ -1,0 +1,24 @@
+{
+  "nodes": {
+    "@app": "src/app/**/*",
+    "@page:[page]": ["src/pages/[page].*", "src/pages/[page]/**/*"],
+    "@widget:[widget]": ["src/widgets/[widget].*", "src/widgets/[widget]/**/*"],
+    "@feature:[feat]": "src/features/[feat]/**/*",
+    "@entity:[entity]": "src/entities/[entity]/**/*",
+    "@shared": "src/shared/**/*"
+  },
+  "graph": {
+    "frontend_core": {
+      "cascade": {
+        "ui_flow": [
+          ["@app"],
+          ["@page:[page]"],
+          ["@widget:[widget]"],
+          ["@feature:[feat]"],
+          ["@entity:[entity]"],
+          ["@shared"]
+        ]
+      }
+    }
+  }
+}

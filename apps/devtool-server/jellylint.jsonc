@@ -1,0 +1,128 @@
+{
+  // JellyLint architecture contract for @rejelly/devtool (apps/devtool-server).
+  //
+  // Shape: TWO entry roots over one shared core, modeled as an explicit DAG
+  // (not a single linear cascade). See packages/jelly-lint/README.md for DSL semantics.
+  //
+  //   @cli ─────────────► @server ─► @route ─┬─► @controller ─┬─► @service …
+  //     └───────────────► @tools             │               └─► @agents ─► @tools …
+  //                                          └─► @mcp ────────► @tools
+  //
+  //   shared core (cascade), any upper tier may reach any lower tier (jumps ok):
+  //     @tools ─► @service ─► @repo ─► @db ─► @utils ─► {@config}
+  //
+  //   - @server: the HTTP/process app (boot + Fastify wiring). Reaches its
+  //     three surfaces only through @route.
+  //   - @cli: the headless binary. Its default command boots @server
+  //     (startServer); its `tools` command drives @tools directly. So @cli is
+  //     the OUTER root sitting above @server — they are NOT co-equal peers.
+  //   - @controller / @mcp are server-internal transport surfaces and stay
+  //     isolated: they share NO edges with each other in `connect`, so either
+  //     importing the other is Forbidden (enforced by OMISSION: do not add a
+  //     controller↔mcp edge).
+  //   - @agents is NOT a transport surface — it is an AI capability layer that
+  //     @controller orchestrates (controller → agents → tools), the same way it
+  //     orchestrates @service. So @controller → @agents is allowed, but @agents
+  //     stays isolated from @mcp, and @route no longer reaches @agents directly
+  //     (the ai surface goes route → controller → agents like every other one).
+  //   - @cli no longer lives in the same layer as the surfaces; the old @cli/
+  //     @entry naming confusion is gone now that @cli is a first-class root.
+  "nodes": {
+    // ---- Test specs: live outside production layering ----------------------
+    "@spec:tests": ["src/**/__tests__/**/*", "src/**/*.test.*"],
+
+    // ---- Roots: the two entry binaries -------------------------------------
+    "@server": ["src/server/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"], // boot + Fastify wiring (server/start-server/index)
+    "@cli": ["src/cli/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"], // bin shell (cli-entry) + headless tool harness
+
+    // ---- Transport: Fastify route plugins (HTTP / WS / MCP / AI) ------------
+    "@route": ["src/routes/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+
+    // ---- Server-internal transport surfaces (no peers) ---------------------
+    "@controller": ["src/controllers/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"], // classic HTTP controllers
+    "@mcp": ["src/mcp/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"], // MCP server adapter
+
+    // ---- AI capability layer: orchestrated by @controller, sits over @tools -
+    "@agents": ["src/agents/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"], // AI agents (analyze / filter)
+
+    // ---- Shared capability: portable trace tools + the registry ------------
+    "@tools": ["src/tools/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+
+    // ---- Domain logic -------------------------------------------------------
+    "@service": ["src/services/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+
+    // ---- Data access --------------------------------------------------------
+    "@repo": ["src/repositories/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+
+    // ---- Persistence infra (floor): drizzle / schema / migrations -----------
+    "@db": ["src/db/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+
+    // ---- Domain capability kernels -----------------------------------------
+    "@traceFilter": [
+      "src/capabilities/trace-filter/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+
+    // ---- Leaf / cross-cutting (no upward deps) ------------------------------
+    "@utils": ["src/utils/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"], // leaf utility layer (no internal deps)
+    "@config": ["src/config/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"]
+  },
+
+  "graph": {
+    // `connect`: the explicit top DAG (roots, transport, surfaces). Same-layer
+    // forbiddance is by absence of edges, so the surface peers stay isolated.
+    // @config is the single resolver for env-derived settings (db path, port,
+    // host). It is a pure floor leaf (a sink that imports nothing internal), so —
+    // any layer that needs a setting may import it directly rather
+    // than re-reading process.env with its own copy of the defaults. The entry
+    // root (@cli), the boot layer (@server) and the AI self-trace layer (@agents)
+    // all read settings, hence the explicit @config edges below.
+    "production": {
+      "connect": {
+        "@cli": ["@server", "@tools", "@config"],
+        "@server": ["@route", "@db", "@config"],
+        "@route": ["@controller", "@mcp", "@service", "@traceFilter"],
+        "@controller": ["@service", "@agents", "@utils", "@traceFilter"],
+        "@agents": ["@tools", "@utils", "@config", "@traceFilter"],
+        "@mcp": ["@tools"]
+      },
+
+      // `cascade`: the shared lower core. Any upper tier may depend on any lower
+      // tier (jumps allowed), never sideways/upward. Cross-cutting leaves sit at
+      // the floor so the whole core can reach them. @traceFilter sits beside
+      // @db: repositories may use both, but neither persistence nor filter
+      // capability may depend on the other by default.
+      "cascade": [
+        ["@tools"],
+        ["@service"],
+        ["@repo"],
+        ["@db", "@traceFilter"],
+        ["@utils"],
+        ["@config"]
+      ]
+    },
+
+    // Tests are outside production layering and may exercise any layer.
+    "tests": {
+      "cascade": [
+        ["@spec:tests"],
+        [
+          "@cli",
+          "@server",
+          "@route",
+          "@controller",
+          "@mcp",
+          "@agents",
+          "@tools",
+          "@service",
+          "@repo",
+          "@db",
+          "@traceFilter",
+          "@utils",
+          "@config"
+        ]
+      ]
+    }
+  }
+}

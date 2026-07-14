@@ -1,0 +1,54 @@
+packages:
+  - packages/jelly-lint
+  - packages/core
+  - packages/env
+  - packages/limit-model
+  - packages/test-utils
+  - packages/release-tools
+  - packages/devtool-contracts
+  - packages/adapters/*
+  - packages/create
+  - packages/create/template-*
+  - apps/evil-jelly
+  - apps/devtool-ui
+  - apps/devtool-server
+  - examples
+  - docs
+  - notes
+
+catalog:
+  '@fastify/cors': ^10.0.1
+  '@fastify/static': ^9.1.3
+  '@fastify/swagger': ^9.6.1
+  '@fastify/swagger-ui': ^5.2.4
+  '@fastify/websocket': ^11.2.0
+  '@modelcontextprotocol/sdk': ^1.29.0
+  '@tailwindcss/vite': ^4.1.3
+  '@types/better-sqlite3': ^7.6.13
+  '@types/node': ^22.0.0
+  '@types/react': ^19.0.0
+  '@types/react-dom': ^19.0.0
+  '@vitejs/plugin-react': ^4.3.4
+  autoprefixer: ^10.4.20
+  better-sqlite3: ^12.6.2
+  cac: ^6.7.14
+  concurrently: ^9.1.2
+  dotenv: ^16.4.7
+  fastify: ^5.8.5
+  jiti: ^2.4.2
+  postcss: ^8.4.49
+  react: ^19.2.3
+  react-dom: ^19.2.3
+  tailwindcss: ^4.1.3
+  tsup: ^8.3.5
+  tsx: ^4.19.2
+  typescript: ^5.9.3
+  undici: ^7.28.0
+  vite: ^6.0.5
+  vitest: ^4.0.16
+  zod: ^3.25.76
+  zustand: ^5.0.9
+
+catalogs:
+  peer:
+    zod: ^3.25 || ^4

@@ -1,0 +1,61 @@
+{
+  "nodes": {
+    "@spec:tests": ["src/**/__tests__/**/*", "src/**/*.test.*"],
+    "@cli:entry": ["src/cli/index.ts"],
+    "@cli:app": ["src/cli/app/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@cli:bindings": ["src/cli/bindings/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@cli:ui": ["src/cli/ui/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@cli:prompt-editor": [
+      "src/cli/prompt-editor/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@cli:store": ["src/cli/store/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@shell": ["src/shell/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@feature:[feat]": ["src/features/[feat]/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@tools": ["src/tools/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@service:[svc]": ["src/services/[svc]/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@shared": ["src/shared/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@ext:fs": "node:fs",
+    "@ext:ui": ["npm:ink", "npm:react", "npm:zustand"]
+  },
+  "graph": {
+    "runtime_arch": {
+      "cascade": [
+        ["@spec:tests"],
+        ["@cli:**"],
+        ["@shell"],
+        ["@feature:[feat]"],
+        ["@tools"],
+        ["@service:[svc]"],
+        ["@shared"],
+        ["@ext:fs"]
+      ],
+      "connect": {
+        "@cli:bindings": ["@ext:ui"],
+        "@cli:ui": ["@ext:ui"],
+        "@cli:prompt-editor": ["@ext:ui"],
+        "@cli:store": ["@ext:ui"]
+      }
+    },
+    "cli_arch": {
+      "connect": {
+        "@cli:entry": ["@cli:app", "@cli:bindings"],
+        "@cli:bindings": ["@cli:ui", "@cli:store"]
+      },
+      "cascade": [["@cli:ui"], ["@cli:prompt-editor"], ["@cli:store"]]
+    }
+  },
+  "rules": [
+    {
+      "name": "restrict-fs-access",
+      "description": "Agent tools must access filesystem via src/shared/fs-policy",
+      "match": {
+        "from": "@tools",
+        "to": "@ext:fs"
+      },
+      "severity": "error",
+      "message": "Please access filesystem via src/shared/fs-policy"
+    }
+  ]
+}

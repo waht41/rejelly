@@ -1,0 +1,38 @@
+{
+  "name": "@rejelly/notes",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "dev": "concurrently -k -n server,client \"pnpm dev:server\" \"pnpm dev:client\"",
+    "dev:server": "tsx watch src/server/main.ts",
+    "dev:client": "vite --host 127.0.0.1",
+    "build": "tsc -b --force --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "typecheck": "tsc -b --noEmit",
+    "lint:doc": "node script/lint-docs.mjs"
+  },
+  "dependencies": {
+    "@fastify/cors": "catalog:",
+    "@fastify/static": "catalog:",
+    "fastify": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "concurrently": "catalog:",
+    "tailwindcss": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  }
+}

@@ -1,0 +1,102 @@
+/** biome-ignore-all lint/suspicious/noUnknownAtRules: tailwind not recognize */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Modern Dark IDE - Zinc palette */
+    --background: 240 10% 3.9%; /* Zinc 950 - #09090b */
+    --foreground: 0 0% 98%; /* Near white */
+    --card: 240 5.9% 10%; /* Zinc 900 - #18181b - elevated from background */
+    --card-foreground: 0 0% 98%;
+    --popover: 240 5.9% 10%; /* Zinc 900 - #18181b - elevated from background */
+    --popover-foreground: 0 0% 98%;
+    --primary: 217.2 91.2% 59.8%; /* Keep blue for accents */
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 240 3.7% 15.9%; /* Zinc 800 */
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%; /* Zinc 800 - for hover states */
+    --muted-foreground: 240 5% 64.9%; /* Zinc 400 */
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%; /* Zinc 800 - key for layering */
+    --input: 240 3.7% 15.9%;
+    --ring: 217.2 91.2% 59.8%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    --radius: 0.375rem; /* 6px - micro rounding */
+
+    /* Semantic colors for interactive elements */
+    --resize-handle-hover: 240 5.9% 10%; /* Zinc 700 - for resize handle hover */
+    --tree-item-hover: 240 5.3% 26.1%; /* Zinc 900 - for tree item hover background */
+    --tree-item-hover-text: 240 4.9% 83.9%; /* Zinc 200 - for tree item hover text */
+    --tree-item-selected: 212 45% 35%; /* Deep blue - for tree item selected background (VS Code style, less vibrant) */
+    --tree-item-selected-text: 0 0% 100%; /* White - for tree item selected text */
+    --tree-item-text: 240 5% 64.9%; /* Zinc 400 - for tree item default text */
+    --tree-item-icon-hover: 240 3.7% 15.9%; /* Zinc 800 - for tree item icon hover */
+    --tree-item-icon-agent: 217.2 91.2% 59.8%; /* Blue - for agent icon (same as primary) */
+    --tree-item-icon-span: 280 65% 60%; /* Purple - for span icon (similar to chart-4) */
+    --card-bg: 240 5.3% 26.1%; /* Zinc 900 - for card backgrounds */
+    --ring-offset: 240 10% 3.9%; /* Zinc 950 - for ring offset */
+    --badge-bg: 240 3.7% 15.9%; /* Zinc 800 - for badge backgrounds */
+    --badge-text: 240 5% 64.9%; /* Zinc 400 - for badge text */
+    --badge-border: 240 5.9% 10%; /* Zinc 700 - for badge borders */
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-mono text-sm;
+    font-feature-settings:
+      "rlig" 1,
+      "calt" 1;
+  }
+
+  /* Force dark mode */
+  html {
+    color-scheme: dark;
+  }
+
+  /* Custom scrollbar - ultra thin */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-background;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-muted rounded-sm;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/50;
+  }
+
+  /* Firefox scrollbar */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted)) hsl(var(--background));
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none; /* Firefox */
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none; /* Chrome, Safari and Opera */
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@rejelly/docs",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vitepress dev",
+    "typecheck": "tsc --noEmit",
+    "build": "vitepress build",
+    "preview": "vitepress preview"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitepress": "^1.6.3",
+    "vue": "^3.4.0"
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "name": "@rejelly/limit-model",
+  "version": "0.1.0",
+  "author": "waht41",
+  "description": "Rate limit (WithLimit) core API types and contracts for token/concurrency/request limiting",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "clean": "node ../../scripts/clean.mjs",
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:redis": "cross-env REDIS_TEST=1 vitest run",
+    "test:watch": "vitest",
+    "benchmark:redis": "tsx bench/redis-store.bench.ts",
+    "benchmark:memory": "tsx bench/memory-store.bench.ts",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "node -e \"if(process.env.I_KNOW_WHAT_I_AM_DOING !== 'true') { console.error('❌ 防呆拦截：必须带上环境变量才能发布！'); process.exit(1); }\""
+  },
+  "keywords": [
+    "rate-limit",
+    "token",
+    "concurrency",
+    "withlimit"
+  ],
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@rejelly/core": "workspace:*",
+    "@types/node": "catalog:",
+    "cross-env": "^7.0.3",
+    "ioredis": "^5.6.0",
+    "tsx": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

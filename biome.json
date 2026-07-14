@@ -1,0 +1,122 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.3.14/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "ignoreUnknown": true,
+    "includes": ["**", "!**/__generated__"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineEnding": "lf",
+    "lineWidth": 100
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "a11y": {
+        "recommended": false
+      },
+      "suspicious": {
+        "noExplicitAny": "off",
+        "noArrayIndexKey": "off"
+      },
+      "style": {
+        "noDefaultExport": "off",
+        "noParameterProperties": "off",
+        "noNonNullAssertion": "off"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["apps/devtool-ui/**", "notes/**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "useExhaustiveDependencies": "error",
+            "useHookAtTopLevel": "error"
+          },
+          "style": {
+            "useSelfClosingElements": "error"
+          }
+        }
+      },
+      "css": {
+        "parser": {
+          "tailwindDirectives": true
+        }
+      }
+    },
+    {
+      "includes": ["packages/core/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "testing": "Do not import from the testing barrel; use a specific module (e.g. testing/mock-model)",
+                  "../testing": "Do not import from the testing barrel; use a specific module",
+                  "../../testing": "Do not import from the testing barrel; use a specific module",
+                  "utils": "Do not import from the utils barrel; use a specific module",
+                  "../utils": "Do not import from the utils barrel; use a specific module",
+                  "../../utils": "Do not import from the utils barrel; use a specific module",
+                  "core": "Do not import from the core barrel; use a specific module",
+                  "../core": "Do not import from the core barrel; use a specific module",
+                  "../../core": "Do not import from the core barrel; use a specific module",
+                  "model": "Do not import from the model barrel; use a specific module",
+                  "../model": "Do not import from the model barrel; use a specific module",
+                  "../../model": "Do not import from the model barrel; use a specific module",
+                  "debugger": "Do not import from the debugger barrel; use a specific module",
+                  "../debugger": "Do not import from the debugger barrel; use a specific module",
+                  "../../debugger": "Do not import from the debugger barrel; use a specific module"
+                },
+                "patterns": [
+                  {
+                    "group": ["**/index", "**/index.ts", "**/index.js"],
+                    "message": "Do not import from index barrel files; import the specific module directly."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "apps/evil-jelly/src/**",
+        "!apps/evil-jelly/src/**/*.test.*",
+        "!apps/evil-jelly/src/shared/config.ts",
+        "!apps/evil-jelly/src/services/web/webConfig.ts",
+        "!apps/evil-jelly/src/services/cmd/executeShellCommand.ts",
+        "!apps/evil-jelly/src/cli/bindings/externalEditor.ts",
+        "!apps/evil-jelly/src/cli/prompt-editor/clipboardImage.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noProcessEnv": "error"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["tsconfig.json", "tsconfig.*.json", ".vscode/*.json"],
+      "json": {
+        "parser": {
+          "allowComments": true,
+          "allowTrailingCommas": true
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "name": "@rejelly/evil-jelly",
+  "version": "0.1.0",
+  "author": "waht41",
+  "description": "CLI agent demo: filesystem tools + @rejelly/core (host entry for future Electron/Fastify)",
+  "type": "module",
+  "bin": {
+    "evil": "./dist/cli/index.js",
+    "evil-jelly": "./dist/cli/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/cli/index.ts --review --devtool",
+    "start": "tsx src/cli/index.ts",
+    "sync": "tsx src/cli/index.ts --intent sync_docs",
+    "typecheck": "tsc --noEmit",
+    "lint:jelly": "jelly-lint",
+    "test": "vitest run --config vitest.config.ts",
+    "test:watch": "vitest --config vitest.config.ts",
+    "prepublishOnly": "node -e \"if(process.env.I_KNOW_WHAT_I_AM_DOING !== 'true') { console.error('❌ 防呆拦截：必须带上环境变量才能发布！'); process.exit(1); }\""
+  },
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@ast-grep/napi": "^0.42.1",
+    "@modelcontextprotocol/sdk": "catalog:",
+    "@rejelly/adapter-mcp": "workspace:*",
+    "@rejelly/adapter-openai": "workspace:*",
+    "@rejelly/core": "workspace:*",
+    "cac": "catalog:",
+    "diff": "^9.0.0",
+    "dotenv": "catalog:",
+    "fast-glob": "^3.3.3",
+    "ignore": "^7.0.5",
+    "ink": "^7.0.0",
+    "jsonc-parser": "^3.3.1",
+    "micromatch": "^4.0.8",
+    "picomatch": "^4.0.4",
+    "react": "catalog:",
+    "string-width": "^8.2.0",
+    "strip-ansi": "^7.1.2",
+    "undici": "catalog:",
+    "wrap-ansi": "^10.0.0",
+    "zod": "catalog:",
+    "zustand": "catalog:"
+  },
+  "devDependencies": {
+    "@rejelly/jelly-lint": "workspace:*",
+    "@types/micromatch": "^4.0.10",
+    "@types/node": "catalog:",
+    "@types/picomatch": "^4.0.3",
+    "@types/react": "catalog:",
+    "tsup": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

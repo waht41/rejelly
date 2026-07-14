@@ -1,0 +1,55 @@
+{
+  "name": "create-rejelly",
+  "version": "0.1.0",
+  "author": "waht41",
+  "description": "Scaffold a new Rejelly app in seconds",
+  "type": "module",
+  "bin": {
+    "create-rejelly": "./dist/index.js"
+  },
+  "files": [
+    "dist/index.js",
+    "template-basic/src",
+    "template-basic/AGENTS.md",
+    "template-basic/.env.example",
+    "template-basic/package.json",
+    "template-basic/README.md",
+    "template-basic/tsconfig.json",
+    "template-basic/vitest.config.ts",
+    "template-router/src",
+    "template-router/AGENTS.md",
+    "template-router/.env.example",
+    "template-router/package.json",
+    "template-router/README.md",
+    "template-router/tsconfig.json",
+    "template-router/vitest.config.ts"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "generate:agents": "node script/generate-agents.mjs",
+    "lint:doc": "node script/generate-agents.mjs --check",
+    "prepublishOnly": "node -e \"if(process.env.I_KNOW_WHAT_I_AM_DOING !== 'true') { console.error('❌ 防呆拦截：必须带上环境变量才能发布！'); process.exit(1); }\""
+  },
+  "keywords": [
+    "rejelly",
+    "agent",
+    "ai",
+    "cli",
+    "scaffold"
+  ],
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "picocolors": "^1.0.0",
+    "prompts": "^2.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/prompts": "^2.4.9",
+    "tsup": "^8.0.0",
+    "typescript": "catalog:"
+  }
+}

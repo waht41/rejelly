@@ -1,0 +1,55 @@
+{
+  "name": "@rejelly/devtool",
+  "version": "0.1.0",
+  "author": "waht41",
+  "type": "module",
+  "bin": {
+    "rejelly-devtool": "./dist/cli-entry.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "license": "Apache-2.0",
+  "scripts": {
+    "dev": "tsx watch --import @rejelly/env/setup src/cli/cli-entry.ts --review",
+    "db:generate": "drizzle-kit generate",
+    "eval:tools": "tsx --import @rejelly/env/setup src/cli/cli-entry.ts tools",
+    "start": "node dist/cli-entry.js",
+    "build": "tsup",
+    "postbuild": "node scripts/copy-assets.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint:jelly": "jelly-lint",
+    "prepublishOnly": "node -e \"if(process.env.I_KNOW_WHAT_I_AM_DOING !== 'true') { console.error('❌ 防呆拦截：必须带上环境变量才能发布！'); process.exit(1); }\""
+  },
+  "dependencies": {
+    "@fastify/cors": "catalog:",
+    "@fastify/static": "catalog:",
+    "@fastify/swagger": "catalog:",
+    "@fastify/swagger-ui": "catalog:",
+    "@fastify/websocket": "catalog:",
+    "@modelcontextprotocol/sdk": "catalog:",
+    "@rejelly/adapter-openai": "workspace:*",
+    "@rejelly/core": "workspace:*",
+    "async-mutex": "^0.5.0",
+    "better-sqlite3": "catalog:",
+    "cac": "catalog:",
+    "dotenv": "catalog:",
+    "drizzle-orm": "^0.45.2",
+    "fastify": "catalog:",
+    "fastify-type-provider-zod": "5.1.0",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@rejelly/devtool-contracts": "workspace:*",
+    "@rejelly/devtool-ui": "workspace:*",
+    "@rejelly/env": "workspace:*",
+    "@rejelly/jelly-lint": "workspace:*",
+    "@types/node": "catalog:",
+    "drizzle-kit": "^0.31.9",
+    "tsup": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

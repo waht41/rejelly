@@ -1,0 +1,170 @@
+diff --git a/build/ink.js b/build/ink.js
+index 98ba6eff90db503fbd82fca6a19ef8d82d07ed8e..7d11acf844cb01170a58baeeaf93a0c811adbe1e 100644
+--- a/build/ink.js
++++ b/build/ink.js
+@@ -261,8 +261,15 @@ export default class Ink {
+     resized = () => {
+         const currentWidth = getWindowSize(this.options.stdout).columns;
+         if (currentWidth < this.lastTerminalWidth) {
+-            // We clear the screen when decreasing terminal width to prevent duplicate overlapping re-renders.
+-            this.log.clear();
++            // [evil-jelly patch] Repaint the DYNAMIC frame only (never re-dump fullStaticOutput,
++            // to keep scrollback intact). log.clear() erased by the stale LOGICAL line count and
++            // returned to bottom by logical rows too; on narrowing the terminal reflows every
++            // full-width line of the old frame (box borders, the padded input row) into 2+ physical
++            // rows, so both counts fall short and ghost rows survive. eraseLastFrame recounts with
++            // the NEW width, so it is reflow-immune. We do it eagerly on resize so fast drags
++            // (coalesced throttled renders) can't stack reflowed frames.
++            this.eraseLastFrame(currentWidth);
++            this.log.reset();
+             this.lastOutput = '';
+             this.lastOutputToRender = '';
+         }
+@@ -270,6 +277,37 @@ export default class Ink {
+         this.onRender();
+         this.lastTerminalWidth = currentWidth;
+     };
++    // [evil-jelly patch] Erase the previously painted DYNAMIC frame in place: move the cursor to
++    // the frame's TOP-LEFT, then erase from there to the end of the screen with \x1b[J
++    // (eraseDown). This needs NO count of the wrapped rows BELOW the cursor (box borders, the
++    // padded input row) — only the small above-cursor portion. Scrollback is untouched: \x1b[J
++    // clears the visible viewport downward only, never \x1b[3J.
++    //
++    // resized-only: it recounts physical rows because reflow makes log-update's counts stale.
++    // Do NOT call it from onRender — there this.cursorPosition may already describe the frame
++    // being committed (useCursor propagates via useInsertionEffect before resetAfterCommit)
++    // while lastOutput is the previous frame; log.clear() is the consistent eraser there.
++    eraseLastFrame = (width) => {
++        const src = this.lastOutput || '';
++        if (!src) {
++            return;
++        }
++        const physOf = (s) => (s === '' ? 1 : wrapAnsi(s, width, { trim: false, hard: true }).split('\n').length);
++        const lines = src.split('\n');
++        const totalPhys = lines.reduce((n, l) => n + physOf(l), 0);
++        // Trailing '\n' (non-fullscreen) parks the cursor one row below the frame.
++        const parked = (this.lastOutputToRender ?? '').endsWith('\n') ? 1 : 0;
++        // Physical rows from the frame's top down to the cursor's CURRENT row. Focused:
++        // the caret is parked UP on its input line. Unfocused: parked below the frame.
++        const caret = this.cursorPosition;
++        const up = caret
++            ? lines.slice(0, caret.y).reduce((n, l) => n + physOf(l), 0) + Math.floor(Math.max(0, caret.x) / width)
++            : totalPhys - 1 + parked;
++        this.options.stdout.write(hideCursorEscape
++            + ansiEscapes.cursorTo(0)
++            + (up > 0 ? ansiEscapes.cursorUp(up) : '')
++            + ansiEscapes.eraseDown);
++    };
+     resolveExitPromise = () => { };
+     rejectExitPromise = () => { };
+     unsubscribeExit = () => { };
+@@ -615,6 +653,14 @@ export default class Ink {
+             // Sync lastOutput so that unmount's final onRender
+             // sees it as unchanged and log-update skips it
+             this.log.sync(this.lastOutputToRender || this.lastOutput + '\n');
++            // [evil-jelly patch] clear() is "forget everything I painted", so the committed
++            // <Static> backlog must go too: the host wiped the screen (evil-jelly /clear), so
++            // the backlog no longer describes anything the terminal shows, and stale copies
++            // would resurface through the debug write paths. Unmount's shouldRenderFinalFrame
++            // check (fullStaticOutput === '') stays correct: clear() already log.sync'd the
++            // last frame, so a final onRender writes nothing new, and static items flushed
++            // after the clear repopulate this buffer anyway.
++            this.fullStaticOutput = '';
+         }
+     }
+     patchConsole() {
+@@ -702,11 +748,36 @@ export default class Ink {
+             if (sync) {
+                 this.options.stdout.write(bsu);
+             }
+-            this.options.stdout.write(ansiEscapes.clearTerminal + this.fullStaticOutput + output);
++            // [evil-jelly patch] Upstream wrote clearTerminal + fullStaticOutput + output here.
++            // clearTerminal's \x1b[3J wipes the terminal's scrollback (user history, pre-app
++            // content, raw stderr writes), and with scrollback preserved instead, re-dumping the
++            // ENTIRE static backlog duplicates it in scrollback on EVERY overflowing render —
++            // Windows Terminal's \x1b[2J even pushes the live viewport into scrollback, stacking
++            // more copies. Static history already lives in the terminal; it never needs
++            // re-dumping. Erase only the previously painted frame, then write any NEW static
++            // output and the frame — the same contract as the static path below.
++            //
++            // Use log.clear(), NOT eraseLastFrame's cursor math: useCursor propagates the NEW
++            // frame's caret via useInsertionEffect BEFORE resetAfterCommit triggers onRender, so
++            // this.cursorPosition already describes the frame being rendered while lastOutput is
++            // still the old frame — counting rows from the new caret erases the wrong span (e.g.
++            // leaving most of a closing fullscreen overlay on screen). log-update tracks where it
++            // actually parked the cursor (previousCursorPosition/previousLineCount), and with the
++            // width unchanged those counts are exact — eraseLastFrame's recount is only needed on
++            // resize, where reflow makes them stale. For an overflowing old frame the erase clamps
++            // at the viewport top; rows already scrolled into scrollback stay as inert residue —
++            // the price of never wiping scrollback.
++            //
++            // log(outputToRender), not output: the trailing '\n' (when not fullscreen) is the
++            // cursor anchor log-update's bookkeeping expects, as everywhere else.
++            this.log.clear();
++            if (hasStaticOutput) {
++                this.options.stdout.write(staticOutput);
++            }
++            this.log(outputToRender);
+             this.lastOutput = output;
+             this.lastOutputToRender = outputToRender;
+             this.lastOutputHeight = outputHeight;
+-            this.log.sync(outputToRender);
+             if (sync) {
+                 this.options.stdout.write(esu);
+             }
+diff --git a/build/reconciler.js b/build/reconciler.js
+index 74cb3b8841f1493d1fc3fa889028109d5cc77c0c..ac9007bab26db4741515c469391ddef5cfc6e897 100644
+--- a/build/reconciler.js
++++ b/build/reconciler.js
+@@ -6,23 +6,9 @@ import Yoga from 'yoga-layout';
+ import { createContext, version as reactVersion } from 'react';
+ import { createTextNode, appendChildNode, insertBeforeNode, removeChildNode, emitLayoutListeners, setStyle, setTextNodeValue, createNode, setAttribute, } from './dom.js';
+ import applyStyles from './styles.js';
+-// We need to conditionally perform devtools connection to avoid
+-// accidentally breaking other third-party code.
+-// See https://github.com/vadimdemedes/ink/issues/384
+-// See https://github.com/vadimdemedes/ink/issues/648
+-if (process.env['DEV'] === 'true') {
+-    // Intentionally no warning when the package is missing.
+-    // DEV may be set for other reasons; devtools is opt-in via installing the package.
+-    let isDevtoolsInstalled = false;
+-    try {
+-        import.meta.resolve('react-devtools-core');
+-        isDevtoolsInstalled = true;
+-    }
+-    catch { }
+-    if (isDevtoolsInstalled) {
+-        await import('./devtools.js');
+-    }
+-}
++// [evil-jelly patch] Disable Ink's optional React DevTools bridge for the packaged CLI.
++// Bundlers hoist devtools.js' optional peer import (`react-devtools-core`) into a top-level
++// static import, which makes the CLI fail at startup when the optional peer is not installed.
+ const diff = (before, after) => {
+     if (before === after) {
+         return;
+@@ -205,7 +191,12 @@ export default createReconciler({
+     removeChildFromContainer(node, removeNode) {
+         removeChildNode(node, removeNode);
+         cleanupYogaNode(removeNode.yogaNode);
+-        if (removeNode.internal_static && currentRootNode) {
++        // [evil-jelly patch] Only clear staticNode when it still points at the node being
++        // removed. On a keyed <Static> remount, createInstance for the REPLACEMENT static box
++        // runs in the render phase and sets rootNode.staticNode to the new node; the OLD box's
++        // deletion then commits in the mutation phase — clearing unconditionally clobbers the
++        // fresh reference and silences ALL static output for the rest of the app's lifetime.
++        if (removeNode.internal_static && currentRootNode && currentRootNode.staticNode === removeNode) {
+             currentRootNode.staticNode = undefined;
+         }
+     },
+@@ -245,7 +236,9 @@ export default createReconciler({
+     removeChild(node, removeNode) {
+         removeChildNode(node, removeNode);
+         cleanupYogaNode(removeNode.yogaNode);
+-        if (removeNode.internal_static && currentRootNode) {
++        // [evil-jelly patch] Same guard as removeChildFromContainer: don't clobber the
++        // replacement static box's reference on a keyed <Static> remount.
++        if (removeNode.internal_static && currentRootNode && currentRootNode.staticNode === removeNode) {
+             currentRootNode.staticNode = undefined;
+         }
+     },

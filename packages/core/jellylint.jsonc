@@ -1,0 +1,60 @@
+{
+  // Logical node declarations: map architecture layers to physical paths.
+  "nodes": {
+    // Package-level layers outside core internals.
+    "@debugger": "src/debugger/**/*",
+    "@testing": ["src/testing/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@spec:tests": ["src/**/__tests__/**/*", "src/**/*.test.*"],
+    "@utils": ["src/utils/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+
+    // Core target layering (top facade -> bottom foundation).
+    "@core:facade": ["src/core/facade/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@core:policy": ["src/core/policy/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@core:engine": ["src/core/engine/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@core:snapshot": ["src/core/snapshot/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@core:observability": [
+      "src/core/observability/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@core:context": ["src/core/context/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    // domain = the vocabulary layer (Model/Tool/Stream types). Single source of truth.
+    "@core:domain": ["src/core/domain/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    // shared = kernel: generic infra only (logger/id/symbols/const/errors). domain excluded.
+    "@core:shared": ["src/core/shared/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"]
+  },
+  "graph": {
+    // Target architecture (the destination DAG), expressed as one cascade.
+    // cascade: upper layers may depend on any lower layer; never the reverse;
+    // nodes in the SAME layer array are siblings and may NOT depend on each other.
+    //
+    //   facade                              <- public hooks: runWith, equip*, expect*
+    //     policy                             <- prompt / schema / loop strategy
+    //       engine                           <- turn, llm-caller, tool-executor, flow
+    //         [observability | snapshot]     <- siblings, independent of each other
+    //           context                      <- AgentContext, accessor, scope, storage
+    //             domain                     <- Model/Tool/Stream types (single source)
+    //               shared (kernel)          <- logger/id/symbols/const/errors
+    "target_architecture": {
+      "cascade": [
+        ["@core:facade"],
+        ["@core:policy"],
+        ["@core:engine"],
+        ["@core:observability", "@core:snapshot"],
+        ["@core:context"],
+        ["@core:domain"],
+        ["@core:shared"]
+      ]
+    },
+    // Package-level relationship kept as-is (compat shim during migration).
+    // Treats all @core:** as one layer, so it adds NO intra-core edges:
+    // core's internal layering is governed solely by target_architecture above.
+    "package_star": {
+      "cascade": [["@spec:tests"], ["@debugger", "@testing"], ["@core:**"], ["@utils"]]
+    }
+  },
+  // Migration patches: existing debt that the target graph rejects, downgraded to
+  // `warn` via `scope: "fallback"` (only fires when topology rejects the edge).
+  // Ordered by urgency; fix the edge, then delete the rule.
+  "rules": []
+}

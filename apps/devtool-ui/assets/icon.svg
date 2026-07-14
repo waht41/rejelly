@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" fill="none">
+    <defs>
+        <linearGradient id="jelly" x1="12" y1="10" x2="54" y2="52" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#7EE0FF"/>
+            <stop offset="55%" stop-color="#4C7DFF"/>
+            <stop offset="100%" stop-color="#9A5CFF"/>
+        </linearGradient>
+    </defs>
+
+    <path
+            d="M13.6 13.0
+       C18.2 8.4 25.1 6.1 32.0 6.1
+       C38.9 6.1 45.8 8.4 50.4 13.0
+       C56.2 18.8 59.6 25.7 59.6 36.1
+       V41.8
+       C59.6 46.4 57.3 49.9 52.7 49.9
+       C49.3 49.9 47.0 47.6 43.5 47.6
+       C38.9 47.6 37.8 51.0 32.0 51.0
+       C26.2 51.0 25.1 47.6 20.5 47.6
+       C17.0 47.6 14.7 49.9 11.3 49.9
+       C6.7 49.9 4.4 46.4 4.4 41.8
+       V36.1
+       C4.4 25.7 7.8 18.8 13.6 13.0Z"
+            fill="url(#jelly)"
+            stroke="#FFFFFF"
+            stroke-opacity="0.18"
+            stroke-width="1.38"
+    />
+
+    <polygon
+            points="32,10.9 38.9,15.5 32,20.1 25.1,15.5"
+            fill="#FFFFFF"
+            fill-opacity="0.18"
+    />
+
+    <polyline
+            points="23.95,16.65 14.75,25.85 23.95,35.05"
+            stroke="#FFFFFF"
+            stroke-width="5.3"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+    />
+    <line
+            x1="32" y1="14.35" x2="32" y2="37.35"
+            stroke="#FFFFFF"
+            stroke-width="5.3"
+            stroke-linecap="round"
+    />
+    <polyline
+            points="40.05,16.65 49.25,25.85 40.05,35.05"
+            stroke="#FFFFFF"
+            stroke-width="5.3"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+    />
+</svg>

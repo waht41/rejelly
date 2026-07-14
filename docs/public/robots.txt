@@ -1,0 +1,60 @@
+# Rejelly documentation — crawlers and AI agents are explicitly welcome.
+# This is a public docs site; nothing here is disallowed.
+# A machine-friendly digest of the whole site is served at /llm.txt
+
+User-agent: *
+Allow: /
+
+# Explicitly welcome known AI / LLM crawlers and agents. This is redundant with
+# the wildcard rule above, but some bots are opt-in and default to self-excluding
+# unless a matching rule states intent — so we spell it out.
+
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+User-agent: Meta-ExternalAgent
+Allow: /
+
+User-agent: cohere-ai
+Allow: /
+
+Sitemap: https://docs.rejelly.dev/sitemap.xml

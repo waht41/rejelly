@@ -1,0 +1,137 @@
+import { Box, Text, useStdout } from "ink";
+import type { Turn } from "../store/useOutputStore";
+import { DiffBlock } from "./viewers/DiffViewer";
+import { MarkdownViewer } from "./viewers/MarkdownViewer";
+
+const TOOL_PREVIEW_OUTPUT_ROWS = 3;
+const TRUNCATION_LINES = new Set(["...", "…"]);
+
+function compactToolPreview(
+  preview: string,
+  fullResult: string,
+  ordinal: number | undefined,
+): string[] {
+  const rawLines = preview.trimEnd().split("\n");
+  const lastLine = rawLines[rawLines.length - 1];
+  const alreadyTruncated = lastLine ? TRUNCATION_LINES.has(lastLine.trim()) : false;
+  const contentLines = alreadyTruncated ? rawLines.slice(0, -1) : rawLines;
+  const fullLineCount =
+    fullResult.trimEnd().length > 0 ? fullResult.trimEnd().split("\n").length : 0;
+  const shownLineCount = Math.min(contentLines.length, TOOL_PREVIEW_OUTPUT_ROWS);
+  const omittedLineCount = Math.max(0, fullLineCount - shownLineCount);
+  const needsTruncation =
+    alreadyTruncated || contentLines.length > TOOL_PREVIEW_OUTPUT_ROWS || omittedLineCount > 0;
+
+  if (needsTruncation) {
+    const suffix = ordinal === undefined ? "" : `, #${ordinal}`;
+    return [
+      ...contentLines.slice(0, TOOL_PREVIEW_OUTPUT_ROWS),
+      `… (+${omittedLineCount} lines${suffix})`,
+    ];
+  }
+
+  if (contentLines.length === 0 || contentLines[0] === "") {
+    return [];
+  }
+
+  return contentLines.slice(0, TOOL_PREVIEW_OUTPUT_ROWS);
+}
+
+export function HistoryItem({ turn }: { turn: Turn }) {
+  const { stdout } = useStdout();
+  const columns = stdout?.columns ?? 80;
+  if (turn.type === "banner") {
+    const { model, dir, version } = turn.banner;
+    return (
+      <Box
+        flexDirection="column"
+        borderStyle="round"
+        borderColor="gray"
+        paddingX={2}
+        marginBottom={1}
+        alignSelf="flex-start"
+      >
+        <Box marginBottom={1}>
+          <Text bold color="whiteBright">
+            {">_ Evil Jelly"}
+          </Text>
+          <Text dimColor> (v{version})</Text>
+        </Box>
+        <Box>
+          <Text dimColor>{"model:     "}</Text>
+          <Text>{model}</Text>
+        </Box>
+        <Box>
+          <Text dimColor>{"directory: "}</Text>
+          <Text>{dir}</Text>
+        </Box>
+      </Box>
+    );
+  }
+  if (turn.type === "user") {
+    return (
+      <Box width={columns} paddingX={1} marginBottom={1} backgroundColor="#333">
+        <Text bold color="whiteBright">
+          ❯ {turn.content}
+        </Text>
+      </Box>
+    );
+  }
+  if (turn.type === "assistant") {
+    if (turn.hidden) {
+      return null;
+    }
+    return (
+      <Box paddingBottom={1}>
+        <MarkdownViewer text={turn.content} columns={columns} />
+      </Box>
+    );
+  }
+  if (turn.type === "assistant_stream") {
+    return (
+      <Box paddingBottom={turn.final ? 1 : 0}>
+        <MarkdownViewer text={turn.content} columns={columns} />
+      </Box>
+    );
+  }
+  if (turn.type === "diff") {
+    return (
+      <Box flexDirection="column" paddingBottom={1}>
+        <DiffBlock
+          text={turn.diff.text}
+          caption={turn.diff.caption}
+          captionTitle={turn.diff.captionTitle}
+        />
+      </Box>
+    );
+  }
+  if (turn.type === "tool") {
+    const { summary, preview, fullResult, ok, ordinal } = turn.tool;
+    const previewLines = compactToolPreview(preview, fullResult, ordinal);
+    return (
+      <Box flexDirection="column">
+        <Box>
+          <Text color={ok ? "green" : "red"}>● </Text>
+          <Text>
+            {ordinal === undefined ? "" : `#${ordinal} `}
+            {summary}
+          </Text>
+        </Box>
+        {previewLines.length > 0 ? (
+          <Box flexDirection="column" paddingLeft={2}>
+            {previewLines.map((line, index) => (
+              <Text key={index} dimColor>
+                {line}
+              </Text>
+            ))}
+          </Box>
+        ) : null}
+      </Box>
+    );
+  }
+  return (
+    <Box paddingBottom={1}>
+      <Text dimColor> {turn.content}</Text>
+    </Box>
+  );
+}

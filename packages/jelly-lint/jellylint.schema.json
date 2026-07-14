@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "JellyLint Pure Graph DSL",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["nodes", "graph"],
+  "properties": {
+    "nodes": {
+      "type": "object",
+      "description": "All architecture nodes (vertices). Maps logical node IDs to internal path templates or external identifiers. For internal paths, prefix pattern with `!` to exclude files from the same node mapping. Node path patterns must not reference other node IDs (`@...`); repeat globs explicitly or generate config. Engine warns when one node include pattern fully contains another node include pattern without explicit exclusion boundaries.",
+      "patternProperties": {
+        "^@[a-zA-Z0-9_:-]+(\\[[a-zA-Z0-9_]+\\])?[a-zA-Z0-9_:-]*$": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Single path template (supports [var], *, **, ?) or external key like npm:react / node:fs."
+            },
+            {
+              "type": "array",
+              "description": "Fallback path templates. Engine tries each template in order.",
+              "minItems": 1,
+              "items": { "type": "string" }
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "graph": {
+      "type": "object",
+      "description": "Directed edge definition. Supports flat graph or named subgraphs.",
+      "oneOf": [
+        { "$ref": "#/$defs/graphBlock" },
+        {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/graphBlock" }
+        }
+      ]
+    },
+    "rules": {
+      "type": "array",
+      "description": "Policy overrides for graph edge checks. Used for temporary debt waivers or local policy gates.",
+      "items": { "$ref": "#/$defs/ruleSpec" }
+    }
+  },
+  "$defs": {
+    "targetNode": {
+      "type": "string",
+      "pattern": "^@[a-zA-Z0-9_:\\-\\[\\]\\*\\?]+$",
+      "description": "Node selector. Use exact id for strict match, or explicit glob for wildcard match (e.g. @core:**)."
+    },
+    "edgePolicySeverity": {
+      "type": "string",
+      "default": "error",
+      "description": "Outcome when the rule matches (rules are evaluated in array order; first match wins). `error`: always forbid the edge. `warn`: allow with warning. `off`: allow and silence. Omitting the field defaults to `error`.",
+      "enum": ["error", "warn", "off"]
+    },
+    "ruleScope": {
+      "type": "string",
+      "default": "all",
+      "enum": ["all", "fallback", "topology_allowed"],
+      "description": "`all`: always run matchers (default). `fallback`: only when the abstract graph denies the edge (debt exemption / illegal-edge patch). `topology_allowed`: only when the graph allows the edge (e.g. deprecation on legally allowed dependencies without downgrading illegal edges)."
+    },
+    "flowLevels": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/targetNode" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/targetNode" }
+            }
+          }
+        }
+      ]
+    },
+    "connectSpec": {
+      "oneOf": [
+        {
+          "type": "object",
+          "patternProperties": {
+            "^@[a-zA-Z0-9_:\\-\\[\\]\\*\\?]+$": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/targetNode" }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "patternProperties": {
+              "^@[a-zA-Z0-9_:\\-\\[\\]\\*\\?]+$": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/targetNode" }
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "ruleMatcher": {
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        }
+      ],
+      "description": "Pattern list for one side. `!` at string start means negation. @-prefixed values match logical nodes, others match physical paths/import specs. If all patterns are negated, matcher uses implicit universe and then subtracts negations. Placeholders `[name]` (alphanumeric/underscore) are template variables: on `from` they are extracted from the node or path, then substituted into `to` patterns in the same rule (cross-edge unification). If every `from` pattern is negated, none of them may contain `[name]` (a complement is not a finite set to extract from). Patterns without `[name]` still use glob matching."
+    },
+    "ruleSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["match"],
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "scope": {
+          "$ref": "#/$defs/ruleScope"
+        },
+        "match": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "from": { "$ref": "#/$defs/ruleMatcher" },
+            "to": { "$ref": "#/$defs/ruleMatcher" }
+          }
+        },
+        "severity": { "$ref": "#/$defs/edgePolicySeverity" },
+        "message": { "type": "string" }
+      }
+    },
+    "graphBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cascade": { "$ref": "#/$defs/flowLevels" },
+        "sequence": { "$ref": "#/$defs/flowLevels" },
+        "connect": { "$ref": "#/$defs/connectSpec" }
+      }
+    }
+  }
+}

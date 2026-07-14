@@ -1,0 +1,75 @@
+// Document-domain registry for evil-jelly: symmetric doc-sync glob pairs plus the doc→code seed map.
+// doc-sync expands each pair from both sides and compares the resulting file pairs. Convention:
+// put the authoritative zh-side glob on the left; the left side is the evaluator walk-through spine.
+// Hand-written mappings stay at FILE level only: workspace-relative doc path/glob keys map to
+// coarse path prefixes / artifact files per doc. Section→symbol detail is derived deterministically
+// per run and cached in the audit ledger — never listed here. Explicit path entries override glob
+// matches regardless of order; later globs override earlier globs.
+// `skip` excludes a doc (say why); `note` is injected into the evaluator prompt for that doc.
+// Cross-doc links are locale-mirrored: each side links its own language's variant of the target
+// (zh docs link docs/zh/..., en docs link docs/en/...); linking the counterpart locale is drift.
+{
+  "version": 1,
+  "sync": {
+    "pairs": [
+      ["docs/zh/**/*.md", "docs/en/**/*.md"],
+      ["examples/**/README.zh-CN.md", "examples/**/README.md"],
+      ["README.zh-CN.md", "README.md"]
+    ]
+  },
+  "docs": {
+    // glob as fallback; explicit path entries override glob matches regardless of order
+    "docs/zh/api/*.md": { "paths": ["packages/core/src/core"] },
+    "docs/zh/api/index.md": {
+      "paths": ["packages/core/src"],
+      "note": "Overview/index page. Verify that named symbols exist and that the call-order constraint table matches the code; do not flag missing detail — depth lives in the per-topic docs."
+    },
+    "docs/zh/api/testing.md": { "paths": ["packages/core/src/testing"] },
+    "docs/zh/api/debug.md": { "paths": ["packages/core/src/debugger"] },
+    "docs/zh/api/adapter/index.md": {
+      "paths": [
+        "packages/adapters/openai/src",
+        "packages/adapters/gemini/src",
+        "packages/adapters/langchain/src",
+        "packages/adapters/mcp/src",
+        "packages/core/src/core"
+      ]
+    },
+    "docs/zh/api/adapter/model.md": {
+      "paths": [
+        "packages/adapters/openai/src",
+        "packages/adapters/gemini/src",
+        "packages/core/src/core"
+      ]
+    },
+    "docs/zh/api/adapter/mcp.md": {
+      "paths": ["packages/adapters/mcp/src", "packages/core/src/core"]
+    },
+    "docs/zh/api/adapter/langchain.md": {
+      "paths": ["packages/adapters/langchain/src", "packages/core/src/core"]
+    },
+    "packages/jelly-lint/README.md": {
+      "artifacts": [
+        "packages/jelly-lint/jellylint.schema.json",
+        "packages/jelly-lint/index.d.ts",
+        "packages/jelly-lint/example.jellylint.jsonc"
+      ],
+      "note": "The engine is Rust (packages/jelly-lint/src); the schema/d.ts artifacts are authoritative for the DSL shape. Read the Rust sources only for engine-behavior claims. Doc-vs-schema consistency is the primary check."
+    },
+    "docs/zh/index.md": {
+      "skip": "Site landing page (layout: home hero); marketing copy with no factual API claims to audit. Still participates in zh/en sync pairing."
+    },
+    "docs/zh/guide/*.md": {
+      "paths": ["packages/core/src"],
+      "note": "Narrative guide: verify only factual API claims (signatures / parameters / defaults / symbol existence); do not flag omitted detail or simplified examples."
+    },
+    "docs/zh/guide/create.md": {
+      "paths": ["packages/create/src"],
+      "note": "Narrative guide: verify only the factual CLI / template behavior of the create-rejelly scaffolder; do not flag omitted detail or simplified examples."
+    },
+    "docs/zh/guide/example.md": {
+      "paths": ["examples"],
+      "note": "Narrative guide: verify only the example structure and factual API usage under the examples directory; do not flag omitted detail or simplified examples."
+    }
+  }
+}

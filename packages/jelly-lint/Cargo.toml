@@ -1,0 +1,28 @@
+[package]
+name = "rejelly-jelly-lint"
+version = "0.0.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "CLI: one-way FSD-style layer dependency lint (Oxc + Rayon)"
+
+[[bin]]
+name = "jelly-lint"
+path = "src/main.rs"
+
+[dependencies]
+dunce = "1.0"
+globset = "0.4"
+clap = { version = "4.5", features = ["derive"] }
+ignore = "0.4"
+json-strip-comments = "3.1"
+miette = { version = "7.6", features = ["fancy"] }
+oxc_allocator = "0.128"
+oxc_ast = "0.128"
+oxc_ast_visit = "0.128"
+oxc_parser = "0.128"
+oxc_resolver = "11.19"
+oxc_span = "0.128"
+rayon = "1.11"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"

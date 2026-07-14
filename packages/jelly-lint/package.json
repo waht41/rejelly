@@ -1,0 +1,25 @@
+{
+  "name": "@rejelly/jelly-lint",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Rust CLI for one-way FSD-style layer imports; npm bin delegates to native binary",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "types": "./index.d.ts",
+  "bin": {
+    "jelly-lint": "./bin/jelly-lint.cjs"
+  },
+  "files": [
+    "bin",
+    "index.d.ts",
+    "jellylint.schema.json",
+    "example.jellylint.jsonc"
+  ],
+  "scripts": {
+    "build": "cargo build --release",
+    "clean": "cargo clean",
+    "test": "cargo test"
+  }
+}

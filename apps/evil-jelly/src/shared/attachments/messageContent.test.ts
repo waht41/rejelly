@@ -1,0 +1,86 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { getWorkspaceFsPolicy, setWorkspaceRoot } from "../fs-policy/workspace-fs-policy";
+import { buildAttachmentActionSummary, buildConversationMessages } from "./messageContent";
+
+describe("buildConversationMessages", () => {
+  let prevRoot: string;
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    prevRoot = getWorkspaceFsPolicy().getRoot();
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "evil-jelly-attachments-"));
+    await fs.mkdir(path.join(tmpDir, "src"), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, "src", "attached.ts"), "export const probe = 1;\n");
+    setWorkspaceRoot(tmpDir);
+  });
+
+  afterEach(async () => {
+    setWorkspaceRoot(prevRoot);
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("injects explicitly attached file contents into the current user turn", async () => {
+    const messages = await buildConversationMessages({
+      userInput: "explain this",
+      attachments: [{ type: "file", path: "src/attached.ts" }],
+    });
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.content).toContain("explain this");
+    expect(messages[0]?.content).toContain("## Attached paths for this turn");
+    expect(messages[0]?.content).toContain("### @src/attached.ts");
+    expect(messages[0]?.content).toContain("read src/attached.ts");
+    expect(messages[0]?.content).toContain("export const probe = 1;");
+  });
+
+  it("lists attached directories instead of reading them as files", async () => {
+    const messages = await buildConversationMessages({
+      userInput: "summarize @src",
+      attachments: [{ type: "file", path: "src" }],
+    });
+
+    expect(messages[0]?.content).toContain("### @src");
+    expect(messages[0]?.content).toContain("list src");
+    expect(messages[0]?.content).toContain("[file] attached.ts");
+  });
+
+  it("converts attached images into multimodal user content", async () => {
+    const imagePath = path.join(tmpDir, "clipboard.png");
+    await fs.writeFile(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+
+    const messages = await buildConversationMessages({
+      userInput: "what is in this image?",
+      attachments: [{ type: "image", path: imagePath, mimeType: "image/png" }],
+    });
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.content).toEqual([
+      { type: "text", text: "what is in this image?" },
+      {
+        type: "image",
+        image: {
+          url: "data:image/png;base64,iVBORw==",
+          detail: "auto",
+        },
+      },
+    ]);
+  });
+
+  it("summarizes visible attachment actions for the CLI history", async () => {
+    await expect(
+      buildAttachmentActionSummary([
+        { type: "file", path: "src/attached.ts" },
+        { type: "file", path: "src" },
+      ]),
+    ).resolves.toEqual(["read src/attached.ts", "list src"]);
+  });
+
+  it("summarizes image attachments for the CLI history", async () => {
+    await expect(
+      buildAttachmentActionSummary([{ type: "image", path: "clipboard.png" }]),
+    ).resolves.toEqual(["attach [Image #1]"]);
+  });
+});

@@ -1,0 +1,48 @@
+{
+  "name": "rejelly",
+  "version": "0.0.0",
+  "private": true,
+  "author": "waht41",
+  "packageManager": "pnpm@10.28.2",
+  "scripts": {
+    "build": "turbo run build",
+    "dev:devtool": "pnpm --filter @rejelly/devtool-contracts build && turbo run dev --filter=@rejelly/devtool-contracts --filter=@rejelly/devtool-ui --filter=@rejelly/devtool",
+    "typecheck": "turbo run typecheck",
+    "lint:jelly": "turbo run lint:jelly",
+    "lint:docs": "pnpm --filter @rejelly/notes lint:doc",
+    "check": "turbo run typecheck lint:jelly lint:doc && biome check --write .",
+    "check:biome": "biome check --write .",
+    "prepare": "husky",
+    "test": "turbo run test",
+    "test:model": "pnpm --filter \"./packages/adapters/*\" run test",
+    "test:watch": "vitest",
+    "changeset": "changeset",
+    "release:canary": "pnpm --filter @rejelly/release-tools release:canary --registry http://localhost:4873/",
+    "release": "pnpm --filter @rejelly/release-tools release:check-registry --expect https://registry.npmjs.org/ && turbo run build && changeset publish",
+    "release:local": "turbo run build && pnpm -r publish --registry http://localhost:4873/ --no-git-checks",
+    "clean": "turbo run clean"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ],
+    "patchedDependencies": {
+      "ink@7.0.0": "patches/ink@7.0.0.patch"
+    }
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.3.14",
+    "@changesets/cli": "^2.31.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "turbo": "^2.8.13",
+    "vitest": "catalog:"
+  },
+  "license": "Apache-2.0",
+  "lint-staged": {
+    "*.{js,ts,cjs,mjs,d.cts,d.mts,jsx,tsx,json,jsonc}": [
+      "biome check --write --no-errors-on-unmatched"
+    ]
+  }
+}

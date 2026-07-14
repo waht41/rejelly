@@ -1,0 +1,50 @@
+{
+  "name": "@rejelly/adapter-mcp",
+  "version": "0.1.0",
+  "author": "waht41",
+  "description": "Model Context Protocol adapter for @rejelly/core: connect MCP servers, discover tools/resources",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "node ../../../scripts/clean.mjs",
+    "prepublishOnly": "node -e \"if(process.env.I_KNOW_WHAT_I_AM_DOING !== 'true') { console.error('❌ 防呆拦截：必须带上环境变量才能发布！'); process.exit(1); }\""
+  },
+  "keywords": [
+    "rejelly",
+    "adapter",
+    "mcp",
+    "model-context-protocol"
+  ],
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "peerDependencies": {
+    "@rejelly/core": "workspace:^",
+    "zod": "catalog:peer"
+  },
+  "dependencies": {
+    "zod-to-json-schema": "^3.25.0"
+  },
+  "devDependencies": {
+    "@rejelly/core": "workspace:*",
+    "@types/node": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "zod": "catalog:"
+  }
+}

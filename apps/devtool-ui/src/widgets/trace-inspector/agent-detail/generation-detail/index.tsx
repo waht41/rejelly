@@ -1,0 +1,1 @@
+export { GenerationDetailView } from "./GenerationDetailView";

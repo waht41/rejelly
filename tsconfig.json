@@ -1,0 +1,16 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.test.json" },
+    { "path": "./apps/devtool-ui" },
+    { "path": "./apps/devtool-server" },
+    { "path": "./packages/adapters/gemini" },
+    { "path": "./packages/adapters/openai" },
+    { "path": "./packages/adapters/langchain" },
+    { "path": "./packages/adapters/mcp" },
+    { "path": "./packages/core" },
+    { "path": "./packages/create" },
+    { "path": "./packages/test-utils" },
+    { "path": "./examples" }
+  ]
+}

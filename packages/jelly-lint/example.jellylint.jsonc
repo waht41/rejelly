@@ -1,0 +1,40 @@
+{
+  // Node definition: logical ID -> internal path template / external module key.
+  "nodes": {
+    "@app:[name]": "src/apps/[name]/**/*",
+    "@feature:[feat]:ui": "src/features/[feat]/ui/**/*",
+    "@feature:[feat]:db": ["src/features/[feat]/db/**/*", "!src/features/[feat]/db/**/*.mock.ts"],
+    "@shared:vfs": "src/shared/vfs/**/*",
+    "@ext:react": "npm:react",
+    "@ext:fs": "node:fs"
+  },
+
+  // Directed graph edge model (pure additive). Supports flat graph and nested subgraph.
+  "graph": {
+    "frontend_core": {
+      "cascade": {
+        "render_flow": [["@app:[name]"], ["@feature:[feat]:ui"], ["@shared:vfs"]]
+      },
+      "connect": {
+        "@app:[name]": ["@ext:react"],
+        "@feature:[feat]:ui": ["@ext:react", "@feature:[feat]:db"],
+        "@shared:vfs": ["@ext:fs"]
+      }
+    }
+  },
+
+  // Rules are policy-only overrides and do not change graph topology.
+  // If from/to is omitted, it implicitly matches all edges on that side.
+  "rules": [
+    {
+      "name": "restrict-fs-access",
+      "description": "Only @shared:vfs can directly depend on node:fs",
+      "match": {
+        "from": "!@shared:vfs",
+        "to": "node:fs"
+      },
+      "severity": "warn",
+      "message": "please access filesystem via @shared:vfs"
+    }
+  ]
+}

@@ -1,0 +1,337 @@
+import { recordActiveToolDetail } from "../../services/binding/toolTranscriptDetail";
+import type {
+  AgentMode,
+  FsOutsideAccessPayload,
+  FsWritePayload,
+  ShellCommandPayload,
+  ToolConfirmationHandler,
+  ToolConfirmationResult,
+  WriteActionType,
+} from "../../shared/AgentShared";
+import { classifyShellCommand, isSimpleCommand } from "../../shared/shellCommandPolicy";
+import { useOutputStore } from "../store/useOutputStore";
+import type { ActionMenuOption } from "../store/usePromptStore";
+import { usePromptStore } from "../store/usePromptStore";
+import { editContentInExternalEditor } from "./externalEditor";
+import { runPromptSession } from "./promptQueue";
+
+const ACTION_UI_MAP: Record<WriteActionType, ActionMenuOption> = {
+  accept: { key: "y", label: "Accept", value: "accept" },
+  reject: { key: "n", label: "Reject", value: "reject" },
+  edit: { key: "e", label: "Edit in editor", value: "edit" },
+  retry: { key: "r", label: "Retry with feedback", value: "retry" },
+};
+
+function uniqueWriteActions(actions: WriteActionType[]): WriteActionType[] {
+  const seen = new Set<WriteActionType>();
+  const out: WriteActionType[] = [];
+  for (const a of actions) {
+    if (!seen.has(a)) {
+      seen.add(a);
+      out.push(a);
+    }
+  }
+  return out;
+}
+
+export type CreateInkConfirmWriteOptions = {
+  /**
+   * Unmount Ink and release the TTY before running an external editor, then remount after.
+   * Omit only in tests or non-Ink hosts; required for correct vim + Ink coexistence.
+   */
+  suspendInkForExternalProcess?: <T>(fn: () => Promise<T>) => Promise<T>;
+  /** Initial session auto-allow flags by operation kind. */
+  initialAutoAllow?: Partial<AutoAllowPolicy>;
+  /** Initial shell command prefixes allowed for session auto-accept. */
+  initialShellAutoAllowPrefixes?: string[];
+  /**
+   * Reads the current session mode. Injected from the upper layer (the CLI wires it to the mode
+   * store); defaults to "normal". Mode governs the ambiguous (confirm) shell tier and fs writes
+   * (create/edit/delete auto-accept in "auto"); read-only commands auto-run and irreversible
+   * shell commands are confirmed in every mode.
+   */
+  getMode?: () => AgentMode;
+};
+
+type AutoAllowPolicy = {
+  create: boolean;
+  edit: boolean;
+  delete: boolean;
+};
+
+function normalizeShellPrefix(prefix: string): string {
+  return prefix.trim().replace(/\s+/g, " ");
+}
+
+function commandMatchesPrefix(command: string, prefix: string): boolean {
+  const normalizedCommand = normalizeShellPrefix(command);
+  const normalizedPrefix = normalizeShellPrefix(prefix);
+  if (!normalizedPrefix) {
+    return false;
+  }
+  return (
+    normalizedCommand === normalizedPrefix || normalizedCommand.startsWith(`${normalizedPrefix} `)
+  );
+}
+
+function deriveAutoAllowPrefix(command: string): string {
+  const parts = command.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0]} ${parts[1]}`;
+  }
+  return parts[0] ?? "";
+}
+
+function tryAutoAllowFsWrite(
+  params: FsWritePayload,
+  policy: AutoAllowPolicy,
+  getMode: () => AgentMode,
+): ToolConfirmationResult | null {
+  if (params.outsideWorkspace) {
+    return null;
+  }
+  // Inside-workspace fs writes are diff-reviewed, so "auto" mode accepts them. Outside-workspace
+  // writes have a wider boundary and stay manually gated.
+  if (getMode() === "auto") {
+    useOutputStore
+      .getState()
+      .logSystem(`[Auto-allowed] ${params.kind} (auto mode) → ${params.filePath}`);
+    return { action: "accept" };
+  }
+  if (!policy[params.kind]) {
+    return null;
+  }
+  useOutputStore.getState().logSystem(`[Auto-allowed] ${params.kind} → ${params.filePath}`);
+  return { action: "accept" };
+}
+
+async function confirmOutsideAccess(
+  params: FsOutsideAccessPayload,
+): Promise<ToolConfirmationResult> {
+  const menuOptions: ActionMenuOption[] = [
+    { key: "y", label: "Allow", value: "accept" },
+    { key: "n", label: "Reject", value: "reject" },
+  ];
+  useOutputStore.getState().setStatus(`outside ${params.mode} → ${params.targetPath}`);
+  const selected = await usePromptStore
+    .getState()
+    .requestActionMenu(
+      `Allow ${params.mode} outside workspace?\n${params.targetPath}\n\nApprove directory for this session:\n${params.approveDir}`,
+      menuOptions,
+    );
+  useOutputStore.getState().setStatus("Running…");
+  return selected === "accept" ? { action: "accept" } : { action: "reject" };
+}
+
+type ShellAutoAllowCheck = {
+  result: ToolConfirmationResult | null;
+  declaredReason: string;
+  risk: ReturnType<typeof classifyShellCommand>;
+};
+
+function tryAutoAllowShellCommand(
+  params: ShellCommandPayload,
+  shellAutoAllowPrefixes: Set<string>,
+  getMode: () => AgentMode,
+): ShellAutoAllowCheck {
+  const risk = classifyShellCommand(params.command);
+  // Read-only commands run in every mode; irreversible (block) ones are never auto-run.
+  if (risk === "auto") {
+    useOutputStore.getState().logSystem(`[Auto-allowed] safe shell → ${params.command}`);
+    return { result: { action: "accept" }, declaredReason: "", risk };
+  }
+
+  // Learned prefixes only match a single simple command (no chaining/substitution/redirect)
+  // and never override a block-tier command (irreversible/privileged/outbound).
+  if (risk !== "block" && isSimpleCommand(params.command)) {
+    for (const prefix of shellAutoAllowPrefixes) {
+      if (commandMatchesPrefix(params.command, prefix)) {
+        useOutputStore.getState().logSystem(`[Auto-allowed] shell (${prefix}) → ${params.command}`);
+        return { result: { action: "accept" }, declaredReason: "", risk };
+      }
+    }
+  }
+
+  const declaredSafety = params.declaredSafety;
+  if (
+    risk === "confirm" &&
+    getMode() === "auto" &&
+    (declaredSafety === "read_only" || declaredSafety === "reversible")
+  ) {
+    const why = params.reason ? ` — ${params.reason}` : "";
+    useOutputStore
+      .getState()
+      .logSystem(`[Auto-allowed] declared ${declaredSafety}${why} → ${params.command}`);
+    return { result: { action: "accept" }, declaredReason: "", risk };
+  }
+
+  return { result: null, declaredReason: params.reason ?? "", risk };
+}
+
+async function confirmShellCommand(
+  params: ShellCommandPayload,
+  declaredReason: string,
+  risk: ReturnType<typeof classifyShellCommand>,
+  shellAutoAllowPrefixes: Set<string>,
+): Promise<ToolConfirmationResult> {
+  const actions = uniqueWriteActions(
+    params.supportedActions?.length ? params.supportedActions : ["accept", "reject"],
+  );
+  const menuOptions: ActionMenuOption[] = actions.map((a) => ACTION_UI_MAP[a]);
+  const blocked = risk === "block";
+  const suggestedPrefix = deriveAutoAllowPrefix(params.command);
+  if (actions.includes("accept") && !blocked && suggestedPrefix.length > 0) {
+    menuOptions.push({
+      key: "A",
+      label: `Accept future shell commands with prefix: ${suggestedPrefix}`,
+      value: "accept_shell_prefix",
+    });
+  }
+
+  const cwd = params.cwd?.trim() ? params.cwd.trim() : "workspace root";
+  useOutputStore.getState().setStatus(`shell → ${cwd}`);
+  if (blocked) {
+    useOutputStore
+      .getState()
+      .logSystem(
+        "[Auto-allow] Disabled for this command (irreversible/privileged/outbound operation).",
+      );
+  }
+  const safetyNote = declaredReason ? `\n⚠ ${declaredReason}` : "";
+  const selected = await usePromptStore
+    .getState()
+    .requestActionMenu(
+      `Run shell command in ${cwd}?${safetyNote}\n> ${params.command}`,
+      menuOptions,
+    );
+  useOutputStore.getState().setStatus("Running…");
+
+  if (selected === "accept_shell_prefix") {
+    shellAutoAllowPrefixes.add(suggestedPrefix);
+    useOutputStore.getState().logSystem(`[Auto-allow] Enabled shell prefix: ${suggestedPrefix}`);
+    return { action: "accept" };
+  }
+  return selected === "accept" ? { action: "accept" } : { action: "reject" };
+}
+
+async function confirmFsWrite(
+  params: FsWritePayload,
+  policy: AutoAllowPolicy,
+  suspendInkForExternalProcess: CreateInkConfirmWriteOptions["suspendInkForExternalProcess"],
+): Promise<ToolConfirmationResult> {
+  const {
+    kind,
+    filePath,
+    unifiedDiff,
+    proposedContent,
+    reviewCaption,
+    supportedActions = ["accept", "reject"],
+  } = params;
+
+  const actions = uniqueWriteActions(
+    supportedActions.length > 0 ? supportedActions : ["accept", "reject"],
+  );
+  const menuOptions: ActionMenuOption[] = actions.map((a) => ACTION_UI_MAP[a]);
+  if (actions.includes("accept") && !params.outsideWorkspace) {
+    menuOptions.push({
+      key: "A",
+      label: "Accept all future writes in this session",
+      value: "accept_all_session",
+    });
+  }
+
+  const outsideLabel = params.outsideWorkspace ? " outside workspace" : "";
+  useOutputStore.getState().setStatus(`${kind}${outsideLabel} → ${filePath}`);
+  // Commit the reviewed diff to <Static> history instead of the transient view: it stays in
+  // scrollback for later review, and the dynamic frame stays shorter than the viewport, so Ink
+  // never enters its overflow full-repaint path while the menu is up.
+  useOutputStore.getState().logDiff({
+    text: unifiedDiff,
+    ...(reviewCaption?.trim() ? { caption: reviewCaption.trim() } : {}),
+  });
+  const selected = await usePromptStore
+    .getState()
+    .requestActionMenu(`Allow ${kind}${outsideLabel} ${filePath}?`, menuOptions);
+  useOutputStore.getState().setStatus("Running…");
+
+  if (selected === "accept_all_session") {
+    policy.create = true;
+    policy.edit = true;
+    policy.delete = true;
+    useOutputStore.getState().logSystem("[Auto-allow] Enabled for the rest of this session.");
+    return { action: "accept" };
+  }
+
+  if (selected === "edit") {
+    const runEdit = () => editContentInExternalEditor(proposedContent, filePath);
+    const modifiedContent = suspendInkForExternalProcess
+      ? await suspendInkForExternalProcess(runEdit)
+      : await runEdit();
+    useOutputStore.getState().setStatus("Running…");
+    return { action: "edit", modifiedContent };
+  }
+
+  if (selected === "retry") {
+    useOutputStore.getState().setStatus("Waiting for review comments…");
+    const feedback = await usePromptStore.getState().requestLine("Review comments: ");
+    useOutputStore.getState().setStatus("Running…");
+    return { action: "retry", feedback };
+  }
+
+  if (selected === "accept") {
+    return { action: "accept" };
+  }
+
+  return { action: "reject" };
+}
+
+export function createInkConfirmWrite(
+  options: CreateInkConfirmWriteOptions = {},
+): ToolConfirmationHandler {
+  const policy: AutoAllowPolicy = {
+    create: options.initialAutoAllow?.create ?? false,
+    edit: options.initialAutoAllow?.edit ?? false,
+    delete: options.initialAutoAllow?.delete ?? false,
+  };
+  const shellAutoAllowPrefixes = new Set(
+    (options.initialShellAutoAllowPrefixes ?? [])
+      .map((p) => normalizeShellPrefix(p))
+      .filter((p) => p.length > 0),
+  );
+
+  const getMode = options.getMode ?? (() => "normal" as AgentMode);
+
+  const confirmTool: ToolConfirmationHandler = async (params) => {
+    if (params.type === "shell_command") {
+      const autoAllow = tryAutoAllowShellCommand(params, shellAutoAllowPrefixes, getMode);
+      if (autoAllow.result) {
+        return autoAllow.result;
+      }
+      return runPromptSession(() =>
+        confirmShellCommand(
+          params,
+          autoAllow.declaredReason,
+          autoAllow.risk,
+          shellAutoAllowPrefixes,
+        ),
+      );
+    }
+    if (params.type === "fs_outside_access") {
+      return runPromptSession(() => confirmOutsideAccess(params));
+    }
+
+    recordActiveToolDetail({
+      type: "diff",
+      text: params.unifiedDiff,
+      ...(params.reviewCaption?.trim() ? { caption: params.reviewCaption.trim() } : {}),
+    });
+    const autoAllow = tryAutoAllowFsWrite(params, policy, getMode);
+    if (autoAllow) {
+      return autoAllow;
+    }
+    return runPromptSession(() =>
+      confirmFsWrite(params, policy, options.suspendInkForExternalProcess),
+    );
+  };
+  return confirmTool;
+}
