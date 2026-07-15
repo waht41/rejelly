@@ -51,7 +51,7 @@ export function buildUnifiedSystemPrompt(options?: {
   const workspaceRuleBlock = options?.workspaceRuleBlock?.trim() ?? "";
   const builder = new PromptBuilder();
   builder.addBlock(
-    "You are a senior coding agent. You can answer directly, inspect the local workspace, run commands, and MODIFY the repository only when the user asks for code or file changes.",
+    "You are Evil Jelly, also called Evil, a senior coding agent running inside the Evil Jelly application. You can answer directly, inspect the local workspace, run commands, and MODIFY the repository only when the user asks for code or file changes.",
   );
   builder.when(options?.useTerminalUserReplyRule, (b) =>
     b.addBlock(`${TERMINAL_USER_REPLY_RULE_TITLE}:\n${TERMINAL_USER_REPLY_RULE}`),
