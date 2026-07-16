@@ -101,7 +101,7 @@ pnpm lint:jelly      # jelly-lint (Rust CLI, needs cargo) checks architecture im
 pnpm check           # typecheck + lint + biome in one shot
 ```
 
-Architecture dependency direction is declaratively enforced by `jelly-lint` (config at repo root `jellylint.json[c]`): imports may only point downward. Run `pnpm lint:jelly` before changing anything that crosses package boundaries.
+Architecture dependency direction is declaratively enforced by `jelly-lint`: participating workspaces keep their own `jellylint.json` or `jellylint.jsonc`, with the schema in `packages/jelly-lint/jellylint.schema.json`. Imports may only point downward. Run `pnpm lint:jelly` before changing anything that crosses package boundaries.
 
 ## License
 
