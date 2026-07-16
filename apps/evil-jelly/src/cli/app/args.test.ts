@@ -19,13 +19,38 @@ describe("parseCliArgs", () => {
   });
 
   it("exits directly after cac handles --help", () => {
-    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     vi.spyOn(process, "exit").mockImplementation((code) => {
       throw new Error(`exit ${String(code)}`);
     });
 
     expect(() => parseCliArgs(["node", "evil", "--help"])).toThrow("exit 0");
+    const help = log.mock.calls.flat().join("\n");
+    expect(help).toContain("--headless");
+    expect(help).toContain("requires --input and cannot use --resume, --snapshot, or --mock");
+    expect(help).toContain("--mock-inputs");
+    expect(help).toContain("requires --mock and cannot be combined with --input");
+  });
+
+  it("describes required audit options without a misleading negated default", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+
+    expect(() => parseCliArgs(["node", "evil", "audit", "--help"])).toThrow("exit 0");
+    const help = log.mock.calls.flat().join("\n");
+    expect(help).toContain("$ evil audit --family <name> [options]");
+    expect(help).toContain(
+      "Required; one of clone, complexity, fragmentation, doc-drift, or doc-sync",
+    );
+    expect(help).toContain("--code <path>");
+    expect(help).toContain("requires --doc");
+    expect(help).not.toContain(
+      "--no-ledger-gc        Disable stale ledger pruning for this run (default: true)",
+    );
   });
 
   it("resolves relative workspace paths from the current directory", () => {
