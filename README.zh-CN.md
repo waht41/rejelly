@@ -101,7 +101,7 @@ pnpm lint:jelly      # jelly-lint（Rust CLI，需 cargo）校验架构依赖边
 pnpm check           # typecheck + lint + biome 一把梭
 ```
 
-架构依赖方向由 `jelly-lint` 声明式约束（配置见仓库根 `jellylint.json[c]`），只能向下引用。改动跨包边界前先跑 `pnpm lint:jelly`。
+架构依赖方向由 `jelly-lint` 声明式约束：参与校验的工作区分别维护自己的 `jellylint.json` 或 `jellylint.jsonc`，schema 位于 `packages/jelly-lint/jellylint.schema.json`。依赖只能向下引用；改动跨包边界前先跑 `pnpm lint:jelly`。
 
 ## License
 
