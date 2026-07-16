@@ -49,6 +49,7 @@ Run `evil audit --family <name>` to analyze a workspace without modifying it. Re
 ```bash
 evil                                      # Interactive coding session
 evil audit --family clone                 # Read-only clone audit
+evil audit --family complexity            # Read-only complexity audit
 evil audit --family fragmentation         # Read-only fragmentation audit
 evil audit --family doc-drift              # Validate docs against code
 evil audit --family doc-sync               # Compare bilingual docs
@@ -151,17 +152,27 @@ pnpm typecheck      # TypeScript checking
 
 ### Options and subcommands
 
+- `--api-key <key>`: override `OPENAI_API_KEY` for this invocation. Prefer `evil init` for persistent setup and avoid exposing keys in shell history.
 - `--review`: enable Review trace export, optionally with `REJELLY_REVIEW_ENDPOINT`.
 - `--devtool`: connect to the devtool MCP tools. A failed connection prints a warning and execution continues.
 - `--doc-map <path>`: workspace-relative doc-map for doc-drift validation. Defaults to `.evil-jelly/doc-map.jsonc`.
 - `--workspace <dir>`: workspace root for `.evil-jelly/` configuration, audit output, session data, and Agent tool paths. Defaults to the current working directory; relative paths are resolved from the process startup directory.
+- `--snapshot <traceId>`: restore a snapshot from a Review trace before entering the session. Mutually exclusive with `--mock`, `--resume`, and `--headless`.
+- `--mock <traceId>`: replay an interactive session from a Review trace's model output and snapshot cache. Mutually exclusive with `--snapshot`, `--resume`, and `--headless`.
+- `--mock-inputs`: with `--mock`, enqueue user inputs recovered from the trace. Requires `--mock` and cannot be combined with `--input`.
+- `--headless`: run UnifiedAgent once without Ink. Requires `--input` and cannot be combined with `--resume`, `--snapshot`, or `--mock`.
+- `--auto-accept`: accept tool confirmations in headless test/evaluation runs. Requires `--headless`.
+- `--resume [sessionId]`: resume a saved local session by id, or omit the id to choose from this workspace's sessions. Cannot be combined with `--snapshot`, `--mock`, or `--headless`.
+- `--input <text>`: supply the first user input without prompting; required by `--headless`.
+- **`init --base-url <url>`**: save `OPENAI_BASE_URL` alongside the API key in `~/.evil-jelly/.env`.
+- **`init --model <id>`**: save `OPENAI_MODEL_ID` alongside the API key.
 - **`audit --family <name>`**: run one read-only audit family without Ink and exit. Required family values: `clone`, `complexity`, `fragmentation`, `doc-drift`, or `doc-sync`.
 - **`audit --only-actionable`**: render only actionable findings; statistics still cover the complete run.
+- **`audit --max-seeds <n>`**: set a positive limit on new or changed seeds evaluated in this run.
+- **`audit --ledger-gc-days <n>`**: prune same-family ledger entries not seen for this positive number of days.
+- **`audit --no-ledger-gc`**: disable stale ledger pruning for this run; pruning is enabled by default.
 - **`audit --family doc-drift --doc <file>`**: validate one document by basename or workspace-relative path. The partial run does not mark other documents' historical entries as resolved.
 - **`audit --family doc-drift --doc <file> --code <path>`**: repeatable; synthesize an in-memory doc-map entry for a trial run. Temporary paths enter the surface hash, so different final map paths trigger reevaluation.
-- `--snapshot <traceId>`: restore a snapshot from a Review trace before entering the session.
-- `--mock <traceId>`: replay an interactive session from a Review trace's model output and snapshot cache.
-- `--input <text>`: supply the first user input without typing an initial Ink line.
 
 Without a one-shot subcommand, Evil Jelly enters the Ink interface. Enter `exit` to end the session.
 

@@ -221,20 +221,29 @@ cli
   .command("", "Start the interactive run loop")
   .option(
     "--snapshot <traceId>",
-    "Review trace id to restore (fetch events + restoreSnapshot + inject)",
+    "Restore a Review trace snapshot; mutually exclusive with --mock, --resume, and --headless",
   )
   .option(
     "--mock <traceId>",
-    "Review trace id to replay with a mock model while restoring tool outputs from snapshot cache; add --review to export the replay",
+    "Replay a Review trace with a mock model; mutually exclusive with --snapshot, --resume, and --headless",
   )
-  .option("--mock-inputs", "With --mock, enqueue user inputs recovered from the trace")
-  .option("--headless", "Run UnifiedAgent once without Ink; requires --input")
-  .option("--auto-accept", "With --headless, accept tool confirmations (test/eval harness only)")
+  .option(
+    "--mock-inputs",
+    "Enqueue user inputs recovered from the --mock trace; requires --mock and cannot be combined with --input",
+  )
+  .option(
+    "--headless",
+    "Run UnifiedAgent once without Ink; requires --input and cannot use --resume, --snapshot, or --mock",
+  )
+  .option(
+    "--auto-accept",
+    "Accept tool confirmations; requires --headless (test/eval harness only)",
+  )
   .option(
     "--resume [sessionId]",
-    "Resume a saved local session: pass a sessionId, or omit to pick from this workspace's recent sessions",
+    "Resume a saved session by id, or omit the id to pick one; cannot use --snapshot, --mock, or --headless",
   )
-  .option("--input <text>", "First user line without prompting");
+  .option("--input <text>", "First user line without prompting; required by --headless");
 
 cli
   .command("init", "Setup global config file under ~/.evil-jelly/.env")
@@ -246,24 +255,35 @@ cli
 
 cli
   .command("audit", "Run the one-shot audit/report workflow")
+  .usage("audit --family <name> [options]")
   .option(
     "--family <name>",
-    "Audit only one detector family (clone, complexity, fragmentation, doc-drift, doc-sync)",
+    "Required; one of clone, complexity, fragmentation, doc-drift, or doc-sync",
   )
   .option("--only-actionable", "Audit report: render only actionable findings")
-  .option("--max-seeds <n>", "Audit: max new/changed seeds per family to evaluate")
-  .option("--ledger-gc-days <n>", "Audit: prune same-family ledger entries not seen for N days")
-  .option("--no-ledger-gc", "Audit: disable stale ledger pruning for this run")
+  .option("--max-seeds <n>", "Positive limit on new or changed seeds to evaluate")
+  .option("--ledger-gc-days <n>", "Positive stale-entry age in days for ledger pruning")
+  .option("--no-ledger-gc", "Disable stale ledger pruning for this run")
   .option(
     "--doc <file>",
-    "doc-drift only: validate a single doc file (basename like equip.md, or workspace-relative path)",
+    "doc-drift only: validate one document by basename or workspace-relative path",
   )
   .option(
     "--code <path>",
-    "doc-drift only: with --doc, temporarily validate against this workspace-relative code path (repeatable; bypasses doc-map)",
+    "doc-drift only: requires --doc; add a temporary workspace-relative code path (repeatable; bypasses doc-map)",
   );
 
-cli.help().version(getCliVersion());
+cli
+  .help((sections) =>
+    sections.map((section) => ({
+      ...section,
+      // CAC models --no-* flags as default=true booleans and prints that parser default next to
+      // the negated flag. Hiding the implementation detail avoids implying the disabling flag is
+      // active by default.
+      body: section.body.replace(/^(\s+--no-\S+.*?) \(default: true\)$/gm, "$1"),
+    })),
+  )
+  .version(getCliVersion());
 
 function parseAuditCommand({ args, options, common }: ParseCtx): ParsedAuditArgs {
   if (args.length > 0) {

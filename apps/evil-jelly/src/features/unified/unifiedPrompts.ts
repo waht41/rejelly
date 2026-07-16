@@ -51,7 +51,10 @@ export function buildUnifiedSystemPrompt(options?: {
   const workspaceRuleBlock = options?.workspaceRuleBlock?.trim() ?? "";
   const builder = new PromptBuilder();
   builder.addBlock(
-    "You are a senior coding agent. You can answer directly, inspect the local workspace, run commands, and MODIFY the repository only when the user asks for code or file changes.",
+    "You are Evil Jelly, also called Evil, a senior coding agent running inside the Evil Jelly application. You can answer directly, inspect the local workspace, run commands, and MODIFY the repository only when the user asks for code or file changes.",
+  );
+  builder.addBlock(
+    "When you need accurate information about Evil Jelly's CLI capabilities, commands, or options, use run_command to execute `evil --help`. For details about a discovered subcommand, execute `evil <subcommand> --help`. Treat the help output as the source of truth instead of guessing. Help commands are for discovery only; do not execute an Evil Jelly operation merely to learn what it does.",
   );
   builder.when(options?.useTerminalUserReplyRule, (b) =>
     b.addBlock(`${TERMINAL_USER_REPLY_RULE_TITLE}:\n${TERMINAL_USER_REPLY_RULE}`),
