@@ -1,0 +1,118 @@
+name: Bug report
+description: Report reproducible behavior that does not work as expected.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug. Please provide a minimal reproduction when possible.
+
+        Do not include API keys, credentials, private source code, or unsanitized traces and logs.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      description: Select the package or product area where the problem occurs.
+      options:
+        - "@rejelly/core"
+        - "@rejelly/adapter-openai"
+        - "@rejelly/adapter-gemini"
+        - "@rejelly/adapter-langchain"
+        - "@rejelly/adapter-mcp"
+        - "@rejelly/devtool"
+        - "@rejelly/evil-jelly"
+        - "@rejelly/limit-model"
+        - "create-rejelly"
+        - Documentation or examples
+        - Repository tooling
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Provide the affected package version, commit, or indicate that you are using current main.
+      placeholder: "@rejelly/core 0.1.0, commit abc1234, or current main"
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the operating system, Node.js version, package manager and version, and relevant model provider or runtime.
+      placeholder: |
+        OS: Windows 11
+        Node.js: 22.x
+        pnpm: 10.28.2
+        Provider/runtime: OpenAI-compatible API
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide the smallest code sample or public repository that demonstrates the problem. If one is not possible, explain why.
+      placeholder: Paste a minimal example or link to a public reproduction.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Install or build ...
+        2. Run ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: Describe what you expected to happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Describe what happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs or screenshots
+      description: Add relevant output or attachments after removing secrets and private information.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add anything else that may help diagnose the problem.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched existing issues and did not find an existing report for this problem.
+          required: true
+        - label: I removed API keys, credentials, private source code, and other sensitive information.
+          required: true

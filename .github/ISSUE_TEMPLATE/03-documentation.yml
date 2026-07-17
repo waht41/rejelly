@@ -1,0 +1,73 @@
+name: Documentation issue
+description: Report incorrect, missing, outdated, or inconsistent documentation.
+title: "[Docs]: "
+labels:
+  - documentation
+body:
+  - type: input
+    id: location
+    attributes:
+      label: Documentation location
+      description: Link to the published page or provide the repository-relative file path.
+      placeholder: "docs/en/api/core.md or https://..."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Problem category
+      options:
+        - Incorrect information
+        - Missing information
+        - Outdated information
+        - English and Chinese content are inconsistent
+        - Example does not run
+        - Typo or formatting
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: language
+    attributes:
+      label: Affected language
+      options:
+        - English
+        - Simplified Chinese
+        - Both
+        - Not language-specific
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Current problem
+      description: Explain what is wrong, unclear, missing, or inconsistent.
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested change
+      description: Describe or draft the correction if you have one.
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add related code, screenshots, or links that help verify the documentation.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched existing issues and did not find an existing report for this documentation problem.
+          required: true
