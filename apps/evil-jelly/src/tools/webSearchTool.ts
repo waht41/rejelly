@@ -30,23 +30,13 @@ export const WebSearchTool: ToolDefinition<typeof webSearchParameters> = {
     try {
       const { results, diagnostics } = await webSearch(query, limit ?? 6);
       equipWebSearchTraceAttrs(diagnostics);
-      if (diagnostics.polluted) {
-        const reasons = diagnostics.pollutionReasons.join(", ");
-        const hostText =
-          diagnostics.finalHost && diagnostics.finalHost !== diagnostics.requestedHost
-            ? `${diagnostics.requestedHost} -> ${diagnostics.finalHost}`
-            : diagnostics.finalHost || diagnostics.requestedHost || "unknown";
-        return (
-          `Web results for ${JSON.stringify(query)} looked polluted/degraded and were withheld. ` +
-          `Provider=${diagnostics.provider}, host=${hostText}, reasons=${reasons}. ` +
-          "Try a different provider, more specific source URLs, or different keywords."
-        );
-      }
       if (results.length === 0) {
         return `No web results for ${JSON.stringify(query)}. Try different or broader keywords.`;
       }
-      const lines = results.map(
-        (r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet || "(no snippet)"}`,
+      const lines = results.map((r, i) =>
+        [`${i + 1}. ${r.title}`, `   ${r.url}`, r.snippet ? `   ${r.snippet}` : ""]
+          .filter(Boolean)
+          .join("\n"),
       );
       return `Web results for ${JSON.stringify(query)}:\n${lines.join("\n")}`;
     } catch (e: unknown) {
@@ -64,14 +54,10 @@ function equipWebSearchTraceAttrs(diagnostics: WebSearchDiagnostics): void {
         "evil_jelly.web_search.requested_host": diagnostics.requestedHost,
         "evil_jelly.web_search.final_host": diagnostics.finalHost,
         "evil_jelly.web_search.proxy_enabled": diagnostics.webProxyEnabled,
+        "evil_jelly.web_search.raw_result_count": diagnostics.rawResultCount,
         "evil_jelly.web_search.result_count": diagnostics.resultCount,
         "evil_jelly.web_search.top_hosts": diagnostics.topHosts.join(","),
-        "evil_jelly.web_search.query_token_count": diagnostics.queryTokenCount,
-        "evil_jelly.web_search.matched_result_count": diagnostics.matchedResultCount,
         "evil_jelly.web_search.site_constraint": diagnostics.siteConstraint ?? "",
-        "evil_jelly.web_search.site_constraint_matched": diagnostics.siteConstraintMatched ?? false,
-        "evil_jelly.web_search.polluted": diagnostics.polluted,
-        "evil_jelly.web_search.pollution_reasons": diagnostics.pollutionReasons.join(","),
       },
       { target: "local" },
     );

@@ -21,6 +21,51 @@ export interface SearchProviderResponse {
   results: SearchResult[];
 }
 
+export interface ParsedSearchQuery {
+  terms: string;
+  siteConstraint: string | null;
+}
+
+/** Separate a site: operator from terms because Anthropic-compatible mirrors may ignore it. */
+export function parseSearchQuery(query: string): ParsedSearchQuery {
+  const match = query.match(/\bsite:([^\s)]+)/i);
+  const rawSite = match?.[1]
+    ?.replace(/^["']|["']$/g, "")
+    .trim()
+    .toLowerCase();
+  const siteConstraint = rawSite
+    ? rawSite
+        .replace(/^\*\./, "")
+        .replace(/^https?:\/\//, "")
+        .replace(/\/.*$/, "")
+    : null;
+  const terms = query
+    .replace(/\bsite:[^\s)]+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return {
+    terms: terms || siteConstraint || query.trim(),
+    siteConstraint,
+  };
+}
+
+export function filterSearchResultsBySite(
+  results: SearchResult[],
+  siteConstraint: string | null,
+): SearchResult[] {
+  if (!siteConstraint) {
+    return results;
+  }
+  return results.filter((result) => {
+    try {
+      const host = new URL(result.url).hostname.toLowerCase();
+      return host === siteConstraint || host.endsWith(`.${siteConstraint}`);
+    } catch {
+      return false;
+    }
+  });
+}
+
 /**
  * LLM-API search provider: call a CC-compatible model's Anthropic-mirror endpoint with Anthropic's
  * server-side `web_search` tool and harvest the result blocks. The per-result body is opaque
@@ -30,8 +75,9 @@ export interface SearchProviderResponse {
 export class LlmSearchProvider implements SearchProvider {
   readonly name = "llm";
 
-  async search(query: string, limit: number): Promise<SearchProviderResponse> {
+  async search(query: string, _limit: number): Promise<SearchProviderResponse> {
     const config = getWebConfig();
+    const parsedQuery = parseSearchQuery(query);
     if (!config.llmSearchApiKey) {
       throw new HttpError("WEB_SEARCH_LLM_API_KEY (or OPENAI_API_KEY) is not set");
     }
@@ -52,7 +98,11 @@ export class LlmSearchProvider implements SearchProvider {
             role: "user",
             content:
               "You must call the web_search tool to find sources for the query below, then stop. " +
-              `Do not answer from memory.\n\nQuery: ${query}`,
+              "Do not answer from memory." +
+              (parsedQuery.siteConstraint
+                ? ` Only return sources hosted on ${parsedQuery.siteConstraint} or its subdomains.`
+                : "") +
+              `\n\nQuery: ${parsedQuery.terms}`,
           },
         ],
         tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }],
@@ -64,13 +114,16 @@ export class LlmSearchProvider implements SearchProvider {
       provider: this.name,
       requestedUrl: url,
       finalUrl: url,
-      results: parseAnthropicWebSearch(json, limit),
+      results: parseAnthropicWebSearch(json),
     };
   }
 }
 
 /** Harvest `web_search_result` items from an Anthropic Messages response into SearchResult[]. */
-export function parseAnthropicWebSearch(json: unknown, limit: number): SearchResult[] {
+export function parseAnthropicWebSearch(
+  json: unknown,
+  limit = Number.POSITIVE_INFINITY,
+): SearchResult[] {
   const content = (json as { content?: unknown })?.content;
   if (!Array.isArray(content)) {
     return [];
@@ -86,22 +139,36 @@ export function parseAnthropicWebSearch(json: unknown, limit: number): SearchRes
     }
     for (const item of (block as { content: unknown[] }).content) {
       const r = item as { type?: unknown; url?: unknown; title?: unknown };
-      if (r.type !== "web_search_result" || typeof r.url !== "string" || seen.has(r.url)) {
+      if (r.type !== "web_search_result" || typeof r.url !== "string") {
         continue;
       }
-      seen.add(r.url);
+      const dedupeKey = normalizeResultUrl(r.url);
+      if (!dedupeKey || seen.has(dedupeKey)) {
+        continue;
+      }
+      seen.add(dedupeKey);
       // Per-result body is Anthropic's opaque encrypted_content → no plain snippet to surface.
       results.push({
         title: typeof r.title === "string" ? r.title : r.url,
         url: r.url,
         snippet: "",
       });
-      if (results.length >= limit) {
-        return results;
-      }
     }
   }
-  return results;
+  return results.slice(0, limit);
+}
+
+function normalizeResultUrl(raw: string): string | null {
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null;
+    }
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 const provider = new LlmSearchProvider();
