@@ -11,7 +11,7 @@ export interface SearchResult {
 
 export interface SearchProvider {
   readonly name: string;
-  search(query: string, limit: number): Promise<SearchProviderResponse>;
+  search(query: string): Promise<SearchProviderResponse>;
 }
 
 export interface SearchProviderResponse {
@@ -75,7 +75,7 @@ export function filterSearchResultsBySite(
 export class LlmSearchProvider implements SearchProvider {
   readonly name = "llm";
 
-  async search(query: string, _limit: number): Promise<SearchProviderResponse> {
+  async search(query: string): Promise<SearchProviderResponse> {
     const config = getWebConfig();
     const parsedQuery = parseSearchQuery(query);
     if (!config.llmSearchApiKey) {
