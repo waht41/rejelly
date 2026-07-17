@@ -1,0 +1,83 @@
+name: Feature request
+description: Propose an improvement based on a concrete problem or use case.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem before the proposed implementation. This helps evaluate alternatives and keep the public API coherent.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - "@rejelly/core"
+        - "@rejelly/adapter-openai"
+        - "@rejelly/adapter-gemini"
+        - "@rejelly/adapter-langchain"
+        - "@rejelly/adapter-mcp"
+        - "@rejelly/devtool"
+        - "@rejelly/evil-jelly"
+        - "@rejelly/limit-model"
+        - "create-rejelly"
+        - Documentation or examples
+        - Repository tooling
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What are you trying to accomplish, and what prevents you from doing it today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior or API you would like to see. Code sketches are welcome but not required.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe current workarounds or other designs you considered.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: compatibility
+    attributes:
+      label: Public API impact
+      description: Give your best estimate; maintainers will confirm during design review.
+      options:
+        - No public API change
+        - Backward-compatible addition
+        - Breaking change
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add examples, related projects, benchmarks, screenshots, or implementation notes.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched existing issues and discussions and did not find an equivalent request.
+          required: true
