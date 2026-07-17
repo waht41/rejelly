@@ -1,5 +1,5 @@
 /**
- * web_search tool: thin wrapper over the web service's Bing SERP search (INV-0009 §3.1).
+ * web_search tool: thin wrapper over the Anthropic-compatible server-side search (INV-0009 §3.1).
  * Returns a compact, model-friendly list of {title, url, snippet}; pair with read_webpage to pull
  * actual page text before drawing conclusions (snippets alone invite fabrication).
  */
@@ -63,7 +63,6 @@ function equipWebSearchTraceAttrs(diagnostics: WebSearchDiagnostics): void {
         "evil_jelly.web_search.provider": diagnostics.provider,
         "evil_jelly.web_search.requested_host": diagnostics.requestedHost,
         "evil_jelly.web_search.final_host": diagnostics.finalHost,
-        "evil_jelly.web_search.market": diagnostics.market,
         "evil_jelly.web_search.proxy_enabled": diagnostics.webProxyEnabled,
         "evil_jelly.web_search.result_count": diagnostics.resultCount,
         "evil_jelly.web_search.top_hosts": diagnostics.topHosts.join(","),

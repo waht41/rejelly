@@ -1,16 +1,11 @@
 /**
- * Web research substrate config: scrape parameters + outbound proxy, resolved from process.env.
+ * Web research substrate config: server-side search, page fetch, and outbound proxy settings.
  *
  * Reads only process.env (already populated by loadEvilJellyEnv per env-loading-policy); this layer
- * never opens its own .env file. All knobs have safe MVP defaults so the kit runs with zero config.
+ * never opens its own .env file.
  */
 
-const DEFAULT_USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-
-/** Bing SERP host. Mainland networks resolve www.bing.com to cn.bing.com automatically. */
-const DEFAULT_SEARCH_BASE = "https://www.bing.com/search";
+const DEFAULT_USER_AGENT = "rejelly-web-reader/0.1 (+https://github.com/waht41/rejelly)";
 
 export interface WebConfig {
   userAgent: string;
@@ -18,19 +13,16 @@ export interface WebConfig {
   timeoutMs: number;
   /** Hard cap on a single fetched document body, in bytes (pre-sanitize). */
   maxFetchBytes: number;
-  /** Bing market hint, e.g. en-US / zh-CN. Empty leaves it to Bing geo-detection. */
-  market: string;
-  searchBaseUrl: string;
   /** undici ProxyAgent target when proxying is enabled; null disables proxying. */
   proxyUrl: string | null;
-  /** Active search provider: "bing" (SERP scrape) or "llm" (Anthropic-mirror web_search tool). */
+  /** Explicit opt-in for the Anthropic-compatible server-side search provider. */
   searchProvider: string;
   /**
    * LLM search provider (INV-0009 §3.1): a CC-compatible model's Anthropic-mirror endpoint that
    * proxies Anthropic's server-side `web_search` tool. No vendor literals in source — any domestic
    * mirror (DeepSeek, Qwen, Zhipu, ...) drops in by env alone. To keep config minimal, all three
    * reuse the already-present OPENAI_* (single-vendor) values as the fallback, so the common
-   * setup needs only WEB_SEARCH_PROVIDER=llm:
+   * setup needs no extra search-specific variables:
    *   - key:   WEB_SEARCH_LLM_API_KEY → OPENAI_API_KEY
    *   - model: WEB_SEARCH_LLM_MODEL  → OPENAI_MODEL_ID
    *   - base:  WEB_SEARCH_LLM_BASE_URL → origin(OPENAI_BASE_URL) + "/anthropic"
@@ -54,9 +46,7 @@ function intFromEnv(name: string, fallback: number): number {
 
 /**
  * Web egress proxy is a SEPARATE knob from the global USE_PROXY/PROXY_URL (which routes the LLM API).
- * Defaults to DIRECT: Bing serves decoy/unrelated results to flagged proxy exit IPs, and Bing is
- * directly reachable on the target network, so proxying the SERP actively breaks search quality.
- * Opt in only for page fetches that need it: set WEB_PROXY_URL, or WEB_USE_PROXY=true to reuse PROXY_URL.
+ * Defaults to DIRECT. Opt in with WEB_PROXY_URL, or WEB_USE_PROXY=true to reuse PROXY_URL.
  */
 function resolveProxyUrl(): string | null {
   const explicit = (process.env.WEB_PROXY_URL ?? "").trim();
@@ -76,10 +66,8 @@ export function getWebConfig(): WebConfig {
     userAgent: (process.env.WEB_USER_AGENT ?? "").trim() || DEFAULT_USER_AGENT,
     timeoutMs: intFromEnv("WEB_TIMEOUT_MS", 15_000),
     maxFetchBytes: intFromEnv("WEB_MAX_FETCH_BYTES", 2_000_000),
-    market: (process.env.WEB_SEARCH_MARKET ?? "").trim(),
-    searchBaseUrl: (process.env.WEB_SEARCH_BASE_URL ?? "").trim() || DEFAULT_SEARCH_BASE,
     proxyUrl: resolveProxyUrl(),
-    searchProvider: (process.env.WEB_SEARCH_PROVIDER ?? "").trim().toLowerCase() || "bing",
+    searchProvider: (process.env.WEB_SEARCH_PROVIDER ?? "").trim().toLowerCase(),
     llmSearchBaseUrl: resolveLlmSearchBaseUrl(),
     llmSearchApiKey:
       (process.env.WEB_SEARCH_LLM_API_KEY ?? "").trim() ||
@@ -87,6 +75,11 @@ export function getWebConfig(): WebConfig {
     llmSearchModel:
       (process.env.WEB_SEARCH_LLM_MODEL ?? "").trim() || (process.env.OPENAI_MODEL_ID ?? "").trim(),
   };
+}
+
+/** Whether server-side web search was explicitly enabled at tool-registration time. */
+export function isWebSearchConfigured(): boolean {
+  return getWebConfig().searchProvider === "llm";
 }
 
 /**

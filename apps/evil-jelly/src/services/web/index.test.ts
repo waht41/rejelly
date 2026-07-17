@@ -6,9 +6,9 @@ describe("diagnoseSearchResults", () => {
   it("keeps relevant technical results", () => {
     const diagnostics = diagnoseSearchResults({
       query: "undici npm",
-      provider: "bing",
-      requestedUrl: "https://www.bing.com/search?q=undici+npm",
-      finalUrl: "https://cn.bing.com/search?q=undici+npm",
+      provider: "llm",
+      requestedUrl: "https://api.example.test/anthropic/v1/messages",
+      finalUrl: "https://api.example.test/anthropic/v1/messages",
       results: [
         {
           title: "undici - npm",
@@ -30,15 +30,15 @@ describe("diagnoseSearchResults", () => {
 
     expect(diagnostics.polluted).toBe(false);
     expect(diagnostics.matchedResultCount).toBe(3);
-    expect(diagnostics.finalHost).toBe("cn.bing.com");
+    expect(diagnostics.finalHost).toBe("api.example.test");
   });
 
   it("flags unrelated results with an ignored site constraint", () => {
     const diagnostics = diagnoseSearchResults({
       query: "site:example-source.test rarewidget",
-      provider: "bing",
-      requestedUrl: "https://www.bing.com/search?q=site%3Aexample-source.test+rarewidget",
-      finalUrl: "https://cn.bing.com/search?q=site%3Aexample-source.test+rarewidget",
+      provider: "llm",
+      requestedUrl: "https://api.example.test/anthropic/v1/messages",
+      finalUrl: "https://api.example.test/anthropic/v1/messages",
       results: [
         {
           title: "Generic help center",

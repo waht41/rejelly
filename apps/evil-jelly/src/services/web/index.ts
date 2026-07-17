@@ -14,7 +14,6 @@ export interface WebSearchDiagnostics {
   provider: string;
   requestedHost: string;
   finalHost: string;
-  market: string;
   webProxyEnabled: boolean;
   resultCount: number;
   topHosts: string[];
@@ -85,7 +84,6 @@ export function diagnoseSearchResults(args: {
     provider: args.provider,
     requestedHost,
     finalHost,
-    market: config.market,
     webProxyEnabled: config.proxyUrl !== null,
     resultCount: args.results.length,
     topHosts,

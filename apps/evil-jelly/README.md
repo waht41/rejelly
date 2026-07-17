@@ -109,21 +109,19 @@ All variables except `OPENAI_API_KEY` are optional. Application-level LLM variab
 
 #### Web search
 
-Web egress proxying is independent from LLM API proxying and defaults to a direct connection because Bing can return degraded results for proxy exit IPs. Parsing is implemented in `src/services/web/webConfig.ts`.
+Web search uses the configured Anthropic-compatible endpoint's server-side `web_search` tool. `read_webpage` is always loaded for direct URLs, while `web_search` is loaded only when `WEB_SEARCH_PROVIDER=llm`. Web egress proxying is independent from the main LLM API proxy and defaults to a direct connection.
 
 | Variable | Description |
 |----------|-------------|
 | `WEB_PROXY_URL` | Proxy used only for web fetching; the LLM proxy is not reused by default. |
 | `WEB_USE_PROXY` | Set to `true` to reuse `PROXY_URL` for web fetching. |
-| `WEB_USER_AGENT` | Fetch user agent. Defaults to the Chrome desktop user agent. |
+| `WEB_USER_AGENT` | Identifiable user agent for page fetching. Defaults to `rejelly-web-reader/0.1` with the project URL. |
 | `WEB_TIMEOUT_MS` | Per-request timeout in milliseconds (positive integer). Defaults to `15000`. |
 | `WEB_MAX_FETCH_BYTES` | Maximum bytes fetched per document (positive integer). Defaults to `2000000`. |
-| `WEB_SEARCH_PROVIDER` | `bing` (SERP scraping, default) or `llm` (Anthropic-mirror `web_search`). |
-| `WEB_SEARCH_BASE_URL` | SERP URL. Defaults to `https://www.bing.com/search`. |
-| `WEB_SEARCH_MARKET` | Bing market hint such as `zh-CN`; blank by default for geo-detection. |
-| `WEB_SEARCH_LLM_BASE_URL` | Anthropic-mirror root for the `llm` backend; defaults to `origin(OPENAI_BASE_URL) + /anthropic`. |
-| `WEB_SEARCH_LLM_API_KEY` | `llm` backend key; falls back to `OPENAI_API_KEY`. |
-| `WEB_SEARCH_LLM_MODEL` | `llm` backend model; falls back to `OPENAI_MODEL_ID`. |
+| `WEB_SEARCH_PROVIDER` | Set to `llm` to enable `web_search`; `read_webpage` is always available. |
+| `WEB_SEARCH_LLM_BASE_URL` | Anthropic-compatible root; defaults to `origin(OPENAI_BASE_URL) + /anthropic`. |
+| `WEB_SEARCH_LLM_API_KEY` | Search endpoint key; falls back to `OPENAI_API_KEY`. |
+| `WEB_SEARCH_LLM_MODEL` | Search model; falls back to `OPENAI_MODEL_ID`. |
 
 Evil Jelly also follows OS shell conventions: `EDITOR` / `VISUAL` select the prompt editor (Windows `notepad`, POSIX `vi` by default), while `ComSpec` / `SHELL` select the command shell (`cmd.exe` / `/bin/sh` by default).
 

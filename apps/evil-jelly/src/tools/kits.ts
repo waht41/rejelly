@@ -4,6 +4,7 @@
  */
 
 import { augmentTool, equipTool, type ToolDefinition } from "@rejelly/core";
+import { isWebSearchConfigured } from "../services/web/webConfig";
 import { ListDirTool, ReadFileTool } from "./FileSystemTools";
 import { FuzzySearchTool } from "./FuzzySearchTool";
 import { GrepSearchTool } from "./GrepSearchTool";
@@ -96,17 +97,17 @@ export interface WebResearchKitOptions {
 }
 
 /**
- * Web research substrate: web_search (Bing SERP) + read_webpage (fetch → clean markdown).
+ * Web research substrate: server-side web_search + read_webpage (fetch → clean markdown).
  *
- * Like the other kits, this equips tools only — no intake budget. See {@link equipReadOnlyWorkspaceKit}.
+ * read_webpage is always available for user-provided URLs. web_search is added only when
+ * WEB_SEARCH_PROVIDER=llm explicitly enables server-side search. Like the other kits, this equips
+ * tools only — no intake budget. See {@link equipReadOnlyWorkspaceKit}.
  */
 export function equipWebResearchKit(options: WebResearchKitOptions = {}): void {
   const quiet = options.quiet ?? false;
-  const tools = quiet
-    ? [WebSearchTool, ReadWebpageTool]
-    : [withHostPrint(WebSearchTool), withHostPrint(ReadWebpageTool)];
+  const tools = isWebSearchConfigured() ? [WebSearchTool, ReadWebpageTool] : [ReadWebpageTool];
 
   for (const tool of tools) {
-    equipTool(tool);
+    equipTool(quiet ? tool : withHostPrint(tool));
   }
 }

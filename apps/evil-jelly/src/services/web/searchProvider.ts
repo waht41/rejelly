@@ -1,13 +1,6 @@
-/**
- * Search provider behind an interface so the SERP source is swappable (INV-0009 §3.1).
- *
- * Default = BingSearchProvider: scrape the Bing HTML results page (no API key / no vendor binding;
- * Bing's SERP is relatively scrape-tolerant). GoogleSearchProvider is the planned second provider;
- * the reversal trigger to a paid API (Brave/Serper/CSE) is recorded in the INV, not coded here.
- */
+/** Server-side web search through an Anthropic-compatible Messages endpoint (INV-0009 §3.1). */
 
-import { fetchJson, fetchText, HttpError } from "./httpClient";
-import { stripTags } from "./sanitize";
+import { fetchJson, HttpError } from "./httpClient";
 import { getWebConfig } from "./webConfig";
 
 export interface SearchResult {
@@ -28,102 +21,11 @@ export interface SearchProviderResponse {
   results: SearchResult[];
 }
 
-/** Bing wraps some outbound links in a redirector; unwrap the real target when present. */
-function unwrapBingUrl(raw: string): string {
-  try {
-    const u = new URL(raw);
-    if (/bing\.com$/i.test(u.hostname)) {
-      const real = u.searchParams.get("u") ?? u.searchParams.get("r");
-      if (real) {
-        // Bing's `u` param is sometimes base64 (prefixed "a1") of the URL.
-        const candidate = real.startsWith("a1") ? safeBase64(real.slice(2)) : real;
-        if (candidate?.startsWith("http")) {
-          return candidate;
-        }
-      }
-    }
-  } catch {
-    // not an absolute URL — fall through
-  }
-  return raw;
-}
-
-function safeBase64(input: string): string | null {
-  try {
-    const normalized = input.replace(/-/g, "+").replace(/_/g, "/");
-    return Buffer.from(normalized, "base64").toString("utf-8");
-  } catch {
-    return null;
-  }
-}
-
-export class BingSearchProvider implements SearchProvider {
-  readonly name = "bing";
-
-  async search(query: string, limit: number): Promise<SearchProviderResponse> {
-    const config = getWebConfig();
-    const params = new URLSearchParams({ q: query, count: String(Math.min(limit * 2, 30)) });
-    if (config.market) {
-      params.set("mkt", config.market);
-    }
-    const url = `${config.searchBaseUrl}?${params.toString()}`;
-    const { body, url: finalUrl } = await fetchText(url, { acceptHtmlOnly: true });
-    return {
-      provider: this.name,
-      requestedUrl: url,
-      finalUrl,
-      results: parseBingResults(body, limit),
-    };
-  }
-}
-
-/** Parse <li class="b_algo"> blocks: title + url from the <h2><a>, snippet from the first <p>. */
-export function parseBingResults(html: string, limit: number): SearchResult[] {
-  const results: SearchResult[] = [];
-  const seen = new Set<string>();
-  const blockRe = /<li[^>]*class="[^"]*\bb_algo\b[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
-
-  for (const block of html.matchAll(blockRe)) {
-    const segment = block[1];
-    const anchor = segment.match(
-      /<h2\b[^>]*>[\s\S]*?<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i,
-    );
-    if (!anchor) {
-      continue;
-    }
-    const url = unwrapBingUrl(decodeHref(anchor[1]));
-    if (!url.startsWith("http") || seen.has(url)) {
-      continue;
-    }
-    const title = stripTags(anchor[2]);
-    if (!title) {
-      continue;
-    }
-    const snippetMatch =
-      segment.match(/<p\b[^>]*class="[^"]*b_lineclamp[^"]*"[^>]*>([\s\S]*?)<\/p>/i) ??
-      segment.match(/<p\b[^>]*>([\s\S]*?)<\/p>/i);
-    const snippet = snippetMatch ? stripTags(snippetMatch[1]) : "";
-
-    seen.add(url);
-    results.push({ title, url, snippet });
-    if (results.length >= limit) {
-      break;
-    }
-  }
-  return results;
-}
-
-function decodeHref(raw: string): string {
-  return raw.replace(/&amp;/g, "&");
-}
-
 /**
  * LLM-API search provider: call a CC-compatible model's Anthropic-mirror endpoint with Anthropic's
- * server-side `web_search` tool and harvest the result blocks (INV-0009 §3.1). Verified against
- * DeepSeek's /anthropic endpoint: on English/technical/rare queries it returns relevant first-party
- * sources where the cn.bing SERP scrape was polluted. We extract clean {title,url}; the per-result
- * body is Anthropic's opaque `encrypted_content`, so snippet is left empty (read_webpage fetches the
- * real text). `site:` is not honored by the mirror — prefer plain keywords + post-hoc host filtering.
+ * server-side `web_search` tool and harvest the result blocks. The per-result body is opaque
+ * `encrypted_content`, so snippet is left empty (read_webpage fetches the real text). `site:` may
+ * not be honored by every mirror, so prefer plain keywords plus post-hoc host filtering.
  */
 export class LlmSearchProvider implements SearchProvider {
   readonly name = "llm";
@@ -202,39 +104,9 @@ export function parseAnthropicWebSearch(json: unknown, limit: number): SearchRes
   return results;
 }
 
-let cachedProvider: SearchProvider | null = null;
+const provider = new LlmSearchProvider();
 
-/**
- * Resolve the active provider from WEB_SEARCH_PROVIDER. "llm" selects the Anthropic-mirror
- * web_search tool; anything else (default) uses the Bing SERP scrape. Falls back to Bing if "llm"
- * is selected without its base URL + key — but warns loudly so a misconfigured opt-in is visible
- * instead of silently scraping Bing.
- */
+/** Return the sole supported search provider. Missing configuration fails in search(). */
 export function getSearchProvider(): SearchProvider {
-  if (cachedProvider) {
-    return cachedProvider;
-  }
-  const config = getWebConfig();
-  if (config.searchProvider === "llm") {
-    const missing: string[] = [];
-    if (!config.llmSearchApiKey) {
-      missing.push("API key (WEB_SEARCH_LLM_API_KEY / OPENAI_API_KEY)");
-    }
-    if (!config.llmSearchBaseUrl) {
-      missing.push("base URL (WEB_SEARCH_LLM_BASE_URL / OPENAI_BASE_URL)");
-    }
-    if (!config.llmSearchModel) {
-      missing.push("model (WEB_SEARCH_LLM_MODEL / OPENAI_MODEL_ID)");
-    }
-    if (missing.length === 0) {
-      cachedProvider = new LlmSearchProvider();
-      return cachedProvider;
-    }
-    console.warn(
-      `[web] WEB_SEARCH_PROVIDER=llm but ${missing.join(" and ")} not set; ` +
-        "falling back to Bing SERP scrape.",
-    );
-  }
-  cachedProvider = new BingSearchProvider();
-  return cachedProvider;
+  return provider;
 }
