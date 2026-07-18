@@ -1,69 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { diagnoseSearchResults } from "./index";
-import { parseAnthropicWebSearch } from "./searchProvider";
+import {
+  filterSearchResultsBySite,
+  parseAnthropicWebSearch,
+  parseSearchQuery,
+  type SearchResult,
+} from "./searchProvider";
 
-describe("diagnoseSearchResults", () => {
-  it("keeps relevant technical results", () => {
-    const diagnostics = diagnoseSearchResults({
-      query: "undici npm",
-      provider: "bing",
-      requestedUrl: "https://www.bing.com/search?q=undici+npm",
-      finalUrl: "https://cn.bing.com/search?q=undici+npm",
-      results: [
-        {
-          title: "undici - npm",
-          url: "https://www.npmjs.com/package/undici",
-          snippet: "An HTTP/1.1 client for Node.js.",
-        },
-        {
-          title: "GitHub - nodejs/undici",
-          url: "https://github.com/nodejs/undici",
-          snippet: "HTTP client written from scratch.",
-        },
-        {
-          title: "Using Undici fetch in Node.js",
-          url: "https://nodejs.org/en/learn/getting-started/fetch",
-          snippet: "Undici powers fetch in Node.js.",
-        },
-      ],
+describe("search query constraints", () => {
+  it("separates site: from the terms sent to the search model", () => {
+    expect(parseSearchQuery("site:docs.example.test web search API")).toEqual({
+      terms: "web search API",
+      siteConstraint: "docs.example.test",
     });
-
-    expect(diagnostics.polluted).toBe(false);
-    expect(diagnostics.matchedResultCount).toBe(3);
-    expect(diagnostics.finalHost).toBe("cn.bing.com");
+    expect(parseSearchQuery("ordinary query")).toEqual({
+      terms: "ordinary query",
+      siteConstraint: null,
+    });
   });
 
-  it("flags unrelated results with an ignored site constraint", () => {
-    const diagnostics = diagnoseSearchResults({
-      query: "site:example-source.test rarewidget",
-      provider: "bing",
-      requestedUrl: "https://www.bing.com/search?q=site%3Aexample-source.test+rarewidget",
-      finalUrl: "https://cn.bing.com/search?q=site%3Aexample-source.test+rarewidget",
-      results: [
-        {
-          title: "Generic help center",
-          url: "https://help.example.com/articles/intro",
-          snippet: "A general introduction page.",
-        },
-        {
-          title: "Dictionary entry for common words",
-          url: "https://dictionary.example.net/common",
-          snippet: "Common dictionary examples.",
-        },
-        {
-          title: "Product catalog",
-          url: "https://shop.example.org/catalog",
-          snippet: "A broad product listing.",
-        },
-      ],
-    });
+  it("keeps only the requested host and its subdomains", () => {
+    const results: SearchResult[] = [
+      { title: "root", url: "https://example.test/a", snippet: "" },
+      { title: "docs", url: "https://docs.example.test/b", snippet: "" },
+      { title: "lookalike", url: "https://notexample.test/c", snippet: "" },
+      { title: "suffix", url: "https://example.test.evil.invalid/d", snippet: "" },
+    ];
 
-    expect(diagnostics.polluted).toBe(true);
-    expect(diagnostics.pollutionReasons).toEqual([
-      "no_query_token_overlap",
-      "site_constraint_ignored",
-    ]);
-    expect(diagnostics.siteConstraintMatched).toBe(false);
+    expect(
+      filterSearchResultsBySite(results, "example.test").map((result) => result.title),
+    ).toEqual(["root", "docs"]);
   });
 });
 
@@ -116,6 +81,32 @@ describe("parseAnthropicWebSearch", () => {
 
   it("respects the limit", () => {
     expect(parseAnthropicWebSearch(response, 1)).toHaveLength(1);
+  });
+
+  it("collects all result blocks, validates URLs, and de-duplicates fragments before limiting", () => {
+    const results = parseAnthropicWebSearch(
+      {
+        content: [
+          {
+            type: "web_search_tool_result",
+            content: [
+              { type: "web_search_result", url: "https://example.test/docs#one", title: "one" },
+              { type: "web_search_result", url: "ftp://example.test/file", title: "ftp" },
+            ],
+          },
+          {
+            type: "web_search_tool_result",
+            content: [
+              { type: "web_search_result", url: "https://example.test/docs#two", title: "dup" },
+              { type: "web_search_result", url: "https://example.test/later", title: "later" },
+            ],
+          },
+        ],
+      },
+      2,
+    );
+
+    expect(results.map((result) => result.title)).toEqual(["one", "later"]);
   });
 
   it("falls back to url when title is missing", () => {

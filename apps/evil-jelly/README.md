@@ -77,7 +77,7 @@ Configuration is resolved in this order: **CLI arguments > shell environment > w
 
 A regular `.env` at the workspace root is not loaded: it belongs to the application being developed, not to Evil Jelly. When `OPENAI_BASE_URL` or `OPENAI_PROVIDER` comes from a workspace file but `OPENAI_API_KEY` comes from the shell or global file, startup warns that the repository is redirecting a key it does not own. Keep the key and endpoint in the same layer.
 
-When `evil init` finds an existing key, press Enter to retain it. In a TTY it also asks for an optional Base URL and model. For non-interactive setup:
+When `evil init` finds an existing key, press Enter to retain it. In a TTY it also asks for an optional Base URL and model. For non-interactive endpoint/model setup when the key is already saved (otherwise also pass `--api-key <key>`):
 
 ```bash
 evil init --base-url https://api.deepseek.com --model deepseek-v4-flash
@@ -105,25 +105,25 @@ All variables except `OPENAI_API_KEY` are optional. Application-level LLM variab
 | Variable | Description |
 |----------|-------------|
 | `USE_PROXY` | Set to `true` or `1` to enable a global HTTP proxy for LLM API calls. |
+| `HTTPS_PROXY` | Highest-priority proxy URL when `USE_PROXY` is enabled. |
+| `HTTP_PROXY` | Proxy URL used when `USE_PROXY` is enabled and `HTTPS_PROXY` is unset. |
 | `PROXY_URL` | Used when `USE_PROXY` is enabled and neither `HTTPS_PROXY` nor `HTTP_PROXY` is set. Defaults to `http://127.0.0.1:7890`. |
 
 #### Web search
 
-Web egress proxying is independent from LLM API proxying and defaults to a direct connection because Bing can return degraded results for proxy exit IPs. Parsing is implemented in `src/services/web/webConfig.ts`.
+Web search uses the configured Anthropic-compatible endpoint's server-side `web_search` tool. `read_webpage` is always loaded for direct URLs, while `web_search` is loaded only when `WEB_SEARCH_PROVIDER=llm`. Web egress proxying is independent from the main LLM API proxy and defaults to a direct connection.
 
 | Variable | Description |
 |----------|-------------|
 | `WEB_PROXY_URL` | Proxy used only for web fetching; the LLM proxy is not reused by default. |
 | `WEB_USE_PROXY` | Set to `true` to reuse `PROXY_URL` for web fetching. |
-| `WEB_USER_AGENT` | Fetch user agent. Defaults to the Chrome desktop user agent. |
+| `WEB_USER_AGENT` | Identifiable user agent for page fetching. Defaults to `rejelly-web-reader/0.1` with the project URL. |
 | `WEB_TIMEOUT_MS` | Per-request timeout in milliseconds (positive integer). Defaults to `15000`. |
 | `WEB_MAX_FETCH_BYTES` | Maximum bytes fetched per document (positive integer). Defaults to `2000000`. |
-| `WEB_SEARCH_PROVIDER` | `bing` (SERP scraping, default) or `llm` (Anthropic-mirror `web_search`). |
-| `WEB_SEARCH_BASE_URL` | SERP URL. Defaults to `https://www.bing.com/search`. |
-| `WEB_SEARCH_MARKET` | Bing market hint such as `zh-CN`; blank by default for geo-detection. |
-| `WEB_SEARCH_LLM_BASE_URL` | Anthropic-mirror root for the `llm` backend; defaults to `origin(OPENAI_BASE_URL) + /anthropic`. |
-| `WEB_SEARCH_LLM_API_KEY` | `llm` backend key; falls back to `OPENAI_API_KEY`. |
-| `WEB_SEARCH_LLM_MODEL` | `llm` backend model; falls back to `OPENAI_MODEL_ID`. |
+| `WEB_SEARCH_PROVIDER` | Set to `llm` to enable `web_search`; `read_webpage` is always available. |
+| `WEB_SEARCH_LLM_BASE_URL` | Anthropic-compatible root; defaults to `origin(OPENAI_BASE_URL) + /anthropic`. |
+| `WEB_SEARCH_LLM_API_KEY` | Search endpoint key; falls back to `OPENAI_API_KEY`. |
+| `WEB_SEARCH_LLM_MODEL` | Search model; falls back to `OPENAI_MODEL_ID`. |
 
 Evil Jelly also follows OS shell conventions: `EDITOR` / `VISUAL` select the prompt editor (Windows `notepad`, POSIX `vi` by default), while `ComSpec` / `SHELL` select the command shell (`cmd.exe` / `/bin/sh` by default).
 
@@ -208,7 +208,13 @@ All Evil Jelly configuration lives under `.evil-jelly/`:
 ```jsonc
 {
   // Per-seed evaluator concurrency for evil audit (default: 12)
-  "audit": { "concurrency": 12 }
+  "audit": {
+    "concurrency": 12,
+    // Maximum new or changed seeds evaluated per family (default: 24)
+    "maxSeeds": 24,
+    // Prune same-family ledger entries not seen for this many days (default: 30)
+    "ledgerGcDays": 30,
+  }
 }
 ```
 
@@ -303,7 +309,7 @@ The read-only `features/audit/families/docSync.ts` replaced the retired interact
 2. **Per-seed evaluation:** compare both full documents using the left side as the review spine. Each section is classified as `ok`, `inconsistent`, `left-only`, or `right-only`; the model handles cross-language section alignment.
 3. **Fan-in:** share the audit ledger with other families, using both paths as the `fingerprint` and both full texts as the `contentHash`. Reevaluate only when either side changes; suppress non-actionable verdicts according to ledger rules.
 
-The audit never changes files. A downstream agent must add translations or resolve which side is authoritative, consulting source code when necessary.
+The audit never changes source or documentation files; it only updates its report and ledger under `.evil-jelly/audit/`. A downstream agent must add translations or resolve which side is authoritative, consulting source code when necessary.
 
 ```bash
 evil audit --family doc-sync

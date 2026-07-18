@@ -1,7 +1,7 @@
 /**
  * Single outbound HTTP chokepoint for the web research kit: proxy-aware fetch with timeout, size cap,
- * a browser UA, and a content-type guard. Both web_search (SERP) and read_webpage go through here, so
- * proxy/UA/limit policy lives in exactly one place.
+ * an identifiable UA, and a content-type guard. Both web_search and read_webpage go through here,
+ * so proxy/UA/limit policy lives in exactly one place.
  *
  * Proxying uses this layer's WEB_* knobs only. When disabled, we still pass an explicit direct
  * undici Agent so @rejelly/env's global EnvHttpProxyAgent cannot accidentally proxy web egress.
@@ -87,22 +87,9 @@ export async function fetchText(
       redirect: "follow",
       signal,
       dispatcher: resolveDispatcher(config.proxyUrl),
-      // Full browser header set incl. sec-fetch-* / sec-ch-ua: Bing serves only a JS shell (no
-      // server-rendered b_algo results) to requests that look automated; these headers flip it to
-      // the real SERP. They're harmless for ordinary page fetches too.
       headers: {
         "User-Agent": config.userAgent,
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": config.market ? `${config.market},en;q=0.8` : "en-US,en;q=0.9",
-        "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": '"Windows"',
-        "sec-fetch-dest": "document",
-        "sec-fetch-mode": "navigate",
-        "sec-fetch-site": "none",
-        "sec-fetch-user": "?1",
-        "upgrade-insecure-requests": "1",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5",
       },
     });
 
