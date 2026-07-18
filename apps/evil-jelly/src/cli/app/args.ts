@@ -108,13 +108,24 @@ function resolveAuditFamily(raw: unknown): SelectableAuditFamilyKind {
 }
 
 export function getCliVersion(): string {
-  try {
-    const pkgPath = fileURLToPath(new URL("../../package.json", import.meta.url));
-    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as { version?: string };
-    return pkg.version ?? "0.0.0";
-  } catch {
-    return "0.0.0";
+  // The source module lives at src/cli/app/args.ts, while tsup bundles it into dist/cli/index.js.
+  // Try both layouts and verify the package name so a parent workspace package cannot win by
+  // accident if the output structure changes.
+  for (const relativePath of ["../../package.json", "../../../package.json"]) {
+    try {
+      const pkgPath = fileURLToPath(new URL(relativePath, import.meta.url));
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as {
+        name?: string;
+        version?: string;
+      };
+      if (pkg.name === "@rejelly/evil-jelly" && pkg.version) {
+        return pkg.version;
+      }
+    } catch {
+      // Try the other supported layout.
+    }
   }
+  return "0.0.0";
 }
 
 function resolveOptionalPath(raw: unknown, baseDir = process.cwd()): string | undefined {

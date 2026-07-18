@@ -5,6 +5,8 @@
  * never opens its own .env file.
  */
 
+import { DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL_ID } from "../../shared/configDefaults";
+
 const DEFAULT_USER_AGENT = "rejelly-web-reader/0.1 (+https://github.com/waht41/rejelly)";
 
 export interface WebConfig {
@@ -40,8 +42,8 @@ function intFromEnv(name: string, fallback: number): number {
   if (raw === undefined) {
     return fallback;
   }
-  const parsed = Number.parseInt(raw.trim(), 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  const parsed = Number(raw.trim());
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 /**
@@ -73,7 +75,9 @@ export function getWebConfig(): WebConfig {
       (process.env.WEB_SEARCH_LLM_API_KEY ?? "").trim() ||
       (process.env.OPENAI_API_KEY ?? "").trim(),
     llmSearchModel:
-      (process.env.WEB_SEARCH_LLM_MODEL ?? "").trim() || (process.env.OPENAI_MODEL_ID ?? "").trim(),
+      (process.env.WEB_SEARCH_LLM_MODEL ?? "").trim() ||
+      (process.env.OPENAI_MODEL_ID ?? "").trim() ||
+      DEFAULT_OPENAI_MODEL_ID,
   };
 }
 
@@ -92,10 +96,7 @@ function resolveLlmSearchBaseUrl(): string {
   if (explicit) {
     return explicit;
   }
-  const openaiBase = (process.env.OPENAI_BASE_URL ?? "").trim();
-  if (!openaiBase) {
-    return "";
-  }
+  const openaiBase = (process.env.OPENAI_BASE_URL ?? "").trim() || DEFAULT_OPENAI_BASE_URL;
   try {
     return `${new URL(openaiBase).origin}/anthropic`;
   } catch {

@@ -1,6 +1,13 @@
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { parseCliArgs } from "./args";
+import { getCliVersion, parseCliArgs } from "./args";
+
+describe("getCliVersion", () => {
+  it("reads the Evil Jelly package version when running from source", () => {
+    expect(getCliVersion()).toMatch(/^\d+\.\d+\.\d+/);
+    expect(getCliVersion()).not.toBe("0.0.0");
+  });
+});
 
 describe("parseCliArgs", () => {
   afterEach(() => {

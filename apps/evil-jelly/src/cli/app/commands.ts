@@ -56,7 +56,7 @@ function docDriftMissingMapMessage(): string {
     `Doc validation needs a doc map at \`${docMapPath()}\` (workspace-relative; ` +
     `override with --doc-map). It maps each doc ` +
     `file to the code paths/artifacts to validate against - see .evil-jelly/doc-map.jsonc ` +
-    `in the reagent repo for the format.`
+    `in the Rejelly repo for the format.`
   );
 }
 
