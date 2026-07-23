@@ -1,5 +1,9 @@
+import { renderToString } from "ink";
+import { createElement } from "react";
+import stripAnsi from "strip-ansi";
 import { describe, expect, it } from "vitest";
 import {
+  MarkdownViewer,
   markdownInlineText,
   markdownTableLayout,
   markdownTableRowHeight,
@@ -78,6 +82,31 @@ describe("parseMarkdownBlocks", () => {
     expect(parseMarkdownBlocks("## ")).toEqual([{ type: "paragraph", text: "##" }]);
     expect(parseMarkdownBlocks("- ")).toEqual([{ type: "paragraph", text: "-" }]);
     expect(parseMarkdownBlocks("1. ")).toEqual([{ type: "paragraph", text: "1." }]);
+  });
+});
+
+describe("MarkdownViewer code blocks", () => {
+  it("hard-wraps long code lines without truncating their content", () => {
+    const url = "https://example.com/a/very/long/path?first=alpha&second=omega";
+    const output = renderToString(
+      createElement(MarkdownViewer, {
+        text: ["```text", url, "```"].join("\n"),
+        columns: 24,
+      }),
+      { columns: 24 },
+    );
+
+    const visibleOutput = stripAnsi(output);
+    const renderedContent = visibleOutput
+      .split("\n")
+      .slice(2, -1)
+      .map((line) => line.slice(2, -2).trimEnd())
+      .join("");
+    const hyperlinkOpen = `\u001B]8;;${url}\u0007`;
+
+    expect(renderedContent).toBe(url);
+    expect(output).not.toContain("…");
+    expect(output.split(hyperlinkOpen).length - 1).toBeGreaterThan(1);
   });
 });
 

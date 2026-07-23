@@ -17,6 +17,12 @@ describe("stream window measurement", () => {
     expect(measureWrappedRows("孤立abc", 3)).toBe(3);
   });
 
+  it("counts wrapped code lines using the bordered block's content width", () => {
+    const text = ["```text", "abcdefghijkl", "```"].join("\n");
+
+    expect(measureStreamRows(text, 10)).toBe(5);
+  });
+
   it("keeps a markdown stream inside the requested row budget", () => {
     const text = [
       "# heading",

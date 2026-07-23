@@ -10,6 +10,7 @@ import {
 } from "./viewers/MarkdownViewer";
 
 const MIN_COLUMNS = 1;
+const CODE_BLOCK_HORIZONTAL_CHROME = 4;
 
 export type StreamTailWindow = {
   text: string;
@@ -73,7 +74,16 @@ function measureMarkdownStableRows(markdown: string, columns: number): number {
       continue;
     }
     if (block.type === "code") {
-      const contentRows = Math.max(1, block.lines.length) + (block.language ? 1 : 0);
+      const contentColumns = Math.max(1, columns - CODE_BLOCK_HORIZONTAL_CHROME);
+      const codeRows =
+        block.lines.length > 0
+          ? block.lines.reduce(
+              (total, line) => total + Math.max(1, measureWrappedRows(line, contentColumns)),
+              0,
+            )
+          : 1;
+      const languageRows = block.language ? measureWrappedRows(block.language, contentColumns) : 0;
+      const contentRows = codeRows + languageRows;
       rows += marginTop + contentRows + 2;
       continue;
     }

@@ -1,3 +1,4 @@
+import { link as terminalLink } from "ansi-escapes";
 import { Box, Text, useWindowSize } from "ink";
 import type { ReactNode } from "react";
 import stringWidth from "string-width";
@@ -17,6 +18,7 @@ type TableAlignment = "left" | "center" | "right";
 
 const MAX_RENDER_BLOCKS = 500;
 const MIN_TABLE_COLUMN_WIDTH = 3;
+const CODE_URL_PATTERN = /https?:\/\/[^\s<>"'`]+/g;
 
 function isFence(line: string): boolean {
   return /^\s*```/.test(line);
@@ -257,6 +259,25 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
   }
 
   return nodes;
+}
+
+function codeLineWithTerminalLinks(line: string): string {
+  let rendered = "";
+  let lastIndex = 0;
+
+  for (const match of line.matchAll(CODE_URL_PATTERN)) {
+    const url = match[0];
+    const start = match.index ?? 0;
+    rendered += line.slice(lastIndex, start);
+    try {
+      rendered += terminalLink(url, new URL(url).href);
+    } catch {
+      rendered += url;
+    }
+    lastIndex = start + url.length;
+  }
+
+  return rendered + line.slice(lastIndex);
 }
 
 export function markdownInlineText(text: string): string {
@@ -586,8 +607,8 @@ export function MarkdownViewer({
               {block.language ? <Text dimColor>{block.language}</Text> : null}
               {block.lines.length > 0 ? (
                 block.lines.map((line, lineIndex) => (
-                  <Text key={`${key}-${lineIndex}`} color="whiteBright" wrap="truncate-end">
-                    {line.length > 0 ? line : " "}
+                  <Text key={`${key}-${lineIndex}`} color="whiteBright" wrap="hard">
+                    {line.length > 0 ? codeLineWithTerminalLinks(line) : " "}
                   </Text>
                 ))
               ) : (
