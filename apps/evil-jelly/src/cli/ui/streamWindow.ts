@@ -23,14 +23,28 @@ function safeColumns(columns: number): number {
   return Math.max(MIN_COLUMNS, Math.floor(columns) || MIN_COLUMNS);
 }
 
-export function measureWrappedRows(text: string, columns: number): number {
+/**
+ * Count the rows `text` occupies once wrapped to `columns`.
+ *
+ * `wordWrap` must mirror the ink `wrap` prop the same text is rendered with, or
+ * the window budget drifts from what the terminal shows: ink's default `wrap`
+ * breaks on word boundaries (`wordWrap: true`), while `wrap="hard"` breaks
+ * strictly at the column (`wordWrap: false`). Word wrapping can need *more*
+ * rows than hard wrapping — "ab cdefghijkl" at 10 columns is 3 rows, not 2 —
+ * so measuring with the wrong mode silently overflows the budget.
+ */
+export function measureWrappedRows(
+  text: string,
+  columns: number,
+  { wordWrap = true }: { wordWrap?: boolean } = {},
+): number {
   if (text.length === 0) {
     return 0;
   }
   const wrapped = wrapAnsi(normalizeNewlines(text), safeColumns(columns), {
     hard: true,
     trim: false,
-    wordWrap: false,
+    wordWrap,
   });
   return Math.max(1, wrapped.split("\n").length);
 }
@@ -57,13 +71,15 @@ function measureMarkdownStableRows(markdown: string, columns: number): number {
       continue;
     }
     if (block.type === "table") {
-      const { widths, renderedWidth } = markdownTableLayout(block, columns);
-      const rowsPerRenderedLine = Math.max(1, Math.ceil(renderedWidth / safeColumns(columns)));
+      const { widths } = markdownTableLayout(block, columns);
+      // Every table line is rendered with `wrap="truncate-end"`, so a table too
+      // wide for the terminal loses its right edge instead of reflowing: one
+      // rendered line is always one row.
       const tableRows =
         3 +
         markdownTableRowHeight(block.headers, widths) +
         block.rows.reduce((total, row) => total + markdownTableRowHeight(row, widths), 0);
-      rows += marginTop + tableRows * rowsPerRenderedLine;
+      rows += marginTop + tableRows;
       continue;
     }
     if (block.type === "quote") {
@@ -78,7 +94,8 @@ function measureMarkdownStableRows(markdown: string, columns: number): number {
       const codeRows =
         block.lines.length > 0
           ? block.lines.reduce(
-              (total, line) => total + Math.max(1, measureWrappedRows(line, contentColumns)),
+              (total, line) =>
+                total + Math.max(1, measureWrappedRows(line, contentColumns, { wordWrap: false })),
               0,
             )
           : 1;
@@ -106,10 +123,11 @@ export function measureStreamRows(text: string, columns: number): number {
 }
 
 function visuallyClipSuffix(text: string, columns: number, maxRows: number): string {
+  // The clipped suffix is rendered raw (`<Text>{...}</Text>`, ink's default
+  // `wrap`), so it has to be split the same way ink would split it.
   const wrappedLines = wrapAnsi(normalizeNewlines(text), safeColumns(columns), {
     hard: true,
     trim: false,
-    wordWrap: false,
   }).split("\n");
   return wrappedLines.slice(-maxRows).join("\n");
 }

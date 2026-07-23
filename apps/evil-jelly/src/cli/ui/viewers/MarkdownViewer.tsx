@@ -18,7 +18,9 @@ type TableAlignment = "left" | "center" | "right";
 
 const MAX_RENDER_BLOCKS = 500;
 const MIN_TABLE_COLUMN_WIDTH = 3;
-const CODE_URL_PATTERN = /https?:\/\/[^\s<>"'`]+/g;
+const URL_PATTERN = /https?:\/\/[^\s<>"'`]+/g;
+const URL_TRAILING_PUNCTUATION = ".,;:!?";
+const URL_CLOSING_PAIRS: Record<string, string> = { ")": "(", "]": "[", "}": "{" };
 
 function isFence(line: string): boolean {
   return /^\s*```/.test(line);
@@ -236,12 +238,12 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
     const value = match[0];
     const start = match.index ?? 0;
     if (start > lastIndex) {
-      nodes.push(text.slice(lastIndex, start));
+      nodes.push(withTerminalLinks(text.slice(lastIndex, start)));
     }
     if (value.startsWith("`")) {
       nodes.push(
         <Text key={`${keyPrefix}-code-${index++}`} color="cyan">
-          {value.slice(1, -1)}
+          {withTerminalLinks(value.slice(1, -1))}
         </Text>,
       );
     } else {
@@ -255,20 +257,65 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
   }
 
   if (lastIndex < text.length) {
-    nodes.push(text.slice(lastIndex));
+    nodes.push(withTerminalLinks(text.slice(lastIndex)));
   }
 
   return nodes;
 }
 
-function codeLineWithTerminalLinks(line: string): string {
+function countOccurrences(text: string, character: string): number {
+  let total = 0;
+  for (const candidate of text) {
+    if (candidate === character) {
+      total++;
+    }
+  }
+  return total;
+}
+
+// A bare URL has no closing delimiter, so the match has to guess where it ends.
+// Prose and code both routinely park a URL in front of sentence punctuation or
+// inside brackets — `see https://x/a.` and `(https://x/a)` — and those trailing
+// characters belong to the surrounding text, not to the link target. Brackets
+// are only dropped when unbalanced, so wiki-style URLs that legitimately carry a
+// pair (`https://x/a_(b)`) keep it.
+function trimUrlBoundary(url: string): string {
+  let candidate = url;
+
+  while (candidate.length > 0) {
+    const last = candidate.at(-1) ?? "";
+    if (URL_TRAILING_PUNCTUATION.includes(last)) {
+      candidate = candidate.slice(0, -1);
+      continue;
+    }
+    const opening = URL_CLOSING_PAIRS[last];
+    if (opening && countOccurrences(candidate, last) > countOccurrences(candidate, opening)) {
+      candidate = candidate.slice(0, -1);
+      continue;
+    }
+    break;
+  }
+
+  return candidate;
+}
+
+/**
+ * Wrap every bare URL in an OSC 8 hyperlink so it stays clickable after layout.
+ *
+ * Terminals only auto-detect URLs inside a single unbroken line, so anything we
+ * wrap or truncate loses its link; the escape carries the full target through
+ * both. Apply this to a whole logical line *before* handing it to wrap-ansi —
+ * wrap-ansi re-opens the hyperlink on each wrapped row, whereas linking
+ * pre-wrapped fragments would point each row at a truncated URL.
+ */
+function withTerminalLinks(text: string): string {
   let rendered = "";
   let lastIndex = 0;
 
-  for (const match of line.matchAll(CODE_URL_PATTERN)) {
-    const url = match[0];
+  for (const match of text.matchAll(URL_PATTERN)) {
     const start = match.index ?? 0;
-    rendered += line.slice(lastIndex, start);
+    const url = trimUrlBoundary(match[0]);
+    rendered += text.slice(lastIndex, start);
     try {
       rendered += terminalLink(url, new URL(url).href);
     } catch {
@@ -277,7 +324,7 @@ function codeLineWithTerminalLinks(line: string): string {
     lastIndex = start + url.length;
   }
 
-  return rendered + line.slice(lastIndex);
+  return rendered + text.slice(lastIndex);
 }
 
 export function markdownInlineText(text: string): string {
@@ -375,7 +422,9 @@ export function markdownTableLayout(
 }
 
 function wrapTableCell(value: string, width: number): string[] {
-  const text = markdownInlineText(value);
+  // Link before wrapping: wrap-ansi re-opens the hyperlink on every row, so a
+  // URL split across cell lines keeps pointing at the whole target.
+  const text = withTerminalLinks(markdownInlineText(value));
   if (text.length === 0) {
     return [""];
   }
@@ -391,7 +440,10 @@ function tableCellPadding(
   width: number,
   alignment: TableAlignment,
 ): { left: string; right: string } {
-  const padding = Math.max(0, width - tableCellDisplayWidth(value));
+  // `value` is an already wrapped cell line: inline markers are gone and any URL
+  // carries OSC 8 escapes, which string-width discounts. Measure it as-is
+  // instead of running it through the inline pass a second time.
+  const padding = Math.max(0, width - terminalCellWidth(value));
   if (alignment === "right") {
     return { left: " ".repeat(padding), right: "" };
   }
@@ -564,14 +616,28 @@ export function MarkdownViewer({
             (_, columnIndex) => block.alignments[columnIndex] ?? "left",
           );
           return (
+            // A table is a fixed-width layout: every line must occupy exactly one
+            // row, or a terminal too narrow for the rendered width reflows the
+            // rules and headers while the body rows stay truncated, and the
+            // borders drift apart. Truncating all of them keeps the grid intact
+            // and keeps the height predictable for the stream window.
             <Box key={key} flexDirection="column" marginTop={index === 0 ? 0 : 1}>
-              <Text dimColor>{tableRule("┌", "┬", "┐", widths)}</Text>
+              <Text dimColor wrap="truncate-end">
+                {tableRule("┌", "┬", "┐", widths)}
+              </Text>
               {renderTableRowLines(block.headers, widths, alignments).map((line, lineIndex) => (
-                <Text key={`${key}-header-${lineIndex}`} bold color="whiteBright">
+                <Text
+                  key={`${key}-header-${lineIndex}`}
+                  bold
+                  color="whiteBright"
+                  wrap="truncate-end"
+                >
                   {line}
                 </Text>
               ))}
-              <Text dimColor>{tableRule("├", "┼", "┤", widths)}</Text>
+              <Text dimColor wrap="truncate-end">
+                {tableRule("├", "┼", "┤", widths)}
+              </Text>
               {block.rows.flatMap((row, rowIndex) =>
                 renderTableRowLines(row, widths, alignments).map((line, lineIndex) => (
                   <Text key={`${key}-${rowIndex}-${lineIndex}`} wrap="truncate-end">
@@ -579,7 +645,9 @@ export function MarkdownViewer({
                   </Text>
                 )),
               )}
-              <Text dimColor>{tableRule("└", "┴", "┘", widths)}</Text>
+              <Text dimColor wrap="truncate-end">
+                {tableRule("└", "┴", "┘", widths)}
+              </Text>
             </Box>
           );
         }
@@ -608,7 +676,7 @@ export function MarkdownViewer({
               {block.lines.length > 0 ? (
                 block.lines.map((line, lineIndex) => (
                   <Text key={`${key}-${lineIndex}`} color="whiteBright" wrap="hard">
-                    {line.length > 0 ? codeLineWithTerminalLinks(line) : " "}
+                    {line.length > 0 ? withTerminalLinks(line) : " "}
                   </Text>
                 ))
               ) : (
