@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  coalescePaste,
   expandPastedTextTokens,
+  PASTE_COALESCE_MS,
+  type PasteRun,
   pastedTextToken,
   pastedTextTokenBefore,
   shouldCollapsePastedText,
@@ -28,5 +31,67 @@ describe("collapsed pasted text", () => {
     expect(expandPastedTextTokens(`before\n${token}\nafter`, [{ id: 1, text: pasted }])).toBe(
       `before\n${pasted}\nafter`,
     );
+  });
+});
+
+describe("coalescePaste", () => {
+  const feed = (fragments: Array<{ text: string; at: number }>): PasteRun | null => {
+    let run: PasteRun | null = null;
+    let collapsedAt = -1;
+    fragments.forEach((fragment, index) => {
+      const result = coalescePaste(run, fragment.text, fragment.at, PASTE_COALESCE_MS);
+      run = result.run;
+      if (result.collapse && collapsedAt === -1) {
+        collapsedAt = index;
+      }
+    });
+    return run;
+  };
+
+  it("accumulates fragments that arrive within the window", () => {
+    const chunk = "x".repeat(500);
+    expect(coalescePaste(null, chunk, 0, PASTE_COALESCE_MS)).toEqual({
+      run: { text: chunk, at: 0 },
+      collapse: false,
+    });
+    const second = coalescePaste({ text: chunk, at: 0 }, chunk, 5, PASTE_COALESCE_MS);
+    expect(second.run.text).toHaveLength(1000);
+    expect(second.collapse).toBe(false);
+  });
+
+  it("collapses once the coalesced run crosses the char threshold", () => {
+    const chunk = "x".repeat(700);
+    const first = coalescePaste(null, chunk, 0, PASTE_COALESCE_MS);
+    expect(first.collapse).toBe(false);
+    const second = coalescePaste(first.run, chunk, 10, PASTE_COALESCE_MS);
+    expect(second.run.text).toHaveLength(1400);
+    expect(second.collapse).toBe(true);
+  });
+
+  it("collapses a burst of single characters (the Windows fragmented paste)", () => {
+    const fragments = Array.from({ length: 1300 }, (_, index) => ({ text: "字", at: index }));
+    const run = feed(fragments);
+    // Each fragment lands 1ms after the last — well inside the window — so they
+    // all fold into one run that crosses the char threshold.
+    expect(run?.text.length).toBeGreaterThanOrEqual(1200);
+  });
+
+  it("resets the run when the gap exceeds the window (sustained typing)", () => {
+    const chunk = "y".repeat(1100);
+    const first = coalescePaste(null, chunk, 0, PASTE_COALESCE_MS);
+    // Next keystroke arrives 200ms later — a human gap, so it starts fresh
+    // instead of adding to the 1100-char run and wrongly collapsing.
+    const second = coalescePaste(first.run, "z", 200, PASTE_COALESCE_MS);
+    expect(second.run.text).toBe("z");
+    expect(second.collapse).toBe(false);
+  });
+
+  it("coalesces newline fragments up to the line threshold", () => {
+    const run = feed([
+      { text: "a\nb\n", at: 0 },
+      { text: "c\nd\n", at: 5 },
+      { text: "e\nf", at: 10 },
+    ]);
+    expect(run && shouldCollapsePastedText(run.text)).toBe(true);
   });
 });
