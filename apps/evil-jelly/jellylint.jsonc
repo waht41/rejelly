@@ -32,6 +32,7 @@
         ["@ext:fs"]
       ],
       "connect": {
+        "@spec:tests": ["@ext:ui"],
         "@cli:bindings": ["@ext:ui"],
         "@cli:ui": ["@ext:ui"],
         "@cli:prompt-editor": ["@ext:ui"],

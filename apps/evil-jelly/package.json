@@ -32,6 +32,7 @@
     "@rejelly/adapter-mcp": "workspace:*",
     "@rejelly/adapter-openai": "workspace:*",
     "@rejelly/core": "workspace:*",
+    "ansi-escapes": "^7.3.0",
     "cac": "catalog:",
     "diff": "^9.0.0",
     "dotenv": "catalog:",

@@ -1,5 +1,9 @@
+import { renderToString } from "ink";
+import { createElement } from "react";
+import stripAnsi from "strip-ansi";
 import { describe, expect, it } from "vitest";
 import {
+  MarkdownViewer,
   markdownInlineText,
   markdownTableLayout,
   markdownTableRowHeight,
@@ -78,6 +82,105 @@ describe("parseMarkdownBlocks", () => {
     expect(parseMarkdownBlocks("## ")).toEqual([{ type: "paragraph", text: "##" }]);
     expect(parseMarkdownBlocks("- ")).toEqual([{ type: "paragraph", text: "-" }]);
     expect(parseMarkdownBlocks("1. ")).toEqual([{ type: "paragraph", text: "1." }]);
+  });
+});
+
+describe("MarkdownViewer code blocks", () => {
+  it("hard-wraps long code lines without truncating their content", () => {
+    const url = "https://example.com/a/very/long/path?first=alpha&second=omega";
+    const output = renderToString(
+      createElement(MarkdownViewer, {
+        text: ["```text", url, "```"].join("\n"),
+        columns: 24,
+      }),
+      { columns: 24 },
+    );
+
+    const visibleOutput = stripAnsi(output);
+    const renderedContent = visibleOutput
+      .split("\n")
+      .slice(2, -1)
+      .map((line) => line.slice(2, -2).trimEnd())
+      .join("");
+    const hyperlinkOpen = `\u001B]8;;${url}\u0007`;
+
+    expect(renderedContent).toBe(url);
+    expect(output).not.toContain("…");
+    expect(output.split(hyperlinkOpen).length - 1).toBeGreaterThan(1);
+  });
+});
+
+describe("terminal hyperlinks", () => {
+  const render = (text: string, columns: number) =>
+    renderToString(createElement(MarkdownViewer, { text, columns }), { columns });
+
+  it("keeps sentence punctuation and wrapping brackets out of the link target", () => {
+    const output = render("See (https://example.com/docs), then https://example.com/next.", 80);
+
+    expect(output).toContain("]8;;https://example.com/docs");
+    expect(output).toContain("]8;;https://example.com/next");
+    expect(output).not.toContain("https://example.com/docs)");
+    expect(output).not.toContain("https://example.com/next.");
+    expect(stripAnsi(output)).toContain("See (https://example.com/docs), then");
+  });
+
+  it("keeps a balanced bracket pair that belongs to the url", () => {
+    const output = render("https://example.com/a_(b) tail", 80);
+
+    expect(output).toContain("]8;;https://example.com/a_(b)");
+  });
+
+  it("links urls in prose, inline code, and quotes", () => {
+    const url = "https://example.com/x";
+    const open = `]8;;${url}`;
+
+    expect(render(`prose ${url} here`, 80)).toContain(open);
+    expect(render(`prose \`${url}\` here`, 80)).toContain(open);
+    expect(render(`> quoted ${url}`, 80)).toContain(open);
+  });
+});
+
+describe("MarkdownViewer tables", () => {
+  it("wraps a long url inside its cell and relinks every wrapped row", () => {
+    const url = "https://example.com/very/long/path?token=abcdef123456";
+    const output = renderToString(
+      createElement(MarkdownViewer, {
+        text: ["| Name | Link |", "| --- | --- |", `| alpha | ${url} |`].join("\n"),
+        columns: 40,
+      }),
+      { columns: 40 },
+    );
+
+    const open = `]8;;${url}`;
+    const visibleLines = stripAnsi(output).split("\n");
+
+    // The cell is narrower than the url, so it must wrap — and stay whole.
+    // Drop the grid so the wrapped fragments sit next to each other again.
+    expect(output.split(open).length - 1).toBeGreaterThan(1);
+    expect(visibleLines.join("").replace(/[│\s]/g, "")).toContain(url);
+    expect(output).not.toContain("…");
+    // Every line of the grid stays inside the terminal width.
+    for (const line of visibleLines) {
+      expect(terminalCellWidth(line)).toBeLessThanOrEqual(40);
+    }
+  });
+
+  it("truncates an over-wide table instead of reflowing it", () => {
+    const output = renderToString(
+      createElement(MarkdownViewer, {
+        text: ["| Name | Count |", "| --- | --- |", "| alpha | 1 |"].join("\n"),
+        columns: 8,
+      }),
+      { columns: 8 },
+    );
+
+    const visibleLines = stripAnsi(output).split("\n");
+
+    // Rules and header used to wrap while body rows truncated, which tore the
+    // grid apart; now no line escapes the terminal width.
+    for (const line of visibleLines) {
+      expect(terminalCellWidth(line)).toBeLessThanOrEqual(8);
+    }
   });
 });
 

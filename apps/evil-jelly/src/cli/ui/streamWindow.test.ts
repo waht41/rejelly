@@ -1,3 +1,6 @@
+import { renderToString } from "ink";
+import { createElement } from "react";
+import stripAnsi from "strip-ansi";
 import { describe, expect, it } from "vitest";
 import {
   createStreamTailWindow,
@@ -5,6 +8,7 @@ import {
   measureStreamRows,
   measureWrappedRows,
 } from "./streamWindow";
+import { MarkdownViewer } from "./viewers/MarkdownViewer";
 
 describe("stream window measurement", () => {
   it("uses terminal cell width for CJK and emoji", () => {
@@ -15,6 +19,50 @@ describe("stream window measurement", () => {
   it("measures wrapped rows with hard wrapping", () => {
     expect(measureWrappedRows("abcdef", 3)).toBe(2);
     expect(measureWrappedRows("孤立abc", 3)).toBe(3);
+  });
+
+  it("counts wrapped code lines using the bordered block's content width", () => {
+    const text = ["```text", "abcdefghijkl", "```"].join("\n");
+
+    expect(measureStreamRows(text, 10)).toBe(5);
+  });
+
+  it("word-wraps prose the way ink does", () => {
+    // Hard wrapping packs this into 2 rows; ink's default word wrap needs 3.
+    expect(measureWrappedRows("abcde fghij klmno", 10)).toBe(3);
+    expect(measureWrappedRows("abcde fghij klmno", 10, { wordWrap: false })).toBe(2);
+  });
+
+  it("measures the rows ink actually renders", () => {
+    const renderedRows = (text: string, columns: number) =>
+      stripAnsi(
+        renderToString(createElement(MarkdownViewer, { text, columns }), { columns }),
+      ).split("\n").length;
+    const columns = 24;
+    const text = [
+      "# a heading that needs wrapping",
+      "",
+      "prose with a longword-that-cannot-break inside it",
+      "",
+      "- list item that wraps around",
+      "",
+      "> quoted line that also wraps",
+      "",
+      "| Name | Count |",
+      "| --- | --- |",
+      "| alpha | 1 |",
+      "",
+      "```ts",
+      "const url = 'https://example.com/very/long/path?token=abcdef';",
+      "```",
+    ].join("\n");
+
+    expect(measureStreamRows(text, columns)).toBe(renderedRows(text, columns));
+
+    // A table too wide for the terminal is truncated, never reflowed, so its
+    // measured height must not grow either.
+    const table = ["| Name | Count |", "| --- | --- |", "| alpha | 1 |"].join("\n");
+    expect(measureStreamRows(table, 8)).toBe(renderedRows(table, 8));
   });
 
   it("keeps a markdown stream inside the requested row budget", () => {
