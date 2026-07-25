@@ -27,10 +27,12 @@ import { saveClipboardImage } from "../../prompt-editor/clipboardImage";
 import { copyTextToClipboard } from "../../prompt-editor/clipboardText";
 import {
   attachedImages,
+  coalescePaste,
   expandPastedTextTokens,
+  PASTE_COALESCE_MS,
+  type PasteRun,
   pastedTextToken,
   pastedTextTokenBefore,
-  shouldCollapsePastedText,
 } from "../../prompt-editor/lineText";
 import { extractSlashQuery, filterSlashCommands } from "../../prompt-editor/slashCommands";
 import { cursorRowCol, useTextBuffer } from "../../prompt-editor/textBuffer";
@@ -175,6 +177,10 @@ export function SmartLinePrompt({ label }: { label: string }) {
   const [nextPasteId, setNextPasteId] = useState(1);
   const pastedTextsRef = useRef<PastedText[]>([]);
   const pendingPasteChunkRef = useRef<PendingPasteChunk | null>(null);
+  // A run of printable input arriving faster than a human types — a paste
+  // fragmented into sub-threshold events. We insert each fragment immediately
+  // (no typing latency) and retroactively collapse the run once it grows large.
+  const pasteRunRef = useRef<PasteRun | null>(null);
   // Key-claim slot shared with whichever picker overlay is mounted: the picker
   // publishes its handler here and the line keybindings offer it each key first.
   const overlayKeysRef = useRef<PickerKeyHandler | null>(null);
@@ -241,6 +247,7 @@ export function SmartLinePrompt({ label }: { label: string }) {
     setPastedTexts([]);
     pastedTextsRef.current = [];
     pendingPasteChunkRef.current = null;
+    pasteRunRef.current = null;
     setNextPasteId(1);
     return () => {
       clearSelectedFiles();
@@ -287,6 +294,7 @@ export function SmartLinePrompt({ label }: { label: string }) {
     setPastedTexts([]);
     pastedTextsRef.current = [];
     pendingPasteChunkRef.current = null;
+    pasteRunRef.current = null;
     setNextPasteId(1);
   };
 
@@ -396,6 +404,7 @@ export function SmartLinePrompt({ label }: { label: string }) {
           entry.id === id ? { ...entry, text: mergedText } : entry,
         );
         pendingPasteChunkRef.current = { id, updatedAt: now };
+        pasteRunRef.current = null;
         setPastedTexts(pastedTextsRef.current);
         buf.apply((s) => ({
           text: s.text.slice(0, s.cursor - tokenBefore.length) + nextToken + s.text.slice(s.cursor),
@@ -410,22 +419,46 @@ export function SmartLinePrompt({ label }: { label: string }) {
           cursor: s.cursor - tokenBefore.length + text.length,
         }));
         pendingPasteChunkRef.current = null;
+        pasteRunRef.current = null;
         setPasteStatus(null);
         return true;
       }
     }
 
-    if (!shouldCollapsePastedText(text)) {
-      return false;
+    // Fold this fragment into the current run (or start a fresh one) and insert
+    // it right away — typing stays latency-free. Only a run that grows past the
+    // collapse threshold is promoted to a token, so real typing never collapses.
+    const now = Date.now();
+    const { run, collapse } = coalescePaste(pasteRunRef.current, text, now, PASTE_COALESCE_MS);
+    buf.insert(text);
+    if (!collapse) {
+      pasteRunRef.current = run;
+      setPasteStatus(null);
+      return true;
     }
 
+    const accum = run.text;
     const id = nextPasteId;
-    const token = pastedTextToken(id, text);
-    pastedTextsRef.current = [...pastedTextsRef.current, { id, text }];
-    pendingPasteChunkRef.current = { id, updatedAt: Date.now() };
+    const token = pastedTextToken(id, accum);
+    pastedTextsRef.current = [...pastedTextsRef.current, { id, text: accum }];
+    pendingPasteChunkRef.current = { id, updatedAt: now };
+    pasteRunRef.current = null;
     setPastedTexts(pastedTextsRef.current);
     setNextPasteId(id + 1);
-    buf.insert(token);
+    // Retroactively swap the just-inserted run for its token. A functional
+    // update composes with the queued inserts from this same burst (reading
+    // buf.text/cursor here would be stale); bail if the caret is no longer
+    // right after the run (an edit slipped in mid-burst).
+    buf.apply((s) => {
+      const start = s.cursor - accum.length;
+      if (start < 0 || s.text.slice(start, s.cursor) !== accum) {
+        return s;
+      }
+      return {
+        text: s.text.slice(0, start) + token + s.text.slice(s.cursor),
+        cursor: start + token.length,
+      };
+    });
     setPasteStatus(null);
     return true;
   };

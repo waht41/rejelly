@@ -7,6 +7,13 @@
 const COLLAPSE_PASTE_MIN_LINES = 6;
 const COLLAPSE_PASTE_MIN_CHARS = 1200;
 
+// Without bracketed paste, a paste arrives as a burst of tiny input events
+// (single characters on Windows raw-mode stdin). Fragments of one paste land
+// sub-millisecond to a few ms apart; a human keystroke is ≥60ms from the next.
+// 30ms cleanly separates them: sustained typing never coalesces (so it can't be
+// mistaken for a paste and collapsed), while paste fragments do.
+export const PASTE_COALESCE_MS = 30;
+
 // C0 control chars (except tab/newline) and DEL corrupt terminal rendering if
 // inserted verbatim — they move the cursor around instead of printing.
 function isTerminalControlChar(char: string): boolean {
@@ -47,6 +54,38 @@ export function shouldCollapsePastedText(text: string): boolean {
   return (
     pastedLineCount(text) >= COLLAPSE_PASTE_MIN_LINES || text.length >= COLLAPSE_PASTE_MIN_CHARS
   );
+}
+
+/** A run of input fragments that arrived close enough together to be one paste. */
+export interface PasteRun {
+  /** Concatenated text of every fragment in the run so far. */
+  text: string;
+  /** Timestamp (ms) of the most recent fragment. */
+  at: number;
+}
+
+export interface CoalesceResult {
+  /** The run after folding in the new fragment (fresh run when the gap was too long). */
+  run: PasteRun;
+  /** True once the coalesced run is large enough to collapse into a placeholder. */
+  collapse: boolean;
+}
+
+/**
+ * Fold `fragment` into `prev` when they arrived within `windowMs`, otherwise
+ * start a fresh run. Pure so the paste/typing split can be unit-tested without a
+ * terminal: the caller inserts the fragment immediately (zero typing latency)
+ * and, when `collapse` flips true, retroactively swaps the run for a token.
+ */
+export function coalescePaste(
+  prev: PasteRun | null,
+  fragment: string,
+  now: number,
+  windowMs: number,
+): CoalesceResult {
+  const contiguous = prev !== null && now - prev.at <= windowMs;
+  const text = contiguous ? prev.text + fragment : fragment;
+  return { run: { text, at: now }, collapse: shouldCollapsePastedText(text) };
 }
 
 // Attached images live inline as `[Image #N]` tokens (N = the image's 1-based
