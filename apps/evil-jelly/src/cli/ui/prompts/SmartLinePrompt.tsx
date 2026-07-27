@@ -16,11 +16,17 @@
  * detected) attaches an image from the OS clipboard. It drops an `[Image #N]`
  * token into the line at the caret — editable/deletable like any other text;
  * deleting the token drops the image from the submitted turn.
+ *
+ * Rendering: the prompt soft-wraps the buffer itself (see
+ * ../../prompt-editor/softWrap) rather than handing Ink a long line to wrap.
+ * The caret is a terminal cell, so it has to be placed in *physical* rows and
+ * columns; owning the wrap is what lets the painted rows and the caret's
+ * position come from one list instead of two guesses that drift apart.
  */
 
 import type { DOMElement } from "ink";
 import { Box, Text, useCursor, useStdout } from "ink";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
 import stringWidth from "string-width";
 import { extractAtQuery, refsMissingFromText, replaceAtToken } from "../../prompt-editor/atTrigger";
 import { saveClipboardImage } from "../../prompt-editor/clipboardImage";
@@ -35,7 +41,8 @@ import {
   pastedTextTokenBefore,
 } from "../../prompt-editor/lineText";
 import { extractSlashQuery, filterSlashCommands } from "../../prompt-editor/slashCommands";
-import { cursorRowCol, useTextBuffer } from "../../prompt-editor/textBuffer";
+import { caretCell, wrapRows } from "../../prompt-editor/softWrap";
+import { useTextBuffer } from "../../prompt-editor/textBuffer";
 import { useLineKeybindings } from "../../prompt-editor/useLineKeybindings";
 import { applyModeCommand, MODE_META } from "../../store/useModeStore";
 import { isRuntimeActive, useOutputStore } from "../../store/useOutputStore";
@@ -60,12 +67,20 @@ interface PendingPasteChunk {
   updatedAt: number;
 }
 
-interface Origin {
+/**
+ * Where the text column sits, measured off the laid-out frame rather than
+ * guessed: `x`/`y` are its absolute top-left in terminal cells and `width` is
+ * the room it has to wrap in. Everything the caret needs is derived from this,
+ * so nothing above the prompt (the attachment list, the steer queue, the
+ * "agent is running" notice) has to be counted by hand.
+ */
+interface TextArea {
   x: number;
   y: number;
+  width: number;
 }
 
-function absoluteOrigin(node: DOMElement): Origin {
+function absoluteOrigin(node: DOMElement): { x: number; y: number } {
   let x = 0;
   let y = 0;
   let current: DOMElement | undefined = node;
@@ -79,32 +94,39 @@ function absoluteOrigin(node: DOMElement): Origin {
   return { x, y };
 }
 
-function cursorCellPosition(text: string, cursor: number) {
-  const { row, col } = cursorRowCol(text, cursor);
-  const line = text.split("\n")[row] ?? "";
-  return { row, col: stringWidth(line.slice(0, col)) };
-}
-
+/**
+ * `rowRef` goes on the label+text row, whose width is the full inner width of
+ * the bordered prompt box and therefore does not move as the buffer grows —
+ * unlike the text column itself, which is content-sized.
+ */
 function BufferView({
+  rowRef,
   label,
-  text,
+  rows,
   placeholder,
 }: {
+  rowRef: RefObject<DOMElement | null>;
   label: string;
-  text: string;
+  rows: string[];
   placeholder: string;
 }) {
-  const lines = text.split("\n");
   return (
-    <Box flexDirection="row">
+    <Box ref={rowRef} flexDirection="row">
       <Text bold>{label || "❯"} </Text>
       <Box flexDirection="column">
-        {text.length === 0 ? (
+        {rows.length === 0 ? (
           <Text>
             <Text dimColor>{placeholder}</Text>
           </Text>
         ) : (
-          lines.map((line, i) => <Text key={i}>{line.length > 0 ? line : " "}</Text>)
+          // Rows are already wrapped to fit, so Ink never wraps them again — and
+          // the caret's row/column can be read off this very list. Trailing
+          // blanks are dropped so a row padded out to the full width can't
+          // overflow the column and trigger a second wrap.
+          rows.map((row, i) => {
+            const rendered = row.trimEnd();
+            return <Text key={i}>{rendered.length > 0 ? rendered : " "}</Text>;
+          })
         )}
       </Box>
     </Box>
@@ -166,9 +188,9 @@ export function SmartLinePrompt({ label }: { label: string }) {
   const clearDraftSeed = usePromptStore((s) => s.clearDraftSeed);
   const status = useOutputStore((s) => s.status);
   const streamBuffer = useOutputStore((s) => s.streamBuffer);
-  const promptRef = useRef<DOMElement>(null);
+  const rowRef = useRef<DOMElement>(null);
   const buf = useTextBuffer();
-  const [origin, setOrigin] = useState<Origin | null>(null);
+  const [textArea, setTextArea] = useState<TextArea | null>(null);
   const [atQuery, setAtQuery] = useState<string | null>(null);
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
   const [terminalRows, setTerminalRows] = useState(stdout.rows || 24);
@@ -186,14 +208,17 @@ export function SmartLinePrompt({ label }: { label: string }) {
   const overlayKeysRef = useRef<PickerKeyHandler | null>(null);
 
   const isMultiline = buf.text.includes("\n");
-  const caret = cursorCellPosition(buf.text, buf.cursor);
   const labelWidth = stringWidth(`${label || "❯"} `);
-  const selectedFileRows = selectedFiles.length > 0 ? selectedFiles.length + 1 : 0;
-  const cursorPosition = {
-    x: (origin?.x ?? 0) + labelWidth + caret.col,
-    y: (origin?.y ?? 0) + selectedFileRows + caret.row,
-  };
-  setCursorPosition(origin ? cursorPosition : undefined);
+  // One wrap, used twice: BufferView paints these rows and the caret is placed
+  // against them, so the two can't drift apart.
+  const wrappedRows = wrapRows(buf.text, textArea?.width ?? 0);
+  const caret = caretCell(wrappedRows, buf.cursor);
+  setCursorPosition(
+    textArea
+      ? { x: textArea.x + caret.col, y: textArea.y + caret.row }
+      : // Nothing measured yet (first frame): no honest place to put the caret.
+        undefined,
+  );
 
   const shiftImageTokens = (text: string, offset: number): string => {
     if (offset <= 0) {
@@ -214,15 +239,26 @@ export function SmartLinePrompt({ label }: { label: string }) {
     };
   }, [stdout]);
 
+  // Measure after every commit: Ink lays Yoga out before layout effects run, so
+  // this reads the frame that was just painted. A changed measurement re-renders
+  // and the caret catches up on the next frame — which only matters when the
+  // prompt actually moves (resize, an attachment added), never while typing,
+  // since none of these three values depend on the buffer.
   useLayoutEffect(() => {
-    if (!promptRef.current) {
+    const row = rowRef.current;
+    if (!row) {
       return;
     }
-    const nextOrigin = absoluteOrigin(promptRef.current);
-    setOrigin((previousOrigin) =>
-      previousOrigin?.x === nextOrigin.x && previousOrigin.y === nextOrigin.y
-        ? previousOrigin
-        : nextOrigin,
+    const origin = absoluteOrigin(row);
+    const next: TextArea = {
+      x: origin.x + labelWidth,
+      y: origin.y,
+      width: (row.yogaNode?.getComputedWidth() ?? 0) - labelWidth,
+    };
+    setTextArea((previous) =>
+      previous?.x === next.x && previous.y === next.y && previous.width === next.width
+        ? previous
+        : next,
     );
   });
 
@@ -501,15 +537,23 @@ export function SmartLinePrompt({ label }: { label: string }) {
   const hasCollapsedPaste = pastedTexts.some((entry) =>
     buf.text.includes(pastedTextToken(entry.id, entry.text)),
   );
+  // Rough budget for how tall the picker may grow — the rows the prompt itself
+  // eats. Sizing only; the caret no longer depends on this estimate.
+  const promptRows = (selectedFiles.length > 0 ? selectedFiles.length + 1 : 0) + wrappedRows.length;
   const filePickerVisibleRows = Math.min(
     MAX_FILE_PICKER_ROWS,
-    Math.max(MIN_FILE_PICKER_ROWS, terminalRows - selectedFileRows - promptChromeRows),
+    Math.max(MIN_FILE_PICKER_ROWS, terminalRows - promptRows - promptChromeRows),
   );
 
   return (
-    <Box ref={promptRef} flexDirection="column">
+    <Box flexDirection="column">
       {selectedAttachmentList}
-      <BufferView label={label} text={buf.text} placeholder={label || "Message"} />
+      <BufferView
+        rowRef={rowRef}
+        label={label}
+        rows={buf.text.length === 0 ? [] : wrappedRows.map((row) => row.text)}
+        placeholder={label || "Message"}
+      />
       {isMultiline ? (
         <Box marginTop={1}>
           <Text color="yellow" dimColor>
