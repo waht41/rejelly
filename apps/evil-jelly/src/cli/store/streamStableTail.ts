@@ -1,4 +1,8 @@
+import remarkParse from "remark-parse";
+import { unified } from "unified";
 import { normalizeNewlines } from "../../shared/lib/string";
+
+const markdownProcessor = unified().use(remarkParse);
 
 type TableHoldbackState =
   | { type: "none" }
@@ -102,11 +106,39 @@ export class StreamStableTailController {
       holdbackStarts.push(listStart);
     }
 
+    const indentedCodeStart = activeIndentedCodeStart(completeSource);
+    if (indentedCodeStart !== null) {
+      holdbackStarts.push(indentedCodeStart);
+    }
+
     if (holdbackStarts.length === 0) {
       return completeEnd;
     }
     return Math.max(0, Math.min(...holdbackStarts, completeEnd));
   }
+}
+
+/**
+ * Keep a trailing indented code block in one stream fragment.
+ *
+ * mdast determines whether indentation starts a code block or merely continues
+ * another block (for example, a paragraph). Its source position lets us retain
+ * the whole block until later content terminates it or the stream finalizes.
+ */
+function activeIndentedCodeStart(source: string): number | null {
+  const tree = markdownProcessor.parse(source);
+  const trailingNode = tree.children.at(-1);
+  if (trailingNode?.type !== "code") {
+    return null;
+  }
+
+  const start = trailingNode.position?.start.offset;
+  if (typeof start !== "number") {
+    return null;
+  }
+
+  const firstLine = source.slice(start).split("\n", 1)[0] ?? "";
+  return /^(?: {4}|\t)/.test(firstLine) ? start : null;
 }
 
 /**
