@@ -87,7 +87,7 @@ describe("parseMarkdownBlocks", () => {
 
   it("numbers each nesting level on its own and resumes the outer count", () => {
     const [block] = parseMarkdownBlocks(
-      ["1. outer", "    1. inner", "    2. inner", "2. outer", "  - bullet"].join("\n"),
+      ["1. outer", "    1. inner", "    2. inner", "2. outer", "    - bullet"].join("\n"),
     );
 
     expect(block).toEqual({
@@ -139,6 +139,19 @@ describe("parseMarkdownBlocks", () => {
     ]);
   });
 
+  it("keeps an escaped pipe inside a table code span", () => {
+    expect(
+      parseMarkdownBlocks(["| a | b |", "| --- | --- |", "| `x\\|y` | z |"].join("\n")),
+    ).toEqual([
+      {
+        type: "table",
+        headers: ["a", "b"],
+        alignments: ["left", "left"],
+        rows: [["x|y", "z"]],
+      },
+    ]);
+  });
+
   it("keeps pipe text without a separator row as prose", () => {
     expect(parseMarkdownBlocks("Use foo | bar as plain text.")).toEqual([
       { type: "paragraph", text: "Use foo | bar as plain text." },
@@ -149,6 +162,35 @@ describe("parseMarkdownBlocks", () => {
     expect(parseMarkdownBlocks("## ")).toEqual([{ type: "paragraph", text: "##" }]);
     expect(parseMarkdownBlocks("- ")).toEqual([{ type: "paragraph", text: "-" }]);
     expect(parseMarkdownBlocks("1. ")).toEqual([{ type: "paragraph", text: "1." }]);
+  });
+
+  it("supports CommonMark and GFM structures through mdast", () => {
+    expect(
+      parseMarkdownBlocks(
+        [
+          "Setext title",
+          "============",
+          "",
+          "- [x] done",
+          "- [ ] todo",
+          "",
+          "~~~js",
+          "x()",
+          "~~~",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      { type: "heading", depth: 1, text: "Setext title" },
+      {
+        type: "list",
+        ordered: false,
+        items: [
+          { depth: 0, marker: null, text: "[x] done" },
+          { depth: 0, marker: null, text: "[ ] todo" },
+        ],
+      },
+      { type: "code", language: "js", lines: ["x()"] },
+    ]);
   });
 });
 
@@ -406,6 +448,11 @@ describe("markdown table measurement", () => {
     expect(markdownInlineText("`ast_find_references` and **孤立**")).toBe(
       "ast_find_references and 孤立",
     );
+    expect(markdownInlineText("*emphasis*, ~~removed~~, and [label](https://example.com)")).toBe(
+      "emphasis, removed, and label",
+    );
+    expect(markdownInlineText("line one  \nline two")).toBe("line one\nline two");
+    expect(markdownInlineText("**bold with *inner***")).toBe("bold with inner");
     expect(terminalCellWidth(markdownInlineText("`abc`"))).toBe(3);
   });
 

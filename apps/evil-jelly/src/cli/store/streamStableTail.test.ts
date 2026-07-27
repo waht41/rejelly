@@ -78,6 +78,44 @@ describe("StreamStableTailController", () => {
     });
   });
 
+  it("holds a streaming indented code block together", () => {
+    const controller = new StreamStableTailController();
+
+    expect(controller.push("Intro\n\n    const indented = true;\n")).toEqual({
+      stableText: "Intro\n\n",
+      tailText: "    const indented = true;\n",
+    });
+    expect(controller.push("    console.log(indented);\n")).toEqual({
+      stableText: "",
+      tailText: "    const indented = true;\n    console.log(indented);\n",
+    });
+    expect(controller.push("\nAfter\n")).toEqual({
+      stableText: "    const indented = true;\n    console.log(indented);\n\nAfter\n",
+      tailText: "",
+    });
+  });
+
+  it("emits a trailing indented code block as one fragment on finalization", () => {
+    const controller = new StreamStableTailController();
+    const code = "    const first = true;\n    const second = true;\n";
+
+    expect(controller.push(code)).toEqual({ stableText: "", tailText: code });
+    expect(controller.finalize(code)).toEqual({
+      visualRemainder: code,
+      shouldHideFinal: true,
+    });
+  });
+
+  it("does not treat paragraph continuation indentation as a code block", () => {
+    const controller = new StreamStableTailController();
+    const paragraph = "Paragraph\n    continued text\n";
+
+    expect(controller.push(paragraph)).toEqual({
+      stableText: paragraph,
+      tailText: "",
+    });
+  });
+
   it("releases a confirmed pipe table when a non-table line follows it", () => {
     const controller = new StreamStableTailController();
 
