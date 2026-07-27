@@ -4,6 +4,7 @@ import stripAnsi from "strip-ansi";
 import { describe, expect, it } from "vitest";
 import {
   MarkdownViewer,
+  markdownHeadingStyle,
   markdownInlineText,
   markdownTableLayout,
   markdownTableRowHeight,
@@ -82,6 +83,42 @@ describe("parseMarkdownBlocks", () => {
     expect(parseMarkdownBlocks("## ")).toEqual([{ type: "paragraph", text: "##" }]);
     expect(parseMarkdownBlocks("- ")).toEqual([{ type: "paragraph", text: "-" }]);
     expect(parseMarkdownBlocks("1. ")).toEqual([{ type: "paragraph", text: "1." }]);
+  });
+});
+
+describe("MarkdownViewer headings", () => {
+  it("gives each level its own marker so a numbered heading is not read as a list item", () => {
+    const output = renderToString(
+      createElement(MarkdownViewer, {
+        text: ["# Alpha", "## Beta", "### 2. Gamma", "#### Delta", "1. item"].join("\n"),
+        columns: 40,
+      }),
+      { columns: 40 },
+    );
+
+    expect(stripAnsi(output).split("\n")).toEqual([
+      "Alpha",
+      // The rule underlines the title, not the viewport.
+      "━━━━━",
+      "",
+      "▌ Beta",
+      "",
+      "● 2. Gamma",
+      "",
+      "· Delta",
+      "",
+      "1. item",
+    ]);
+  });
+
+  it("dims and cools the colour ramp as the level deepens", () => {
+    expect(markdownHeadingStyle(1)).toMatchObject({ color: "cyanBright", bold: true, rule: true });
+    expect(markdownHeadingStyle(2)).toMatchObject({ color: "cyanBright", bold: true, rule: false });
+    expect(markdownHeadingStyle(3)).toMatchObject({ color: "cyan", bold: true });
+    expect(markdownHeadingStyle(4)).toMatchObject({ color: "blue", bold: false, dim: false });
+    // Every level past the table shares the deepest style instead of falling off it.
+    expect(markdownHeadingStyle(6)).toEqual(markdownHeadingStyle(5));
+    expect(markdownHeadingStyle(6)).toMatchObject({ dim: true });
   });
 });
 

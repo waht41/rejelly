@@ -18,9 +18,45 @@ type TableAlignment = "left" | "center" | "right";
 
 const MAX_RENDER_BLOCKS = 500;
 const MIN_TABLE_COLUMN_WIDTH = 3;
+const HEADING_RULE_CHARACTER = "━";
 const URL_PATTERN = /https?:\/\/[^\s<>"'`]+/g;
 const URL_TRAILING_PUNCTUATION = ".,;:!?";
 const URL_CLOSING_PAIRS: Record<string, string> = { ")": "(", "]": "[", "}": "{" };
+
+export type MarkdownHeadingStyle = {
+  prefix: string;
+  color: string;
+  bold: boolean;
+  dim: boolean;
+  rule: boolean;
+};
+
+// Levels past the ramp all land here rather than falling back to no style.
+const DEEPEST_HEADING_STYLE: MarkdownHeadingStyle = {
+  prefix: "· ",
+  color: "blue",
+  bold: false,
+  dim: true,
+  rule: false,
+};
+
+// Stripping the `#` markers also strips the only signal that a line is a
+// heading, which leaves an `### 2. Foo` section title looking exactly like a
+// top-level ordered item. Each level therefore gets a *different kind* of
+// signal — a rule, a bar, a disc, a dot — rather than a weaker shade of the
+// same one, so the hierarchy survives a low-contrast terminal or a reader who
+// cannot separate the cyan ramp.
+const HEADING_STYLES: MarkdownHeadingStyle[] = [
+  { prefix: "", color: "cyanBright", bold: true, dim: false, rule: true },
+  { prefix: "▌ ", color: "cyanBright", bold: true, dim: false, rule: false },
+  { prefix: "● ", color: "cyan", bold: true, dim: false, rule: false },
+  { prefix: "· ", color: "blue", bold: false, dim: false, rule: false },
+  DEEPEST_HEADING_STYLE,
+];
+
+export function markdownHeadingStyle(depth: number): MarkdownHeadingStyle {
+  return HEADING_STYLES[depth - 1] ?? DEEPEST_HEADING_STYLE;
+}
 
 function isFence(line: string): boolean {
   return /^\s*```/.test(line);
@@ -582,11 +618,20 @@ export function MarkdownViewer({
       {visibleBlocks.map((block, index) => {
         const key = `${index}:${block.type}`;
         if (block.type === "heading") {
+          const style = markdownHeadingStyle(block.depth);
+          // The rule underlines the title rather than the viewport, so it stays
+          // a heading ornament instead of reading as a horizontal divider.
+          const ruleWidth = Math.min(
+            Math.max(1, columns),
+            terminalCellWidth(markdownInlineText(block.text)),
+          );
           return (
-            <Box key={key} marginTop={index === 0 ? 0 : 1}>
-              <Text bold color={block.depth <= 2 ? "cyanBright" : "cyan"} wrap="wrap">
+            <Box key={key} flexDirection="column" marginTop={index === 0 ? 0 : 1}>
+              <Text bold={style.bold} dimColor={style.dim} color={style.color} wrap="wrap">
+                {style.prefix}
                 {renderInline(block.text, key)}
               </Text>
+              {style.rule ? <Text dimColor>{HEADING_RULE_CHARACTER.repeat(ruleWidth)}</Text> : null}
             </Box>
           );
         }
