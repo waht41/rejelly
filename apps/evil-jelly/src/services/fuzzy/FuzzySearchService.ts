@@ -221,6 +221,14 @@ type CandidateCacheEntry = {
   candidates: string[];
 };
 
+export type FuzzySearchOptions = {
+  /**
+   * `refresh` bypasses a cached candidate snapshot and replaces it with a fresh scan.
+   * `reuse` keeps repeated interactive queries fast by scoring the existing snapshot.
+   */
+  cachePolicy?: "reuse" | "refresh";
+};
+
 const candidateCache = new Map<string, CandidateCacheEntry>();
 
 function normalizeDirectoryRel(rel: string): string {
@@ -248,12 +256,15 @@ async function resolveSearchDirectory(
   };
 }
 
-async function getCandidateFiles(directory: string): Promise<string[]> {
+async function getCandidateFiles(
+  directory: string,
+  cachePolicy: FuzzySearchOptions["cachePolicy"] = "reuse",
+): Promise<string[]> {
   const policy = getWorkspaceFsPolicy();
   const resolved = await resolveSearchDirectory(policy, directory);
   const cacheKey = `${policy.getRoot()}\0${resolved.relPosix}`;
   const cached = candidateCache.get(cacheKey);
-  if (cached && cached.mtimeMs === resolved.mtimeMs) {
+  if (cachePolicy === "reuse" && cached && cached.mtimeMs === resolved.mtimeMs) {
     return cached.candidates;
   }
 
@@ -318,6 +329,7 @@ export async function fuzzySearchFiles(
   keyword: string,
   directory: string = ".",
   limit?: number,
+  options?: FuzzySearchOptions,
 ): Promise<FuzzyMatch[]> {
   const maxResults = Math.min(Math.max(limit ?? 20, 1), 100);
   const needle = keyword.trim().toLowerCase();
@@ -325,7 +337,7 @@ export async function fuzzySearchFiles(
     return [];
   }
 
-  const rootRelPaths = await getCandidateFiles(directory);
+  const rootRelPaths = await getCandidateFiles(directory, options?.cachePolicy);
 
   const scored: Array<{ path: string; score: number }> = [];
   for (const rootRel of rootRelPaths) {
@@ -346,6 +358,7 @@ export async function fuzzySearchPathRefs(
   keyword: string,
   directory: string = ".",
   limit?: number,
+  options?: FuzzySearchOptions,
 ): Promise<FuzzyPathRefMatch[]> {
   const maxResults = Math.min(Math.max(limit ?? 20, 1), 100);
   const needle = normalizePathRefNeedle(keyword);
@@ -353,7 +366,7 @@ export async function fuzzySearchPathRefs(
     return [];
   }
 
-  const rootRelFiles = await getCandidateFiles(directory);
+  const rootRelFiles = await getCandidateFiles(directory, options?.cachePolicy);
   const rootRelDirectories = collectParentDirectories(rootRelFiles);
   const exactDirectory = await exactDirectoryCandidate(keyword);
   if (exactDirectory && !rootRelDirectories.includes(exactDirectory)) {

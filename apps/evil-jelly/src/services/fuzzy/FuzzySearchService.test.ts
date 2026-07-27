@@ -40,6 +40,19 @@ describe("FuzzySearchService", () => {
     expect(getFuzzySearchCacheSize()).toBe(1);
   });
 
+  it("refreshes a stale candidate snapshot on request", async () => {
+    await fuzzySearchFiles("smart", ".", 10);
+    const addedPath = path.join(tmpDir, "src", "cli", "NewNestedReport.md");
+    await fs.writeFile(addedPath, "# new\n");
+
+    await expect(fuzzySearchFiles("newnested", ".", 10)).resolves.toEqual([]);
+
+    const refreshed = await fuzzySearchFiles("newnested", ".", 10, {
+      cachePolicy: "refresh",
+    });
+    expect(refreshed.map((match) => match.path)).toContain("src/cli/NewNestedReport.md");
+  });
+
   it("returns directories for attachable path refs", async () => {
     const matches = await fuzzySearchPathRefs("src/cli/", ".", 10);
 

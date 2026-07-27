@@ -64,7 +64,9 @@ async function suggestSimilarPaths(image: string): Promise<string> {
     if (needle.length === 0) {
       return "";
     }
-    const [best] = await fuzzySearchFiles(needle, dir.length === 0 ? "." : dir, 1);
+    const [best] = await fuzzySearchFiles(needle, dir.length === 0 ? "." : dir, 1, {
+      cachePolicy: "refresh",
+    });
     if (!best || best.score < needle.length * SUGGESTION_MIN_SCORE_RATIO) {
       return "";
     }
