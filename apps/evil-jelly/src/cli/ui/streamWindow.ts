@@ -2,6 +2,7 @@ import stringWidth from "string-width";
 import wrapAnsi from "wrap-ansi";
 import { normalizeNewlines } from "../../shared/lib/string";
 import {
+  markdownHeadingStyle,
   markdownInlineText,
   markdownTableLayout,
   markdownTableRowHeight,
@@ -59,7 +60,17 @@ function measureMarkdownStableRows(markdown: string, columns: number): number {
 
   for (const [index, block] of blocks.entries()) {
     const marginTop = index === 0 ? 0 : 1;
-    if (block.type === "heading" || block.type === "paragraph") {
+    if (block.type === "heading") {
+      // The level glyph shares the title's line, so it competes for the same
+      // columns; the h1 rule occupies a line of its own.
+      const style = markdownHeadingStyle(block.depth);
+      rows +=
+        marginTop +
+        measureInlineRows(`${style.prefix}${block.text}`, columns) +
+        (style.rule ? 1 : 0);
+      continue;
+    }
+    if (block.type === "paragraph") {
       rows += marginTop + measureInlineRows(block.text, columns);
       continue;
     }
