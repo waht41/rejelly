@@ -97,11 +97,56 @@ export class StreamStableTailController {
       holdbackStarts.push(tableHoldback.start);
     }
 
+    const listStart = activeListStart(completeSource);
+    if (listStart !== null) {
+      holdbackStarts.push(listStart);
+    }
+
     if (holdbackStarts.length === 0) {
       return completeEnd;
     }
     return Math.max(0, Math.min(...holdbackStarts, completeEnd));
   }
+}
+
+/**
+ * Keep a trailing markdown list in one stream fragment.
+ *
+ * Completed stream lines are normally flushed to Ink's `<Static>` history as
+ * soon as they arrive. Splitting a list that way makes every fragment a new
+ * markdown document, so an indented child becomes the first (depth-zero) item
+ * of its fragment and loses its nesting. Hold the active list until a
+ * non-list block terminates it or finalization emits the remaining fragment.
+ */
+function activeListStart(source: string): number | null {
+  let start: number | null = null;
+
+  for (const line of parseLinesWithFenceState(source)) {
+    if (line.fenceKind !== "outside") {
+      start = null;
+      continue;
+    }
+
+    const item = line.text.match(/^(\s*)(?:[-*+]|\d{1,9}[.)])\s+\S/);
+    if (item) {
+      const indent = item[1]?.length ?? 0;
+      if (start !== null || indent <= 3) {
+        start ??= line.start;
+      }
+      continue;
+    }
+
+    if (start === null) {
+      continue;
+    }
+    if (line.text.trim().length === 0 || /^\s{2,}\S/.test(line.text)) {
+      continue;
+    }
+
+    start = null;
+  }
+
+  return start;
 }
 
 function lastCompleteLineEnd(text: string): number {

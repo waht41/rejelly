@@ -1,4 +1,4 @@
-import { renderToString } from "ink";
+import { renderToString, Static } from "ink";
 import { createElement } from "react";
 import stripAnsi from "strip-ansi";
 import { describe, expect, it } from "vitest";
@@ -37,7 +37,14 @@ describe("parseMarkdownBlocks", () => {
     expect(blocks).toEqual([
       { type: "heading", depth: 1, text: "Title" },
       { type: "paragraph", text: "First paragraph continues here." },
-      { type: "list", ordered: false, items: ["one", "two"] },
+      {
+        type: "list",
+        ordered: false,
+        items: [
+          { depth: 0, marker: null, text: "one" },
+          { depth: 0, marker: null, text: "two" },
+        ],
+      },
       { type: "quote", lines: ["quoted", "text"] },
       { type: "code", language: "ts", lines: ["const value = 1;"] },
     ]);
@@ -45,9 +52,68 @@ describe("parseMarkdownBlocks", () => {
 
   it("keeps ordered lists separate from unordered lists", () => {
     expect(parseMarkdownBlocks("1. first\n2. second\n- third")).toEqual([
-      { type: "list", ordered: true, items: ["first", "second"] },
-      { type: "list", ordered: false, items: ["third"] },
+      {
+        type: "list",
+        ordered: true,
+        items: [
+          { depth: 0, marker: 1, text: "first" },
+          { depth: 0, marker: 2, text: "second" },
+        ],
+      },
+      { type: "list", ordered: false, items: [{ depth: 0, marker: null, text: "third" }] },
     ]);
+  });
+
+  it("keeps one loose list together instead of restarting it at every blank line", () => {
+    const [block] = parseMarkdownBlocks("1. first\n\n2. second\n\n3. third");
+
+    expect(block).toEqual({
+      type: "list",
+      ordered: true,
+      items: [
+        { depth: 0, marker: 1, text: "first" },
+        { depth: 0, marker: 2, text: "second" },
+        { depth: 0, marker: 3, text: "third" },
+      ],
+    });
+  });
+
+  it("ends a loose list at content that is not another item", () => {
+    expect(parseMarkdownBlocks("- first\n\nProse after the list.")).toEqual([
+      { type: "list", ordered: false, items: [{ depth: 0, marker: null, text: "first" }] },
+      { type: "paragraph", text: "Prose after the list." },
+    ]);
+  });
+
+  it("numbers each nesting level on its own and resumes the outer count", () => {
+    const [block] = parseMarkdownBlocks(
+      ["1. outer", "    1. inner", "    2. inner", "2. outer", "  - bullet"].join("\n"),
+    );
+
+    expect(block).toEqual({
+      type: "list",
+      ordered: true,
+      items: [
+        { depth: 0, marker: 1, text: "outer" },
+        { depth: 1, marker: 1, text: "inner" },
+        { depth: 1, marker: 2, text: "inner" },
+        { depth: 0, marker: 2, text: "outer" },
+        { depth: 1, marker: null, text: "bullet" },
+      ],
+    });
+  });
+
+  it("starts a list from its own first marker", () => {
+    const [block] = parseMarkdownBlocks("5. fifth\n6. sixth");
+
+    expect(block).toEqual({
+      type: "list",
+      ordered: true,
+      items: [
+        { depth: 0, marker: 5, text: "fifth" },
+        { depth: 0, marker: 6, text: "sixth" },
+      ],
+    });
   });
 
   it("parses GFM tables with alignment markers", () => {
@@ -119,6 +185,49 @@ describe("MarkdownViewer headings", () => {
     // Every level past the table shares the deepest style instead of falling off it.
     expect(markdownHeadingStyle(6)).toEqual(markdownHeadingStyle(5));
     expect(markdownHeadingStyle(6)).toMatchObject({ dim: true });
+  });
+});
+
+describe("MarkdownViewer lists", () => {
+  it("numbers a blank-line separated list in sequence and indents its nesting", () => {
+    const output = renderToString(
+      createElement(MarkdownViewer, {
+        text: ["1. first", "", "2. second", "    1. nested", "", "3. third"].join("\n"),
+        columns: 40,
+      }),
+      { columns: 40 },
+    );
+
+    expect(stripAnsi(output).split("\n")).toEqual([
+      "1. first",
+      "2. second",
+      "  1. nested",
+      "3. third",
+    ]);
+  });
+
+  it("keeps nested indentation when flushed through Ink Static", () => {
+    const text = [
+      "**有序列表：**",
+      "",
+      "1. 第一步：打开终端",
+      "2. 第二步：输入命令",
+      "3. 第三步：查看输出",
+      "   1. 子步骤 A",
+      "   2. 子步骤 B",
+      "4. 第四步：完成",
+    ].join("\n");
+    const output = renderToString(
+      createElement(Static, {
+        items: [text],
+        children: (item: unknown) =>
+          createElement(MarkdownViewer, { key: "list", text: String(item), columns: 80 }),
+      }),
+      { columns: 80 },
+    );
+
+    expect(stripAnsi(output).split("\n")).toContain("  1. 子步骤 A");
+    expect(stripAnsi(output).split("\n")).toContain("  2. 子步骤 B");
   });
 });
 

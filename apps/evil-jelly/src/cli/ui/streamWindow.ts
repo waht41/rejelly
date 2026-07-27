@@ -4,6 +4,8 @@ import { normalizeNewlines } from "../../shared/lib/string";
 import {
   markdownHeadingStyle,
   markdownInlineText,
+  markdownListItemIndent,
+  markdownListItemPrefix,
   markdownTableLayout,
   markdownTableRowHeight,
   parseMarkdownBlocks,
@@ -75,10 +77,15 @@ function measureMarkdownStableRows(markdown: string, columns: number): number {
       continue;
     }
     if (block.type === "list") {
-      const itemColumns = Math.max(1, columns - 3);
+      // The marker and the nesting indent both eat into the text column, and
+      // they vary per item ("- " vs "10. ", depth 0 vs depth 2), so budget each
+      // item against what the renderer actually leaves it.
       rows +=
         marginTop +
-        block.items.reduce((total, item) => total + measureInlineRows(item, itemColumns), 0);
+        block.items.reduce((total, item) => {
+          const chrome = markdownListItemIndent(item) + markdownListItemPrefix(item).length;
+          return total + measureInlineRows(item.text, Math.max(1, columns - chrome));
+        }, 0);
       continue;
     }
     if (block.type === "table") {

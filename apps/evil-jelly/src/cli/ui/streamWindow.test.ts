@@ -69,6 +69,14 @@ describe("stream window measurement", () => {
       "\n",
     );
     expect(measureStreamRows(headings, columns)).toBe(renderedRows(headings, columns));
+
+    // Nesting indent and a two-digit marker both narrow the text column, so a
+    // fixed marker budget would under-count the wrapped rows here.
+    const list = [
+      "9. an item that wraps at this width",
+      "    10. a nested item that wraps too",
+    ].join("\n");
+    expect(measureStreamRows(list, columns)).toBe(renderedRows(list, columns));
   });
 
   it("keeps a markdown stream inside the requested row budget", () => {

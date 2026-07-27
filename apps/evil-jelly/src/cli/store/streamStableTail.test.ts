@@ -45,6 +45,39 @@ describe("StreamStableTailController", () => {
     });
   });
 
+  it("holds a streaming list together so nested items keep their context", () => {
+    const controller = new StreamStableTailController();
+
+    expect(controller.push("Intro\n1. first\n")).toEqual({
+      stableText: "Intro\n",
+      tailText: "1. first\n",
+    });
+    expect(controller.push("2. second\n3. parent\n")).toEqual({
+      stableText: "",
+      tailText: "1. first\n2. second\n3. parent\n",
+    });
+    expect(controller.push("   1. nested A\n   2. nested B\n4. fourth\n")).toEqual({
+      stableText: "",
+      tailText: "1. first\n2. second\n3. parent\n   1. nested A\n   2. nested B\n4. fourth\n",
+    });
+    expect(controller.push("\nAfter\n")).toEqual({
+      stableText:
+        "1. first\n2. second\n3. parent\n   1. nested A\n   2. nested B\n4. fourth\n\nAfter\n",
+      tailText: "",
+    });
+  });
+
+  it("emits an unterminated trailing list as one fragment on finalization", () => {
+    const controller = new StreamStableTailController();
+    const list = "1. first\n2. parent\n   1. nested\n";
+
+    expect(controller.push(list)).toEqual({ stableText: "", tailText: list });
+    expect(controller.finalize(list)).toEqual({
+      visualRemainder: list,
+      shouldHideFinal: true,
+    });
+  });
+
   it("releases a confirmed pipe table when a non-table line follows it", () => {
     const controller = new StreamStableTailController();
 
