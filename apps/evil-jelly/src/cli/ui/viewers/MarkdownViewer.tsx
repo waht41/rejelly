@@ -5,10 +5,18 @@ import stringWidth from "string-width";
 import wrapAnsi from "wrap-ansi";
 import { normalizeNewlines } from "../../../shared/lib/string";
 
+/**
+ * One rendered list row. `depth` is the nesting level (0 for the outermost),
+ * and `marker` carries the number an ordered item is displayed with — `null`
+ * marks a bullet. Numbering is resolved during parsing so the renderer and the
+ * stream measurer both read the same value.
+ */
+export type MarkdownListItem = { depth: number; marker: number | null; text: string };
+
 type MarkdownBlock =
   | { type: "heading"; depth: number; text: string }
   | { type: "paragraph"; text: string }
-  | { type: "list"; ordered: boolean; items: string[] }
+  | { type: "list"; ordered: boolean; items: MarkdownListItem[] }
   | { type: "table"; headers: string[]; alignments: TableAlignment[]; rows: string[][] }
   | { type: "quote"; lines: string[] }
   | { type: "code"; language?: string; lines: string[] }
@@ -19,6 +27,9 @@ type TableAlignment = "left" | "center" | "right";
 const MAX_RENDER_BLOCKS = 500;
 const MIN_TABLE_COLUMN_WIDTH = 3;
 const HEADING_RULE_CHARACTER = "━";
+const LIST_INDENT_COLUMNS = 2;
+const LIST_ITEM_PATTERN = /^(\s*)(?:([-*+])|(\d{1,9})[.)])\s+(.+)$/;
+const TOP_LEVEL_LIST_INDENT = 3;
 const URL_PATTERN = /https?:\/\/[^\s<>"'`]+/g;
 const URL_TRAILING_PUNCTUATION = ".,;:!?";
 const URL_CLOSING_PAIRS: Record<string, string> = { ")": "(", "]": "[", "}": "{" };
@@ -143,6 +154,61 @@ function isBlockStart(line: string): boolean {
   );
 }
 
+type ListItemMatch = { indent: number; ordered: boolean; number: number; text: string };
+
+// Unlike `isBlockStart`, this accepts any indentation: nested items sit four or
+// more columns in, which the top-level block patterns deliberately exclude.
+function matchListItem(line: string): ListItemMatch | null {
+  const match = line.match(LIST_ITEM_PATTERN);
+  if (!match) {
+    return null;
+  }
+  const digits = match[3];
+  return {
+    indent: match[1].length,
+    ordered: digits !== undefined,
+    number: digits === undefined ? 1 : Number.parseInt(digits, 10),
+    text: match[4].trim(),
+  };
+}
+
+/**
+ * Resolve nesting depth and display number for the items of one list block.
+ *
+ * Indentation is tracked as a stack rather than divided by a fixed step, so
+ * two-, three-, and four-space nesting all read as one level. Each level keeps
+ * its own counter: the first item sets the start (markdown numbers a list from
+ * its first marker) and later siblings increment it, while returning to an
+ * outer level resumes that level's count instead of restarting it.
+ */
+function createListNumbering() {
+  const levels: { indent: number; next: number }[] = [];
+
+  return (item: ListItemMatch): { depth: number; marker: number | null } => {
+    while (levels.length > 1 && item.indent < (levels.at(-1)?.indent ?? 0)) {
+      levels.pop();
+    }
+    if (levels.length === 0 || item.indent > (levels.at(-1)?.indent ?? 0)) {
+      levels.push({ indent: item.indent, next: item.ordered ? item.number : 1 });
+    }
+    const level = levels.at(-1);
+    if (!level) {
+      return { depth: 0, marker: item.ordered ? item.number : null };
+    }
+    const marker = item.ordered ? level.next : null;
+    level.next += 1;
+    return { depth: levels.length - 1, marker };
+  };
+}
+
+export function markdownListItemPrefix(item: MarkdownListItem): string {
+  return item.marker === null ? "- " : `${item.marker}. `;
+}
+
+export function markdownListItemIndent(item: MarkdownListItem): number {
+  return item.depth * LIST_INDENT_COLUMNS;
+}
+
 function isIncompleteStreamingBlockStart(line: string): boolean {
   return (
     /^#{1,6}\s+$/.test(line) || /^\s{0,3}[-*+]\s+$/.test(line) || /^\s{0,3}\d+[.)]\s+$/.test(line)
@@ -220,29 +286,45 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
       continue;
     }
 
-    const listMatch = line.match(/^\s{0,3}(?:([-*+])|(\d+)[.)])\s+(.+)$/);
-    if (listMatch) {
-      const ordered = listMatch[2] !== undefined;
-      const items: string[] = [];
+    const listStart = matchListItem(line);
+    if (listStart && listStart.indent <= TOP_LEVEL_LIST_INDENT) {
+      const ordered = listStart.ordered;
+      const numbering = createListNumbering();
+      const items: MarkdownListItem[] = [];
       while (i < lines.length) {
-        const match = (lines[i] ?? "").match(/^\s{0,3}(?:([-*+])|(\d+)[.)])\s+(.+)$/);
-        if (!match || (match[2] !== undefined) !== ordered) {
+        const match = matchListItem(lines[i] ?? "");
+        // A nested list may switch between bullets and numbers; a switch back at
+        // the block's own indentation starts a different list instead.
+        if (!match || (match.indent <= listStart.indent && match.ordered !== ordered)) {
           break;
         }
-        let item = match[3].trim();
+        const { depth, marker } = numbering(match);
+        let text = match.text;
         i++;
         while (i < lines.length) {
           const continuation = lines[i] ?? "";
           if (continuation.trim() === "") {
             break;
           }
-          if (isBlockStart(continuation)) {
+          if (isBlockStart(continuation) || matchListItem(continuation)) {
             break;
           }
-          item += ` ${continuation.trim()}`;
+          text += ` ${continuation.trim()}`;
           i++;
         }
-        items.push(item);
+        items.push({ depth, marker, text });
+
+        // A "loose" list separates its items with blank lines. Ending the block
+        // on the first one splits such a list into single-item blocks, and each
+        // block then restarts its own numbering — so look past the blanks and
+        // keep going when another item follows.
+        let lookahead = i;
+        while (lookahead < lines.length && (lines[lookahead] ?? "").trim() === "") {
+          lookahead++;
+        }
+        if (lookahead > i && matchListItem(lines[lookahead] ?? "")) {
+          i = lookahead;
+        }
       }
       blocks.push({ type: "list", ordered, items });
       continue;
@@ -646,9 +728,9 @@ export function MarkdownViewer({
           return (
             <Box key={key} flexDirection="column" marginTop={index === 0 ? 0 : 1}>
               {block.items.map((item, itemIndex) => (
-                <Box key={`${key}-${itemIndex}`}>
-                  <Text color="cyan">{block.ordered ? `${itemIndex + 1}. ` : "- "}</Text>
-                  <Text wrap="wrap">{renderInline(item, `${key}-${itemIndex}`)}</Text>
+                <Box key={`${key}-${itemIndex}`} paddingLeft={markdownListItemIndent(item)}>
+                  <Text color="cyan">{markdownListItemPrefix(item)}</Text>
+                  <Text wrap="wrap">{renderInline(item.text, `${key}-${itemIndex}`)}</Text>
                 </Box>
               ))}
             </Box>
