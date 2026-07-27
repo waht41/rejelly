@@ -37,7 +37,9 @@ export const FuzzySearchTool: ToolDefinition<typeof fuzzySearchPathsParameters> 
   parameters: fuzzySearchPathsParameters,
   handler: async ({ keyword, directory, limit }) => {
     try {
-      const matches = await fuzzySearchFiles(keyword, directory, limit);
+      const matches = await fuzzySearchFiles(keyword, directory, limit, {
+        cachePolicy: "refresh",
+      });
 
       if (matches.length === 0) {
         return (

@@ -37,6 +37,7 @@ export function FilePickerOverlay({
   const [matches, setMatches] = useState<FuzzyPathRefMatch[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestSeqRef = useRef(0);
+  const needsRefreshRef = useRef(true);
 
   // Debounced fuzzy search
   useEffect(() => {
@@ -50,13 +51,18 @@ export function FilePickerOverlay({
     }
     const requestSeq = ++requestSeqRef.current;
     debounceRef.current = setTimeout(async () => {
+      const cachePolicy = needsRefreshRef.current ? "refresh" : "reuse";
+      needsRefreshRef.current = false;
       try {
-        const results = await fuzzySearchPathRefs(query, ".", 20);
+        const results = await fuzzySearchPathRefs(query, ".", 20, { cachePolicy });
         if (requestSeq !== requestSeqRef.current) {
           return;
         }
         setMatches(results);
       } catch {
+        if (cachePolicy === "refresh") {
+          needsRefreshRef.current = true;
+        }
         if (requestSeq !== requestSeqRef.current) {
           return;
         }
