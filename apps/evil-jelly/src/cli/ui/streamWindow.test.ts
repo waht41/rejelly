@@ -70,6 +70,9 @@ describe("stream window measurement", () => {
     );
     expect(measureStreamRows(headings, columns)).toBe(renderedRows(headings, columns));
 
+    const hardBreak = "line one  \nline two";
+    expect(measureStreamRows(hardBreak, columns)).toBe(renderedRows(hardBreak, columns));
+
     // Nesting indent and a two-digit marker both narrow the text column, so a
     // fixed marker budget would under-count the wrapped rows here.
     const list = [

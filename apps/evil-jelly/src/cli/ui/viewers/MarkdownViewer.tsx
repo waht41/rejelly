@@ -4,32 +4,23 @@ import type { ReactNode } from "react";
 import stringWidth from "string-width";
 import wrapAnsi from "wrap-ansi";
 import { normalizeNewlines } from "../../../shared/lib/string";
+import {
+  type MarkdownBlock,
+  type MarkdownListItem,
+  type MarkdownPhrasingContent,
+  markdownInlineText,
+  parseMarkdownBlocks,
+  parseMarkdownInline,
+  type TableAlignment,
+} from "./markdownParser";
 
-/**
- * One rendered list row. `depth` is the nesting level (0 for the outermost),
- * and `marker` carries the number an ordered item is displayed with — `null`
- * marks a bullet. Numbering is resolved during parsing so the renderer and the
- * stream measurer both read the same value.
- */
-export type MarkdownListItem = { depth: number; marker: number | null; text: string };
-
-type MarkdownBlock =
-  | { type: "heading"; depth: number; text: string }
-  | { type: "paragraph"; text: string }
-  | { type: "list"; ordered: boolean; items: MarkdownListItem[] }
-  | { type: "table"; headers: string[]; alignments: TableAlignment[]; rows: string[][] }
-  | { type: "quote"; lines: string[] }
-  | { type: "code"; language?: string; lines: string[] }
-  | { type: "rule" };
-
-type TableAlignment = "left" | "center" | "right";
+export type { MarkdownBlock, MarkdownListItem, TableAlignment } from "./markdownParser";
+export { markdownInlineText, parseMarkdownBlocks } from "./markdownParser";
 
 const MAX_RENDER_BLOCKS = 500;
 const MIN_TABLE_COLUMN_WIDTH = 3;
 const HEADING_RULE_CHARACTER = "━";
 const LIST_INDENT_COLUMNS = 2;
-const LIST_ITEM_PATTERN = /^(\s*)(?:([-*+])|(\d{1,9})[.)])\s+(.+)$/;
-const TOP_LEVEL_LIST_INDENT = 3;
 const URL_PATTERN = /https?:\/\/[^\s<>"'`]+/g;
 const URL_TRAILING_PUNCTUATION = ".,;:!?";
 const URL_CLOSING_PAIRS: Record<string, string> = { ")": "(", "]": "[", "}": "{" };
@@ -82,123 +73,8 @@ function hasUnescapedPipe(line: string): boolean {
   return false;
 }
 
-function splitTableRow(line: string): string[] {
-  const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
-  const cells: string[] = [];
-  let cell = "";
-  let escaped = false;
-
-  for (const char of trimmed) {
-    if (escaped) {
-      cell += char;
-      escaped = false;
-      continue;
-    }
-    if (char === "\\") {
-      escaped = true;
-      continue;
-    }
-    if (char === "|") {
-      cells.push(cell.trim());
-      cell = "";
-      continue;
-    }
-    cell += char;
-  }
-  cells.push(cell.trim());
-  return cells;
-}
-
-function parseTableSeparator(line: string): TableAlignment[] | null {
-  if (!hasUnescapedPipe(line)) {
-    return null;
-  }
-  const cells = splitTableRow(line);
-  if (cells.length === 0) {
-    return null;
-  }
-  const alignments: TableAlignment[] = [];
-  for (const cell of cells) {
-    if (!/^:?-{3,}:?$/.test(cell.replace(/\s+/g, ""))) {
-      return null;
-    }
-    const compact = cell.replace(/\s+/g, "");
-    if (compact.startsWith(":") && compact.endsWith(":")) {
-      alignments.push("center");
-    } else if (compact.endsWith(":")) {
-      alignments.push("right");
-    } else {
-      alignments.push("left");
-    }
-  }
-  return alignments;
-}
-
 function isTableStart(lines: string[], index: number): boolean {
-  const header = lines[index] ?? "";
-  const separator = lines[index + 1] ?? "";
-  return hasUnescapedPipe(header) && parseTableSeparator(separator) !== null;
-}
-
-function isBlockStart(line: string): boolean {
-  if (line.trim() === "") {
-    return true;
-  }
-  return (
-    isFence(line) ||
-    /^#{1,6}\s+/.test(line) ||
-    /^\s{0,3}>\s?/.test(line) ||
-    /^\s{0,3}([-*+])\s+/.test(line) ||
-    /^\s{0,3}\d+[.)]\s+/.test(line) ||
-    /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)
-  );
-}
-
-type ListItemMatch = { indent: number; ordered: boolean; number: number; text: string };
-
-// Unlike `isBlockStart`, this accepts any indentation: nested items sit four or
-// more columns in, which the top-level block patterns deliberately exclude.
-function matchListItem(line: string): ListItemMatch | null {
-  const match = line.match(LIST_ITEM_PATTERN);
-  if (!match) {
-    return null;
-  }
-  const digits = match[3];
-  return {
-    indent: match[1].length,
-    ordered: digits !== undefined,
-    number: digits === undefined ? 1 : Number.parseInt(digits, 10),
-    text: match[4].trim(),
-  };
-}
-
-/**
- * Resolve nesting depth and display number for the items of one list block.
- *
- * Indentation is tracked as a stack rather than divided by a fixed step, so
- * two-, three-, and four-space nesting all read as one level. Each level keeps
- * its own counter: the first item sets the start (markdown numbers a list from
- * its first marker) and later siblings increment it, while returning to an
- * outer level resumes that level's count instead of restarting it.
- */
-function createListNumbering() {
-  const levels: { indent: number; next: number }[] = [];
-
-  return (item: ListItemMatch): { depth: number; marker: number | null } => {
-    while (levels.length > 1 && item.indent < (levels.at(-1)?.indent ?? 0)) {
-      levels.pop();
-    }
-    if (levels.length === 0 || item.indent > (levels.at(-1)?.indent ?? 0)) {
-      levels.push({ indent: item.indent, next: item.ordered ? item.number : 1 });
-    }
-    const level = levels.at(-1);
-    if (!level) {
-      return { depth: 0, marker: item.ordered ? item.number : null };
-    }
-    const marker = item.ordered ? level.next : null;
-    level.next += 1;
-    return { depth: levels.length - 1, marker };
-  };
+  return parseMarkdownBlocks(lines.slice(index).join("\n"))[0]?.type === "table";
 }
 
 export function markdownListItemPrefix(item: MarkdownListItem): string {
@@ -215,170 +91,85 @@ function isIncompleteStreamingBlockStart(line: string): boolean {
   );
 }
 
-export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
-  const lines = normalizeNewlines(markdown).split("\n");
-  const blocks: MarkdownBlock[] = [];
-  let i = 0;
-
-  while (i < lines.length) {
-    const line = lines[i] ?? "";
-    if (line.trim() === "") {
-      i++;
-      continue;
-    }
-
-    const fence = line.match(/^\s*```\s*([^\s`]*)?/);
-    if (fence) {
-      const codeLines: string[] = [];
-      i++;
-      while (i < lines.length && !isFence(lines[i] ?? "")) {
-        codeLines.push(lines[i] ?? "");
-        i++;
-      }
-      if (i < lines.length) {
-        i++;
-      }
-      blocks.push({
-        type: "code",
-        language: fence[1] || undefined,
-        lines: codeLines,
-      });
-      continue;
-    }
-
-    const heading = line.match(/^(#{1,6})\s+(.+)$/);
-    if (heading) {
-      blocks.push({ type: "heading", depth: heading[1].length, text: heading[2].trim() });
-      i++;
-      continue;
-    }
-
-    if (/^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)) {
-      blocks.push({ type: "rule" });
-      i++;
-      continue;
-    }
-
-    if (isTableStart(lines, i)) {
-      const headers = splitTableRow(lines[i] ?? "");
-      const alignments = parseTableSeparator(lines[i + 1] ?? "") ?? [];
-      const rows: string[][] = [];
-      i += 2;
-      while (i < lines.length && hasUnescapedPipe(lines[i] ?? "") && lines[i]?.trim() !== "") {
-        rows.push(splitTableRow(lines[i] ?? ""));
-        i++;
-      }
-      blocks.push({ type: "table", headers, alignments, rows });
-      continue;
-    }
-
-    if (/^\s{0,3}>\s?/.test(line)) {
-      const quoteLines: string[] = [];
-      while (i < lines.length) {
-        const match = (lines[i] ?? "").match(/^\s{0,3}>\s?(.*)$/);
-        if (!match) {
-          break;
-        }
-        quoteLines.push(match[1]);
-        i++;
-      }
-      blocks.push({ type: "quote", lines: quoteLines });
-      continue;
-    }
-
-    const listStart = matchListItem(line);
-    if (listStart && listStart.indent <= TOP_LEVEL_LIST_INDENT) {
-      const ordered = listStart.ordered;
-      const numbering = createListNumbering();
-      const items: MarkdownListItem[] = [];
-      while (i < lines.length) {
-        const match = matchListItem(lines[i] ?? "");
-        // A nested list may switch between bullets and numbers; a switch back at
-        // the block's own indentation starts a different list instead.
-        if (!match || (match.indent <= listStart.indent && match.ordered !== ordered)) {
-          break;
-        }
-        const { depth, marker } = numbering(match);
-        let text = match.text;
-        i++;
-        while (i < lines.length) {
-          const continuation = lines[i] ?? "";
-          if (continuation.trim() === "") {
-            break;
-          }
-          if (isBlockStart(continuation) || matchListItem(continuation)) {
-            break;
-          }
-          text += ` ${continuation.trim()}`;
-          i++;
-        }
-        items.push({ depth, marker, text });
-
-        // A "loose" list separates its items with blank lines. Ending the block
-        // on the first one splits such a list into single-item blocks, and each
-        // block then restarts its own numbering — so look past the blanks and
-        // keep going when another item follows.
-        let lookahead = i;
-        while (lookahead < lines.length && (lines[lookahead] ?? "").trim() === "") {
-          lookahead++;
-        }
-        if (lookahead > i && matchListItem(lines[lookahead] ?? "")) {
-          i = lookahead;
-        }
-      }
-      blocks.push({ type: "list", ordered, items });
-      continue;
-    }
-
-    const paragraph: string[] = [];
-    const startIndex = i;
-    while (i < lines.length && !isBlockStart(lines[i] ?? "")) {
-      paragraph.push((lines[i] ?? "").trim());
-      i++;
-    }
-    if (i === startIndex) {
-      paragraph.push(line.trim());
-      i++;
-    }
-    blocks.push({ type: "paragraph", text: paragraph.join(" ") });
+function inlineNodeText(node: MarkdownPhrasingContent): string {
+  if (node.type === "text" || node.type === "inlineCode") {
+    return node.value;
   }
+  if (node.type === "break") {
+    return "\n";
+  }
+  if (node.type === "image") {
+    return node.alt ?? "";
+  }
+  if (node.type === "footnoteReference") {
+    return `[^${node.label ?? node.identifier}]`;
+  }
+  if ("children" in node) {
+    return node.children.map(inlineNodeText).join("");
+  }
+  return "value" in node && typeof node.value === "string" ? node.value : "";
+}
 
-  return blocks;
+function renderInlineNodes(nodes: MarkdownPhrasingContent[], keyPrefix: string): ReactNode[] {
+  return nodes.map((node, index) => {
+    const key = `${keyPrefix}-${node.type}-${index}`;
+    if (node.type === "text") {
+      return withTerminalLinks(node.value.replace(/\n/g, " "));
+    }
+    if (node.type === "inlineCode") {
+      return (
+        <Text key={key} color="cyan">
+          {withTerminalLinks(node.value)}
+        </Text>
+      );
+    }
+    if (node.type === "strong") {
+      return (
+        <Text key={key} bold>
+          {renderInlineNodes(node.children, key)}
+        </Text>
+      );
+    }
+    if (node.type === "emphasis") {
+      return (
+        <Text key={key} italic>
+          {renderInlineNodes(node.children, key)}
+        </Text>
+      );
+    }
+    if (node.type === "delete") {
+      return (
+        <Text key={key} strikethrough>
+          {renderInlineNodes(node.children, key)}
+        </Text>
+      );
+    }
+    if (node.type === "link") {
+      const label = node.children.map(inlineNodeText).join("");
+      try {
+        return terminalLink(label, new URL(node.url).href);
+      } catch {
+        return label;
+      }
+    }
+    if (node.type === "break") {
+      return "\n";
+    }
+    if (node.type === "image") {
+      return node.alt ?? "";
+    }
+    if (node.type === "footnoteReference") {
+      return `[^${node.label ?? node.identifier}]`;
+    }
+    if ("children" in node) {
+      return <Text key={key}>{renderInlineNodes(node.children, key)}</Text>;
+    }
+    return inlineNodeText(node);
+  });
 }
 
 function renderInline(text: string, keyPrefix: string): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  const pattern = /(`[^`]+`|\*\*[^*]+\*\*)/g;
-  let lastIndex = 0;
-  let index = 0;
-
-  for (const match of text.matchAll(pattern)) {
-    const value = match[0];
-    const start = match.index ?? 0;
-    if (start > lastIndex) {
-      nodes.push(withTerminalLinks(text.slice(lastIndex, start)));
-    }
-    if (value.startsWith("`")) {
-      nodes.push(
-        <Text key={`${keyPrefix}-code-${index++}`} color="cyan">
-          {withTerminalLinks(value.slice(1, -1))}
-        </Text>,
-      );
-    } else {
-      nodes.push(
-        <Text key={`${keyPrefix}-bold-${index++}`} bold>
-          {value.slice(2, -2)}
-        </Text>,
-      );
-    }
-    lastIndex = start + value.length;
-  }
-
-  if (lastIndex < text.length) {
-    nodes.push(withTerminalLinks(text.slice(lastIndex)));
-  }
-
-  return nodes;
+  return renderInlineNodes(parseMarkdownInline(text), keyPrefix);
 }
 
 function countOccurrences(text: string, character: string): number {
@@ -443,10 +234,6 @@ function withTerminalLinks(text: string): string {
   }
 
   return rendered + text.slice(lastIndex);
-}
-
-export function markdownInlineText(text: string): string {
-  return text.replace(/`([^`]+)`/g, "$1").replace(/\*\*([^*]+)\*\*/g, "$1");
 }
 
 // Must measure with the same string-width used by wrap-ansi and ink, or the
