@@ -1,4 +1,4 @@
-import { renderToString } from "ink";
+import { renderToString, Static } from "ink";
 import { createElement } from "react";
 import stripAnsi from "strip-ansi";
 import { describe, expect, it } from "vitest";
@@ -204,6 +204,30 @@ describe("MarkdownViewer lists", () => {
       "  1. nested",
       "3. third",
     ]);
+  });
+
+  it("keeps nested indentation when flushed through Ink Static", () => {
+    const text = [
+      "**有序列表：**",
+      "",
+      "1. 第一步：打开终端",
+      "2. 第二步：输入命令",
+      "3. 第三步：查看输出",
+      "   1. 子步骤 A",
+      "   2. 子步骤 B",
+      "4. 第四步：完成",
+    ].join("\n");
+    const output = renderToString(
+      createElement(Static, {
+        items: [text],
+        children: (item: unknown) =>
+          createElement(MarkdownViewer, { key: "list", text: String(item), columns: 80 }),
+      }),
+      { columns: 80 },
+    );
+
+    expect(stripAnsi(output).split("\n")).toContain("  1. 子步骤 A");
+    expect(stripAnsi(output).split("\n")).toContain("  2. 子步骤 B");
   });
 });
 
