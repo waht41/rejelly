@@ -3,21 +3,33 @@
  */
 
 import { create } from "zustand";
-import { normalizeNewlines } from "../../shared/lib/string";
-import type { ToolTranscriptDetail } from "../../shared/types";
+import type { ToolCallHandle, ToolTranscriptDetail } from "../../shared/types";
 import { StreamStableTailController } from "./streamStableTail";
+import { drainToolOutput } from "./toolTailWindow";
 
 const TRANSIENT_STREAM_CAP = 96_000;
-const TRANSIENT_TOOL_PROGRESS_CAP = 100;
+/**
+ * Lines kept per running tool. Only a handful are ever on screen; the slack lets
+ * a quiet tool's rows be spent on a chatty one without losing its own backlog.
+ */
+const TOOL_TAIL_CAP = 32;
 const STREAM_FLUSH_INTERVAL_MS = 50;
+const TOOL_OUTPUT_FLUSH_INTERVAL_MS = 50;
 export const TOOL_FULL_CAP = 96_000;
 
 let turnIdCounter = 0;
+let toolOrdinalCounter = 0;
 let pendingStreamText = "";
 let streamFlushTimer: ReturnType<typeof setTimeout> | undefined;
+// Raw chunks per tool call id, drained on a timer. Chunks arrive far faster than
+// the terminal can repaint, so batching here is what keeps a chatty command from
+// melting the render loop.
+const pendingToolOutput = new Map<string, string>();
+let toolOutputFlushTimer: ReturnType<typeof setTimeout> | undefined;
 const streamController = new StreamStableTailController();
 
 export type ToolBlock = {
+  id?: string;
   toolName: string;
   summary: string;
   args?: string;
@@ -26,6 +38,19 @@ export type ToolBlock = {
   fullResult: string;
   ok: boolean;
   ordinal?: number;
+};
+
+/** A tool call between `beginTool` and `logTool`, with whatever it has printed so far. */
+export type RunningTool = {
+  id: string;
+  ordinal: number;
+  summary: string;
+  /** Complete output lines, oldest first, capped at {@link TOOL_TAIL_CAP}. */
+  tail: string[];
+  /** Raw unterminated remainder of the newest line. */
+  partial: string;
+  /** Complete lines seen in total, so a squeezed-out tool can still show progress. */
+  lineCount: number;
 };
 
 /** Session header shown at the top of a fresh view (startup and after `/clear`). */
@@ -52,7 +77,7 @@ export type DiffBlockDetail = {
 
 interface OutputState {
   streamBuffer: string;
-  toolProgress: string[];
+  runningTools: RunningTool[];
   status: string;
   history: Turn[];
   /**
@@ -65,7 +90,8 @@ interface OutputState {
   clearedStaticTurns: Turn[];
 
   appendStream: (text: string) => void;
-  appendToolProgress: (text: string) => void;
+  beginTool: (start: { toolName: string; summary: string }) => ToolCallHandle;
+  appendToolOutput: (toolCallId: string, chunk: string) => void;
   setStatus: (status: string) => void;
   logUser: (content: string) => void;
   logAssistant: (content: string) => void;
@@ -118,14 +144,57 @@ function flushPendingStream(): void {
   }));
 }
 
+function clearToolOutputFlushTimer(): void {
+  if (toolOutputFlushTimer === undefined) {
+    return;
+  }
+  clearTimeout(toolOutputFlushTimer);
+  toolOutputFlushTimer = undefined;
+}
+
+function flushPendingToolOutput(): void {
+  clearToolOutputFlushTimer();
+  if (pendingToolOutput.size === 0) {
+    return;
+  }
+  const drained = new Map<string, ReturnType<typeof drainToolOutput>>();
+  for (const [id, buffer] of pendingToolOutput) {
+    const result = drainToolOutput(buffer);
+    drained.set(id, result);
+    pendingToolOutput.set(id, result.rest);
+  }
+
+  useOutputStore.setState((state) => ({
+    runningTools: state.runningTools.map((tool) => {
+      const result = drained.get(tool.id);
+      if (!result) {
+        return tool;
+      }
+      const tail = [...tool.tail, ...result.lines];
+      return {
+        ...tool,
+        tail: tail.length > TOOL_TAIL_CAP ? tail.slice(-TOOL_TAIL_CAP) : tail,
+        partial: result.rest,
+        lineCount: tool.lineCount + result.lines.length,
+      };
+    }),
+  }));
+}
+
+function clearToolOutputState(): void {
+  clearToolOutputFlushTimer();
+  pendingToolOutput.clear();
+}
+
 function clearStreamState(): void {
   clearPendingStream();
+  clearToolOutputState();
   streamController.reset();
 }
 
 export const useOutputStore = create<OutputState>((set) => ({
   streamBuffer: "",
-  toolProgress: [],
+  runningTools: [],
   status: "Ready",
   history: [],
   clearedStaticTurns: [],
@@ -137,19 +206,31 @@ export const useOutputStore = create<OutputState>((set) => ({
     }
   },
 
-  appendToolProgress: (text) =>
-    set((state) => {
-      const lines = normalizeNewlines(text)
-        .split("\n")
-        .map((line) => line.trimEnd())
-        .filter((line) => line.length > 0);
-      if (lines.length === 0) {
-        return { toolProgress: state.toolProgress };
-      }
-      return {
-        toolProgress: [...state.toolProgress, ...lines].slice(-TRANSIENT_TOOL_PROGRESS_CAP),
-      };
-    }),
+  beginTool: ({ toolName, summary }) => {
+    // Numbered here, when the call starts, so parallel tools read in the order
+    // the model issued them rather than the order they happen to finish in.
+    const handle: ToolCallHandle = {
+      id: `tc_${toolName}_${++toolOrdinalCounter}`,
+      ordinal: toolOrdinalCounter,
+    };
+    set((state) => ({
+      runningTools: [
+        ...state.runningTools,
+        { id: handle.id, ordinal: handle.ordinal, summary, tail: [], partial: "", lineCount: 0 },
+      ],
+    }));
+    return handle;
+  },
+
+  appendToolOutput: (toolCallId, chunk) => {
+    if (chunk.length === 0) {
+      return;
+    }
+    pendingToolOutput.set(toolCallId, (pendingToolOutput.get(toolCallId) ?? "") + chunk);
+    if (toolOutputFlushTimer === undefined) {
+      toolOutputFlushTimer = setTimeout(flushPendingToolOutput, TOOL_OUTPUT_FLUSH_INTERVAL_MS);
+    }
+  },
 
   setStatus: (status) => set({ status }),
 
@@ -182,42 +263,43 @@ export const useOutputStore = create<OutputState>((set) => ({
         },
       ],
       streamBuffer: "",
-      toolProgress: [],
+      runningTools: [],
       status: "Ready",
     }));
   },
 
   logTool: (block: ToolBlock) => {
     flushPendingStream();
-    set((state) => {
-      const progressIndex = state.toolProgress.indexOf(block.summary);
-      const toolProgress =
-        progressIndex === -1
-          ? state.toolProgress
-          : [
-              ...state.toolProgress.slice(0, progressIndex),
-              ...state.toolProgress.slice(progressIndex + 1),
-            ];
-      return {
-        history: [
-          ...state.history,
-          {
-            id: `t_${turnIdCounter++}`,
-            type: "tool",
-            content: block.summary,
-            tool: {
-              ...block,
-              ordinal:
-                block.ordinal ??
-                state.history.filter(
-                  (turn): turn is Extract<Turn, { type: "tool" }> => turn.type === "tool",
-                ).length + 1,
-            },
+    if (block.id !== undefined) {
+      pendingToolOutput.delete(block.id);
+    }
+    set((state) => ({
+      history: [
+        ...state.history,
+        {
+          id: `t_${turnIdCounter++}`,
+          type: "tool",
+          content: block.summary,
+          tool: {
+            ...block,
+            // Without a handle the host never numbered this call, so fall back to
+            // the order blocks land in.
+            ordinal:
+              block.ordinal ??
+              state.history.filter(
+                (turn): turn is Extract<Turn, { type: "tool" }> => turn.type === "tool",
+              ).length + 1,
           },
-        ],
-        toolProgress,
-      };
-    });
+        },
+      ],
+      // The block replaces the live view, so this tool's rows leave the window
+      // with it — a stale tail under a number that already scrolled past reads
+      // as if the tool were still running.
+      runningTools:
+        block.id === undefined
+          ? state.runningTools
+          : state.runningTools.filter((tool) => tool.id !== block.id),
+    }));
   },
 
   logDiff: (diff) => {
@@ -233,27 +315,33 @@ export const useOutputStore = create<OutputState>((set) => ({
     })),
 
   logSystem: (content) => {
-    clearStreamState();
+    // A system line is a notice, not a turn boundary. Most of them are emitted
+    // while a tool is mid-flight — every `[Auto-allowed]` confirmation, `/mode`,
+    // `/expand-tool` — so it must not retire the running tools or report the
+    // agent idle. The real boundaries (logAssistant, clearStream, clearHistory)
+    // still reset both.
+    clearPendingStream();
+    streamController.reset();
     set((state) => ({
       history: [...state.history, { id: `s_${turnIdCounter++}`, type: "system", content }],
       streamBuffer: "",
-      toolProgress: [],
-      status: "Ready",
     }));
   },
 
   clearStream: () => {
     clearStreamState();
-    set({ streamBuffer: "", toolProgress: [], status: "Ready" });
+    set({ streamBuffer: "", runningTools: [], status: "Ready" });
   },
   clearHistory: () => {
     // turnIdCounter keeps counting: ids must stay unique across clearedStaticTurns + history.
+    // Ordinals do restart: `/expand-tool #N` only searches the live history, which is now empty.
+    toolOrdinalCounter = 0;
     clearStreamState();
     set((state) => ({
       clearedStaticTurns: [...state.clearedStaticTurns, ...state.history],
       history: [],
       streamBuffer: "",
-      toolProgress: [],
+      runningTools: [],
       status: "Ready",
     }));
   },
@@ -272,10 +360,11 @@ export function isRuntimeActive(status: string, streamBuffer: string): boolean {
 /** Clear history/stream for a new CLI session (singleton store). */
 export function resetOutputSession(): void {
   turnIdCounter = 0;
+  toolOrdinalCounter = 0;
   clearStreamState();
   useOutputStore.setState({
     streamBuffer: "",
-    toolProgress: [],
+    runningTools: [],
     status: "Ready",
     history: [],
     clearedStaticTurns: [],

@@ -6,6 +6,7 @@ import type { ToolContext, ToolMiddleware } from "@rejelly/core";
 import { getBinding } from "../../services/binding/hostBindings";
 import {
   runWithToolDetailSlot,
+  setActiveToolCall,
   takeActiveToolDetail,
 } from "../../services/binding/toolTranscriptDetail";
 
@@ -206,15 +207,25 @@ export function withToolLogger(): ToolMiddleware {
     name: "evil_jelly_tool_logger",
     handler: async (ctx, next) => {
       return runWithToolDetailSlot(async () => {
-        const { printOut, logToolBlock } = getBinding();
+        const { printOut, logToolStart, logToolBlock } = getBinding();
         const summary = formatToolProgressLine(ctx).replace(/…?\n$/, "");
         const args = stringifyToolArgs(ctx.toolName, ctx.input);
-        printOut(`${summary}\n`, { kind: "tool-progress" });
+        // The handle both numbers this call in invocation order and lets a
+        // streaming handler attribute its output. Hosts without a live view get
+        // the old one-line announcement instead.
+        const call = logToolStart?.({ toolName: ctx.toolName, summary });
+        if (call) {
+          setActiveToolCall(call);
+        } else {
+          printOut(`${summary}\n`);
+        }
         try {
           const result = await next();
           const fullResult = stringifyToolResult(result);
           const detail = takeActiveToolDetail();
           logToolBlock({
+            id: call?.id,
+            ordinal: call?.ordinal,
             toolName: ctx.toolName,
             summary,
             args,
@@ -228,6 +239,8 @@ export function withToolLogger(): ToolMiddleware {
           const msg = err instanceof Error ? err.message : String(err);
           const detail = takeActiveToolDetail();
           logToolBlock({
+            id: call?.id,
+            ordinal: call?.ordinal,
             toolName: ctx.toolName,
             summary,
             args,

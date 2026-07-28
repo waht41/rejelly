@@ -14,13 +14,18 @@ vi.mock("../../services/binding/hostBindings", () => ({
   getBinding: () => mockGetBinding(),
 }));
 
-import { recordActiveToolDetail } from "../../services/binding/toolTranscriptDetail";
+import {
+  getActiveToolCall,
+  recordActiveToolDetail,
+} from "../../services/binding/toolTranscriptDetail";
 import { withToolLogger } from "./withToolLogger";
 
 describe("withToolLogger", () => {
   function createMockBindings(): EvilJellyHostBindings & {
-    printed: Array<{ message: string; kind: "assistant" | "tool-progress" | undefined }>;
+    printed: Array<{ message: string }>;
     toolBlocks: Array<{
+      id?: string;
+      ordinal?: number;
       toolName: string;
       summary: string;
       args?: string;
@@ -30,8 +35,10 @@ describe("withToolLogger", () => {
       ok: boolean;
     }>;
   } {
-    const printed: Array<{ message: string; kind: "assistant" | "tool-progress" | undefined }> = [];
+    const printed: Array<{ message: string }> = [];
     const toolBlocks: Array<{
+      id?: string;
+      ordinal?: number;
       toolName: string;
       summary: string;
       args?: string;
@@ -44,8 +51,8 @@ describe("withToolLogger", () => {
       printed,
       toolBlocks,
       getInput: async () => ({ text: "" }),
-      printOut: (msg, options) => {
-        printed.push({ message: msg, kind: options?.kind });
+      printOut: (msg: string) => {
+        printed.push({ message: msg });
       },
       logUserMessage: () => {},
       logAssistantMessage: () => {},
@@ -78,9 +85,10 @@ describe("withToolLogger", () => {
 
     expect(result).toBe("file content line 1\nline 2\nline 3");
     expect(mockGetBinding).toHaveBeenCalled();
+    // No logToolStart on these bindings, so the middleware falls back to the
+    // one-line announcement.
     expect(bindings.printed.length).toBeGreaterThanOrEqual(1);
     expect(bindings.printed[0]?.message).toContain("[Tools] read_file");
-    expect(bindings.printed[0]?.kind).toBe("tool-progress");
     expect(bindings.toolBlocks).toHaveLength(1);
     const block = bindings.toolBlocks[0]!;
     expect(block.toolName).toBe("read_file");
@@ -226,5 +234,58 @@ describe("withToolLogger", () => {
       type: "diff",
       text: "--- a.ts\n+++ a.ts\n@@\n-old\n+new\n",
     });
+  });
+
+  it("hands the call handle to the running handler and back on the block", async () => {
+    const bindings = createMockBindings();
+    bindings.logToolStart = () => ({ id: "tc_1", ordinal: 7 });
+    mockGetBinding.mockReturnValue(bindings);
+
+    const middleware = withToolLogger();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ctx = { toolName: "run_command", input: { command: "pnpm build" } } as any;
+
+    let seen: ReturnType<typeof getActiveToolCall>;
+    const next = vi.fn().mockImplementation(async () => {
+      seen = getActiveToolCall();
+      return "ok";
+    });
+
+    await middleware.handler!(ctx, next);
+
+    // A streaming handler reads this to attribute its output to the right tool.
+    expect(seen).toEqual({ id: "tc_1", ordinal: 7 });
+    expect(bindings.toolBlocks[0]).toMatchObject({ id: "tc_1", ordinal: 7 });
+    // The live view replaces the one-line announcement.
+    expect(bindings.printed).toHaveLength(0);
+  });
+
+  it("keeps parallel calls on their own handles", async () => {
+    const bindings = createMockBindings();
+    let next_ordinal = 0;
+    bindings.logToolStart = () => {
+      next_ordinal++;
+      return { id: `tc_${next_ordinal}`, ordinal: next_ordinal };
+    };
+    mockGetBinding.mockReturnValue(bindings);
+
+    const middleware = withToolLogger();
+    const seen: Array<number | undefined> = [];
+    const run = (command: string, delayMs: number) =>
+      middleware.handler!(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        { toolName: "run_command", input: { command } } as any,
+        async () => {
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          seen.push(getActiveToolCall()?.ordinal);
+          return "ok";
+        },
+      );
+
+    // The second call finishes first; AsyncLocalStorage must keep the slots apart.
+    await Promise.all([run("slow", 20), run("fast", 0)]);
+
+    expect(seen).toEqual([2, 1]);
+    expect(bindings.toolBlocks.map((block) => block.ordinal)).toEqual([2, 1]);
   });
 });

@@ -32,7 +32,7 @@ describe("isRuntimeActive", () => {
 
 describe("logTool", () => {
   it("adds a tool turn to history with summary as content", () => {
-    useOutputStore.setState({ history: [], toolProgress: [] });
+    useOutputStore.setState({ history: [], runningTools: [] });
     const block: ToolBlock = {
       toolName: "grep",
       summary: '[Tools] grep "needle"',
@@ -86,7 +86,7 @@ describe("logTool", () => {
     useOutputStore.setState({
       history: [],
       streamBuffer: "ongoing stream content",
-      toolProgress: [],
+      runningTools: [],
     });
     const block: ToolBlock = {
       toolName: "run_command",
@@ -103,27 +103,88 @@ describe("logTool", () => {
     expect(state.streamBuffer).toBe("ongoing stream content");
   });
 
-  it("removes the matching transient tool progress line", () => {
-    useOutputStore.setState({
-      history: [],
-      streamBuffer: "",
-      toolProgress: ["[Tools] read_file -> src/a.ts", "[Tools] grep -> needle"],
-    });
-    const block: ToolBlock = {
+  it("drops only the finished call from the live view, matching on id not summary", () => {
+    const store = useOutputStore.getState();
+    // Two calls that look identical — the old summary match would have removed
+    // whichever came first, leaving a running tool invisible.
+    const first = store.beginTool({ toolName: "read_file", summary: "[Tools] read_file -> a.ts" });
+    const second = store.beginTool({ toolName: "read_file", summary: "[Tools] read_file -> a.ts" });
+
+    store.logTool({
+      id: second.id,
+      ordinal: second.ordinal,
       toolName: "read_file",
-      summary: "[Tools] read_file -> src/a.ts",
+      summary: "[Tools] read_file -> a.ts",
       preview: "content",
       fullResult: "content",
       ok: true,
-    };
+    });
 
-    useOutputStore.getState().logTool(block);
+    expect(useOutputStore.getState().runningTools.map((tool) => tool.id)).toEqual([first.id]);
+  });
 
-    expect(useOutputStore.getState().toolProgress).toEqual(["[Tools] grep -> needle"]);
+  it("numbers calls when they start, so parallel tools keep invocation order", () => {
+    const store = useOutputStore.getState();
+    const first = store.beginTool({ toolName: "run_command", summary: "[Tools] slow" });
+    const second = store.beginTool({ toolName: "run_command", summary: "[Tools] fast" });
+    expect([first.ordinal, second.ordinal]).toEqual([1, 2]);
+
+    // The second call finishes first; its block must still read #2.
+    const block = (handle: typeof first, summary: string): ToolBlock => ({
+      id: handle.id,
+      ordinal: handle.ordinal,
+      toolName: "run_command",
+      summary,
+      preview: "",
+      fullResult: "",
+      ok: true,
+    });
+    store.logTool(block(second, "[Tools] fast"));
+    store.logTool(block(first, "[Tools] slow"));
+
+    const ordinals = useOutputStore
+      .getState()
+      .history.filter(
+        (turn): turn is Extract<typeof turn, { type: "tool" }> => turn.type === "tool",
+      )
+      .map((turn) => turn.tool.ordinal);
+    expect(ordinals).toEqual([2, 1]);
+  });
+
+  it("accumulates live output into the running tool's tail", async () => {
+    const store = useOutputStore.getState();
+    const handle = store.beginTool({ toolName: "run_command", summary: "[Tools] build" });
+
+    store.appendToolOutput(handle.id, "compiling\nlinking");
+    await vi.waitFor(() => {
+      const tool = useOutputStore.getState().runningTools[0]!;
+      expect(tool.tail).toEqual(["compiling"]);
+      expect(tool.partial).toBe("linking");
+      expect(tool.lineCount).toBe(1);
+    });
   });
 
   it("TOOL_FULL_CAP constant is defined and positive", () => {
     expect(TOOL_FULL_CAP).toBeGreaterThan(0);
+  });
+
+  it("survives a system notice logged while the tool runs", async () => {
+    // Every auto-allowed confirmation lands here, between beginTool and the
+    // first chunk. Treating it as a turn boundary retired the tool before it had
+    // printed anything, so the live view stayed empty for the whole command.
+    const store = useOutputStore.getState();
+    store.setStatus("Running…");
+    const handle = store.beginTool({ toolName: "run_command", summary: "[Tools] stream" });
+
+    store.logSystem("[Auto-allowed] declared read_only → node stream-test.js");
+
+    expect(useOutputStore.getState().runningTools.map((tool) => tool.id)).toEqual([handle.id]);
+    expect(useOutputStore.getState().status).toBe("Running…");
+
+    store.appendToolOutput(handle.id, "line 1\n");
+    await vi.waitFor(() => {
+      expect(useOutputStore.getState().runningTools[0]?.tail).toEqual(["line 1"]);
+    });
   });
 });
 
@@ -229,7 +290,7 @@ describe("clearHistory", () => {
     useOutputStore.setState({
       history: [{ id: "a_1", type: "assistant", content: "hello" }],
       streamBuffer: "partial",
-      toolProgress: ["[Tools] grep -> needle"],
+      runningTools: [],
       status: "Running…",
     });
 
@@ -238,7 +299,7 @@ describe("clearHistory", () => {
     expect(useOutputStore.getState()).toMatchObject({
       history: [],
       streamBuffer: "",
-      toolProgress: [],
+      runningTools: [],
       status: "Ready",
     });
   });
