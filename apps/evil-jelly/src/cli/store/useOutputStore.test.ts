@@ -167,6 +167,25 @@ describe("logTool", () => {
   it("TOOL_FULL_CAP constant is defined and positive", () => {
     expect(TOOL_FULL_CAP).toBeGreaterThan(0);
   });
+
+  it("survives a system notice logged while the tool runs", async () => {
+    // Every auto-allowed confirmation lands here, between beginTool and the
+    // first chunk. Treating it as a turn boundary retired the tool before it had
+    // printed anything, so the live view stayed empty for the whole command.
+    const store = useOutputStore.getState();
+    store.setStatus("Running…");
+    const handle = store.beginTool({ toolName: "run_command", summary: "[Tools] stream" });
+
+    store.logSystem("[Auto-allowed] declared read_only → node stream-test.js");
+
+    expect(useOutputStore.getState().runningTools.map((tool) => tool.id)).toEqual([handle.id]);
+    expect(useOutputStore.getState().status).toBe("Running…");
+
+    store.appendToolOutput(handle.id, "line 1\n");
+    await vi.waitFor(() => {
+      expect(useOutputStore.getState().runningTools[0]?.tail).toEqual(["line 1"]);
+    });
+  });
 });
 
 describe("appendStream", () => {

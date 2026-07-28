@@ -315,12 +315,16 @@ export const useOutputStore = create<OutputState>((set) => ({
     })),
 
   logSystem: (content) => {
-    clearStreamState();
+    // A system line is a notice, not a turn boundary. Most of them are emitted
+    // while a tool is mid-flight — every `[Auto-allowed]` confirmation, `/mode`,
+    // `/expand-tool` — so it must not retire the running tools or report the
+    // agent idle. The real boundaries (logAssistant, clearStream, clearHistory)
+    // still reset both.
+    clearPendingStream();
+    streamController.reset();
     set((state) => ({
       history: [...state.history, { id: `s_${turnIdCounter++}`, type: "system", content }],
       streamBuffer: "",
-      runningTools: [],
-      status: "Ready",
     }));
   },
 

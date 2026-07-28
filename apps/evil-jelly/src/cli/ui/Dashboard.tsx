@@ -78,8 +78,12 @@ function RunningToolList({ tools, maxTailRows }: { tools: RunningTool[]; maxTail
     <Box flexDirection="column" marginBottom={1}>
       {tools.map((tool) => (
         <Box key={tool.id}>
-          <Text color="green">● </Text>
-          <Text color={toolTailColor(tool.ordinal)}>#{tool.ordinal} </Text>
+          {/* Fixed prefix: without flexShrink={0} an over-wide row makes Yoga
+              squeeze these instead of truncating the summary, eating the spaces. */}
+          <Box flexShrink={0}>
+            <Text color="green">● </Text>
+            <Text color={toolTailColor(tool.ordinal)}>#{tool.ordinal} </Text>
+          </Box>
           <Text dimColor wrap="truncate-end">
             {tool.summary}
             {tool.lineCount > 0
@@ -92,7 +96,11 @@ function RunningToolList({ tools, maxTailRows }: { tools: RunningTool[]; maxTail
         <Box flexDirection="column" paddingLeft={2}>
           {rows.map((row, index) => (
             <Box key={`${row.ordinal}:${index}:${row.text}`}>
-              {prefixed ? <Text color={toolTailColor(row.ordinal)}>#{row.ordinal} │ </Text> : null}
+              {prefixed ? (
+                <Box flexShrink={0}>
+                  <Text color={toolTailColor(row.ordinal)}>#{row.ordinal} │ </Text>
+                </Box>
+              ) : null}
               {/* Truncate, never wrap: one 400-char line would otherwise eat the
                   whole window, and there is no scrollback to recover it from. */}
               <Text dimColor wrap="truncate-end">
