@@ -1,16 +1,14 @@
-import stringWidth from "string-width";
 import wrapAnsi from "wrap-ansi";
 import { normalizeNewlines } from "../../shared/lib/string";
 import {
   markdownHeadingStyle,
-  markdownInlineText,
   markdownListItemIndent,
   markdownListItemPrefix,
   markdownTableLayout,
   markdownTableRowHeight,
-  parseMarkdownBlocks,
   splitStreamingMarkdown,
 } from "./viewers/MarkdownViewer";
+import { parseMarkdownBlocks } from "./viewers/markdownParser";
 
 const MIN_COLUMNS = 1;
 const CODE_BLOCK_HORIZONTAL_CHROME = 4;
@@ -52,10 +50,6 @@ export function measureWrappedRows(
   return Math.max(1, wrapped.split("\n").length);
 }
 
-function measureInlineRows(text: string, columns: number): number {
-  return measureWrappedRows(markdownInlineText(text), columns);
-}
-
 function measureMarkdownStableRows(markdown: string, columns: number): number {
   const blocks = parseMarkdownBlocks(markdown);
   let rows = 0;
@@ -68,12 +62,12 @@ function measureMarkdownStableRows(markdown: string, columns: number): number {
       const style = markdownHeadingStyle(block.depth);
       rows +=
         marginTop +
-        measureInlineRows(`${style.prefix}${block.text}`, columns) +
+        measureWrappedRows(`${style.prefix}${block.text}`, columns) +
         (style.rule ? 1 : 0);
       continue;
     }
     if (block.type === "paragraph") {
-      rows += marginTop + measureInlineRows(block.text, columns);
+      rows += marginTop + measureWrappedRows(block.text, columns);
       continue;
     }
     if (block.type === "list") {
@@ -84,7 +78,7 @@ function measureMarkdownStableRows(markdown: string, columns: number): number {
         marginTop +
         block.items.reduce((total, item) => {
           const chrome = markdownListItemIndent(item) + markdownListItemPrefix(item).length;
-          return total + measureInlineRows(item.text, Math.max(1, columns - chrome));
+          return total + measureWrappedRows(item.text, Math.max(1, columns - chrome));
         }, 0);
       continue;
     }
@@ -104,7 +98,7 @@ function measureMarkdownStableRows(markdown: string, columns: number): number {
       const quoteColumns = Math.max(1, columns - 3);
       rows +=
         marginTop +
-        block.lines.reduce((total, line) => total + measureInlineRows(line, quoteColumns), 0);
+        block.lines.reduce((total, line) => total + measureWrappedRows(line.text, quoteColumns), 0);
       continue;
     }
     if (block.type === "code") {
@@ -204,8 +198,4 @@ export function createStreamTailWindow({
     forceRaw: true,
     measuredRows: measureWrappedRows(clippedText, columns),
   };
-}
-
-export function displayWidth(text: string): number {
-  return stringWidth(text);
 }

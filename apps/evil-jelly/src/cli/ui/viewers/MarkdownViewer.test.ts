@@ -5,13 +5,20 @@ import { describe, expect, it } from "vitest";
 import {
   MarkdownViewer,
   markdownHeadingStyle,
-  markdownInlineText,
   markdownTableLayout,
   markdownTableRowHeight,
-  parseMarkdownBlocks,
   splitStreamingMarkdown,
   terminalCellWidth,
 } from "./MarkdownViewer";
+import { parseMarkdownBlocks } from "./markdownParser";
+
+function renderedInlineText(markdown: string): string {
+  const [block] = parseMarkdownBlocks(markdown);
+  if (block?.type === "heading" || block?.type === "paragraph") {
+    return block.text;
+  }
+  throw new Error(`Expected one heading or paragraph, got ${block?.type ?? "nothing"}`);
+}
 
 describe("parseMarkdownBlocks", () => {
   it("groups prose, headings, lists, quotes, and code fences", () => {
@@ -34,7 +41,7 @@ describe("parseMarkdownBlocks", () => {
       ].join("\n"),
     );
 
-    expect(blocks).toEqual([
+    expect(blocks).toMatchObject([
       { type: "heading", depth: 1, text: "Title" },
       { type: "paragraph", text: "First paragraph continues here." },
       {
@@ -45,13 +52,13 @@ describe("parseMarkdownBlocks", () => {
           { depth: 0, marker: null, text: "two" },
         ],
       },
-      { type: "quote", lines: ["quoted", "text"] },
+      { type: "quote", lines: [{ text: "quoted" }, { text: "text" }] },
       { type: "code", language: "ts", lines: ["const value = 1;"] },
     ]);
   });
 
   it("keeps ordered lists separate from unordered lists", () => {
-    expect(parseMarkdownBlocks("1. first\n2. second\n- third")).toEqual([
+    expect(parseMarkdownBlocks("1. first\n2. second\n- third")).toMatchObject([
       {
         type: "list",
         ordered: true,
@@ -67,7 +74,7 @@ describe("parseMarkdownBlocks", () => {
   it("keeps one loose list together instead of restarting it at every blank line", () => {
     const [block] = parseMarkdownBlocks("1. first\n\n2. second\n\n3. third");
 
-    expect(block).toEqual({
+    expect(block).toMatchObject({
       type: "list",
       ordered: true,
       items: [
@@ -79,7 +86,7 @@ describe("parseMarkdownBlocks", () => {
   });
 
   it("ends a loose list at content that is not another item", () => {
-    expect(parseMarkdownBlocks("- first\n\nProse after the list.")).toEqual([
+    expect(parseMarkdownBlocks("- first\n\nProse after the list.")).toMatchObject([
       { type: "list", ordered: false, items: [{ depth: 0, marker: null, text: "first" }] },
       { type: "paragraph", text: "Prose after the list." },
     ]);
@@ -90,7 +97,7 @@ describe("parseMarkdownBlocks", () => {
       ["1. outer", "    1. inner", "    2. inner", "2. outer", "    - bullet"].join("\n"),
     );
 
-    expect(block).toEqual({
+    expect(block).toMatchObject({
       type: "list",
       ordered: true,
       items: [
@@ -106,7 +113,7 @@ describe("parseMarkdownBlocks", () => {
   it("starts a list from its own first marker", () => {
     const [block] = parseMarkdownBlocks("5. fifth\n6. sixth");
 
-    expect(block).toEqual({
+    expect(block).toMatchObject({
       type: "list",
       ordered: true,
       items: [
@@ -126,7 +133,7 @@ describe("parseMarkdownBlocks", () => {
           "| beta | 3 | pending |",
         ].join("\n"),
       ),
-    ).toEqual([
+    ).toMatchObject([
       {
         type: "table",
         headers: ["Name", "Count", "Status"],
@@ -142,7 +149,7 @@ describe("parseMarkdownBlocks", () => {
   it("keeps an escaped pipe inside a table code span", () => {
     expect(
       parseMarkdownBlocks(["| a | b |", "| --- | --- |", "| `x\\|y` | z |"].join("\n")),
-    ).toEqual([
+    ).toMatchObject([
       {
         type: "table",
         headers: ["a", "b"],
@@ -153,15 +160,15 @@ describe("parseMarkdownBlocks", () => {
   });
 
   it("keeps pipe text without a separator row as prose", () => {
-    expect(parseMarkdownBlocks("Use foo | bar as plain text.")).toEqual([
+    expect(parseMarkdownBlocks("Use foo | bar as plain text.")).toMatchObject([
       { type: "paragraph", text: "Use foo | bar as plain text." },
     ]);
   });
 
   it("consumes incomplete streaming block starts as prose", () => {
-    expect(parseMarkdownBlocks("## ")).toEqual([{ type: "paragraph", text: "##" }]);
-    expect(parseMarkdownBlocks("- ")).toEqual([{ type: "paragraph", text: "-" }]);
-    expect(parseMarkdownBlocks("1. ")).toEqual([{ type: "paragraph", text: "1." }]);
+    expect(parseMarkdownBlocks("## ")).toMatchObject([{ type: "paragraph", text: "##" }]);
+    expect(parseMarkdownBlocks("- ")).toMatchObject([{ type: "paragraph", text: "-" }]);
+    expect(parseMarkdownBlocks("1. ")).toMatchObject([{ type: "paragraph", text: "1." }]);
   });
 
   it("supports CommonMark and GFM structures through mdast", () => {
@@ -179,7 +186,7 @@ describe("parseMarkdownBlocks", () => {
           "~~~",
         ].join("\n"),
       ),
-    ).toEqual([
+    ).toMatchObject([
       { type: "heading", depth: 1, text: "Setext title" },
       {
         type: "list",
@@ -270,6 +277,44 @@ describe("MarkdownViewer lists", () => {
 
     expect(stripAnsi(output).split("\n")).toContain("  1. 子步骤 A");
     expect(stripAnsi(output).split("\n")).toContain("  2. 子步骤 B");
+  });
+});
+
+describe("inline emphasis from the block AST", () => {
+  it("renders leading emphasis without reparsing block text", () => {
+    const output = renderToString(
+      createElement(MarkdownViewer, {
+        text: [
+          "# **`PASTE_COALESCE_MS = 30`** — threshold",
+          "",
+          "**[Image #N]** — attachment",
+          "",
+          '- _emph_ and __strong__, **"quoted"**, **(parenthesized)**',
+        ].join("\n"),
+        columns: 100,
+      }),
+      { columns: 100 },
+    );
+    const visible = stripAnsi(output);
+
+    expect(visible).toContain("PASTE_COALESCE_MS = 30 — threshold");
+    expect(visible).toContain("[Image #N] — attachment");
+    expect(visible).toContain('emph and strong, "quoted", (parenthesized)');
+    expect(visible).not.toContain("**");
+    expect(visible).not.toContain("__");
+    expect(visible).not.toContain("_emph_");
+  });
+
+  it("keeps inline nodes and blank lines inside quotes", () => {
+    const output = renderToString(
+      createElement(MarkdownViewer, {
+        text: ["> **first", "> line**", ">", ">> nested"].join("\n"),
+        columns: 80,
+      }),
+      { columns: 80 },
+    );
+
+    expect(stripAnsi(output).split("\n")).toEqual([" > first", " > line", " >", " > > nested"]);
   });
 });
 
@@ -445,15 +490,15 @@ describe("markdown table measurement", () => {
   });
 
   it("measures rendered inline text instead of markdown source text", () => {
-    expect(markdownInlineText("`ast_find_references` and **孤立**")).toBe(
+    expect(renderedInlineText("`ast_find_references` and **孤立**")).toBe(
       "ast_find_references and 孤立",
     );
-    expect(markdownInlineText("*emphasis*, ~~removed~~, and [label](https://example.com)")).toBe(
+    expect(renderedInlineText("*emphasis*, ~~removed~~, and [label](https://example.com)")).toBe(
       "emphasis, removed, and label",
     );
-    expect(markdownInlineText("line one  \nline two")).toBe("line one\nline two");
-    expect(markdownInlineText("**bold with *inner***")).toBe("bold with inner");
-    expect(terminalCellWidth(markdownInlineText("`abc`"))).toBe(3);
+    expect(renderedInlineText("line one  \nline two")).toBe("line one\nline two");
+    expect(renderedInlineText("**bold with *inner***")).toBe("bold with inner");
+    expect(terminalCellWidth(renderedInlineText("`abc`"))).toBe(3);
   });
 
   it("counts CJK and emoji using terminal cell width", () => {
