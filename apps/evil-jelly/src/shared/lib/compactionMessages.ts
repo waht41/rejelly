@@ -20,28 +20,6 @@ export function isCompactionBridgeMessage(message: Message): boolean {
   );
 }
 
-/**
- * Remove only the app-owned marker before adapter-side role merging, preserving unrelated metadata.
- * Persisted history keeps the marker; model wire messages do not need it.
- */
-export function withoutCompactionBridgeMarker(message: Message): Message {
-  if (!isStructuredCompactionBridge(message)) {
-    return message;
-  }
-  const extra = { ...message.extra };
-  const remainingRejelly = { ...(extra.rejelly as Record<string, unknown>) };
-  delete remainingRejelly.kind;
-  if (Object.keys(remainingRejelly).length > 0) {
-    extra.rejelly = remainingRejelly;
-  } else {
-    delete extra.rejelly;
-  }
-  return {
-    ...message,
-    ...(Object.keys(extra).length > 0 ? { extra } : { extra: undefined }),
-  };
-}
-
 function isStructuredCompactionBridge(message: Message): boolean {
   const rejelly = message.extra?.rejelly;
   return (

@@ -8,7 +8,6 @@ import {
   isCompactionBridgeMessage,
   PRIOR_USER_MESSAGE_TAG,
   unwrapPriorUserMessageText,
-  withoutCompactionBridgeMarker,
 } from "../../shared/lib/compactionMessages";
 import { renderPseudoXmlElement, selectPseudoXmlBoundaryTag } from "../../shared/lib/pseudoXml";
 import {
@@ -235,7 +234,7 @@ async function summarizeCompactionInput(
       // `tools`) omits the tool-definitions block, busting the provider prompt-cache prefix and
       // forcing a full re-encode of the large working set.
       const summaryRuntime = ctx.fork({ toolCallLoopMiddlewares: [] });
-      const turn = await executeTurn(attemptMessages.map(withoutCompactionBridgeMarker), {
+      const turn = await executeTurn(attemptMessages, {
         runtime: summaryRuntime,
         toolChoice: "none",
         channel: COMPACTION_STREAM_CHANNEL,

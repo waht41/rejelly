@@ -9,7 +9,6 @@ import {
 } from "@rejelly/core/policy";
 import type { LineInputValue } from "../../shared/AgentShared";
 import { buildUserMessageContent } from "../../shared/attachments/messageContent";
-import { withoutCompactionBridgeMarker } from "../../shared/lib/compactionMessages";
 import { appendMessageContentSuffix } from "../../shared/lib/message";
 import { estimateMessagesTokens } from "../../shared/lib/tokens";
 import {
@@ -162,9 +161,7 @@ export async function runResilientToolCallLoopPolicy<T = unknown>(
       await compaction.maybeCompact(deltaMessages);
 
       const result: LoopTurnResult = await executeValidatedLoopTurn({
-        runtime: ctx.fork({
-          messages: compaction.messages(deltaMessages).map(withoutCompactionBridgeMarker),
-        }),
+        runtime: ctx.fork({ messages: compaction.messages(deltaMessages) }),
         jsonSchema: snapshot.jsonSchema,
         parser: snapshot.parser,
         maxRetries: ctx.maxRetries,

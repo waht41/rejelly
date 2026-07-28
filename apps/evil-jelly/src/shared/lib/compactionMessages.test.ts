@@ -5,7 +5,6 @@ import {
   countConversationTurns,
   isCompactionBridgeMessage,
   unwrapPriorUserMessageText,
-  withoutCompactionBridgeMarker,
 } from "./compactionMessages";
 
 describe("compaction message classification", () => {
@@ -55,10 +54,5 @@ describe("compaction message classification", () => {
         content: "[Context was automatically compacted using the legacy format]",
       }),
     ).toBe(true);
-    expect(withoutCompactionBridgeMarker(structured)).toEqual({
-      role: "user",
-      content: "A future bridge format with different text",
-      extra: { providerHint: "keep" },
-    });
   });
 });
