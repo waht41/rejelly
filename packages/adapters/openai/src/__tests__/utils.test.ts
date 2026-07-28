@@ -68,6 +68,49 @@ describe("OpenAI message conversion", () => {
     ]);
   });
 
+  it("ignores Rejelly-owned metadata when merging wire messages", () => {
+    const messages = toOpenAIMessages([
+      {
+        role: "user",
+        content: "stable instruction",
+        extra: { rejelly: { kind: "instruction" } },
+      },
+      { role: "user", content: "actual task" },
+      { role: "assistant", content: "reply" },
+      { role: "user", content: "retained historical task" },
+      {
+        role: "user",
+        content: "compaction summary",
+        extra: { rejelly: { kind: "compaction_bridge" } },
+      },
+    ]);
+
+    expect(messages).toEqual([
+      { role: "user", content: "stable instruction\n\nactual task" },
+      { role: "assistant", content: "reply" },
+      { role: "user", content: "retained historical task\n\ncompaction summary" },
+    ]);
+  });
+
+  it("keeps provider metadata as a wire-message merge boundary", () => {
+    const messages = toOpenAIMessages([
+      {
+        role: "user",
+        content: "provider-specific message",
+        extra: {
+          providerHint: "preserve-boundary",
+          rejelly: { kind: "instruction" },
+        },
+      },
+      { role: "user", content: "actual task" },
+    ]);
+
+    expect(messages).toEqual([
+      { role: "user", content: "provider-specific message" },
+      { role: "user", content: "actual task" },
+    ]);
+  });
+
   it("keeps user image content as multimodal Chat Completions content", () => {
     const messages = toOpenAIMessages([
       {
