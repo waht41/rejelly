@@ -3,7 +3,6 @@ import wrapAnsi from "wrap-ansi";
 import { normalizeNewlines } from "../../shared/lib/string";
 import {
   markdownHeadingStyle,
-  markdownInlineText,
   markdownListItemIndent,
   markdownListItemPrefix,
   markdownTableLayout,
@@ -53,7 +52,7 @@ export function measureWrappedRows(
 }
 
 function measureInlineRows(text: string, columns: number): number {
-  return measureWrappedRows(markdownInlineText(text), columns);
+  return measureWrappedRows(text, columns);
 }
 
 function measureMarkdownStableRows(markdown: string, columns: number): number {
@@ -104,7 +103,7 @@ function measureMarkdownStableRows(markdown: string, columns: number): number {
       const quoteColumns = Math.max(1, columns - 3);
       rows +=
         marginTop +
-        block.lines.reduce((total, line) => total + measureInlineRows(line, quoteColumns), 0);
+        block.lines.reduce((total, line) => total + measureInlineRows(line.text, quoteColumns), 0);
       continue;
     }
     if (block.type === "code") {

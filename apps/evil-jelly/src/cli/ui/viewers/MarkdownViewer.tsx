@@ -8,14 +8,12 @@ import {
   type MarkdownBlock,
   type MarkdownListItem,
   type MarkdownPhrasingContent,
-  markdownInlineText,
   parseMarkdownBlocks,
-  parseMarkdownInline,
   type TableAlignment,
 } from "./markdownParser";
 
 export type { MarkdownBlock, MarkdownListItem, TableAlignment } from "./markdownParser";
-export { markdownInlineText, parseMarkdownBlocks } from "./markdownParser";
+export { parseMarkdownBlocks } from "./markdownParser";
 
 const MAX_RENDER_BLOCKS = 500;
 const MIN_TABLE_COLUMN_WIDTH = 3;
@@ -168,8 +166,8 @@ function renderInlineNodes(nodes: MarkdownPhrasingContent[], keyPrefix: string):
   });
 }
 
-function renderInline(text: string, keyPrefix: string): ReactNode[] {
-  return renderInlineNodes(parseMarkdownInline(text), keyPrefix);
+function renderInline(nodes: MarkdownPhrasingContent[], keyPrefix: string): ReactNode[] {
+  return renderInlineNodes(nodes, keyPrefix);
 }
 
 function countOccurrences(text: string, character: string): number {
@@ -251,7 +249,7 @@ function tableCellText(cells: string[], index: number): string {
 }
 
 function tableCellDisplayWidth(value: string): number {
-  return terminalCellWidth(markdownInlineText(value));
+  return terminalCellWidth(value);
 }
 
 export type MarkdownTableLayout = {
@@ -329,7 +327,7 @@ export function markdownTableLayout(
 function wrapTableCell(value: string, width: number): string[] {
   // Link before wrapping: wrap-ansi re-opens the hyperlink on every row, so a
   // URL split across cell lines keeps pointing at the whole target.
-  const text = withTerminalLinks(markdownInlineText(value));
+  const text = withTerminalLinks(value);
   if (text.length === 0) {
     return [""];
   }
@@ -490,15 +488,12 @@ export function MarkdownViewer({
           const style = markdownHeadingStyle(block.depth);
           // The rule underlines the title rather than the viewport, so it stays
           // a heading ornament instead of reading as a horizontal divider.
-          const ruleWidth = Math.min(
-            Math.max(1, columns),
-            terminalCellWidth(markdownInlineText(block.text)),
-          );
+          const ruleWidth = Math.min(Math.max(1, columns), terminalCellWidth(block.text));
           return (
             <Box key={key} flexDirection="column" marginTop={index === 0 ? 0 : 1}>
               <Text bold={style.bold} dimColor={style.dim} color={style.color} wrap="wrap">
                 {style.prefix}
-                {renderInline(block.text, key)}
+                {renderInline(block.nodes, key)}
               </Text>
               {style.rule ? <Text dimColor>{HEADING_RULE_CHARACTER.repeat(ruleWidth)}</Text> : null}
             </Box>
@@ -507,7 +502,7 @@ export function MarkdownViewer({
         if (block.type === "paragraph") {
           return (
             <Box key={key} marginTop={index === 0 ? 0 : 1}>
-              <Text wrap="wrap">{renderInline(block.text, key)}</Text>
+              <Text wrap="wrap">{renderInline(block.nodes, key)}</Text>
             </Box>
           );
         }
@@ -517,7 +512,7 @@ export function MarkdownViewer({
               {block.items.map((item, itemIndex) => (
                 <Box key={`${key}-${itemIndex}`} paddingLeft={markdownListItemIndent(item)}>
                   <Text color="cyan">{markdownListItemPrefix(item)}</Text>
-                  <Text wrap="wrap">{renderInline(item.text, `${key}-${itemIndex}`)}</Text>
+                  <Text wrap="wrap">{renderInline(item.nodes, `${key}-${itemIndex}`)}</Text>
                 </Box>
               ))}
             </Box>
@@ -570,7 +565,7 @@ export function MarkdownViewer({
             <Box key={key} flexDirection="column" marginTop={index === 0 ? 0 : 1} paddingLeft={1}>
               {block.lines.map((line, lineIndex) => (
                 <Text key={`${key}-${lineIndex}`} dimColor wrap="wrap">
-                  &gt; {renderInline(line, `${key}-${lineIndex}`)}
+                  &gt; {renderInline(line.nodes, `${key}-${lineIndex}`)}
                 </Text>
               ))}
             </Box>
