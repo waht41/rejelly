@@ -342,6 +342,71 @@ describe("createInkConfirmWrite", () => {
     expect(usePromptStore.getState().prompt).toMatchObject({ type: "idle" });
   });
 
+  it("states why a shell command was auto-allowed without repeating it", async () => {
+    resetCliStores();
+    const confirmTool = createInkConfirmWrite({ getMode: () => "auto" });
+    const command = `node -e "let a = 1;\n  let b = 2;\n  console.log(a + b);"`;
+
+    await confirmTool({
+      type: "shell_command",
+      command,
+      declaredSafety: "read_only",
+      reason: "Inspect a JSON field.",
+      supportedActions: ["accept", "reject"],
+    });
+
+    const notice = useOutputStore
+      .getState()
+      .history.find((turn) => turn.type === "system" && turn.content.includes("[Auto-allowed]"));
+    expect(notice).toBeDefined();
+    const content = notice?.type === "system" ? notice.content : "";
+    // The reason is the only thing this line says that the tool block does not.
+    expect(content).toBe("[Auto-allowed] declared read_only — Inspect a JSON field.");
+    expect(content).not.toContain("node -e");
+    expect(notice?.type === "system" && notice.oneLine).toBe(true);
+  });
+
+  it("still names the target in a filesystem auto-allow notice", async () => {
+    resetCliStores();
+    const confirmTool = createInkConfirmWrite({ getMode: () => "auto" });
+
+    await confirmTool({
+      type: "fs_write",
+      kind: "edit",
+      filePath: "src/a.ts",
+      unifiedDiff: "--- a\n+++ b\n@@\n-old\n+new\n",
+      proposedContent: "new",
+    });
+
+    const notice = useOutputStore
+      .getState()
+      .history.find((turn) => turn.type === "system" && turn.content.includes("[Auto-allowed]"));
+    // Paths are short and there is no reason field to carry the line on its own.
+    expect(notice?.type === "system" ? notice.content : "").toContain("src/a.ts");
+  });
+
+  it("still shows the full command in the interactive confirmation", async () => {
+    resetCliStores();
+    const confirmTool = createInkConfirmWrite({ getMode: () => "normal" });
+    const command = `rm -rf ${"nested/dir/".repeat(40)}build`;
+
+    const pending = confirmTool({
+      type: "shell_command",
+      command,
+      declaredSafety: "read_only",
+      reason: "why",
+      supportedActions: ["accept", "reject"],
+    });
+
+    await flushMicrotasks();
+    const prompt = usePromptStore.getState().prompt;
+    // Approving something you cannot fully read is the one case where the
+    // untruncated command matters.
+    expect(prompt.type === "actionMenu" ? prompt.message : "").toContain(command);
+    usePromptStore.getState().submitActionChoice("reject");
+    await pending;
+  });
+
   it("normal mode still confirms a confirm-tier command even when declared reversible", async () => {
     resetCliStores();
     const confirmTool = createInkConfirmWrite({ getMode: () => "normal" });

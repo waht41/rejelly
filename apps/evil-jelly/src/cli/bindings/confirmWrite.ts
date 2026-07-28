@@ -59,6 +59,27 @@ type AutoAllowPolicy = {
   delete: boolean;
 };
 
+/**
+ * Flatten a path for an `[Auto-allowed]` notice. The notice is a headline —
+ * logged with `oneLine`, so the renderer truncates it to the terminal width —
+ * and truncation applies per line, so embedded newlines have to go here.
+ */
+function forNotice(target: string): string {
+  return target.replace(/\s*\n\s*/g, " ").trim();
+}
+
+/**
+ * Committed to history as a single truncated row, not wrapped.
+ *
+ * A shell notice says only *why* the command ran without asking. It deliberately
+ * does not repeat the command: the running-tool headline shows it while it runs
+ * and the tool block below names it again once it finishes, so including it here
+ * put the same long line on screen twice in a row.
+ */
+function logNotice(message: string): void {
+  useOutputStore.getState().logSystem(message, { oneLine: true });
+}
+
 function normalizeShellPrefix(prefix: string): string {
   return prefix.trim().replace(/\s+/g, " ");
 }
@@ -93,15 +114,13 @@ function tryAutoAllowFsWrite(
   // Inside-workspace fs writes are diff-reviewed, so "auto" mode accepts them. Outside-workspace
   // writes have a wider boundary and stay manually gated.
   if (getMode() === "auto") {
-    useOutputStore
-      .getState()
-      .logSystem(`[Auto-allowed] ${params.kind} (auto mode) → ${params.filePath}`);
+    logNotice(`[Auto-allowed] ${params.kind} (auto mode) → ${forNotice(params.filePath)}`);
     return { action: "accept" };
   }
   if (!policy[params.kind]) {
     return null;
   }
-  useOutputStore.getState().logSystem(`[Auto-allowed] ${params.kind} → ${params.filePath}`);
+  logNotice(`[Auto-allowed] ${params.kind} → ${forNotice(params.filePath)}`);
   return { action: "accept" };
 }
 
@@ -137,7 +156,7 @@ function tryAutoAllowShellCommand(
   const risk = classifyShellCommand(params.command);
   // Read-only commands run in every mode; irreversible (block) ones are never auto-run.
   if (risk === "auto") {
-    useOutputStore.getState().logSystem(`[Auto-allowed] safe shell → ${params.command}`);
+    logNotice("[Auto-allowed] safe shell (read-only)");
     return { result: { action: "accept" }, declaredReason: "", risk };
   }
 
@@ -146,7 +165,7 @@ function tryAutoAllowShellCommand(
   if (risk !== "block" && isSimpleCommand(params.command)) {
     for (const prefix of shellAutoAllowPrefixes) {
       if (commandMatchesPrefix(params.command, prefix)) {
-        useOutputStore.getState().logSystem(`[Auto-allowed] shell (${prefix}) → ${params.command}`);
+        logNotice(`[Auto-allowed] shell prefix: ${prefix}`);
         return { result: { action: "accept" }, declaredReason: "", risk };
       }
     }
@@ -159,9 +178,7 @@ function tryAutoAllowShellCommand(
     (declaredSafety === "read_only" || declaredSafety === "reversible")
   ) {
     const why = params.reason ? ` — ${params.reason}` : "";
-    useOutputStore
-      .getState()
-      .logSystem(`[Auto-allowed] declared ${declaredSafety}${why} → ${params.command}`);
+    logNotice(`[Auto-allowed] declared ${declaredSafety}${why}`);
     return { result: { action: "accept" }, declaredReason: "", risk };
   }
 
@@ -191,11 +208,9 @@ async function confirmShellCommand(
   const cwd = params.cwd?.trim() ? params.cwd.trim() : "workspace root";
   useOutputStore.getState().setStatus(`shell → ${cwd}`);
   if (blocked) {
-    useOutputStore
-      .getState()
-      .logSystem(
-        "[Auto-allow] Disabled for this command (irreversible/privileged/outbound operation).",
-      );
+    logNotice(
+      "[Auto-allow] Disabled for this command (irreversible/privileged/outbound operation).",
+    );
   }
   const safetyNote = declaredReason ? `\n⚠ ${declaredReason}` : "";
   const selected = await usePromptStore
@@ -208,7 +223,7 @@ async function confirmShellCommand(
 
   if (selected === "accept_shell_prefix") {
     shellAutoAllowPrefixes.add(suggestedPrefix);
-    useOutputStore.getState().logSystem(`[Auto-allow] Enabled shell prefix: ${suggestedPrefix}`);
+    logNotice(`[Auto-allow] Enabled shell prefix: ${suggestedPrefix}`);
     return { action: "accept" };
   }
   return selected === "accept" ? { action: "accept" } : { action: "reject" };
@@ -258,7 +273,7 @@ async function confirmFsWrite(
     policy.create = true;
     policy.edit = true;
     policy.delete = true;
-    useOutputStore.getState().logSystem("[Auto-allow] Enabled for the rest of this session.");
+    logNotice("[Auto-allow] Enabled for the rest of this session.");
     return { action: "accept" };
   }
 

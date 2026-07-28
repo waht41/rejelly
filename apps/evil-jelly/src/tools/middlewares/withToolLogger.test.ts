@@ -236,6 +236,26 @@ describe("withToolLogger", () => {
     });
   });
 
+  it("flattens a multi-line command into a one-row headline", async () => {
+    const bindings = createMockBindings();
+    mockGetBinding.mockReturnValue(bindings);
+
+    const middleware = withToolLogger();
+    const command = "node <<'EOF'\n  console.log(1);\n  console.log(2);\nEOF";
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ctx = { toolName: "run_command", input: { command } } as any;
+
+    await middleware.handler!(ctx, vi.fn().mockResolvedValue("ok"));
+
+    const block = bindings.toolBlocks[0]!;
+    expect(block.summary).not.toContain("\n");
+    expect(block.summary).toBe(
+      "[Tools] run_command → node <<'EOF' console.log(1); console.log(2); EOF",
+    );
+    // The exact text stays recoverable from the arguments.
+    expect(JSON.parse(block.args!).command).toBe(command);
+  });
+
   it("hands the call handle to the running handler and back on the block", async () => {
     const bindings = createMockBindings();
     bindings.logToolStart = () => ({ id: "tc_1", ordinal: 7 });
