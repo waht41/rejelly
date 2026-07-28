@@ -59,22 +59,22 @@ type AutoAllowPolicy = {
   delete: boolean;
 };
 
-const NOTICE_TARGET_MAX_CHARS = 120;
-
 /**
- * Shorten a command or path for an `[Auto-allowed]` notice.
+ * Flatten a command or path for an `[Auto-allowed]` notice.
  *
- * These notices are committed to history, and their renderer is shared with
- * `/expand-tool` output — which must stay verbatim — so the cap has to be
- * applied here rather than at render. Nothing is lost by it: the full command is
- * already on the running-tool headline while it runs, and in the tool block that
- * follows. Without the cap one long command wrapped over six rows, twice.
+ * The notice is a headline: it is logged with `oneLine`, so the renderer
+ * truncates it to the terminal width. Only its own newlines have to go here —
+ * truncation applies per line, so a heredoc would still span several rows.
+ * Nothing is lost either way: the full command is on the running-tool headline
+ * while it runs, and in the tool block that follows.
  */
 function forNotice(target: string): string {
-  const oneLine = target.replace(/\s*\n\s*/g, " ").trim();
-  return oneLine.length <= NOTICE_TARGET_MAX_CHARS
-    ? oneLine
-    : `${oneLine.slice(0, NOTICE_TARGET_MAX_CHARS - 1)}…`;
+  return target.replace(/\s*\n\s*/g, " ").trim();
+}
+
+/** Committed to history as a single truncated row, not wrapped. */
+function logNotice(message: string): void {
+  useOutputStore.getState().logSystem(message, { oneLine: true });
 }
 
 function normalizeShellPrefix(prefix: string): string {
@@ -111,17 +111,13 @@ function tryAutoAllowFsWrite(
   // Inside-workspace fs writes are diff-reviewed, so "auto" mode accepts them. Outside-workspace
   // writes have a wider boundary and stay manually gated.
   if (getMode() === "auto") {
-    useOutputStore
-      .getState()
-      .logSystem(`[Auto-allowed] ${params.kind} (auto mode) → ${forNotice(params.filePath)}`);
+    logNotice(`[Auto-allowed] ${params.kind} (auto mode) → ${forNotice(params.filePath)}`);
     return { action: "accept" };
   }
   if (!policy[params.kind]) {
     return null;
   }
-  useOutputStore
-    .getState()
-    .logSystem(`[Auto-allowed] ${params.kind} → ${forNotice(params.filePath)}`);
+  logNotice(`[Auto-allowed] ${params.kind} → ${forNotice(params.filePath)}`);
   return { action: "accept" };
 }
 
@@ -157,7 +153,7 @@ function tryAutoAllowShellCommand(
   const risk = classifyShellCommand(params.command);
   // Read-only commands run in every mode; irreversible (block) ones are never auto-run.
   if (risk === "auto") {
-    useOutputStore.getState().logSystem(`[Auto-allowed] safe shell → ${forNotice(params.command)}`);
+    logNotice(`[Auto-allowed] safe shell → ${forNotice(params.command)}`);
     return { result: { action: "accept" }, declaredReason: "", risk };
   }
 
@@ -166,9 +162,7 @@ function tryAutoAllowShellCommand(
   if (risk !== "block" && isSimpleCommand(params.command)) {
     for (const prefix of shellAutoAllowPrefixes) {
       if (commandMatchesPrefix(params.command, prefix)) {
-        useOutputStore
-          .getState()
-          .logSystem(`[Auto-allowed] shell (${prefix}) → ${forNotice(params.command)}`);
+        logNotice(`[Auto-allowed] shell (${prefix}) → ${forNotice(params.command)}`);
         return { result: { action: "accept" }, declaredReason: "", risk };
       }
     }
@@ -181,9 +175,7 @@ function tryAutoAllowShellCommand(
     (declaredSafety === "read_only" || declaredSafety === "reversible")
   ) {
     const why = params.reason ? ` — ${params.reason}` : "";
-    useOutputStore
-      .getState()
-      .logSystem(`[Auto-allowed] declared ${declaredSafety}${why} → ${forNotice(params.command)}`);
+    logNotice(`[Auto-allowed] declared ${declaredSafety}${why} → ${forNotice(params.command)}`);
     return { result: { action: "accept" }, declaredReason: "", risk };
   }
 
@@ -213,11 +205,9 @@ async function confirmShellCommand(
   const cwd = params.cwd?.trim() ? params.cwd.trim() : "workspace root";
   useOutputStore.getState().setStatus(`shell → ${cwd}`);
   if (blocked) {
-    useOutputStore
-      .getState()
-      .logSystem(
-        "[Auto-allow] Disabled for this command (irreversible/privileged/outbound operation).",
-      );
+    logNotice(
+      "[Auto-allow] Disabled for this command (irreversible/privileged/outbound operation).",
+    );
   }
   const safetyNote = declaredReason ? `\n⚠ ${declaredReason}` : "";
   const selected = await usePromptStore
@@ -230,7 +220,7 @@ async function confirmShellCommand(
 
   if (selected === "accept_shell_prefix") {
     shellAutoAllowPrefixes.add(suggestedPrefix);
-    useOutputStore.getState().logSystem(`[Auto-allow] Enabled shell prefix: ${suggestedPrefix}`);
+    logNotice(`[Auto-allow] Enabled shell prefix: ${suggestedPrefix}`);
     return { action: "accept" };
   }
   return selected === "accept" ? { action: "accept" } : { action: "reject" };
@@ -280,7 +270,7 @@ async function confirmFsWrite(
     policy.create = true;
     policy.edit = true;
     policy.delete = true;
-    useOutputStore.getState().logSystem("[Auto-allow] Enabled for the rest of this session.");
+    logNotice("[Auto-allow] Enabled for the rest of this session.");
     return { action: "accept" };
   }
 

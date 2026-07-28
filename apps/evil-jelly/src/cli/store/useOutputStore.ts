@@ -61,7 +61,9 @@ export type SessionBanner = {
 };
 
 export type Turn =
-  | { id: string; type: "user" | "system"; content: string }
+  | { id: string; type: "user"; content: string }
+  /** `oneLine`: a notice, truncated to a single row rather than wrapped. */
+  | { id: string; type: "system"; content: string; oneLine?: boolean }
   | { id: string; type: "assistant"; content: string; hidden?: boolean }
   | { id: string; type: "assistant_stream"; content: string; final?: boolean }
   | { id: string; type: "tool"; content: string; tool: ToolBlock }
@@ -97,7 +99,7 @@ interface OutputState {
   logAssistant: (content: string) => void;
   logTool: (block: ToolBlock) => void;
   logDiff: (diff: DiffBlockDetail) => void;
-  logSystem: (content: string) => void;
+  logSystem: (content: string, options?: { oneLine?: boolean }) => void;
   logBanner: (banner: SessionBanner) => void;
   clearStream: () => void;
   clearHistory: () => void;
@@ -314,7 +316,7 @@ export const useOutputStore = create<OutputState>((set) => ({
       history: [...state.history, { id: `b_${turnIdCounter++}`, type: "banner", banner }],
     })),
 
-  logSystem: (content) => {
+  logSystem: (content, options) => {
     // A system line is a notice, not a turn boundary. Most of them are emitted
     // while a tool is mid-flight — every `[Auto-allowed]` confirmation, `/mode`,
     // `/expand-tool` — so it must not retire the running tools or report the
@@ -323,7 +325,10 @@ export const useOutputStore = create<OutputState>((set) => ({
     clearPendingStream();
     streamController.reset();
     set((state) => ({
-      history: [...state.history, { id: `s_${turnIdCounter++}`, type: "system", content }],
+      history: [
+        ...state.history,
+        { id: `s_${turnIdCounter++}`, type: "system", content, oneLine: options?.oneLine },
+      ],
       streamBuffer: "",
     }));
   },

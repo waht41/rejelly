@@ -342,12 +342,10 @@ describe("createInkConfirmWrite", () => {
     expect(usePromptStore.getState().prompt).toMatchObject({ type: "idle" });
   });
 
-  it("caps the command in an auto-allowed notice", async () => {
+  it("marks an auto-allowed notice as a one-row headline", async () => {
     resetCliStores();
     const confirmTool = createInkConfirmWrite({ getMode: () => "auto" });
-    // The notice is committed to history and its renderer is shared with
-    // /expand-tool output, so it cannot be truncated at render time.
-    const command = `node -e "${"const x = 1;".repeat(60)}"`;
+    const command = `node -e "let a = 1;\n  let b = 2;\n  console.log(a + b);"`;
 
     await confirmTool({
       type: "shell_command",
@@ -364,9 +362,10 @@ describe("createInkConfirmWrite", () => {
     const content = notice?.type === "system" ? notice.content : "";
     // Reason kept — it is the only thing this line says that the tool block does not.
     expect(content).toContain("Inspect a JSON field.");
-    expect(content).toContain('→ node -e "const x = 1;');
-    expect(content.endsWith("…")).toBe(true);
-    expect(content.length).toBeLessThan(command.length);
+    // Flattened here; the width cut belongs to the renderer, which knows the terminal.
+    expect(content).not.toContain("\n");
+    expect(content).toContain('→ node -e "let a = 1; let b = 2; console.log(a + b);"');
+    expect(notice?.type === "system" && notice.oneLine).toBe(true);
   });
 
   it("still shows the full command in the interactive confirmation", async () => {

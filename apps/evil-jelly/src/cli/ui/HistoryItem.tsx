@@ -109,7 +109,11 @@ export function HistoryItem({ turn }: { turn: Turn }) {
     const { summary, preview, fullResult, ok, ordinal } = turn.tool;
     const previewLines = compactToolPreview(preview, fullResult, ordinal);
     return (
-      <Box flexDirection="column">
+      // `<Static>` lays its children out at their content width, not the
+      // terminal's, so a truncating child is measured against the full width and
+      // then pushed past it by its siblings. Pin the width the way the user turn
+      // above already does, or the row overflows and the terminal wraps it.
+      <Box flexDirection="column" width={columns}>
         <Box>
           {/* flexShrink={0}: an over-wide headline otherwise makes Yoga squeeze
               the marker instead of truncating the summary, eating its spaces. */}
@@ -124,7 +128,10 @@ export function HistoryItem({ turn }: { turn: Turn }) {
         {previewLines.length > 0 ? (
           <Box flexDirection="column" paddingLeft={2}>
             {previewLines.map((line, index) => (
-              <Text key={index} dimColor>
+              // One row per preview line. The block promises "3 lines and then a
+              // count"; a 500-char JSON line wrapping into six rows breaks that
+              // promise as thoroughly as showing all of them would.
+              <Text key={index} dimColor wrap="truncate-end">
                 {line}
               </Text>
             ))}
@@ -134,8 +141,13 @@ export function HistoryItem({ turn }: { turn: Turn }) {
     );
   }
   return (
-    <Box paddingBottom={1}>
-      <Text dimColor> {turn.content}</Text>
+    <Box paddingBottom={1} width={columns}>
+      {/* Notices (`[Auto-allowed] …`) are headlines and truncate. Everything else
+          — `/expand-tool` output above all — is content and must stay whole. */}
+      <Text dimColor wrap={turn.oneLine ? "truncate-end" : "wrap"}>
+        {" "}
+        {turn.content}
+      </Text>
     </Box>
   );
 }
