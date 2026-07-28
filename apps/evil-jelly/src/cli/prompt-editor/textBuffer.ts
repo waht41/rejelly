@@ -127,20 +127,19 @@ export function cursorRowCol(text: string, cursor: number): { row: number; col: 
   return { row, col: before.length - (lastNl + 1) };
 }
 
+/**
+ * Only the ops that are safe to fire blind are bound as actions. The char- and
+ * word-wise motions and deletes above are deliberately absent: the prompt wraps
+ * them in `placeholderMotion` so the caret can't come to rest inside an inline
+ * `[Image #N]` / `[Pasted text #N …]` token, and a raw action here would be a
+ * way to bypass that. Reach them through `apply` with a composed transform.
+ */
 export interface TextBufferActions {
   insert: (str: string) => void;
-  backspace: () => void;
   deleteForward: () => void;
-  deleteWordLeft: () => void;
   deleteToLineStart: () => void;
-  moveLeft: () => void;
-  moveRight: () => void;
-  moveWordLeft: () => void;
-  moveWordRight: () => void;
   moveLineStart: () => void;
   moveLineEnd: () => void;
-  moveUp: () => void;
-  moveDown: () => void;
   /** Run an arbitrary pure transform against the current state. */
   apply: (fn: (s: BufferState) => BufferState) => void;
   /** Replace the whole text; caret defaults to end. */
@@ -158,18 +157,10 @@ export function useTextBuffer(initial = ""): TextBuffer {
   const actions = useMemo<TextBufferActions>(
     () => ({
       insert: (str) => setState((s) => insert(s, str)),
-      backspace: () => setState(backspace),
       deleteForward: () => setState(deleteForward),
-      deleteWordLeft: () => setState(deleteWordLeft),
       deleteToLineStart: () => setState(deleteToLineStart),
-      moveLeft: () => setState(moveLeft),
-      moveRight: () => setState(moveRight),
-      moveWordLeft: () => setState(moveWordLeft),
-      moveWordRight: () => setState(moveWordRight),
       moveLineStart: () => setState(moveLineStart),
       moveLineEnd: () => setState(moveLineEnd),
-      moveUp: () => setState(moveUp),
-      moveDown: () => setState(moveDown),
       apply: (fn) => setState(fn),
       setText: (text, cursor) =>
         setState({ text, cursor: clamp(cursor ?? text.length, 0, text.length) }),
