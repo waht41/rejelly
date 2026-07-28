@@ -2,20 +2,10 @@ import { renderToString } from "ink";
 import { createElement } from "react";
 import stripAnsi from "strip-ansi";
 import { describe, expect, it } from "vitest";
-import {
-  createStreamTailWindow,
-  displayWidth,
-  measureStreamRows,
-  measureWrappedRows,
-} from "./streamWindow";
+import { createStreamTailWindow, measureStreamRows, measureWrappedRows } from "./streamWindow";
 import { MarkdownViewer } from "./viewers/MarkdownViewer";
 
 describe("stream window measurement", () => {
-  it("uses terminal cell width for CJK and emoji", () => {
-    expect(displayWidth("孤立")).toBe(4);
-    expect(displayWidth("✅仍在使用")).toBe(10);
-  });
-
   it("measures wrapped rows with hard wrapping", () => {
     expect(measureWrappedRows("abcdef", 3)).toBe(2);
     expect(measureWrappedRows("孤立abc", 3)).toBe(3);

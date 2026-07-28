@@ -9,11 +9,9 @@ import {
   type MarkdownListItem,
   type MarkdownPhrasingContent,
   parseMarkdownBlocks,
+  phrasingText,
   type TableAlignment,
 } from "./markdownParser";
-
-export type { MarkdownBlock, MarkdownListItem, TableAlignment } from "./markdownParser";
-export { parseMarkdownBlocks } from "./markdownParser";
 
 const MAX_RENDER_BLOCKS = 500;
 const MIN_TABLE_COLUMN_WIDTH = 3;
@@ -89,25 +87,6 @@ function isIncompleteStreamingBlockStart(line: string): boolean {
   );
 }
 
-function inlineNodeText(node: MarkdownPhrasingContent): string {
-  if (node.type === "text" || node.type === "inlineCode") {
-    return node.value;
-  }
-  if (node.type === "break") {
-    return "\n";
-  }
-  if (node.type === "image") {
-    return node.alt ?? "";
-  }
-  if (node.type === "footnoteReference") {
-    return `[^${node.label ?? node.identifier}]`;
-  }
-  if ("children" in node) {
-    return node.children.map(inlineNodeText).join("");
-  }
-  return "value" in node && typeof node.value === "string" ? node.value : "";
-}
-
 function renderInlineNodes(nodes: MarkdownPhrasingContent[], keyPrefix: string): ReactNode[] {
   return nodes.map((node, index) => {
     const key = `${keyPrefix}-${node.type}-${index}`;
@@ -143,7 +122,7 @@ function renderInlineNodes(nodes: MarkdownPhrasingContent[], keyPrefix: string):
       );
     }
     if (node.type === "link") {
-      const label = node.children.map(inlineNodeText).join("");
+      const label = phrasingText(node.children);
       try {
         return terminalLink(label, new URL(node.url).href);
       } catch {
@@ -162,12 +141,8 @@ function renderInlineNodes(nodes: MarkdownPhrasingContent[], keyPrefix: string):
     if ("children" in node) {
       return <Text key={key}>{renderInlineNodes(node.children, key)}</Text>;
     }
-    return inlineNodeText(node);
+    return phrasingText([node]);
   });
-}
-
-function renderInline(nodes: MarkdownPhrasingContent[], keyPrefix: string): ReactNode[] {
-  return renderInlineNodes(nodes, keyPrefix);
 }
 
 function countOccurrences(text: string, character: string): number {
@@ -248,10 +223,6 @@ function tableCellText(cells: string[], index: number): string {
   return cells[index] ?? "";
 }
 
-function tableCellDisplayWidth(value: string): number {
-  return terminalCellWidth(value);
-}
-
 export type MarkdownTableLayout = {
   widths: number[];
   renderedWidth: number;
@@ -269,8 +240,8 @@ function naturalTableWidths(block: Extract<MarkdownBlock, { type: "table" }>): n
   );
   return Array.from({ length: columnCount }, (_, columnIndex) =>
     Math.max(
-      tableCellDisplayWidth(tableCellText(block.headers, columnIndex)),
-      ...block.rows.map((row) => tableCellDisplayWidth(tableCellText(row, columnIndex))),
+      terminalCellWidth(tableCellText(block.headers, columnIndex)),
+      ...block.rows.map((row) => terminalCellWidth(tableCellText(row, columnIndex))),
       MIN_TABLE_COLUMN_WIDTH,
     ),
   );
@@ -493,7 +464,7 @@ export function MarkdownViewer({
             <Box key={key} flexDirection="column" marginTop={index === 0 ? 0 : 1}>
               <Text bold={style.bold} dimColor={style.dim} color={style.color} wrap="wrap">
                 {style.prefix}
-                {renderInline(block.nodes, key)}
+                {renderInlineNodes(block.nodes, key)}
               </Text>
               {style.rule ? <Text dimColor>{HEADING_RULE_CHARACTER.repeat(ruleWidth)}</Text> : null}
             </Box>
@@ -502,7 +473,7 @@ export function MarkdownViewer({
         if (block.type === "paragraph") {
           return (
             <Box key={key} marginTop={index === 0 ? 0 : 1}>
-              <Text wrap="wrap">{renderInline(block.nodes, key)}</Text>
+              <Text wrap="wrap">{renderInlineNodes(block.nodes, key)}</Text>
             </Box>
           );
         }
@@ -512,7 +483,7 @@ export function MarkdownViewer({
               {block.items.map((item, itemIndex) => (
                 <Box key={`${key}-${itemIndex}`} paddingLeft={markdownListItemIndent(item)}>
                   <Text color="cyan">{markdownListItemPrefix(item)}</Text>
-                  <Text wrap="wrap">{renderInline(item.nodes, `${key}-${itemIndex}`)}</Text>
+                  <Text wrap="wrap">{renderInlineNodes(item.nodes, `${key}-${itemIndex}`)}</Text>
                 </Box>
               ))}
             </Box>
@@ -565,7 +536,7 @@ export function MarkdownViewer({
             <Box key={key} flexDirection="column" marginTop={index === 0 ? 0 : 1} paddingLeft={1}>
               {block.lines.map((line, lineIndex) => (
                 <Text key={`${key}-${lineIndex}`} dimColor wrap="wrap">
-                  &gt; {renderInline(line.nodes, `${key}-${lineIndex}`)}
+                  &gt; {renderInlineNodes(line.nodes, `${key}-${lineIndex}`)}
                 </Text>
               ))}
             </Box>

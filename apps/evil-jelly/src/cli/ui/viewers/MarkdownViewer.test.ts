@@ -7,10 +7,10 @@ import {
   markdownHeadingStyle,
   markdownTableLayout,
   markdownTableRowHeight,
-  parseMarkdownBlocks,
   splitStreamingMarkdown,
   terminalCellWidth,
 } from "./MarkdownViewer";
+import { parseMarkdownBlocks } from "./markdownParser";
 
 function renderedInlineText(markdown: string): string {
   const [block] = parseMarkdownBlocks(markdown);

@@ -41,14 +41,10 @@ export type MarkdownBlock =
   | { type: "code"; language?: string; lines: string[] }
   | { type: "rule" };
 
-function offset(value: number | undefined, fallback: number): number {
-  return typeof value === "number" ? value : fallback;
-}
-
 function nodeSource(markdown: string, node: RootContent): string {
   return markdown.slice(
-    offset(node.position?.start.offset, 0),
-    offset(node.position?.end.offset, markdown.length),
+    node.position?.start.offset ?? 0,
+    node.position?.end.offset ?? markdown.length,
   );
 }
 
@@ -125,10 +121,6 @@ function splitPhrasingLines(nodes: MarkdownPhrasingContent[]): MarkdownPhrasingC
   return lines;
 }
 
-function inline(nodes: MarkdownPhrasingContent[]): MarkdownInline {
-  return { text: phrasingText(nodes), nodes };
-}
-
 function blockquoteLines(quote: Blockquote): MarkdownPhrasingContent[][] {
   const lines: MarkdownPhrasingContent[][] = [];
   let previousEndLine: number | undefined;
@@ -201,7 +193,10 @@ function convertBlock(markdown: string, node: RootContent): MarkdownBlock | null
     };
   }
   if (node.type === "blockquote") {
-    return { type: "quote", lines: blockquoteLines(node).map(inline) };
+    return {
+      type: "quote",
+      lines: blockquoteLines(node).map((nodes) => ({ text: phrasingText(nodes), nodes })),
+    };
   }
   if (node.type === "code") {
     return {
