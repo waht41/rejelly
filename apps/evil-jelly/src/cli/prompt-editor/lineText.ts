@@ -93,9 +93,57 @@ export function coalescePaste(
 export const IMAGE_TOKEN = /\[Image #(\d+)\]/g;
 export const PASTED_TEXT_TOKEN = /\[Pasted text #(\d+) \+(\d+) (lines|chars)\]/g;
 
-/** The `[Image #N]` token ending exactly at `cursor`, if any (for atomic delete). */
-export function imageTokenBefore(text: string, cursor: number): string | null {
-  return text.slice(0, cursor).match(/\[Image #\d+\]$/)?.[0] ?? null;
+// Both placeholders share one alternation so caret motion and deletion can treat
+// either as a single indivisible unit without caring which kind it is. Neither
+// shape can span a newline, so a token always lives inside one logical line.
+const PLACEHOLDER_SOURCE = String.raw`\[Image #\d+\]|\[Pasted text #\d+ \+\d+ (?:lines|chars)\]`;
+const PLACEHOLDER_TOKEN = new RegExp(PLACEHOLDER_SOURCE, "g");
+
+/** Half-open `[start, end)` offsets of one placeholder token in the text. */
+export interface TokenSpan {
+  start: number;
+  end: number;
+}
+
+function* tokenSpans(text: string): Generator<TokenSpan> {
+  for (const match of text.matchAll(PLACEHOLDER_TOKEN)) {
+    yield { start: match.index, end: match.index + match[0].length };
+  }
+}
+
+/**
+ * The placeholder span strictly containing `pos` — edges excluded, so a caret
+ * resting just before or just after a token is *outside* it. Callers use this to
+ * bounce the caret back out, keeping "the caret is never inside a token" an
+ * invariant that the edit ops downstream rely on.
+ */
+export function tokenSpanAt(text: string, pos: number): TokenSpan | null {
+  for (const span of tokenSpans(text)) {
+    if (span.start >= pos) break;
+    if (pos < span.end) return span;
+  }
+  return null;
+}
+
+/**
+ * The placeholder span that a deletion ending at `cursor` should swallow whole:
+ * one ending exactly at the caret, or (defensively) one the caret sits inside.
+ */
+export function tokenSpanBefore(text: string, cursor: number): TokenSpan | null {
+  for (const span of tokenSpans(text)) {
+    if (span.start >= cursor) break;
+    if (cursor <= span.end) return span;
+  }
+  return null;
+}
+
+/**
+ * Pull `start` back to a token boundary so a range deletion can never cut a
+ * placeholder in half (word-wise deletes otherwise stop at the spaces inside
+ * `[Pasted text #1 +13 lines]`).
+ */
+export function alignDeletionStart(text: string, start: number): number {
+  return tokenSpanAt(text, start)?.start ?? start;
 }
 
 /** The `[Pasted text #N +X lines]` token ending exactly at `cursor`, if any. */

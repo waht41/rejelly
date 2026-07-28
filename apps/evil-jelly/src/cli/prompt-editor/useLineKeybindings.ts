@@ -15,12 +15,17 @@ import { type Key, useInput } from "ink";
 import { hasRuntimeTask } from "../../services/stop/runtimeControl";
 import { normalizeNewlines } from "../../shared/lib/string";
 import { useModeStore } from "../store/useModeStore";
+import { looksBinary, stripControlChars } from "./lineText";
 import {
-  imageTokenBefore,
-  looksBinary,
-  pastedTextTokenBefore,
-  stripControlChars,
-} from "./lineText";
+  caretDown,
+  caretLeft,
+  caretRight,
+  caretUp,
+  caretWordLeft,
+  caretWordRight,
+  deletePlaceholderOrChar,
+  deleteWordLeftAtomic,
+} from "./placeholderMotion";
 import { cursorRowCol, type TextBuffer } from "./textBuffer";
 
 // Tab inserts spaces up to the next multiple of this; see the key.tab handler.
@@ -32,24 +37,25 @@ interface MotionBinding {
 }
 
 // Pure caret/delete motions: no prompt state, no branching action. Read top to
-// bottom like a keymap; first match wins.
+// bottom like a keymap; first match wins. The caret ones go through
+// placeholderMotion so `[Image #N]` / `[Pasted text #N …]` behave as one glyph.
 const MOTIONS: MotionBinding[] = [
   {
     when: (_i, k) => k.leftArrow,
-    run: (b, k) => (k.ctrl || k.meta ? b.moveWordLeft() : b.moveLeft()),
+    run: (b, k) => b.apply(k.ctrl || k.meta ? caretWordLeft : caretLeft),
   },
   {
     when: (_i, k) => k.rightArrow,
-    run: (b, k) => (k.ctrl || k.meta ? b.moveWordRight() : b.moveRight()),
+    run: (b, k) => b.apply(k.ctrl || k.meta ? caretWordRight : caretRight),
   },
-  { when: (_i, k) => k.upArrow, run: (b) => b.moveUp() },
-  { when: (_i, k) => k.downArrow, run: (b) => b.moveDown() },
+  { when: (_i, k) => k.upArrow, run: (b) => b.apply(caretUp) },
+  { when: (_i, k) => k.downArrow, run: (b) => b.apply(caretDown) },
   { when: (_i, k) => k.home, run: (b) => b.moveLineStart() },
   { when: (_i, k) => k.end, run: (b) => b.moveLineEnd() },
   { when: (i, k) => k.ctrl && (i === "a" || i === "A"), run: (b) => b.moveLineStart() },
   { when: (i, k) => k.ctrl && (i === "e" || i === "E"), run: (b) => b.moveLineEnd() },
   { when: (i, k) => k.ctrl && (i === "u" || i === "U"), run: (b) => b.deleteToLineStart() },
-  { when: (i, k) => k.ctrl && (i === "w" || i === "W"), run: (b) => b.deleteWordLeft() },
+  { when: (i, k) => k.ctrl && (i === "w" || i === "W"), run: (b) => b.apply(deleteWordLeftAtomic) },
 ];
 
 export interface LineKeybindingDeps {
@@ -154,19 +160,10 @@ export function useLineKeybindings(deps: LineKeybindingDeps): void {
         const last = selectedFiles[selectedFiles.length - 1];
         if (last) removeSelectedFile(last);
       } else if (key.ctrl || key.meta) {
-        buf.deleteWordLeft();
+        buf.apply(deleteWordLeftAtomic);
       } else {
         // Delete whole inline placeholders in one stroke (like cc).
-        const token =
-          imageTokenBefore(buf.text, buf.cursor) ?? pastedTextTokenBefore(buf.text, buf.cursor);
-        if (token) {
-          buf.apply((s) => ({
-            text: s.text.slice(0, s.cursor - token.length) + s.text.slice(s.cursor),
-            cursor: s.cursor - token.length,
-          }));
-        } else {
-          buf.backspace();
-        }
+        buf.apply(deletePlaceholderOrChar);
       }
       return;
     }
