@@ -24,7 +24,7 @@ import { StreamMarkdownViewer } from "./viewers/MarkdownViewer";
 
 const STEER_QUEUE_VISIBLE_ROWS = 3;
 const OUTER_VERTICAL_MARGIN_ROWS = 2;
-const TOOL_TAIL_MAX_ROWS = 6;
+const TOOL_TAIL_MAX_ROWS = 8;
 // Colors cycle by ordinal so parallel tools are told apart at a glance, the way
 // a prefixed multi-process runner does it.
 const TOOL_TAIL_COLORS = ["cyan", "magenta", "yellow", "blue", "green", "red"] as const;
