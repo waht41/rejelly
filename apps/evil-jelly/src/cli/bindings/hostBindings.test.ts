@@ -342,6 +342,55 @@ describe("createInkConfirmWrite", () => {
     expect(usePromptStore.getState().prompt).toMatchObject({ type: "idle" });
   });
 
+  it("caps the command in an auto-allowed notice", async () => {
+    resetCliStores();
+    const confirmTool = createInkConfirmWrite({ getMode: () => "auto" });
+    // The notice is committed to history and its renderer is shared with
+    // /expand-tool output, so it cannot be truncated at render time.
+    const command = `node -e "${"const x = 1;".repeat(60)}"`;
+
+    await confirmTool({
+      type: "shell_command",
+      command,
+      declaredSafety: "read_only",
+      reason: "Inspect a JSON field.",
+      supportedActions: ["accept", "reject"],
+    });
+
+    const notice = useOutputStore
+      .getState()
+      .history.find((turn) => turn.type === "system" && turn.content.includes("[Auto-allowed]"));
+    expect(notice).toBeDefined();
+    const content = notice?.type === "system" ? notice.content : "";
+    // Reason kept — it is the only thing this line says that the tool block does not.
+    expect(content).toContain("Inspect a JSON field.");
+    expect(content).toContain('→ node -e "const x = 1;');
+    expect(content.endsWith("…")).toBe(true);
+    expect(content.length).toBeLessThan(command.length);
+  });
+
+  it("still shows the full command in the interactive confirmation", async () => {
+    resetCliStores();
+    const confirmTool = createInkConfirmWrite({ getMode: () => "normal" });
+    const command = `rm -rf ${"nested/dir/".repeat(40)}build`;
+
+    const pending = confirmTool({
+      type: "shell_command",
+      command,
+      declaredSafety: "read_only",
+      reason: "why",
+      supportedActions: ["accept", "reject"],
+    });
+
+    await flushMicrotasks();
+    const prompt = usePromptStore.getState().prompt;
+    // Approving something you cannot fully read is the one case where the
+    // untruncated command matters.
+    expect(prompt.type === "actionMenu" ? prompt.message : "").toContain(command);
+    usePromptStore.getState().submitActionChoice("reject");
+    await pending;
+  });
+
   it("normal mode still confirms a confirm-tier command even when declared reversible", async () => {
     resetCliStores();
     const confirmTool = createInkConfirmWrite({ getMode: () => "normal" });

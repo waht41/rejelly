@@ -59,6 +59,24 @@ type AutoAllowPolicy = {
   delete: boolean;
 };
 
+const NOTICE_TARGET_MAX_CHARS = 120;
+
+/**
+ * Shorten a command or path for an `[Auto-allowed]` notice.
+ *
+ * These notices are committed to history, and their renderer is shared with
+ * `/expand-tool` output — which must stay verbatim — so the cap has to be
+ * applied here rather than at render. Nothing is lost by it: the full command is
+ * already on the running-tool headline while it runs, and in the tool block that
+ * follows. Without the cap one long command wrapped over six rows, twice.
+ */
+function forNotice(target: string): string {
+  const oneLine = target.replace(/\s*\n\s*/g, " ").trim();
+  return oneLine.length <= NOTICE_TARGET_MAX_CHARS
+    ? oneLine
+    : `${oneLine.slice(0, NOTICE_TARGET_MAX_CHARS - 1)}…`;
+}
+
 function normalizeShellPrefix(prefix: string): string {
   return prefix.trim().replace(/\s+/g, " ");
 }
@@ -95,13 +113,15 @@ function tryAutoAllowFsWrite(
   if (getMode() === "auto") {
     useOutputStore
       .getState()
-      .logSystem(`[Auto-allowed] ${params.kind} (auto mode) → ${params.filePath}`);
+      .logSystem(`[Auto-allowed] ${params.kind} (auto mode) → ${forNotice(params.filePath)}`);
     return { action: "accept" };
   }
   if (!policy[params.kind]) {
     return null;
   }
-  useOutputStore.getState().logSystem(`[Auto-allowed] ${params.kind} → ${params.filePath}`);
+  useOutputStore
+    .getState()
+    .logSystem(`[Auto-allowed] ${params.kind} → ${forNotice(params.filePath)}`);
   return { action: "accept" };
 }
 
@@ -137,7 +157,7 @@ function tryAutoAllowShellCommand(
   const risk = classifyShellCommand(params.command);
   // Read-only commands run in every mode; irreversible (block) ones are never auto-run.
   if (risk === "auto") {
-    useOutputStore.getState().logSystem(`[Auto-allowed] safe shell → ${params.command}`);
+    useOutputStore.getState().logSystem(`[Auto-allowed] safe shell → ${forNotice(params.command)}`);
     return { result: { action: "accept" }, declaredReason: "", risk };
   }
 
@@ -146,7 +166,9 @@ function tryAutoAllowShellCommand(
   if (risk !== "block" && isSimpleCommand(params.command)) {
     for (const prefix of shellAutoAllowPrefixes) {
       if (commandMatchesPrefix(params.command, prefix)) {
-        useOutputStore.getState().logSystem(`[Auto-allowed] shell (${prefix}) → ${params.command}`);
+        useOutputStore
+          .getState()
+          .logSystem(`[Auto-allowed] shell (${prefix}) → ${forNotice(params.command)}`);
         return { result: { action: "accept" }, declaredReason: "", risk };
       }
     }
@@ -161,7 +183,7 @@ function tryAutoAllowShellCommand(
     const why = params.reason ? ` — ${params.reason}` : "";
     useOutputStore
       .getState()
-      .logSystem(`[Auto-allowed] declared ${declaredSafety}${why} → ${params.command}`);
+      .logSystem(`[Auto-allowed] declared ${declaredSafety}${why} → ${forNotice(params.command)}`);
     return { result: { action: "accept" }, declaredReason: "", risk };
   }
 

@@ -138,6 +138,16 @@ function formatToolProgressLine(ctx: ToolContext): string {
   return `[Tools] ${ctx.toolName}…\n`;
 }
 
+/**
+ * A summary is a headline, rendered as a single truncated row. A command that
+ * carries its own newlines (a heredoc, a pasted script) would otherwise still
+ * span several rows, since truncation applies per line. The exact text stays
+ * recoverable — `/expand-tool #N` prints the tool's arguments verbatim.
+ */
+function toHeadline(text: string): string {
+  return text.replace(/\s*\n\s*/g, " ").trim();
+}
+
 function stringifyToolResult(r: unknown): string {
   if (typeof r === "string") return r;
   try {
@@ -208,7 +218,7 @@ export function withToolLogger(): ToolMiddleware {
     handler: async (ctx, next) => {
       return runWithToolDetailSlot(async () => {
         const { printOut, logToolStart, logToolBlock } = getBinding();
-        const summary = formatToolProgressLine(ctx).replace(/…?\n$/, "");
+        const summary = toHeadline(formatToolProgressLine(ctx).replace(/…?\n$/, ""));
         const args = stringifyToolArgs(ctx.toolName, ctx.input);
         // The handle both numbers this call in invocation order and lets a
         // streaming handler attribute its output. Hosts without a live view get

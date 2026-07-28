@@ -111,11 +111,15 @@ export function HistoryItem({ turn }: { turn: Turn }) {
     return (
       <Box flexDirection="column">
         <Box>
-          <Text color={ok ? "green" : "red"}>● </Text>
-          <Text>
-            {ordinal === undefined ? "" : `#${ordinal} `}
-            {summary}
-          </Text>
+          {/* flexShrink={0}: an over-wide headline otherwise makes Yoga squeeze
+              the marker instead of truncating the summary, eating its spaces. */}
+          <Box flexShrink={0}>
+            <Text color={ok ? "green" : "red"}>● </Text>
+            {ordinal === undefined ? null : <Text>{`#${ordinal} `}</Text>}
+          </Box>
+          {/* A headline stays one row. Nothing is lost: `/expand-tool #N`
+              reprints the whole summary along with the full result. */}
+          <Text wrap="truncate-end">{summary}</Text>
         </Box>
         {previewLines.length > 0 ? (
           <Box flexDirection="column" paddingLeft={2}>
