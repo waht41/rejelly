@@ -61,4 +61,29 @@ describe("seedHistoryIntoView", () => {
     expect(calls.assistants).toEqual(["package name is demo"]);
     expect(calls.systems[0]).toContain("Resumed session session_1");
   });
+
+  it("renders compaction as a system boundary instead of a user message", () => {
+    const { bindings, calls } = createBindings();
+    const history: Message[] = [
+      {
+        role: "user",
+        content: "<prior_user_message>\nfix the session store\n</prior_user_message>",
+      },
+      {
+        role: "user",
+        content:
+          "[Context was automatically compacted to fit the model window.]\n\n" +
+          "<compaction_summary>\nprivate internal summary\n</compaction_summary>",
+      },
+      { role: "assistant", content: '{"reply":"Continuing the work."}' },
+    ];
+
+    seedHistoryIntoView(bindings, "session_compacted", history);
+
+    expect(calls.users).toEqual(["fix the session store"]);
+    expect(calls.assistants).toEqual(["Continuing the work."]);
+    expect(calls.systems).toContain("Context was compacted in a previous run.\n");
+    expect(calls.systems.at(-1)).toContain("Resumed session session_compacted (1 prior turns)");
+    expect(calls.users.join("\n")).not.toContain("private internal summary");
+  });
 });

@@ -32,6 +32,7 @@ import {
 } from "../shared/attachments/messageContent";
 import { env } from "../shared/config";
 import { getWorkspaceFsPolicy } from "../shared/fs-policy/workspace-fs-policy";
+import { countConversationTurns } from "../shared/lib/compactionMessages";
 import type { EvilJellyHostBindings } from "../shared/types";
 
 const UnifiedAgentWithAbort = UnifiedAgent.fork({ middlewares: [withAbort()] });
@@ -198,7 +199,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
           formatSessionStatus({
             sessionId: props.sessionId ?? "(ephemeral)",
             workspace: getWorkspaceFsPolicy().getRoot(),
-            turns: history.filter((m) => m.role === "user").length,
+            turns: countConversationTurns(history),
             budget: currentBudget(),
             modelId: env.OPENAI_MODEL_ID,
             contextWindow: env.OPENAI_CONTEXT_WINDOW,

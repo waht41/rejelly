@@ -2,10 +2,15 @@ import type { Message } from "@rejelly/core";
 import { isAbortError, isModelCallError } from "@rejelly/core";
 import { executeTurn, isInstructionMessage, type PromptContext } from "@rejelly/core/policy";
 import {
-  renderPseudoXmlElement,
-  selectPseudoXmlBoundaryTag,
-  unwrapPseudoXmlElement,
-} from "../../shared/lib/pseudoXml";
+  COMPACTION_BRIDGE_MESSAGE_KIND,
+  COMPACTION_NOTICE_PREFIX,
+  COMPACTION_SUMMARY_TAG,
+  isCompactionBridgeMessage,
+  PRIOR_USER_MESSAGE_TAG,
+  unwrapPriorUserMessageText,
+  withoutCompactionBridgeMarker,
+} from "../../shared/lib/compactionMessages";
+import { renderPseudoXmlElement, selectPseudoXmlBoundaryTag } from "../../shared/lib/pseudoXml";
 import {
   estimateMessagesTokens,
   estimateTokens,
@@ -92,16 +97,13 @@ const COMPACTION_REQUEST_TRUNCATED_OUTPUT =
  * where one historical turn ends and the next begins. Past-tense name on purpose: the turns must
  * read as already-received history, not as fresh input awaiting an answer.
  */
-const PRIOR_USER_MESSAGE_TAG = "prior_user_message";
 /** Tag fencing the model-generated summary so its free text cannot read as new user input. */
-const COMPACTION_SUMMARY_TAG = "compaction_summary";
 /**
  * Stable lead-in shared by every notice format ever persisted; the cross-round re-collection
  * filter keys on this so bridge messages from older rounds (including pre-reorder histories,
  * where the notice was a standalone user message) are never picked up as kept user turns. Any
  * format change must keep this exact lead-in (tags go after it, never around the whole message).
  */
-const COMPACTION_NOTICE_PREFIX = "[Context was automatically compacted";
 const COMPACTION_NOTICE =
   `${COMPACTION_NOTICE_PREFIX} to fit the model window. The most recent user turns are retained ` +
   `verbatim above, each inside a <${PRIOR_USER_MESSAGE_TAG}> block; any of them already handled ` +
@@ -180,7 +182,7 @@ export function selectRecentUserMessages(messages: Message[], maxTokens: number)
  */
 function wrapPriorUserMessage(message: Message): Message {
   const text = messageContentToText(message.content).trim();
-  if (unwrapPseudoXmlElement(text, PRIOR_USER_MESSAGE_TAG) !== undefined) {
+  if (unwrapPriorUserMessageText(text) !== text) {
     return message;
   }
   if (message.content == null || typeof message.content === "string") {
@@ -233,7 +235,7 @@ async function summarizeCompactionInput(
       // `tools`) omits the tool-definitions block, busting the provider prompt-cache prefix and
       // forcing a full re-encode of the large working set.
       const summaryRuntime = ctx.fork({ toolCallLoopMiddlewares: [] });
-      const turn = await executeTurn(attemptMessages, {
+      const turn = await executeTurn(attemptMessages.map(withoutCompactionBridgeMarker), {
         runtime: summaryRuntime,
         toolChoice: "none",
         channel: COMPACTION_STREAM_CHANNEL,
@@ -292,12 +294,7 @@ export async function runContextCompaction(
   // turn" and the summaries stack.
   const keptUsers = selectRecentUserMessages(
     working.filter(
-      (message) =>
-        !isInstructionMessage(message) &&
-        !(
-          message.role === "user" &&
-          messageContentToText(message.content).startsWith(COMPACTION_NOTICE_PREFIX)
-        ),
+      (message) => !isInstructionMessage(message) && !isCompactionBridgeMessage(message),
     ),
     config.keepRecentUserTokens ?? DEFAULT_KEEP_RECENT_USER_TOKENS,
   );
@@ -321,6 +318,7 @@ export async function runContextCompaction(
         COMPACTION_SUMMARY_TAG,
         `${prefix}\n${summaryText}`,
       )}`,
+      extra: { rejelly: { kind: COMPACTION_BRIDGE_MESSAGE_KIND } },
     },
   ];
   return { history, keptUserMessages: keptUsers.length };

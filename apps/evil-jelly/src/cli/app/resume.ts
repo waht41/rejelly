@@ -9,6 +9,11 @@ import {
   type SessionRecord,
 } from "../../services/session/sessionStore";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
+import {
+  countConversationTurns,
+  isCompactionBridgeMessage,
+  unwrapPriorUserMessageText,
+} from "../../shared/lib/compactionMessages";
 import type { EvilJellyHostBindings } from "../../shared/types";
 
 /**
@@ -106,6 +111,11 @@ export function seedHistoryIntoView(
   const pendingToolCalls = new Map<string, { name: string; arguments?: string }>();
 
   for (const message of seedHistory) {
+    if (isCompactionBridgeMessage(message)) {
+      bindings.logSystemEvent("Context was compacted in a previous run.\n");
+      continue;
+    }
+
     if (message.role === "assistant" && message.tool_calls && message.tool_calls.length > 0) {
       for (const call of message.tool_calls) {
         pendingToolCalls.set(call.id, { name: call.name, arguments: call.arguments });
@@ -118,7 +128,7 @@ export function seedHistoryIntoView(
       continue;
     }
     if (message.role === "user") {
-      bindings.logUserMessage(text);
+      bindings.logUserMessage(unwrapPriorUserMessageText(text));
     } else if (message.role === "assistant") {
       bindings.logAssistantMessage(assistantDisplayText(text));
     } else if (message.role === "tool") {
@@ -133,7 +143,7 @@ export function seedHistoryIntoView(
       });
     }
   }
-  const priorTurns = seedHistory.filter((m) => m.role === "user").length;
+  const priorTurns = countConversationTurns(seedHistory);
   bindings.logSystemEvent(`Resumed session ${sessionId} (${priorTurns} prior turns).\n`);
 }
 
