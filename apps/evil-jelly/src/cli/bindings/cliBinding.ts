@@ -60,17 +60,19 @@ function createOutputBindings(): Pick<
   | "logSystemEvent"
   | "clearHistory"
   | "onStatusUpdate"
+  | "logToolStart"
+  | "appendToolOutput"
   | "logToolBlock"
 > {
   const out = () => useOutputStore.getState();
 
   return {
-    printOut: (message: string, options) => {
-      if (options?.kind === "tool-progress") {
-        out().appendToolProgress(message);
-        return;
-      }
+    printOut: (message: string) => {
       out().appendStream(message);
+    },
+    logToolStart: (start) => out().beginTool(start),
+    appendToolOutput: (toolCallId: string, chunk: string) => {
+      out().appendToolOutput(toolCallId, chunk);
     },
     logUserMessage: (message: string) => {
       out().logUser(message);

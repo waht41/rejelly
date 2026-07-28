@@ -7,8 +7,9 @@ import { Box, measureElement, Static, Text, useInput, useWindowSize } from "ink"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getQueuedSteers, subscribeSteers } from "../../services/steer/steerControl";
 import type { LineInputValue } from "../../shared/AgentShared";
+import { composeToolTailWindow } from "../store/toolTailWindow";
 import { MODE_META, useModeStore } from "../store/useModeStore";
-import { isRuntimeActive, useOutputStore } from "../store/useOutputStore";
+import { isRuntimeActive, type RunningTool, useOutputStore } from "../store/useOutputStore";
 import { usePromptStore } from "../store/usePromptStore";
 import { useViewStore } from "../store/useViewStore";
 import { HistoryItem } from "./HistoryItem";
@@ -23,6 +24,14 @@ import { StreamMarkdownViewer } from "./viewers/MarkdownViewer";
 
 const STEER_QUEUE_VISIBLE_ROWS = 3;
 const OUTER_VERTICAL_MARGIN_ROWS = 2;
+const TOOL_TAIL_MAX_ROWS = 6;
+// Colors cycle by ordinal so parallel tools are told apart at a glance, the way
+// a prefixed multi-process runner does it.
+const TOOL_TAIL_COLORS = ["cyan", "magenta", "yellow", "blue", "green", "red"] as const;
+
+function toolTailColor(ordinal: number): string {
+  return TOOL_TAIL_COLORS[(ordinal - 1) % TOOL_TAIL_COLORS.length] ?? "cyan";
+}
 
 interface LayoutRows {
   topTransient: number;
@@ -53,15 +62,46 @@ function ModeBadge() {
   );
 }
 
-function ToolProgressList({ items }: { items: string[] }) {
+/**
+ * The running tools and, under them, one shared window of what they are printing.
+ *
+ * Every running tool always keeps its own headline row, so nothing disappears
+ * just because it went quiet; only the output rows compete for the window. The
+ * `#N │` prefix appears once the window actually holds more than one tool —
+ * keyed off the window's contents rather than the number of running tools, so
+ * rows don't gain and lose their prefix as tools come and go around them.
+ */
+function RunningToolList({ tools, maxTailRows }: { tools: RunningTool[]; maxTailRows: number }) {
+  const rows = composeToolTailWindow(tools, maxTailRows);
+  const prefixed = new Set(rows.map((row) => row.ordinal)).size > 1;
   return (
     <Box flexDirection="column" marginBottom={1}>
-      {items.map((line, index) => (
-        <Box key={`${index}:${line}`}>
+      {tools.map((tool) => (
+        <Box key={tool.id}>
           <Text color="green">● </Text>
-          <Text dimColor>{line}</Text>
+          <Text color={toolTailColor(tool.ordinal)}>#{tool.ordinal} </Text>
+          <Text dimColor wrap="truncate-end">
+            {tool.summary}
+            {tool.lineCount > 0
+              ? ` (${tool.lineCount} line${tool.lineCount === 1 ? "" : "s"})`
+              : ""}
+          </Text>
         </Box>
       ))}
+      {rows.length > 0 ? (
+        <Box flexDirection="column" paddingLeft={2}>
+          {rows.map((row, index) => (
+            <Box key={`${row.ordinal}:${index}:${row.text}`}>
+              {prefixed ? <Text color={toolTailColor(row.ordinal)}>#{row.ordinal} │ </Text> : null}
+              {/* Truncate, never wrap: one 400-char line would otherwise eat the
+                  whole window, and there is no scrollback to recover it from. */}
+              <Text dimColor wrap="truncate-end">
+                {row.text}
+              </Text>
+            </Box>
+          ))}
+        </Box>
+      ) : null}
     </Box>
   );
 }
@@ -98,7 +138,7 @@ export function Dashboard({ onCtrlCAbort }: { onCtrlCAbort: CtrlCAbortHandler })
   const history = useOutputStore((s) => s.history);
   const clearedStaticTurns = useOutputStore((s) => s.clearedStaticTurns);
   const streamBuffer = useOutputStore((s) => s.streamBuffer);
-  const toolProgress = useOutputStore((s) => s.toolProgress);
+  const runningTools = useOutputStore((s) => s.runningTools);
   const status = useOutputStore((s) => s.status);
 
   const transcriptOpen = useViewStore((s) => s.transcriptOpen);
@@ -116,6 +156,10 @@ export function Dashboard({ onCtrlCAbort }: { onCtrlCAbort: CtrlCAbortHandler })
     [clearedStaticTurns, history],
   );
 
+  // The tail window lives inside the measured transient region, so the assistant
+  // stream's budget already shrinks around it. Keep it a modest slice of the
+  // terminal so a short window still leaves room for everything else.
+  const toolTailRows = Math.max(0, Math.min(TOOL_TAIL_MAX_ROWS, Math.floor(rows / 4)));
   const isAgentWorking = isRuntimeActive(status, streamBuffer);
   const canShowLinePrompt = prompt.type !== "confirm" && prompt.type !== "actionMenu";
   const lineLabel = prompt.type === "line" ? prompt.label : "";
@@ -180,7 +224,9 @@ export function Dashboard({ onCtrlCAbort }: { onCtrlCAbort: CtrlCAbortHandler })
       ) : (
         <Box flexDirection="column" marginTop={1} marginBottom={1}>
           <Box ref={topTransientRef} flexDirection="column">
-            {toolProgress.length > 0 ? <ToolProgressList items={toolProgress} /> : null}
+            {runningTools.length > 0 ? (
+              <RunningToolList tools={runningTools} maxTailRows={toolTailRows} />
+            ) : null}
           </Box>
           {canRenderStream ? (
             <Box flexDirection="column" marginBottom={1}>

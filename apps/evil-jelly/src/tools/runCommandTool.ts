@@ -6,6 +6,7 @@ import type { ToolDefinition } from "@rejelly/core";
 import { getContextSignal } from "@rejelly/core";
 import { z } from "zod";
 import { getBinding } from "../services/binding/hostBindings";
+import { getActiveToolCall } from "../services/binding/toolTranscriptDetail";
 import {
   executeShellCommand,
   getShellEnvironmentSummary,
@@ -101,15 +102,23 @@ export const RunCommandTool: ToolDefinition<typeof runCommandParameters> = {
       },
     });
     const signal = mergeAbortSignals(contextSignal, localAbortController.signal);
+    // Live output goes to this call's slot in the host's transient tail view, not
+    // to printOut — that is the assistant's stream, and anything written there is
+    // committed to scrollback in full and rendered as if the model had said it.
+    // With no handle or no live view the chunks are simply dropped; the collapsed
+    // block still carries the whole result.
+    const toolCall = getActiveToolCall();
+    const onOutput =
+      toolCall && host.appendToolOutput
+        ? (chunk: string) => host.appendToolOutput?.(toolCall.id, chunk)
+        : undefined;
     const result = await executeShellCommand(
       {
         command,
         cwd: resolvedCwd,
         signal,
       },
-      (chunk) => {
-        host.printOut(chunk);
-      },
+      onOutput,
     ).finally(() => {
       popTask();
     });

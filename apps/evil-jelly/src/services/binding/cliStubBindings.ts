@@ -35,6 +35,11 @@ function createStubHostBindings(
     logAssistantMessage: (message: string) => {
       console.log(`[${logPrefix}][assistant] ${message}`);
     },
+    // No live view to attribute output to, so shell chunks just go to stdout as
+    // they arrive — which is what a headless run wants anyway.
+    appendToolOutput: (_toolCallId: string, chunk: string) => {
+      process.stdout.write(chunk);
+    },
     logToolBlock: (block) => {
       console.log(`[${logPrefix}][tool] ${block.summary}`);
     },
