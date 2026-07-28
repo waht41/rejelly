@@ -60,19 +60,22 @@ type AutoAllowPolicy = {
 };
 
 /**
- * Flatten a command or path for an `[Auto-allowed]` notice.
- *
- * The notice is a headline: it is logged with `oneLine`, so the renderer
- * truncates it to the terminal width. Only its own newlines have to go here —
- * truncation applies per line, so a heredoc would still span several rows.
- * Nothing is lost either way: the full command is on the running-tool headline
- * while it runs, and in the tool block that follows.
+ * Flatten a path for an `[Auto-allowed]` notice. The notice is a headline —
+ * logged with `oneLine`, so the renderer truncates it to the terminal width —
+ * and truncation applies per line, so embedded newlines have to go here.
  */
 function forNotice(target: string): string {
   return target.replace(/\s*\n\s*/g, " ").trim();
 }
 
-/** Committed to history as a single truncated row, not wrapped. */
+/**
+ * Committed to history as a single truncated row, not wrapped.
+ *
+ * A shell notice says only *why* the command ran without asking. It deliberately
+ * does not repeat the command: the running-tool headline shows it while it runs
+ * and the tool block below names it again once it finishes, so including it here
+ * put the same long line on screen twice in a row.
+ */
 function logNotice(message: string): void {
   useOutputStore.getState().logSystem(message, { oneLine: true });
 }
@@ -153,7 +156,7 @@ function tryAutoAllowShellCommand(
   const risk = classifyShellCommand(params.command);
   // Read-only commands run in every mode; irreversible (block) ones are never auto-run.
   if (risk === "auto") {
-    logNotice(`[Auto-allowed] safe shell → ${forNotice(params.command)}`);
+    logNotice("[Auto-allowed] safe shell (read-only)");
     return { result: { action: "accept" }, declaredReason: "", risk };
   }
 
@@ -162,7 +165,7 @@ function tryAutoAllowShellCommand(
   if (risk !== "block" && isSimpleCommand(params.command)) {
     for (const prefix of shellAutoAllowPrefixes) {
       if (commandMatchesPrefix(params.command, prefix)) {
-        logNotice(`[Auto-allowed] shell (${prefix}) → ${forNotice(params.command)}`);
+        logNotice(`[Auto-allowed] shell prefix: ${prefix}`);
         return { result: { action: "accept" }, declaredReason: "", risk };
       }
     }
@@ -175,7 +178,7 @@ function tryAutoAllowShellCommand(
     (declaredSafety === "read_only" || declaredSafety === "reversible")
   ) {
     const why = params.reason ? ` — ${params.reason}` : "";
-    logNotice(`[Auto-allowed] declared ${declaredSafety}${why} → ${forNotice(params.command)}`);
+    logNotice(`[Auto-allowed] declared ${declaredSafety}${why}`);
     return { result: { action: "accept" }, declaredReason: "", risk };
   }
 

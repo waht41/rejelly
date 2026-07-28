@@ -75,6 +75,16 @@ describe("HistoryItem tool headline", () => {
     expect(lines[2]).toBe("  short");
     expect(lines[3]).toBe("  … (+2 lines, #3)");
   });
+
+  it("counts withheld characters when no whole line was omitted", () => {
+    // One enormous line: the preview is cut on characters, not lines, so a line
+    // count has nothing to report and used to render "+0 lines".
+    const fullResult = `exitCode=0 status=ok\n${"A".repeat(5000)}`;
+    const preview = `${fullResult.slice(0, 600)}\n…`;
+    const lines = renderTurn(toolTurn("[Tools] run_command → node -e ...", preview, fullResult));
+
+    expect(lines.at(-1)).toMatch(/^ {2}… \(\+4\.\dk chars, #3\)$/);
+  });
 });
 
 describe("HistoryItem system turn", () => {

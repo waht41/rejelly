@@ -6,6 +6,29 @@ import { MarkdownViewer } from "./viewers/MarkdownViewer";
 const TOOL_PREVIEW_OUTPUT_ROWS = 3;
 const TRUNCATION_LINES = new Set(["...", "…"]);
 
+function formatApproxCount(count: number): string {
+  return count < 1000 ? String(count) : `${(count / 1000).toFixed(1).replace(/\.0$/, "")}k`;
+}
+
+/**
+ * How much of the result the preview is holding back.
+ *
+ * The preview is cut on two axes — at six lines *or* six hundred characters —
+ * so a line count alone cannot describe it. One 5000-character line is trimmed
+ * hard while omitting no whole line at all, which used to be reported as the
+ * self-contradictory "+0 lines".
+ */
+function describeOmission(shown: string[], fullResult: string): string {
+  const trimmedResult = fullResult.trimEnd();
+  const fullLineCount = trimmedResult.length > 0 ? trimmedResult.split("\n").length : 0;
+  const omittedLines = Math.max(0, fullLineCount - shown.length);
+  if (omittedLines > 0) {
+    return `+${omittedLines} lines`;
+  }
+  const omittedChars = Math.max(0, trimmedResult.length - shown.join("\n").length);
+  return omittedChars > 0 ? `+${formatApproxCount(omittedChars)} chars` : "";
+}
+
 function compactToolPreview(
   preview: string,
   fullResult: string,
@@ -15,19 +38,14 @@ function compactToolPreview(
   const lastLine = rawLines[rawLines.length - 1];
   const alreadyTruncated = lastLine ? TRUNCATION_LINES.has(lastLine.trim()) : false;
   const contentLines = alreadyTruncated ? rawLines.slice(0, -1) : rawLines;
-  const fullLineCount =
-    fullResult.trimEnd().length > 0 ? fullResult.trimEnd().split("\n").length : 0;
-  const shownLineCount = Math.min(contentLines.length, TOOL_PREVIEW_OUTPUT_ROWS);
-  const omittedLineCount = Math.max(0, fullLineCount - shownLineCount);
+  const shownLines = contentLines.slice(0, TOOL_PREVIEW_OUTPUT_ROWS);
+  const omission = describeOmission(shownLines, fullResult);
   const needsTruncation =
-    alreadyTruncated || contentLines.length > TOOL_PREVIEW_OUTPUT_ROWS || omittedLineCount > 0;
+    alreadyTruncated || contentLines.length > TOOL_PREVIEW_OUTPUT_ROWS || omission.length > 0;
 
   if (needsTruncation) {
-    const suffix = ordinal === undefined ? "" : `, #${ordinal}`;
-    return [
-      ...contentLines.slice(0, TOOL_PREVIEW_OUTPUT_ROWS),
-      `… (+${omittedLineCount} lines${suffix})`,
-    ];
+    const label = [omission, ordinal === undefined ? "" : `#${ordinal}`].filter(Boolean).join(", ");
+    return [...shownLines, label.length > 0 ? `… (${label})` : "…"];
   }
 
   if (contentLines.length === 0 || contentLines[0] === "") {

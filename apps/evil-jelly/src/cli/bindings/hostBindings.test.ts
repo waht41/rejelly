@@ -342,7 +342,7 @@ describe("createInkConfirmWrite", () => {
     expect(usePromptStore.getState().prompt).toMatchObject({ type: "idle" });
   });
 
-  it("marks an auto-allowed notice as a one-row headline", async () => {
+  it("states why a shell command was auto-allowed without repeating it", async () => {
     resetCliStores();
     const confirmTool = createInkConfirmWrite({ getMode: () => "auto" });
     const command = `node -e "let a = 1;\n  let b = 2;\n  console.log(a + b);"`;
@@ -360,12 +360,29 @@ describe("createInkConfirmWrite", () => {
       .history.find((turn) => turn.type === "system" && turn.content.includes("[Auto-allowed]"));
     expect(notice).toBeDefined();
     const content = notice?.type === "system" ? notice.content : "";
-    // Reason kept — it is the only thing this line says that the tool block does not.
-    expect(content).toContain("Inspect a JSON field.");
-    // Flattened here; the width cut belongs to the renderer, which knows the terminal.
-    expect(content).not.toContain("\n");
-    expect(content).toContain('→ node -e "let a = 1; let b = 2; console.log(a + b);"');
+    // The reason is the only thing this line says that the tool block does not.
+    expect(content).toBe("[Auto-allowed] declared read_only — Inspect a JSON field.");
+    expect(content).not.toContain("node -e");
     expect(notice?.type === "system" && notice.oneLine).toBe(true);
+  });
+
+  it("still names the target in a filesystem auto-allow notice", async () => {
+    resetCliStores();
+    const confirmTool = createInkConfirmWrite({ getMode: () => "auto" });
+
+    await confirmTool({
+      type: "fs_write",
+      kind: "edit",
+      filePath: "src/a.ts",
+      unifiedDiff: "--- a\n+++ b\n@@\n-old\n+new\n",
+      proposedContent: "new",
+    });
+
+    const notice = useOutputStore
+      .getState()
+      .history.find((turn) => turn.type === "system" && turn.content.includes("[Auto-allowed]"));
+    // Paths are short and there is no reason field to carry the line on its own.
+    expect(notice?.type === "system" ? notice.content : "").toContain("src/a.ts");
   });
 
   it("still shows the full command in the interactive confirmation", async () => {
