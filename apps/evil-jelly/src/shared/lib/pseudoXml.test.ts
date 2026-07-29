@@ -11,7 +11,7 @@ describe("pseudo XML payloads", () => {
     const body = 'const view = <Panel title="A & B" />;\n';
 
     expect(renderPseudoXmlElement("file", body, { path: 'src/"view".tsx' })).toBe(
-      '<file path="src/&quot;view&quot;.tsx">\n' + body + "\n</file>",
+      `<file path="src/&quot;view&quot;.tsx">\n${body}\n</file>`,
     );
   });
 

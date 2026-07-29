@@ -2,15 +2,15 @@ import type { Message } from "@rejelly/core";
 import { isAbortError, isModelCallError } from "@rejelly/core";
 import { executeTurn, isInstructionMessage, type PromptContext } from "@rejelly/core/policy";
 import {
-  estimateMessagesTokens,
-  estimateTokens,
-  messageContentToText,
-} from "../../shared/lib/tokens";
-import {
   renderPseudoXmlElement,
   selectPseudoXmlBoundaryTag,
   unwrapPseudoXmlElement,
 } from "../../shared/lib/pseudoXml";
+import {
+  estimateMessagesTokens,
+  estimateTokens,
+  messageContentToText,
+} from "../../shared/lib/tokens";
 
 /**
  * Mid-loop context auto-compaction, adapted from openai/codex's mid-turn compaction
@@ -93,8 +93,6 @@ const COMPACTION_REQUEST_TRUNCATED_OUTPUT =
  * read as already-received history, not as fresh input awaiting an answer.
  */
 const PRIOR_USER_MESSAGE_TAG = "prior_user_message";
-const PRIOR_USER_MESSAGE_OPEN = `<${PRIOR_USER_MESSAGE_TAG}>`;
-const PRIOR_USER_MESSAGE_CLOSE = `</${PRIOR_USER_MESSAGE_TAG}>`;
 /** Tag fencing the model-generated summary so its free text cannot read as new user input. */
 const COMPACTION_SUMMARY_TAG = "compaction_summary";
 /**

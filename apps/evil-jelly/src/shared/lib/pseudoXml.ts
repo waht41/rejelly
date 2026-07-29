@@ -44,15 +44,21 @@ export function selectPseudoXmlBoundaryTag(baseTag: string, body: string): strin
   }
 
   const digest = createHash("sha256").update(`${baseTag}\0${body}`).digest("hex").slice(0, 8);
-  let attempt = 0;
-  while (true) {
+  // If two candidates both occur in the body they must occupy distinct start positions:
+  // all candidates share the prefix `</base-digest`, then diverge immediately into `>`
+  // versus `-N>`, so none is a proper prefix of another. A body of length N has only N
+  // start positions, so trying N + 1 distinct candidates guarantees at least one is absent.
+  // The counter guarantees distinctness and termination; the digest makes the usual boundary
+  // deterministic (and therefore prefix-cache stable) while making attempt 0 succeed in practice.
+  for (let attempt = 0; attempt <= body.length; attempt += 1) {
     const suffix = attempt === 0 ? digest : `${digest}-${attempt}`;
     const candidate = `${baseTag}-${suffix}`;
     if (!body.includes(`</${candidate}>`)) {
       return candidate;
     }
-    attempt += 1;
   }
+
+  throw new Error(`Unable to select an XML-like boundary for ${baseTag}`);
 }
 
 /**
