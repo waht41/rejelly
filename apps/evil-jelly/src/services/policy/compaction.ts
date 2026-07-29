@@ -6,6 +6,11 @@ import {
   estimateTokens,
   messageContentToText,
 } from "../../shared/lib/tokens";
+import {
+  renderPseudoXmlElement,
+  selectPseudoXmlBoundaryTag,
+  unwrapPseudoXmlElement,
+} from "../../shared/lib/pseudoXml";
 
 /**
  * Mid-loop context auto-compaction, adapted from openai/codex's mid-turn compaction
@@ -177,21 +182,22 @@ export function selectRecentUserMessages(messages: Message[], maxTokens: number)
  */
 function wrapPriorUserMessage(message: Message): Message {
   const text = messageContentToText(message.content).trim();
-  if (text.startsWith(PRIOR_USER_MESSAGE_OPEN) && text.endsWith(PRIOR_USER_MESSAGE_CLOSE)) {
+  if (unwrapPseudoXmlElement(text, PRIOR_USER_MESSAGE_TAG) !== undefined) {
     return message;
   }
   if (message.content == null || typeof message.content === "string") {
     return {
       ...message,
-      content: `${PRIOR_USER_MESSAGE_OPEN}\n${message.content ?? ""}\n${PRIOR_USER_MESSAGE_CLOSE}`,
+      content: renderPseudoXmlElement(PRIOR_USER_MESSAGE_TAG, message.content ?? ""),
     };
   }
+  const boundaryTag = selectPseudoXmlBoundaryTag(PRIOR_USER_MESSAGE_TAG, text);
   return {
     ...message,
     content: [
-      { type: "text", text: `${PRIOR_USER_MESSAGE_OPEN}\n` },
+      { type: "text", text: `<${boundaryTag}>\n` },
       ...message.content,
-      { type: "text", text: `\n${PRIOR_USER_MESSAGE_CLOSE}` },
+      { type: "text", text: `\n</${boundaryTag}>` },
     ],
   };
 }
@@ -313,9 +319,10 @@ export async function runContextCompaction(
     ...keptUsers.map(wrapPriorUserMessage),
     {
       role: "user",
-      content:
-        `${COMPACTION_NOTICE}\n\n<${COMPACTION_SUMMARY_TAG}>\n` +
-        `${prefix}\n${summaryText}\n</${COMPACTION_SUMMARY_TAG}>`,
+      content: `${COMPACTION_NOTICE}\n\n${renderPseudoXmlElement(
+        COMPACTION_SUMMARY_TAG,
+        `${prefix}\n${summaryText}`,
+      )}`,
     },
   ];
   return { history, keptUserMessages: keptUsers.length };
