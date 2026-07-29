@@ -34,14 +34,23 @@ describe("buildConversationMessages", () => {
 
     expect(messages).toHaveLength(1);
     expect(messages[0]?.content).toContain("explain this");
-    expect(messages[0]?.content).toContain('<attached_file path="src/attached.ts" action="read">');
+    expect(messages[0]?.content).toContain(
+      '<attached_file path="src/attached.ts" path-scope="workspace" action="read">',
+    );
     expect(messages[0]?.content).toContain("export const probe = 1;");
     expect(messages[0]?.extra).toEqual({
       rejelly: {
         kind: "user_input",
         display: {
           text: "explain this",
-          attachments: [{ type: "file", label: "src/attached.ts", action: "read" }],
+          attachments: [
+            {
+              type: "file",
+              label: "src/attached.ts",
+              action: "read",
+              locator: { scope: "workspace", path: "src/attached.ts" },
+            },
+          ],
         },
       },
     });
@@ -53,7 +62,9 @@ describe("buildConversationMessages", () => {
       attachments: [{ type: "file", path: "src" }],
     });
 
-    expect(messages[0]?.content).toContain('<attached_directory path="src" action="list">');
+    expect(messages[0]?.content).toContain(
+      '<attached_directory path="src" path-scope="workspace" action="list">',
+    );
     expect(messages[0]?.content).toContain("[file] attached.ts");
   });
 
@@ -84,7 +95,17 @@ describe("buildConversationMessages", () => {
           kind: "user_input",
           display: {
             text: "what is in this image?",
-            attachments: [{ type: "image", label: "[Image #1]", action: "attach" }],
+            attachments: [
+              {
+                type: "image",
+                label: "[Image #1]",
+                action: "attach",
+                locator: {
+                  scope: "workspace",
+                  path: "clipboard.png",
+                },
+              },
+            ],
           },
         },
       },
@@ -103,7 +124,50 @@ describe("buildConversationMessages", () => {
 
     expect(typeof text).toBe("string");
     expect(text).toContain(`\n${content}\n`);
-    expect(text).toMatch(/<attached_file-[a-f0-9]{8} path="src\/boundary\.txt" action="read">/);
+    expect(text).toMatch(
+      /<attached_file-[a-f0-9]{8} path="src\/boundary\.txt" path-scope="workspace" action="read">/,
+    );
+  });
+
+  it("canonicalizes an absolute in-workspace attachment to a project-relative locator", async () => {
+    const absolutePath = path.join(tmpDir, "src", "attached.ts");
+    const messages = await buildConversationMessages({
+      userInput: "explain this",
+      attachments: [{ type: "file", path: absolutePath }],
+    });
+
+    expect(messages[0]?.content).toContain(
+      '<attached_file path="src/attached.ts" path-scope="workspace" action="read">',
+    );
+    expect(getUserInputDisplay(messages[0]!)).toMatchObject({
+      attachments: [
+        {
+          label: "src/attached.ts",
+          locator: { scope: "workspace", path: "src/attached.ts" },
+        },
+      ],
+    });
+  });
+
+  it("keeps a canonical locator when an in-workspace attachment is missing", async () => {
+    const absolutePath = path.join(tmpDir, "src", "missing.ts");
+    const messages = await buildConversationMessages({
+      userInput: "inspect this",
+      attachments: [{ type: "file", path: absolutePath }],
+    });
+
+    expect(messages[0]?.content).toContain(
+      '<attached_path path="src/missing.ts" path-scope="workspace" status="error">',
+    );
+    expect(getUserInputDisplay(messages[0]!)).toMatchObject({
+      attachments: [
+        {
+          label: "src/missing.ts",
+          status: "error",
+          locator: { scope: "workspace", path: "src/missing.ts" },
+        },
+      ],
+    });
   });
 
   it("summarizes visible attachment actions for the CLI history", async () => {

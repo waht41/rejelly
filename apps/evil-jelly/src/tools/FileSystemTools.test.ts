@@ -48,8 +48,8 @@ describe("ReadFileTool", () => {
     expect(ReadFileTool.parameters.safeParse({ filePaths }).success).toBe(true);
 
     const output = await ReadFileTool.handler({ filePaths });
-    expect(output).toContain('<file path="file-0.txt">');
-    expect(output).toContain('<file path="file-5.txt">');
+    expect(output).toContain('<file path="file-0.txt" path-scope="workspace">');
+    expect(output).toContain('<file path="file-5.txt" path-scope="workspace">');
     expect(output).toContain("content-5");
   });
 
@@ -62,7 +62,7 @@ describe("ReadFileTool", () => {
     });
 
     expect(output).toContain(
-      '<file path="ranged.txt" start-line="10" end-line="12" total-lines="50">',
+      '<file path="ranged.txt" path-scope="workspace" start-line="10" end-line="12" total-lines="50">',
     );
     expect(output).toContain("\nline-10\nline-11\nline-12\n</file>");
     expect(output).not.toContain("10\tline-10");
@@ -84,7 +84,7 @@ describe("ReadFileTool", () => {
       filePaths: [{ path: "big.txt", offset: 5, limit: 2 }],
     });
     expect(rangedRead).toContain(
-      `<file path="big.txt" start-line="5" end-line="6" total-lines="${bigLineCount}">`,
+      `<file path="big.txt" path-scope="workspace" start-line="5" end-line="6" total-lines="${bigLineCount}">`,
     );
     expect(rangedRead).not.toContain("Error:");
   });
@@ -113,8 +113,12 @@ describe("ReadFileTool", () => {
       filePaths: ["whole.txt", { path: "part.txt", offset: 2, limit: 2 }],
     });
 
-    expect(output).toContain('<file path="whole.txt">\nwhole content\n</file>');
-    expect(output).toContain('<file path="part.txt" start-line="2" end-line="3" total-lines="4">');
+    expect(output).toContain(
+      '<file path="whole.txt" path-scope="workspace">\nwhole content\n</file>',
+    );
+    expect(output).toContain(
+      '<file path="part.txt" path-scope="workspace" start-line="2" end-line="3" total-lines="4">',
+    );
     expect(output).toContain("\np2\np3\n</file>");
     expect(output).not.toContain("p4");
   });
@@ -131,7 +135,9 @@ describe("ReadFileTool", () => {
 
       expect(outsideAccessRequests).toHaveLength(1);
       expect(outsideAccessRequests[0]?.mode).toBe("read");
-      expect(output).toContain(`<file path="${outsideFile}">`);
+      expect(output).toContain(
+        `<file path="${outsideFile.replace(/\\/g, "/")}" path-scope="absolute">`,
+      );
       expect(output).toContain("outside content");
     } finally {
       await fs.rm(outsideDir, { recursive: true, force: true });
@@ -163,7 +169,9 @@ describe("ReadFileTool", () => {
     if (typeof output !== "string") {
       throw new TypeError("Expected read_file to return text");
     }
-    const opening = output.match(/^<(file-[a-f0-9]{8}) path="boundary\.txt">/);
+    const opening = output.match(
+      /^<(file-[a-f0-9]{8}) path="boundary\.txt" path-scope="workspace">/,
+    );
 
     expect(opening).not.toBeNull();
     expect(output).toContain(`\n${content}\n`);
