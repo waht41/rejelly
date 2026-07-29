@@ -4,17 +4,13 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { renderPseudoXmlElement } from "../../shared/lib/pseudoXml";
 
 const AGENTS_RULE_FILES = ["AGENTS.override.md", "AGENTS.md"] as const;
 
 interface WorkspaceRule {
   fileName: (typeof AGENTS_RULE_FILES)[number];
   markdown: string;
-}
-
-/** Keep workspace-controlled text from closing or opening the structural XML boundary. */
-function escapeXmlText(value: string): string {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 /** Resolve the first non-empty instruction file using Codex's same-directory precedence. */
@@ -53,10 +49,12 @@ export function buildWorkspaceRuleInstructionBlock(workspaceRoot: string): strin
   if (!rule) {
     return "";
   }
-  return [
-    `<workspace-instructions source="${rule.fileName}">`,
-    "Workspace-provided instructions. Apply these rules while solving the request.",
-    escapeXmlText(rule.markdown),
-    "</workspace-instructions>",
-  ].join("\n");
+  return renderPseudoXmlElement(
+    "workspace-instructions",
+    [
+      "Workspace-provided instructions. Apply these rules while solving the request.",
+      rule.markdown,
+    ].join("\n"),
+    { source: rule.fileName },
+  );
 }
