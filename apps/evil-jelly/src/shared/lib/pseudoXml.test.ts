@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   escapePseudoXmlAttribute,
   renderPseudoXmlElement,
+  renderPseudoXmlEmptyElement,
   selectPseudoXmlBoundaryTag,
   unwrapPseudoXmlElement,
 } from "./pseudoXml";
@@ -42,5 +43,14 @@ describe("pseudo XML payloads", () => {
 
   it("escapes attributes without changing body text", () => {
     expect(escapePseudoXmlAttribute('A & "B" < C > D')).toBe("A &amp; &quot;B&quot; &lt; C &gt; D");
+  });
+
+  it("renders metadata-only elements without inventing a body", () => {
+    expect(
+      renderPseudoXmlEmptyElement("attached_file_ref", {
+        path: 'src/"quoted".ts',
+        "path-scope": "workspace",
+      }),
+    ).toBe('<attached_file_ref path="src/&quot;quoted&quot;.ts" path-scope="workspace" />');
   });
 });

@@ -74,6 +74,12 @@ export function renderPseudoXmlElement(
   return `<${boundaryTag}${renderAttributes(attributes)}>\n${body}\n</${boundaryTag}>`;
 }
 
+/** Render a metadata-only XML-like marker with no body. */
+export function renderPseudoXmlEmptyElement(tag: string, attributes?: PseudoXmlAttributes): string {
+  assertXmlName(tag);
+  return `<${tag}${renderAttributes(attributes)} />`;
+}
+
 /** Unwrap an element produced by renderPseudoXmlElement when it has no attributes. */
 export function unwrapPseudoXmlElement(value: string, baseTag: string): string | undefined {
   assertXmlName(baseTag);

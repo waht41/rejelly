@@ -10,7 +10,7 @@ const undiciMock = vi.hoisted(() => ({
 
 vi.mock("undici", () => undiciMock);
 
-import { loadEvilJellyEnv, resolveGlobalEnvPath, saveGlobalEnvValues } from "./config";
+import { env, loadEvilJellyEnv, resolveGlobalEnvPath, saveGlobalEnvValues } from "./config";
 import { getWorkspaceFsPolicy, setWorkspaceRoot } from "./fs-policy/workspace-fs-policy";
 import { resolveGlobalJellyDir } from "./globalPath";
 
@@ -20,6 +20,7 @@ const trackedEnvKeys = [
   "OPENAI_BASE_URL",
   "OPENAI_PROVIDER",
   "OPENAI_MODEL_ID",
+  "OPENAI_CONTEXT_WINDOW",
   "USE_PROXY",
   "PROXY_URL",
   "HTTP_PROXY",
@@ -215,6 +216,22 @@ describe("loadEvilJellyEnv", () => {
 
     expect(undiciMock.EnvHttpProxyAgent).not.toHaveBeenCalled();
     expect(undiciMock.setGlobalDispatcher).not.toHaveBeenCalled();
+  });
+});
+
+describe("OPENAI_CONTEXT_WINDOW", () => {
+  it("rejects an explicitly configured window below 32k", () => {
+    process.env.OPENAI_CONTEXT_WINDOW = "31999";
+
+    expect(() => env.OPENAI_CONTEXT_WINDOW).toThrow(
+      "OPENAI_CONTEXT_WINDOW must be at least 32000 tokens",
+    );
+  });
+
+  it("accepts a 32k context window", () => {
+    process.env.OPENAI_CONTEXT_WINDOW = "32000";
+
+    expect(env.OPENAI_CONTEXT_WINDOW).toBe(32000);
   });
 });
 

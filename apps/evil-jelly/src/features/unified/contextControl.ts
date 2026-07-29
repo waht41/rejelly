@@ -1,13 +1,22 @@
 import { getBinding } from "../../services/binding/hostBindings";
 import type { PromptChatCompactionConfig } from "../../services/policy/promptChatResilient";
 import { env } from "../../shared/config";
+import { LOW_OPENAI_CONTEXT_WINDOW_TOKENS } from "../../shared/configDefaults";
 
 /** Default real model context window (tokens) when OPENAI_CONTEXT_WINDOW is unset. */
 const DEFAULT_CONTEXT_WINDOW_TOKENS = 200_000;
 /** Trigger mid-loop auto-compaction once estimated live context reaches this fraction of the window. */
 const AUTO_COMPACT_THRESHOLD_RATIO = 0.75;
-/** Verbatim token budget for the most recent user turns retained after an auto-compaction summary. */
-const AUTO_COMPACT_KEEP_RECENT_USER_TOKENS = 6000;
+/**
+ * Maximum token budget for recent user turns retained after compaction. Matches Codex's current
+ * retained message ceiling; Evil additionally charges retained images against it.
+ */
+const AUTO_COMPACT_KEEP_RECENT_USER_TOKEN_CEILING = 64_000;
+/** Preserve a useful amount of recent user intent even on smaller provider windows. */
+const AUTO_COMPACT_KEEP_RECENT_USER_TOKEN_FLOOR = 20_000;
+/** Scale the retained projection down with provider windows smaller than the 200k default. */
+const AUTO_COMPACT_KEEP_RECENT_USER_WINDOW_RATIO = 0.32;
+let warnedLowContextWindow = false;
 
 /**
  * Context-checkpoint prompt, adapted from openai/codex's compaction prompt
@@ -47,6 +56,14 @@ const AUTO_COMPACT_WARN_HINT =
 export function buildAutoCompactionConfig(): PromptChatCompactionConfig {
   // Real model window: the hard ceiling the summarization request is proactively trimmed to fit.
   const contextWindow = env.OPENAI_CONTEXT_WINDOW ?? DEFAULT_CONTEXT_WINDOW_TOKENS;
+  const isLowContextWindow = contextWindow < LOW_OPENAI_CONTEXT_WINDOW_TOKENS;
+  if (isLowContextWindow && !warnedLowContextWindow) {
+    warnedLowContextWindow = true;
+    console.error(
+      `[evil-jelly] Warning: OPENAI_CONTEXT_WINDOW=${contextWindow} is below ` +
+        `${LOW_OPENAI_CONTEXT_WINDOW_TOKENS}; compaction retains less user context and may be less reliable.`,
+    );
+  }
   // Auto-compact trigger budget — kept SEPARATE from the window above (Codex's two-number design).
   // Override via OPENAI_AUTO_COMPACT_TOKENS (absolute, wins) or OPENAI_AUTO_COMPACT_RATIO
   // (fraction of the window) to force early compaction (e.g. in testing) without dragging the
@@ -54,11 +71,20 @@ export function buildAutoCompactionConfig(): PromptChatCompactionConfig {
   const thresholdTokens =
     env.OPENAI_AUTO_COMPACT_TOKENS ??
     Math.floor(contextWindow * (env.OPENAI_AUTO_COMPACT_RATIO ?? AUTO_COMPACT_THRESHOLD_RATIO));
+  const keepRecentUserTokens = Math.min(
+    AUTO_COMPACT_KEEP_RECENT_USER_TOKEN_CEILING,
+    isLowContextWindow
+      ? Math.floor(contextWindow * AUTO_COMPACT_KEEP_RECENT_USER_WINDOW_RATIO)
+      : Math.max(
+          AUTO_COMPACT_KEEP_RECENT_USER_TOKEN_FLOOR,
+          Math.floor(contextWindow * AUTO_COMPACT_KEEP_RECENT_USER_WINDOW_RATIO),
+        ),
+  );
   return {
     thresholdTokens,
     contextWindowTokens: contextWindow,
     summaryInstruction: AUTO_COMPACT_SUMMARY_INSTRUCTION,
-    keepRecentUserTokens: AUTO_COMPACT_KEEP_RECENT_USER_TOKENS,
+    keepRecentUserTokens,
     summaryPrefix: "## Auto-compacted checkpoint",
     warnHint: AUTO_COMPACT_WARN_HINT,
     onCompacted: ({ round, beforeTokens, afterTokens }) => {

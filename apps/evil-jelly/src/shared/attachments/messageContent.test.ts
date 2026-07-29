@@ -70,7 +70,12 @@ describe("buildConversationMessages", () => {
 
   it("converts attached images into multimodal user content", async () => {
     const imagePath = path.join(tmpDir, "clipboard.png");
-    await fs.writeFile(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    const imageBytes = Buffer.alloc(24);
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(imageBytes);
+    imageBytes.write("IHDR", 12, "ascii");
+    imageBytes.writeUInt32BE(640, 16);
+    imageBytes.writeUInt32BE(480, 20);
+    await fs.writeFile(imagePath, imageBytes);
 
     const messages = await buildConversationMessages({
       userInput: "what is in this image?",
@@ -85,7 +90,7 @@ describe("buildConversationMessages", () => {
         {
           type: "image",
           image: {
-            url: "data:image/png;base64,iVBORw==",
+            url: `data:image/png;base64,${imageBytes.toString("base64")}`,
             detail: "auto",
           },
         },
@@ -93,6 +98,7 @@ describe("buildConversationMessages", () => {
       extra: {
         rejelly: {
           kind: "user_input",
+          imageDimensions: [{ width: 640, height: 480 }],
           display: {
             text: "what is in this image?",
             attachments: [

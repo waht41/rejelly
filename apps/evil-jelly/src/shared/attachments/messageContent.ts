@@ -9,6 +9,7 @@ import {
   fileLocatorFromUserPath,
 } from "../fs-policy/file-locator";
 import { getWorkspaceFsPolicy } from "../fs-policy/workspace-fs-policy";
+import { readImageDimensions } from "../lib/imageDimensions";
 import { renderPseudoXmlElement } from "../lib/pseudoXml";
 
 const MAX_ATTACHMENT_BYTES_PER_FILE = 80 * 1024;
@@ -37,9 +38,16 @@ const userInputDisplaySchema = z.object({
   attachments: z.array(userInputAttachmentDisplaySchema),
 });
 
+const imageDimensionsSchema = z.object({
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+});
+
 const userInputMetadataSchema = z.object({
   kind: z.literal(USER_INPUT_MESSAGE_KIND),
   display: userInputDisplaySchema,
+  /** Aligned by index with image content parts; null means the raster header was unreadable. */
+  imageDimensions: z.array(imageDimensionsSchema.nullable()).optional(),
 });
 
 export type UserInputAttachmentDisplay = z.infer<typeof userInputAttachmentDisplaySchema>;
@@ -145,6 +153,15 @@ export function getUserInputDisplay(message: Message): UserInputDisplay | undefi
   return metadata.success ? metadata.data.display : undefined;
 }
 
+export function getUserInputImageDimensions(
+  message: Message,
+): Array<{ width: number; height: number } | undefined> {
+  const metadata = userInputMetadataSchema.safeParse(message.extra?.rejelly);
+  return metadata.success
+    ? (metadata.data.imageDimensions?.map((dimensions) => dimensions ?? undefined) ?? [])
+    : [];
+}
+
 async function buildAttachmentContext(attachments: UserAttachment[] = []): Promise<string> {
   const policy = getWorkspaceFsPolicy();
   const paths = uniqueAttachments(attachments).filter((attachment) => attachment.type === "file");
@@ -246,12 +263,18 @@ function mimeTypeForImage(pathname: string, explicit?: UserImageAttachment["mime
   }
 }
 
-async function buildImageParts(attachments: UserAttachment[] = []): Promise<ContentPart[]> {
+interface BuiltImageParts {
+  parts: ContentPart[];
+  dimensions: Array<{ width: number; height: number } | null>;
+}
+
+async function buildImageParts(attachments: UserAttachment[] = []): Promise<BuiltImageParts> {
   const policy = getWorkspaceFsPolicy();
   const images = uniqueAttachments(attachments).filter(
     (attachment): attachment is UserImageAttachment => attachment.type === "image",
   );
   const parts: ContentPart[] = [];
+  const dimensions: BuiltImageParts["dimensions"] = [];
   for (const image of images) {
     const absPath = path.isAbsolute(image.path)
       ? image.path
@@ -267,6 +290,7 @@ async function buildImageParts(attachments: UserAttachment[] = []): Promise<Cont
     }
     const bytes = await fs.readFile(absPath);
     const mimeType = mimeTypeForImage(absPath, image.mimeType);
+    const imageDimensions = readImageDimensions(bytes);
     parts.push({
       type: "image",
       image: {
@@ -274,34 +298,48 @@ async function buildImageParts(attachments: UserAttachment[] = []): Promise<Cont
         detail: image.detail ?? "auto",
       },
     });
+    dimensions.push(imageDimensions ?? null);
   }
-  return parts;
+  return { parts, dimensions };
+}
+
+async function buildUserMessagePayload(props: {
+  userInput: string;
+  attachments?: UserAttachment[];
+}): Promise<{ content: Message["content"]; imageDimensions: BuiltImageParts["dimensions"] }> {
+  const [attachmentContext, images] = await Promise.all([
+    buildAttachmentContext(props.attachments),
+    buildImageParts(props.attachments),
+  ]);
+  const text = `${props.userInput}${attachmentContext}`;
+  return {
+    content: images.parts.length > 0 ? [{ type: "text", text }, ...images.parts] : text,
+    imageDimensions: images.dimensions,
+  };
 }
 
 export async function buildUserMessageContent(props: {
   userInput: string;
   attachments?: UserAttachment[];
 }): Promise<Message["content"]> {
-  const attachmentContext = await buildAttachmentContext(props.attachments);
-  const imageParts = await buildImageParts(props.attachments);
-  const text = `${props.userInput}${attachmentContext}`;
-  return imageParts.length > 0 ? [{ type: "text", text }, ...imageParts] : text;
+  return (await buildUserMessagePayload(props)).content;
 }
 
 export async function buildUserMessage(props: {
   userInput: string;
   attachments?: UserAttachment[];
 }): Promise<Message> {
-  const [content, attachments] = await Promise.all([
-    buildUserMessageContent(props),
+  const [payload, attachments] = await Promise.all([
+    buildUserMessagePayload(props),
     buildAttachmentDisplays(props.attachments),
   ]);
   return {
     role: "user",
-    content,
+    content: payload.content,
     extra: {
       rejelly: {
         kind: USER_INPUT_MESSAGE_KIND,
+        ...(payload.imageDimensions.length > 0 ? { imageDimensions: payload.imageDimensions } : {}),
         display: {
           text: props.userInput,
           attachments,
