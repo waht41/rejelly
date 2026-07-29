@@ -1,8 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { ContentPart, Message } from "@rejelly/core";
+import { z } from "zod";
 import type { ConversationAgentProps, UserAttachment, UserImageAttachment } from "../AgentShared";
-import { getWorkspaceFsPolicy, toGitignorePath } from "../fs-policy/workspace-fs-policy";
+import { getWorkspaceFsPolicy } from "../fs-policy/workspace-fs-policy";
+import { toPosixPath } from "../lib/path";
 import { renderPseudoXmlElement } from "../lib/pseudoXml";
 
 const MAX_ATTACHMENT_BYTES_PER_FILE = 80 * 1024;
@@ -12,17 +14,25 @@ const MAX_IMAGE_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 export const USER_INPUT_MESSAGE_KIND = "user_input";
 
-export interface UserInputAttachmentDisplay {
-  type: "file" | "image";
-  label: string;
-  action: "read" | "list" | "attach";
-  status?: "error";
-}
+const userInputAttachmentDisplaySchema = z.object({
+  type: z.enum(["file", "image"]),
+  label: z.string(),
+  action: z.enum(["read", "list", "attach"]),
+  status: z.literal("error").optional(),
+});
 
-export interface UserInputDisplay {
-  text: string;
-  attachments: UserInputAttachmentDisplay[];
-}
+const userInputDisplaySchema = z.object({
+  text: z.string(),
+  attachments: z.array(userInputAttachmentDisplaySchema),
+});
+
+const userInputMetadataSchema = z.object({
+  kind: z.literal(USER_INPUT_MESSAGE_KIND),
+  display: userInputDisplaySchema,
+});
+
+export type UserInputAttachmentDisplay = z.infer<typeof userInputAttachmentDisplaySchema>;
+export type UserInputDisplay = z.infer<typeof userInputDisplaySchema>;
 
 function uniqueAttachments(attachments: UserAttachment[] = []): UserAttachment[] {
   const seen = new Set<string>();
@@ -75,7 +85,7 @@ async function buildAttachmentDisplays(
     }
     try {
       const stat = await policy.stat(resolved.rel);
-      const displayPath = toGitignorePath(resolved.rel);
+      const displayPath = toPosixPath(resolved.displayPath);
       displays.push({
         type: "file",
         label: displayPath,
@@ -113,42 +123,8 @@ export function formatUserInputDisplay(display: UserInputDisplay): string {
 }
 
 export function getUserInputDisplay(message: Message): UserInputDisplay | undefined {
-  const rejelly = message.extra?.rejelly;
-  if (
-    typeof rejelly !== "object" ||
-    rejelly === null ||
-    !("kind" in rejelly) ||
-    rejelly.kind !== USER_INPUT_MESSAGE_KIND ||
-    !("display" in rejelly) ||
-    typeof rejelly.display !== "object" ||
-    rejelly.display === null
-  ) {
-    return undefined;
-  }
-  const display = rejelly.display as Partial<UserInputDisplay>;
-  if (typeof display.text !== "string" || !Array.isArray(display.attachments)) {
-    return undefined;
-  }
-  const attachments = display.attachments.filter(
-    (attachment): attachment is UserInputAttachmentDisplay =>
-      typeof attachment === "object" &&
-      attachment !== null &&
-      "type" in attachment &&
-      (attachment.type === "file" || attachment.type === "image") &&
-      "label" in attachment &&
-      typeof attachment.label === "string" &&
-      "action" in attachment &&
-      (attachment.action === "read" ||
-        attachment.action === "list" ||
-        attachment.action === "attach") &&
-      (!("status" in attachment) ||
-        attachment.status === undefined ||
-        attachment.status === "error"),
-  );
-  if (attachments.length !== display.attachments.length) {
-    return undefined;
-  }
-  return { text: display.text, attachments };
+  const metadata = userInputMetadataSchema.safeParse(message.extra?.rejelly);
+  return metadata.success ? metadata.data.display : undefined;
 }
 
 async function buildAttachmentContext(attachments: UserAttachment[] = []): Promise<string> {
@@ -173,7 +149,7 @@ async function buildAttachmentContext(attachments: UserAttachment[] = []): Promi
     }
     try {
       const stat = await policy.stat(resolved.rel);
-      const displayPath = toGitignorePath(resolved.rel);
+      const displayPath = toPosixPath(resolved.displayPath);
       if (stat.isDirectory()) {
         const entries = await policy.readdir(resolved.rel, { withFileTypes: true });
         const visible = entries.slice(0, MAX_ATTACHMENT_DIR_ENTRIES).map((entry) => {

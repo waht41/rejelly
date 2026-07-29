@@ -3,7 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getWorkspaceFsPolicy, setWorkspaceRoot } from "../fs-policy/workspace-fs-policy";
-import { buildAttachmentActionSummary, buildConversationMessages } from "./messageContent";
+import {
+  buildAttachmentActionSummary,
+  buildConversationMessages,
+  getUserInputDisplay,
+} from "./messageContent";
 
 describe("buildConversationMessages", () => {
   let prevRoot: string;
@@ -115,5 +119,23 @@ describe("buildConversationMessages", () => {
     await expect(
       buildAttachmentActionSummary([{ type: "image", path: "clipboard.png" }]),
     ).resolves.toEqual(["attach [Image #1]"]);
+  });
+
+  it("rejects malformed persisted display metadata", () => {
+    expect(
+      getUserInputDisplay({
+        role: "user",
+        content: "raw fallback",
+        extra: {
+          rejelly: {
+            kind: "user_input",
+            display: {
+              text: "shown text",
+              attachments: [{ type: "file", label: "a.ts", action: "unknown" }],
+            },
+          },
+        },
+      }),
+    ).toBeUndefined();
   });
 });
