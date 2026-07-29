@@ -3,8 +3,12 @@ import path from "node:path";
 import type { ContentPart, Message } from "@rejelly/core";
 import { z } from "zod";
 import type { ConversationAgentProps, UserAttachment, UserImageAttachment } from "../AgentShared";
+import {
+  fileLocatorAttributes,
+  fileLocatorFromResolved,
+  fileLocatorFromUserPath,
+} from "../fs-policy/file-locator";
 import { getWorkspaceFsPolicy } from "../fs-policy/workspace-fs-policy";
-import { toPosixPath } from "../lib/path";
 import { renderPseudoXmlElement } from "../lib/pseudoXml";
 
 const MAX_ATTACHMENT_BYTES_PER_FILE = 80 * 1024;
@@ -14,11 +18,18 @@ const MAX_IMAGE_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 export const USER_INPUT_MESSAGE_KIND = "user_input";
 
+const fileLocatorSchema = z.discriminatedUnion("scope", [
+  z.object({ scope: z.literal("workspace"), path: z.string() }),
+  z.object({ scope: z.literal("absolute"), path: z.string() }),
+]);
+
 const userInputAttachmentDisplaySchema = z.object({
   type: z.enum(["file", "image"]),
   label: z.string(),
   action: z.enum(["read", "list", "attach"]),
   status: z.literal("error").optional(),
+  // Optional so sessions written before canonical locators remain resumable.
+  locator: fileLocatorSchema.optional(),
 });
 
 const userInputDisplaySchema = z.object({
@@ -70,7 +81,12 @@ async function buildAttachmentDisplays(
   for (const attachedPath of paths) {
     if (attachedPath.type === "image") {
       imageIndex += 1;
-      displays.push({ type: "image", label: `[Image #${imageIndex}]`, action: "attach" });
+      displays.push({
+        type: "image",
+        label: `[Image #${imageIndex}]`,
+        action: "attach",
+        locator: fileLocatorFromUserPath(policy.getRoot(), attachedPath.path),
+      });
       continue;
     }
     const resolved = policy.tryResolve(attachedPath.path);
@@ -83,20 +99,22 @@ async function buildAttachmentDisplays(
       });
       continue;
     }
+    const locator = fileLocatorFromResolved(resolved);
     try {
       const stat = await policy.stat(resolved.rel);
-      const displayPath = toPosixPath(resolved.displayPath);
       displays.push({
         type: "file",
-        label: displayPath,
+        label: locator.path,
         action: stat.isDirectory() ? "list" : "read",
+        locator,
       });
     } catch {
       displays.push({
         type: "file",
-        label: attachedPath.path,
+        label: locator.path,
         action: "attach",
         status: "error",
+        locator,
       });
     }
   }
@@ -147,9 +165,10 @@ async function buildAttachmentContext(attachments: UserAttachment[] = []): Promi
       );
       continue;
     }
+    const locator = fileLocatorFromResolved(resolved);
+    const locatorAttributes = fileLocatorAttributes(locator);
     try {
       const stat = await policy.stat(resolved.rel);
-      const displayPath = toPosixPath(resolved.displayPath);
       if (stat.isDirectory()) {
         const entries = await policy.readdir(resolved.rel, { withFileTypes: true });
         const visible = entries.slice(0, MAX_ATTACHMENT_DIR_ENTRIES).map((entry) => {
@@ -162,7 +181,7 @@ async function buildAttachmentContext(attachments: UserAttachment[] = []): Promi
             : "";
         blocks.push(
           renderPseudoXmlElement("attached_directory", `${visible.join("\n")}${truncated}`, {
-            path: displayPath,
+            ...locatorAttributes,
             action: "list",
           }),
         );
@@ -173,7 +192,7 @@ async function buildAttachmentContext(attachments: UserAttachment[] = []): Promi
           renderPseudoXmlElement(
             "attached_file",
             `Error: File is larger than ${MAX_ATTACHMENT_BYTES_PER_FILE / 1024} KB and was not attached inline.`,
-            { path: displayPath, action: "read", status: "error" },
+            { ...locatorAttributes, action: "read", status: "error" },
           ),
         );
         continue;
@@ -183,7 +202,7 @@ async function buildAttachmentContext(attachments: UserAttachment[] = []): Promi
           renderPseudoXmlElement(
             "attached_file",
             `Error: Attachment budget exceeded (${MAX_ATTACHMENT_BYTES_TOTAL / 1024} KB total).`,
-            { path: displayPath, action: "read", status: "error" },
+            { ...locatorAttributes, action: "read", status: "error" },
           ),
         );
         continue;
@@ -192,7 +211,7 @@ async function buildAttachmentContext(attachments: UserAttachment[] = []): Promi
       const content = await policy.readFile(resolved.rel);
       blocks.push(
         renderPseudoXmlElement("attached_file", content, {
-          path: displayPath,
+          ...locatorAttributes,
           action: "read",
         }),
       );
@@ -200,7 +219,7 @@ async function buildAttachmentContext(attachments: UserAttachment[] = []): Promi
       const msg = e instanceof Error ? e.message : String(e);
       blocks.push(
         renderPseudoXmlElement("attached_path", `Error: Failed to read attached path: ${msg}`, {
-          path: attachedPath.path,
+          ...locatorAttributes,
           status: "error",
         }),
       );

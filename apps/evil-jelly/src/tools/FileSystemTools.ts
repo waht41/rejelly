@@ -4,6 +4,7 @@
 
 import type { ToolDefinition } from "@rejelly/core";
 import { z } from "zod";
+import { fileLocatorAttributes, fileLocatorFromResolved } from "../shared/fs-policy/file-locator";
 import {
   AGENT_SCRATCH_DIR,
   getWorkspaceFsPolicy,
@@ -160,6 +161,22 @@ function renderReadFileError(displayPath: string, error: string): string {
   return renderReadFileResult(displayPath, error, { status: "error" });
 }
 
+function renderResolvedReadFileResult(
+  resolved: ResolvedFsPath,
+  content: string,
+  attributes?: PseudoXmlAttributes,
+): string {
+  const locator = fileLocatorFromResolved(resolved);
+  return renderReadFileResult(locator.path, content, {
+    ...fileLocatorAttributes(locator),
+    ...attributes,
+  });
+}
+
+function renderResolvedReadFileError(resolved: ResolvedFsPath, error: string): string {
+  return renderResolvedReadFileResult(resolved, error, { status: "error" });
+}
+
 export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
   name: "read_file",
   description:
@@ -187,8 +204,8 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
         if (!hasRange) {
           if (totalBytes + stat.size > MAX_READ_BYTES_PER_CALL) {
             results.push(
-              renderReadFileError(
-                resolved.displayPath,
+              renderResolvedReadFileError(
+                resolved,
                 `Error: Combined file sizes exceed the ${MAX_READ_BYTES_PER_CALL / 1024} KB limit for this tool call. ` +
                   "Read fewer files, pass { path, offset, limit } to read a line range, " +
                   "or use ast_document_symbols / ast_read_symbol_code for JS/TS files.",
@@ -199,14 +216,14 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
 
           totalBytes += stat.size;
           const content = await policy.readResolved(resolved);
-          results.push(renderReadFileResult(resolved.displayPath, content));
+          results.push(renderResolvedReadFileResult(resolved, content));
           continue;
         }
 
         if (stat.size > MAX_RANGED_READ_SOURCE_BYTES) {
           results.push(
-            renderReadFileError(
-              resolved.displayPath,
+            renderResolvedReadFileError(
+              resolved,
               `Error: File is ${Math.ceil(stat.size / 1024)} KB, above the ` +
                 `${MAX_RANGED_READ_SOURCE_BYTES / 1024 / 1024} MB cap for ranged reads. ` +
                 "Use grep_search to locate the relevant lines instead.",
@@ -220,8 +237,8 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
         const startLine = offset ?? 1;
         if (startLine > lines.length) {
           results.push(
-            renderReadFileError(
-              resolved.displayPath,
+            renderResolvedReadFileError(
+              resolved,
               `Error: offset ${startLine} is past the end of the file (${lines.length} lines).`,
             ),
           );
@@ -234,8 +251,8 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
         const snippetBytes = Buffer.byteLength(snippet, "utf8");
         if (totalBytes + snippetBytes > MAX_READ_BYTES_PER_CALL) {
           results.push(
-            renderReadFileError(
-              resolved.displayPath,
+            renderResolvedReadFileError(
+              resolved,
               `Error: Requested line range exceeds the combined ${MAX_READ_BYTES_PER_CALL / 1024} KB limit for this tool call. ` +
                 "Request a smaller limit or split the request into multiple calls.",
             ),
@@ -245,7 +262,7 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
 
         totalBytes += snippetBytes;
         results.push(
-          renderReadFileResult(resolved.displayPath, snippet, {
+          renderResolvedReadFileResult(resolved, snippet, {
             "start-line": String(startLine),
             "end-line": String(endLine),
             "total-lines": String(lines.length),
@@ -253,9 +270,7 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
         );
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
-        results.push(
-          renderReadFileError(resolved.displayPath, `Error: Failed to read file: ${msg}`),
-        );
+        results.push(renderResolvedReadFileError(resolved, `Error: Failed to read file: ${msg}`));
       }
     }
 
