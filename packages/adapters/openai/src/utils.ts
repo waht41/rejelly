@@ -163,9 +163,10 @@ export function convertContentMultimodal(
  *
  * Consecutive same-role messages are collapsed first: the endpoint is a user-configured
  * OpenAI-compatible URL whose chat template's strictness is unknowable, and strict-alternation
- * backends (e.g. DeepSeek reasoner models) reject consecutive same-role messages outright, so
- * merging by default is the only choice that cannot break a provider. OpenAI proper tolerates
- * the merged form equally well.
+ * backends (especially some self-hosted chat templates) reject consecutive same-role messages
+ * outright, so merging by default is the safest compatibility choice. Rejelly-owned `extra`
+ * metadata is removed before this wire-only merge; provider metadata remains and still preserves
+ * its message boundary.
  *
  * Chat Completions tool result messages are text-only, so a tool message carrying media
  * (e.g. an image returned via `toolContent`) is automatically split into two messages: a text
@@ -173,7 +174,8 @@ export function convertContentMultimodal(
  */
 export function toOpenAIMessages(messages: Message[]): ChatCompletionMessageParam[] {
   const result: ChatCompletionMessageParam[] = [];
-  for (const msg of mergeConsecutiveSameRoleMessages(messages)) {
+  const wireMessages = messages.map(withoutRejellyInternalExtra);
+  for (const msg of mergeConsecutiveSameRoleMessages(wireMessages)) {
     switch (msg.role) {
       case "system":
         result.push({ role: "system", content: convertContentToString(msg.content) ?? "" });
@@ -218,6 +220,18 @@ export function toOpenAIMessages(messages: Message[]): ChatCompletionMessagePara
     }
   }
   return result;
+}
+
+function withoutRejellyInternalExtra(message: Message): Message {
+  if (!message.extra || !("rejelly" in message.extra)) {
+    return message;
+  }
+  const extra = { ...message.extra };
+  delete extra.rejelly;
+  return {
+    ...message,
+    ...(Object.keys(extra).length > 0 ? { extra } : { extra: undefined }),
+  };
 }
 
 export function toOpenAITools(tools: ToolDefinition[]): ChatCompletionTool[] {
