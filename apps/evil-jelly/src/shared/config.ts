@@ -9,7 +9,11 @@ import { augmentModel, type ModelAdapter } from "@rejelly/core";
 import type { ReviewOptions } from "@rejelly/core/debugger";
 import { parse as parseEnv } from "dotenv";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
-import { DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL_ID } from "./configDefaults";
+import {
+  DEFAULT_OPENAI_BASE_URL,
+  DEFAULT_OPENAI_MODEL_ID,
+  MIN_OPENAI_CONTEXT_WINDOW_TOKENS,
+} from "./configDefaults";
 import { getWorkspaceFsPolicy } from "./fs-policy/workspace-fs-policy";
 import { resolveGlobalJellyDir } from "./globalPath";
 import { withRetry } from "./lib/withRetry";
@@ -108,6 +112,19 @@ function positiveInt(fallback?: number): EnvParser<number | undefined> {
   };
 }
 
+/** Positive integer with a hard lower bound when explicitly configured. */
+function contextWindow(): EnvParser<number | undefined> {
+  return (raw) => {
+    const parsed = positiveInt()(raw);
+    if (parsed !== undefined && parsed < MIN_OPENAI_CONTEXT_WINDOW_TOKENS) {
+      throw new Error(
+        `OPENAI_CONTEXT_WINDOW must be at least ${MIN_OPENAI_CONTEXT_WINDOW_TOKENS} tokens; received ${parsed}.`,
+      );
+    }
+    return parsed;
+  };
+}
+
 /**
  * Manifest of every env var evil-jelly consumes as plain app config — one line per
  * var: name, type, default. Read via `env.NAME`; adding a var means adding a line
@@ -124,7 +141,7 @@ const ENV_VARS = {
   OPENAI_BASE_URL: str(DEFAULT_OPENAI_BASE_URL),
   OPENAI_PROVIDER: str("openai"),
   /** Real model context window (tokens); drives /status display and auto-compaction. */
-  OPENAI_CONTEXT_WINDOW: positiveInt(),
+  OPENAI_CONTEXT_WINDOW: contextWindow(),
   /** Absolute auto-compact trigger budget (tokens); wins over the ratio below. */
   OPENAI_AUTO_COMPACT_TOKENS: positiveInt(),
   /** Auto-compact trigger as a fraction of the context window; default ratio lives in UnifiedAgent. */
