@@ -11,6 +11,7 @@ import {
   type WorkspaceDirEntry,
   type WorkspaceFsPolicy,
 } from "../shared/fs-policy/workspace-fs-policy";
+import { type PseudoXmlAttributes, renderPseudoXmlElement } from "../shared/lib/pseudoXml";
 import { resolveToolFsPath } from "./outsideAccess";
 
 /** Hard guards to keep tool output compact and predictable. */
@@ -144,11 +145,27 @@ const readFileParameters = z.object({
     ),
 });
 
+function renderReadFileResult(
+  displayPath: string,
+  content: string,
+  attributes?: PseudoXmlAttributes,
+): string {
+  return renderPseudoXmlElement("file", content, {
+    path: displayPath,
+    ...attributes,
+  });
+}
+
+function renderReadFileError(displayPath: string, error: string): string {
+  return renderReadFileResult(displayPath, error, { status: "error" });
+}
+
 export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
   name: "read_file",
   description:
     `Read one or more files with a strict combined ${MAX_READ_BYTES_PER_CALL / 1024} KB size limit. ` +
-    "Pass { path, offset, limit } entries to read a line range (line-numbered output) from files too large to read whole, or around a known line. " +
+    "Returns one XML-like <file> envelope per result while leaving each file body unchanged. " +
+    "Pass { path, offset, limit } entries to read a line range from files too large to read whole, or around a known line; range metadata is in the envelope attributes and is not added to the body. " +
     `Use ast_document_symbols first if you only need file structure or declarations. ${AGENT_SCRATCH_DIR}/ is the agent scratch directory for temporary files.`,
   parameters: readFileParameters,
   handler: async ({ filePaths }) => {
@@ -161,7 +178,7 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
       const hasRange = offset !== undefined || limit !== undefined;
       const resolved = await resolveToolFsPath(filePath, "read");
       if (!resolved.ok) {
-        results.push(`--- FILE: ${filePath} ---\nError: ${resolved.error}\n`);
+        results.push(renderReadFileError(filePath, `Error: ${resolved.error}`));
         continue;
       }
 
@@ -170,26 +187,30 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
         if (!hasRange) {
           if (totalBytes + stat.size > MAX_READ_BYTES_PER_CALL) {
             results.push(
-              `--- FILE: ${resolved.displayPath} ---\n` +
+              renderReadFileError(
+                resolved.displayPath,
                 `Error: Combined file sizes exceed the ${MAX_READ_BYTES_PER_CALL / 1024} KB limit for this tool call. ` +
-                "Read fewer files, pass { path, offset, limit } to read a line range, " +
-                "or use ast_document_symbols / ast_read_symbol_code for JS/TS files.\n",
+                  "Read fewer files, pass { path, offset, limit } to read a line range, " +
+                  "or use ast_document_symbols / ast_read_symbol_code for JS/TS files.",
+              ),
             );
             continue;
           }
 
           totalBytes += stat.size;
           const content = await policy.readResolved(resolved);
-          results.push(`--- FILE: ${resolved.displayPath} ---\n${content}\n`);
+          results.push(renderReadFileResult(resolved.displayPath, content));
           continue;
         }
 
         if (stat.size > MAX_RANGED_READ_SOURCE_BYTES) {
           results.push(
-            `--- FILE: ${resolved.displayPath} ---\n` +
+            renderReadFileError(
+              resolved.displayPath,
               `Error: File is ${Math.ceil(stat.size / 1024)} KB, above the ` +
-              `${MAX_RANGED_READ_SOURCE_BYTES / 1024 / 1024} MB cap for ranged reads. ` +
-              "Use grep_search to locate the relevant lines instead.\n",
+                `${MAX_RANGED_READ_SOURCE_BYTES / 1024 / 1024} MB cap for ranged reads. ` +
+                "Use grep_search to locate the relevant lines instead.",
+            ),
           );
           continue;
         }
@@ -199,35 +220,42 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
         const startLine = offset ?? 1;
         if (startLine > lines.length) {
           results.push(
-            `--- FILE: ${resolved.displayPath} ---\n` +
-              `Error: offset ${startLine} is past the end of the file (${lines.length} lines).\n`,
+            renderReadFileError(
+              resolved.displayPath,
+              `Error: offset ${startLine} is past the end of the file (${lines.length} lines).`,
+            ),
           );
           continue;
         }
 
         const endLine =
           limit === undefined ? lines.length : Math.min(lines.length, startLine + limit - 1);
-        const snippet = lines
-          .slice(startLine - 1, endLine)
-          .map((lineText, i) => `${startLine + i}\t${lineText}`)
-          .join("\n");
+        const snippet = lines.slice(startLine - 1, endLine).join("\n");
         const snippetBytes = Buffer.byteLength(snippet, "utf8");
         if (totalBytes + snippetBytes > MAX_READ_BYTES_PER_CALL) {
           results.push(
-            `--- FILE: ${resolved.displayPath} ---\n` +
+            renderReadFileError(
+              resolved.displayPath,
               `Error: Requested line range exceeds the combined ${MAX_READ_BYTES_PER_CALL / 1024} KB limit for this tool call. ` +
-              "Request a smaller limit or split the request into multiple calls.\n",
+                "Request a smaller limit or split the request into multiple calls.",
+            ),
           );
           continue;
         }
 
         totalBytes += snippetBytes;
         results.push(
-          `--- FILE: ${resolved.displayPath} (lines ${startLine}-${endLine} of ${lines.length}) ---\n${snippet}\n`,
+          renderReadFileResult(resolved.displayPath, snippet, {
+            "start-line": String(startLine),
+            "end-line": String(endLine),
+            "total-lines": String(lines.length),
+          }),
         );
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
-        results.push(`--- FILE: ${resolved.displayPath} ---\nError: Failed to read file: ${msg}\n`);
+        results.push(
+          renderReadFileError(resolved.displayPath, `Error: Failed to read file: ${msg}`),
+        );
       }
     }
 
