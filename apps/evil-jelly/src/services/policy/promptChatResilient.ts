@@ -17,7 +17,11 @@ export type {
   CompactionRoundInfo,
   PromptChatCompactionConfig,
 } from "./compaction";
-export { selectRecentUserMessages, truncateToolOutputsToFit } from "./compaction";
+export {
+  MAX_COMPACT_RETAINED_IMAGES,
+  selectRecentUserMessages,
+  truncateToolOutputsToFit,
+} from "./compaction";
 export { sanitizeInterruptedDelta } from "./interruptedDelta";
 
 export interface ResilientChatPolicyResult<T = string> {

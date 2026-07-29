@@ -1,6 +1,11 @@
-import type { Message } from "@rejelly/core";
+import type { ContentPart, Message } from "@rejelly/core";
 import { isAbortError, isModelCallError } from "@rejelly/core";
 import { executeTurn, isInstructionMessage, type PromptContext } from "@rejelly/core/policy";
+import {
+  getUserInputDisplay,
+  type UserInputAttachmentDisplay,
+} from "../../shared/attachments/messageContent";
+import { fileLocatorAttributes } from "../../shared/fs-policy/file-locator";
 import {
   COMPACTION_BRIDGE_MESSAGE_KIND,
   COMPACTION_NOTICE_PREFIX,
@@ -9,8 +14,9 @@ import {
   PRIOR_USER_MESSAGE_TAG,
   unwrapPriorUserMessageText,
 } from "../../shared/lib/compactionMessages";
-import { renderPseudoXmlElement, selectPseudoXmlBoundaryTag } from "../../shared/lib/pseudoXml";
+import { renderPseudoXmlElement, renderPseudoXmlEmptyElement } from "../../shared/lib/pseudoXml";
 import {
+  estimateMessageContentTokens,
   estimateMessagesTokens,
   estimateTokens,
   messageContentToText,
@@ -20,7 +26,7 @@ import {
  * Mid-loop context auto-compaction, adapted from openai/codex's mid-turn compaction
  * (https://github.com/openai/codex, Apache-2.0): when the estimated live context crosses a
  * threshold during the tool-call loop, summarize the working set, keep the most recent user
- * turns verbatim, and continue in place - bounding the live window across an unbounded task.
+ * turn projections, and continue in place - bounding the live window across an unbounded task.
  */
 export interface PromptChatCompactionConfig {
   /** Estimated live-context token count at/above which a compaction round is triggered. */
@@ -36,7 +42,7 @@ export interface PromptChatCompactionConfig {
    * context-length retry).
    */
   contextWindowTokens?: number;
-  /** Verbatim token budget for the most recent user turns kept after the summary. */
+  /** Token budget for bounded projections of recent user turns kept after the summary. */
   keepRecentUserTokens?: number;
   /** Max compaction rounds per run (safety valve against summary-that-never-shrinks loops). */
   maxRounds?: number;
@@ -74,7 +80,7 @@ export const DEFAULT_WARN_RATIO = 0.8;
  */
 export const COMPACTION_STREAM_CHANNEL = "compaction";
 
-const DEFAULT_KEEP_RECENT_USER_TOKENS = 6000;
+const DEFAULT_KEEP_RECENT_USER_TOKENS = 64_000;
 const DEFAULT_SUMMARY_PREFIX = "## Summary of prior work (auto-compacted)";
 /**
  * Fraction of the real model window the proactive trim fits under. The remainder reserves room for
@@ -88,6 +94,11 @@ const COMPACTION_SUMMARY_FIT_ATTEMPTS = 4;
 const COMPACTION_SUMMARY_SHRINK_RATIO = 0.5;
 const COMPACTION_REQUEST_TRUNCATED_OUTPUT =
   "[Output omitted: truncated to fit the compaction request within the model context window.]";
+const COMPACT_USER_TRUNCATION_MARKER = "\n[... user message truncated during compaction ...]\n";
+const MAX_COMPACT_ATTACHMENT_REFS = 32;
+const MAX_COMPACT_ATTACHMENT_PATH_CHARS = 512;
+/** Keep a small, newest-first visual working set across each compacted window. */
+export const MAX_COMPACT_RETAINED_IMAGES = 4;
 /**
  * Tag wrapping each kept user turn in the compacted history. The kept turns and the bridge
  * message are consecutive user-role messages with no assistant reply between them, so the model
@@ -105,9 +116,11 @@ const COMPACTION_REQUEST_TRUNCATED_OUTPUT =
  */
 const COMPACTION_NOTICE =
   `${COMPACTION_NOTICE_PREFIX} to fit the model window. The most recent user turns are retained ` +
-  `verbatim above, each inside a <${PRIOR_USER_MESSAGE_TAG}> block; any of them already handled ` +
-  "are covered in the summary below — do not answer them again. Continue the current task from " +
-  `the summary inside <${COMPACTION_SUMMARY_TAG}>.]`;
+  `as bounded historical projections above, each inside a <${PRIOR_USER_MESSAGE_TAG}> block; ` +
+  `attached file bodies are omitted and at most ${MAX_COMPACT_RETAINED_IMAGES} recent image ` +
+  "payloads are retained. Any requests already handled are covered in the summary below — do not " +
+  "answer them again. Continue the current task from the summary " +
+  `inside <${COMPACTION_SUMMARY_TAG}>.]`;
 
 /**
  * Codex-parity fit guard (openai/codex `trim_function_call_history_to_fit_context_window`,
@@ -138,7 +151,7 @@ export function truncateToolOutputsToFit(messages: Message[], maxTokens: number)
     if (message.role !== "tool") {
       continue;
     }
-    const currentCost = estimateTokens(messageContentToText(message.content));
+    const currentCost = estimateMessageContentTokens(message.content);
     if (currentCost <= placeholderCost) {
       continue;
     }
@@ -148,56 +161,234 @@ export function truncateToolOutputsToFit(messages: Message[], maxTokens: number)
   return trimmed;
 }
 
-/**
- * Most-recent user turns kept verbatim within a token budget (Codex `collect_user_messages`
- * analog). The single most recent user turn is always kept so the live task text survives even
- * when it alone exceeds the budget.
- */
-export function selectRecentUserMessages(messages: Message[], maxTokens: number): Message[] {
-  const users = messages.filter(
-    (message) => message.role === "user" && !isInstructionMessage(message),
-  );
-  const picked: Message[] = [];
-  let remaining = maxTokens;
-  for (let index = users.length - 1; index >= 0; index -= 1) {
-    const cost = estimateTokens(messageContentToText(users[index].content));
-    if (cost <= remaining) {
-      picked.push(users[index]);
-      remaining -= cost;
+/** Keep a prefix and suffix while guaranteeing that the estimate fits the requested budget. */
+function truncateTextToTokenBudget(text: string, maxTokens: number): string {
+  if (maxTokens <= 0 || text.length === 0) {
+    return "";
+  }
+  if (estimateTokens(text) <= maxTokens) {
+    return text;
+  }
+
+  const chars = [...text];
+  const markerFits = estimateTokens(COMPACT_USER_TRUNCATION_MARKER) < maxTokens;
+  let low = 0;
+  let high = chars.length;
+  let best = "";
+  while (low <= high) {
+    const kept = Math.floor((low + high) / 2);
+    const headLength = markerFits ? Math.ceil((kept * 2) / 3) : kept;
+    const tailLength = markerFits ? kept - headLength : 0;
+    const candidate = markerFits
+      ? `${chars.slice(0, headLength).join("")}${COMPACT_USER_TRUNCATION_MARKER}${
+          tailLength > 0 ? chars.slice(-tailLength).join("") : ""
+        }`
+      : chars.slice(0, kept).join("");
+    if (estimateTokens(candidate) <= maxTokens) {
+      best = candidate;
+      low = kept + 1;
     } else {
-      break;
+      high = kept - 1;
     }
   }
-  if (picked.length === 0 && users.length > 0) {
-    picked.push(users[users.length - 1]);
+  return best;
+}
+
+function compactAttachmentReference(attachment: UserInputAttachmentDisplay): string {
+  const tag =
+    attachment.type === "image"
+      ? "attached_image_ref"
+      : attachment.action === "list"
+        ? "attached_directory_ref"
+        : "attached_file_ref";
+  const locator = attachment.locator;
+  const locatorFits = locator && locator.path.length <= MAX_COMPACT_ATTACHMENT_PATH_CHARS;
+  return renderPseudoXmlEmptyElement(tag, {
+    action: attachment.action,
+    ...(locatorFits
+      ? fileLocatorAttributes(locator)
+      : {
+          label: attachment.label.slice(0, MAX_COMPACT_ATTACHMENT_PATH_CHARS),
+          "locator-status": locator ? "path-too-long" : "unavailable",
+        }),
+    ...(attachment.status ? { status: attachment.status } : {}),
+  });
+}
+
+type UserCompactionProjection = {
+  message: Message;
+  text: string;
+  references: string[];
+  images: ContentPart[];
+};
+
+function projectUserMessageForCompaction(message: Message): UserCompactionProjection {
+  const images = Array.isArray(message.content)
+    ? message.content.filter((part): part is ContentPart => part.type === "image")
+    : [];
+  const display = getUserInputDisplay(message);
+  if (display) {
+    const visible = display.attachments.slice(0, MAX_COMPACT_ATTACHMENT_REFS);
+    const references = visible.map(compactAttachmentReference);
+    if (display.attachments.length > visible.length) {
+      references.push(
+        renderPseudoXmlEmptyElement("attachment_refs_omitted", {
+          count: String(display.attachments.length - visible.length),
+        }),
+      );
+    }
+    return { message, text: display.text.trim(), references, images };
+  }
+
+  const text = messageContentToText(message.content).trim();
+  return {
+    message,
+    text: unwrapPriorUserMessageText(text),
+    references: [],
+    images,
+  };
+}
+
+function renderUserProjection(text: string, references: readonly string[]): string {
+  const referenceText = references.join("\n");
+  if (!text) {
+    return referenceText;
+  }
+  return referenceText ? `${text}\n\n${referenceText}` : text;
+}
+
+function takeCompleteReferences(references: readonly string[], maxTokens: number): string[] {
+  const kept: string[] = [];
+  for (const reference of references) {
+    const candidate = [...kept, reference];
+    if (estimateTokens(candidate.join("\n")) > maxTokens) {
+      break;
+    }
+    kept.push(reference);
+  }
+  return kept;
+}
+
+function projectionContent(
+  text: string,
+  references: readonly string[],
+  images: readonly ContentPart[],
+): string | ContentPart[] {
+  const renderedText = renderUserProjection(text, references);
+  if (images.length === 0) {
+    return renderedText;
+  }
+  return [...(renderedText ? [{ type: "text" as const, text: renderedText }] : []), ...images];
+}
+
+function takeImagesToBudget(images: readonly ContentPart[], maxTokens: number): ContentPart[] {
+  const kept: ContentPart[] = [];
+  let remaining = maxTokens;
+  for (const image of images) {
+    const cost = estimateMessageContentTokens([image]);
+    if (cost > remaining) {
+      break;
+    }
+    kept.push(image);
+    remaining -= cost;
+  }
+  return kept;
+}
+
+function fitUserProjection(
+  projection: UserCompactionProjection,
+  maxTokens: number,
+): Message | undefined {
+  if (maxTokens <= 0) {
+    return undefined;
+  }
+  const complete = projectionContent(projection.text, projection.references, projection.images);
+  if (estimateMessageContentTokens(complete) <= maxTokens) {
+    return { ...projection.message, content: complete };
+  }
+
+  // Images are hard to reconstruct from a summary and already bounded by count. Keep the selected
+  // visual context first, then spend the remaining budget on canonical references and user text.
+  const images = takeImagesToBudget(projection.images, maxTokens);
+  const imageCost = estimateMessageContentTokens(images);
+  const textBudget = Math.max(0, maxTokens - imageCost);
+  const completeReferenceText = projection.references.join("\n");
+  const completeReferenceCost = estimateTokens(completeReferenceText);
+  if (completeReferenceText && completeReferenceCost < textBudget) {
+    const text = truncateTextToTokenBudget(
+      projection.text,
+      Math.max(0, textBudget - completeReferenceCost - estimateTokens("\n\n")),
+    );
+    return {
+      ...projection.message,
+      content: projectionContent(text, projection.references, images),
+    };
+  }
+
+  // With an unusually small configured budget, keep only whole reference elements and reserve
+  // half for the user's actual words. Never truncate a pseudo-XML reference into malformed text.
+  const referenceBudget = projection.text ? Math.floor(textBudget / 2) : textBudget;
+  const references = takeCompleteReferences(projection.references, referenceBudget);
+  const referenceCost = estimateTokens(references.join("\n"));
+  const text = truncateTextToTokenBudget(
+    projection.text,
+    Math.max(0, textBudget - referenceCost - (references.length > 0 ? estimateTokens("\n\n") : 0)),
+  );
+  const fitted = projectionContent(text, references, images);
+  return fitted.length > 0 ? { ...projection.message, content: fitted } : undefined;
+}
+
+/**
+ * Codex-local-style recent-user retention: project messages to bounded text first, then select
+ * newest-first. Structured file attachments become references while a small newest-first image set
+ * remains available as real multimodal content. The first message that crosses the remaining budget
+ * is truncated to fit instead of bypassing the cap.
+ */
+export function selectRecentUserMessages(messages: Message[], maxTokens: number): Message[] {
+  const users = messages
+    .filter((message) => message.role === "user" && !isInstructionMessage(message))
+    .map(projectUserMessageForCompaction);
+  let remainingImages = MAX_COMPACT_RETAINED_IMAGES;
+  for (let index = users.length - 1; index >= 0; index -= 1) {
+    users[index].images = users[index].images.slice(0, remainingImages);
+    remainingImages -= users[index].images.length;
+  }
+  const picked: Message[] = [];
+  let remaining = Math.max(0, maxTokens);
+  for (let index = users.length - 1; index >= 0 && remaining > 0; index -= 1) {
+    const complete = projectionContent(
+      users[index].text,
+      users[index].references,
+      users[index].images,
+    );
+    const cost = Math.max(1, estimateMessageContentTokens(complete));
+    if (cost <= remaining) {
+      picked.push({ ...users[index].message, content: complete });
+      remaining -= cost;
+      continue;
+    }
+    const fitted = fitUserProjection(users[index], remaining);
+    if (fitted) {
+      picked.push(fitted);
+    }
+    break;
   }
   return picked.reverse();
 }
 
 /**
- * Wrap a kept user turn's content in the `<prior_user_message>` boundary. Idempotent: kept turns
- * re-collected by a later compaction round arrive already wrapped and must not gain nested tags.
- * Non-text parts (images) survive by fencing with separate text parts around the original parts.
+ * Wrap a kept user projection in the `<prior_user_message>` boundary. Selection has already
+ * removed file bodies, bounded image payloads, and unwrapped projections retained by an earlier
+ * compact round.
  */
 function wrapPriorUserMessage(message: Message): Message {
   const text = messageContentToText(message.content).trim();
-  if (unwrapPriorUserMessageText(text) !== text) {
-    return message;
-  }
-  if (message.content == null || typeof message.content === "string") {
-    return {
-      ...message,
-      content: renderPseudoXmlElement(PRIOR_USER_MESSAGE_TAG, message.content ?? ""),
-    };
-  }
-  const boundaryTag = selectPseudoXmlBoundaryTag(PRIOR_USER_MESSAGE_TAG, text);
+  const images = Array.isArray(message.content)
+    ? message.content.filter((part): part is ContentPart => part.type === "image")
+    : [];
   return {
     ...message,
-    content: [
-      { type: "text", text: `<${boundaryTag}>\n` },
-      ...message.content,
-      { type: "text", text: `\n</${boundaryTag}>` },
-    ],
+    content: projectionContent(renderPseudoXmlElement(PRIOR_USER_MESSAGE_TAG, text), [], images),
   };
 }
 
