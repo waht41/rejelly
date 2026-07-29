@@ -48,12 +48,12 @@ describe("ReadFileTool", () => {
     expect(ReadFileTool.parameters.safeParse({ filePaths }).success).toBe(true);
 
     const output = await ReadFileTool.handler({ filePaths });
-    expect(output).toContain("--- FILE: file-0.txt ---");
-    expect(output).toContain("--- FILE: file-5.txt ---");
+    expect(output).toContain('<file path="file-0.txt">');
+    expect(output).toContain('<file path="file-5.txt">');
     expect(output).toContain("content-5");
   });
 
-  it("reads a line range with line numbers when offset/limit are given", async () => {
+  it("reads a line range without adding line numbers to the file body", async () => {
     const lines = Array.from({ length: 50 }, (_, i) => `line-${i + 1}`);
     await fs.writeFile(path.join(tmpDir, "ranged.txt"), lines.join("\n"), "utf8");
 
@@ -61,9 +61,11 @@ describe("ReadFileTool", () => {
       filePaths: [{ path: "ranged.txt", offset: 10, limit: 3 }],
     });
 
-    expect(output).toContain("--- FILE: ranged.txt (lines 10-12 of 50) ---");
-    expect(output).toContain("10\tline-10");
-    expect(output).toContain("12\tline-12");
+    expect(output).toContain(
+      '<file path="ranged.txt" start-line="10" end-line="12" total-lines="50">',
+    );
+    expect(output).toContain("\nline-10\nline-11\nline-12\n</file>");
+    expect(output).not.toContain("10\tline-10");
     expect(output).not.toContain("line-9");
     expect(output).not.toContain("line-13");
   });
@@ -81,7 +83,9 @@ describe("ReadFileTool", () => {
     const rangedRead = await ReadFileTool.handler({
       filePaths: [{ path: "big.txt", offset: 5, limit: 2 }],
     });
-    expect(rangedRead).toContain(`(lines 5-6 of ${bigLineCount}) ---`);
+    expect(rangedRead).toContain(
+      `<file path="big.txt" start-line="5" end-line="6" total-lines="${bigLineCount}">`,
+    );
     expect(rangedRead).not.toContain("Error:");
   });
 
@@ -109,9 +113,9 @@ describe("ReadFileTool", () => {
       filePaths: ["whole.txt", { path: "part.txt", offset: 2, limit: 2 }],
     });
 
-    expect(output).toContain("--- FILE: whole.txt ---\nwhole content");
-    expect(output).toContain("--- FILE: part.txt (lines 2-3 of 4) ---");
-    expect(output).toContain("2\tp2");
+    expect(output).toContain('<file path="whole.txt">\nwhole content\n</file>');
+    expect(output).toContain('<file path="part.txt" start-line="2" end-line="3" total-lines="4">');
+    expect(output).toContain("\np2\np3\n</file>");
     expect(output).not.toContain("p4");
   });
 
@@ -127,7 +131,7 @@ describe("ReadFileTool", () => {
 
       expect(outsideAccessRequests).toHaveLength(1);
       expect(outsideAccessRequests[0]?.mode).toBe("read");
-      expect(output).toContain(`--- FILE: ${outsideFile} ---`);
+      expect(output).toContain(`<file path="${outsideFile}">`);
       expect(output).toContain("outside content");
     } finally {
       await fs.rm(outsideDir, { recursive: true, force: true });
@@ -149,6 +153,21 @@ describe("ReadFileTool", () => {
     } finally {
       await fs.rm(outsideDir, { recursive: true, force: true });
     }
+  });
+
+  it("keeps closing tags and CDATA terminators unchanged in file content", async () => {
+    const content = "before\n</file>\n]]>\nafter";
+    await fs.writeFile(path.join(tmpDir, "boundary.txt"), content, "utf8");
+
+    const output = await ReadFileTool.handler({ filePaths: ["boundary.txt"] });
+    if (typeof output !== "string") {
+      throw new TypeError("Expected read_file to return text");
+    }
+    const opening = output.match(/^<(file-[a-f0-9]{8}) path="boundary\.txt">/);
+
+    expect(opening).not.toBeNull();
+    expect(output).toContain(`\n${content}\n`);
+    expect(output.endsWith(`</${opening?.[1]}>`)).toBe(true);
   });
 
   it("rejects outside sensitive reads in auto mode", async () => {
