@@ -7,7 +7,6 @@ import {
   IMAGE_CONTENT_TOKEN_ESTIMATE,
 } from "../../shared/lib/tokens";
 import {
-  MAX_COMPACT_RETAINED_IMAGES,
   sanitizeInterruptedDelta,
   selectRecentUserMessages,
   truncateToolOutputsToFit,
@@ -223,37 +222,107 @@ describe("selectRecentUserMessages", () => {
     ]);
   });
 
-  it("keeps at most the newest image payloads across retained user turns", () => {
-    const messages: Message[] = Array.from(
-      { length: MAX_COMPACT_RETAINED_IMAGES + 2 },
-      (_, index) => ({
-        role: "user",
-        content: [
-          { type: "text", text: `image ${index}` },
-          {
-            type: "image",
-            image: { url: `data:image/png;base64,payload-${index}`, detail: "auto" },
+  it("retains image payloads solely according to the token budget", () => {
+    const messages: Message[] = Array.from({ length: 6 }, (_, index) => ({
+      role: "user",
+      content: [
+        { type: "text", text: `image ${index}` },
+        {
+          type: "image",
+          image: { url: `data:image/png;base64,payload-${index}`, detail: "auto" },
+        },
+      ],
+    }));
+    const imageUrls = (kept: Message[]) =>
+      kept.flatMap((message) =>
+        Array.isArray(message.content)
+          ? message.content.flatMap((part) => (part.type === "image" ? [part.image.url] : []))
+          : [],
+      );
+
+    expect(imageUrls(selectRecentUserMessages(messages, estimateMessagesTokens(messages)))).toEqual(
+      Array.from({ length: 6 }, (_, index) => `data:image/png;base64,payload-${index}`),
+    );
+
+    const newestFour = messages.slice(-4);
+    expect(
+      imageUrls(selectRecentUserMessages(messages, estimateMessagesTokens(newestFour))),
+    ).toEqual(
+      Array.from({ length: 4 }, (_, index) => `data:image/png;base64,payload-${index + 2}`),
+    );
+  });
+
+  it("uses supplied image dimensions when applying the compaction token budget", () => {
+    const message: Message = {
+      role: "user",
+      content: [
+        {
+          type: "image",
+          image: { url: "data:image/png;base64,not-a-real-header", detail: "auto" },
+        },
+      ],
+      extra: {
+        rejelly: {
+          imageDimensions: [{ width: 512, height: 512 }],
+        },
+      },
+    };
+
+    expect(selectRecentUserMessages([message], 1024)).toEqual([message]);
+  });
+
+  it("preserves user text before image payloads when a message crosses the budget", () => {
+    const message: Message = {
+      role: "user",
+      content: [
+        { type: "text", text: "explain what this image means" },
+        {
+          type: "image",
+          image: { url: "data:image/png;base64,payload", detail: "auto" },
+        },
+      ],
+    };
+    const textBudget = estimateTokens("explain what this image means");
+
+    const kept = selectRecentUserMessages([message], textBudget);
+
+    expect(kept).toEqual([{ role: "user", content: "explain what this image means" }]);
+  });
+
+  it("fills the budget with images only after text and marks omitted images", () => {
+    const message: Message = {
+      role: "user",
+      content: [
+        { type: "text", text: "compare these" },
+        ...Array.from({ length: 3 }, (_, index) => ({
+          type: "image" as const,
+          image: {
+            url: `data:image/png;base64,payload-${index}`,
+            detail: "low" as const,
           },
-        ],
-      }),
-    );
+        })),
+      ],
+    };
+    const expectedText = 'compare these\n\n<images_omitted count="1" reason="token-budget" />';
+    const expected: Message = {
+      role: "user",
+      content: [
+        { type: "text", text: expectedText },
+        {
+          type: "image",
+          image: { url: "data:image/png;base64,payload-0", detail: "low" },
+        },
+        {
+          type: "image",
+          image: { url: "data:image/png;base64,payload-1", detail: "low" },
+        },
+      ],
+    };
+    const budget = estimateMessagesTokens([expected]);
 
-    const kept = selectRecentUserMessages(
-      messages,
-      MAX_COMPACT_RETAINED_IMAGES * IMAGE_CONTENT_TOKEN_ESTIMATE + 100,
-    );
-    const keptImageUrls = kept.flatMap((message) =>
-      Array.isArray(message.content)
-        ? message.content.flatMap((part) => (part.type === "image" ? [part.image.url] : []))
-        : [],
-    );
+    const kept = selectRecentUserMessages([message], budget);
 
-    expect(keptImageUrls).toEqual(
-      Array.from(
-        { length: MAX_COMPACT_RETAINED_IMAGES },
-        (_, index) => `data:image/png;base64,payload-${index + 2}`,
-      ),
-    );
+    expect(kept).toEqual([expected]);
   });
 });
 

@@ -97,8 +97,6 @@ const COMPACTION_REQUEST_TRUNCATED_OUTPUT =
 const COMPACT_USER_TRUNCATION_MARKER = "\n[... user message truncated during compaction ...]\n";
 const MAX_COMPACT_ATTACHMENT_REFS = 32;
 const MAX_COMPACT_ATTACHMENT_PATH_CHARS = 512;
-/** Keep a small, newest-first visual working set across each compacted window. */
-export const MAX_COMPACT_RETAINED_IMAGES = 4;
 /**
  * Tag wrapping each kept user turn in the compacted history. The kept turns and the bridge
  * message are consecutive user-role messages with no assistant reply between them, so the model
@@ -117,8 +115,8 @@ export const MAX_COMPACT_RETAINED_IMAGES = 4;
 const COMPACTION_NOTICE =
   `${COMPACTION_NOTICE_PREFIX} to fit the model window. The most recent user turns are retained ` +
   `as bounded historical projections above, each inside a <${PRIOR_USER_MESSAGE_TAG}> block; ` +
-  `attached file bodies are omitted and at most ${MAX_COMPACT_RETAINED_IMAGES} recent image ` +
-  "payloads are retained. Any requests already handled are covered in the summary below — do not " +
+  "attached file bodies are omitted and recent image payloads are retained within the same token " +
+  "budget. Any requests already handled are covered in the summary below — do not " +
   "answer them again. Continue the current task from the summary " +
   `inside <${COMPACTION_SUMMARY_TAG}>.]`;
 
@@ -257,18 +255,6 @@ function renderUserProjection(text: string, references: readonly string[]): stri
   return referenceText ? `${text}\n\n${referenceText}` : text;
 }
 
-function takeCompleteReferences(references: readonly string[], maxTokens: number): string[] {
-  const kept: string[] = [];
-  for (const reference of references) {
-    const candidate = [...kept, reference];
-    if (estimateTokens(candidate.join("\n")) > maxTokens) {
-      break;
-    }
-    kept.push(reference);
-  }
-  return kept;
-}
-
 function projectionContent(
   text: string,
   references: readonly string[],
@@ -281,18 +267,69 @@ function projectionContent(
   return [...(renderedText ? [{ type: "text" as const, text: renderedText }] : []), ...images];
 }
 
-function takeImagesToBudget(images: readonly ContentPart[], maxTokens: number): ContentPart[] {
-  const kept: ContentPart[] = [];
-  let remaining = maxTokens;
-  for (const image of images) {
-    const cost = estimateMessageContentTokens([image]);
-    if (cost > remaining) {
+function projectionTokenCost(
+  projection: UserCompactionProjection,
+  content: Message["content"],
+): number {
+  // Use the whole message so imageDimensions stored in message.extra participate in the estimate.
+  return estimateMessagesTokens([{ ...projection.message, content }]);
+}
+
+function imageOmissionReference(count: number): string {
+  return renderPseudoXmlEmptyElement("images_omitted", {
+    count: String(count),
+    reason: "token-budget",
+  });
+}
+
+function fitTextAndReferences(
+  projection: UserCompactionProjection,
+  maxTokens: number,
+): { text: string; references: string[] } {
+  const completeTextCost = projectionTokenCost(projection, projection.text);
+  if (completeTextCost > maxTokens) {
+    return {
+      text: truncateTextToTokenBudget(projection.text, maxTokens),
+      references: [],
+    };
+  }
+
+  const references: string[] = [];
+  for (const reference of projection.references) {
+    const candidate = [...references, reference];
+    if (
+      projectionTokenCost(projection, projectionContent(projection.text, candidate, [])) > maxTokens
+    ) {
       break;
     }
-    kept.push(image);
-    remaining -= cost;
+    references.push(reference);
   }
-  return kept;
+  return { text: projection.text, references };
+}
+
+function fitImagesAfterText(
+  projection: UserCompactionProjection,
+  text: string,
+  references: readonly string[],
+  maxTokens: number,
+): Exclude<Message["content"], null> {
+  const base = projectionContent(text, references, []);
+  let best = base;
+  for (let keptCount = 0; keptCount <= projection.images.length; keptCount += 1) {
+    const omittedCount = projection.images.length - keptCount;
+    const candidateReferences =
+      omittedCount > 0 ? [...references, imageOmissionReference(omittedCount)] : [...references];
+    const candidate = projectionContent(
+      text,
+      candidateReferences,
+      projection.images.slice(0, keptCount),
+    );
+    if (projectionTokenCost(projection, candidate) > maxTokens) {
+      break;
+    }
+    best = candidate;
+  }
+  return best;
 }
 
 function fitUserProjection(
@@ -303,56 +340,27 @@ function fitUserProjection(
     return undefined;
   }
   const complete = projectionContent(projection.text, projection.references, projection.images);
-  if (estimateMessageContentTokens(complete) <= maxTokens) {
+  if (projectionTokenCost(projection, complete) <= maxTokens) {
     return { ...projection.message, content: complete };
   }
 
-  // Images are hard to reconstruct from a summary and already bounded by count. Keep the selected
-  // visual context first, then spend the remaining budget on canonical references and user text.
-  const images = takeImagesToBudget(projection.images, maxTokens);
-  const imageCost = estimateMessageContentTokens(images);
-  const textBudget = Math.max(0, maxTokens - imageCost);
-  const completeReferenceText = projection.references.join("\n");
-  const completeReferenceCost = estimateTokens(completeReferenceText);
-  if (completeReferenceText && completeReferenceCost < textBudget) {
-    const text = truncateTextToTokenBudget(
-      projection.text,
-      Math.max(0, textBudget - completeReferenceCost - estimateTokens("\n\n")),
-    );
-    return {
-      ...projection.message,
-      content: projectionContent(text, projection.references, images),
-    };
-  }
-
-  // With an unusually small configured budget, keep only whole reference elements and reserve
-  // half for the user's actual words. Never truncate a pseudo-XML reference into malformed text.
-  const referenceBudget = projection.text ? Math.floor(textBudget / 2) : textBudget;
-  const references = takeCompleteReferences(projection.references, referenceBudget);
-  const referenceCost = estimateTokens(references.join("\n"));
-  const text = truncateTextToTokenBudget(
-    projection.text,
-    Math.max(0, textBudget - referenceCost - (references.length > 0 ? estimateTokens("\n\n") : 0)),
-  );
-  const fitted = projectionContent(text, references, images);
+  // Preserve the user's instruction before metadata or visual payloads. If the text itself fills
+  // the budget, images are omitted rather than displacing the words that explain what to do.
+  const { text, references } = fitTextAndReferences(projection, maxTokens);
+  const fitted = fitImagesAfterText(projection, text, references, maxTokens);
   return fitted.length > 0 ? { ...projection.message, content: fitted } : undefined;
 }
 
 /**
  * Codex-local-style recent-user retention: project messages to bounded text first, then select
- * newest-first. Structured file attachments become references while a small newest-first image set
- * remains available as real multimodal content. The first message that crosses the remaining budget
- * is truncated to fit instead of bypassing the cap.
+ * newest-first. Structured file attachments become references while recent images remain available
+ * as real multimodal content and are charged against the same token budget. The first message that
+ * crosses the remaining budget is truncated to fit instead of bypassing the cap.
  */
 export function selectRecentUserMessages(messages: Message[], maxTokens: number): Message[] {
   const users = messages
     .filter((message) => message.role === "user" && !isInstructionMessage(message))
     .map(projectUserMessageForCompaction);
-  let remainingImages = MAX_COMPACT_RETAINED_IMAGES;
-  for (let index = users.length - 1; index >= 0; index -= 1) {
-    users[index].images = users[index].images.slice(0, remainingImages);
-    remainingImages -= users[index].images.length;
-  }
   const picked: Message[] = [];
   let remaining = Math.max(0, maxTokens);
   for (let index = users.length - 1; index >= 0 && remaining > 0; index -= 1) {
@@ -361,7 +369,7 @@ export function selectRecentUserMessages(messages: Message[], maxTokens: number)
       users[index].references,
       users[index].images,
     );
-    const cost = Math.max(1, estimateMessageContentTokens(complete));
+    const cost = Math.max(1, projectionTokenCost(users[index], complete));
     if (cost <= remaining) {
       picked.push({ ...users[index].message, content: complete });
       remaining -= cost;
