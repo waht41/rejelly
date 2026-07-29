@@ -2,6 +2,8 @@
  * Composes system-style prompts from blocks and lists; blocks are joined with \n\n only.
  */
 
+import { type PseudoXmlAttributes, renderPseudoXmlElement } from "../../shared/lib/pseudoXml";
+
 export type AddListOptions = {
   /** Optional heading line placed above the list. */
   title?: string;
@@ -60,36 +62,18 @@ export class PromptBuilder {
     return this;
   }
 
-  /**
-   * One XML-like block. Skips only when content is null or undefined.
-   * Empty string body renders as self-closing `<tag … />`; non-empty wraps as `<tag>…</tag>`.
-   */
-  addXmlBlock(
+  /** One semantic XML-like block with an unmodified, directly copyable body. */
+  addPseudoXmlBlock(
     tag: string,
     content: string | undefined | null,
-    attributes?: Record<string, string>,
+    attributes?: PseudoXmlAttributes,
   ): this {
     if (content === undefined || content === null) {
       return this;
     }
 
-    let attrString = "";
-    if (attributes) {
-      attrString = Object.entries(attributes)
-        .map(([k, v]) => ` ${k}="${this.escapeXmlAttr(v)}"`)
-        .join("");
-    }
-
-    if (content === "") {
-      this.blocks.push(`<${tag}${attrString} />`);
-    } else {
-      this.blocks.push(`<${tag}${attrString}>\n${content}\n</${tag}>`);
-    }
+    this.blocks.push(renderPseudoXmlElement(tag, content, attributes));
     return this;
-  }
-
-  private escapeXmlAttr(value: string): string {
-    return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
   }
 
   /** Final prompt: blocks separated by double newlines only. */
