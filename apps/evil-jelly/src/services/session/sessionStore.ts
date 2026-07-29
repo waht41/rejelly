@@ -18,28 +18,18 @@ import {
   isCompactionBridgeMessage,
   unwrapPriorUserMessageText,
 } from "../../shared/lib/compactionMessages";
+import type { SessionBudgetData } from "./sessionEvents";
 
 /**
  * Cumulative resource usage for a session, surviving across resume segments.
  * Tokens/cost are running sums; lastContextTokens is the most recent model call's input
  * tokens, used as an approximation of the live context-window occupancy (NOT a sum).
  */
-export interface SessionBudget {
-  /** prompt + completion across every model call in the session. */
-  totalTokens: number;
-  promptTokens: number;
-  completionTokens: number;
-  /** Cumulative cached prompt tokens (a subset of promptTokens); 0 when the provider omits it. */
-  cacheReadTokens: number;
-  /** Number of model calls. */
-  callCount: number;
-  /** Aggregated cost by billing unit (e.g. micro_usd); integer amounts. */
-  costs: Record<string, number>;
-  /** Input tokens of the most recent model call ≈ current context-window usage. */
-  lastContextTokens: number;
-  /** Cached portion of the most recent call's input tokens (subset of lastContextTokens). */
-  lastCacheReadTokens: number;
-}
+/**
+ * Cumulative session resource usage. The persisted V2 Zod schema is the type source of truth;
+ * this alias keeps the existing V1/runtime import path stable.
+ */
+export type SessionBudget = SessionBudgetData;
 
 export interface SessionMeta {
   /** Durable session id (stable across resume; distinct from any single traceId). */
