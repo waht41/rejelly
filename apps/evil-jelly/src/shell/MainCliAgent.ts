@@ -28,7 +28,7 @@ import {
 import { withAbort } from "../services/stop/withAbort";
 import {
   buildAttachmentActionSummary,
-  buildUserMessageContent,
+  buildUserMessage,
 } from "../shared/attachments/messageContent";
 import { env } from "../shared/config";
 import { getWorkspaceFsPolicy } from "../shared/fs-policy/workspace-fs-policy";
@@ -156,15 +156,16 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
       });
     };
 
-    const appendTurn = (userContent: Message["content"], reply: string, delta?: Message[]) => {
+    const appendTurn = (userMessage: Message, reply: string, delta?: Message[]) => {
       const assistantDelta =
         delta && delta.length > 0 ? delta : [{ role: "assistant" as const, content: reply }];
-      const next = [...history, { role: "user" as const, content: userContent }, ...assistantDelta];
+      const next = [...history, userMessage, ...assistantDelta];
       setHistory(next);
       persistTurn(next);
     };
 
     let userInput = "";
+    let submittedUserMessage: Message | undefined;
     try {
       const lineInput = await host.getInput();
       userInput = lineInput.text.trim();
@@ -249,6 +250,10 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
           ? `${userInput}\n${attachmentActions.map((action) => `  -> ${action}`).join("\n")}`
           : userInput;
       host.logUserMessage(displayUserInput);
+      submittedUserMessage = await buildUserMessage({
+        userInput,
+        attachments: lineInput.attachments,
+      });
 
       const result = await UnifiedAgentWithAbort({
         userInput,
@@ -263,11 +268,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
         setHistory(result.compactHistory);
         persistTurn(result.compactHistory);
       } else {
-        const historyUserContent = await buildUserMessageContent({
-          userInput,
-          attachments: lineInput.attachments,
-        });
-        appendTurn(historyUserContent, result.reply, result.delta);
+        appendTurn(submittedUserMessage, result.reply, result.delta);
       }
       host.logAssistantMessage(result.reply);
     } catch (error) {
@@ -278,7 +279,13 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
         // aborted turn when the user actually submitted something.
         if (userInput) {
           const abortedReply = "Task has been interrupted by user.";
-          appendTurn(userInput, abortedReply);
+          appendTurn(
+            submittedUserMessage ?? {
+              role: "user",
+              content: userInput,
+            },
+            abortedReply,
+          );
           host.logAssistantMessage(abortedReply);
         }
         host.logSystemEvent("\n[System] Current task aborted. Returning to router.\n");

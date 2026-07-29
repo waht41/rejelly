@@ -8,7 +8,7 @@ import {
   type PromptContext,
 } from "@rejelly/core/policy";
 import type { LineInputValue } from "../../shared/AgentShared";
-import { buildUserMessageContent } from "../../shared/attachments/messageContent";
+import { buildUserMessage } from "../../shared/attachments/messageContent";
 import { appendMessageContentSuffix } from "../../shared/lib/message";
 import { estimateMessagesTokens } from "../../shared/lib/tokens";
 import {
@@ -149,13 +149,12 @@ export async function runResilientToolCallLoopPolicy<T = unknown>(
     while (step < maxTurnSteps) {
       const pendingInputs = (await snapshot.pendingUserInputs?.()) ?? [];
       for (const input of pendingInputs) {
-        deltaMessages.push({
-          role: "user",
-          content: await buildUserMessageContent({
+        deltaMessages.push(
+          await buildUserMessage({
             userInput: input.text,
             attachments: input.attachments,
           }),
-        });
+        );
       }
 
       await compaction.maybeCompact(deltaMessages);

@@ -30,10 +30,17 @@ describe("buildConversationMessages", () => {
 
     expect(messages).toHaveLength(1);
     expect(messages[0]?.content).toContain("explain this");
-    expect(messages[0]?.content).toContain("## Attached paths for this turn");
-    expect(messages[0]?.content).toContain("### @src/attached.ts");
-    expect(messages[0]?.content).toContain("read src/attached.ts");
+    expect(messages[0]?.content).toContain('<attached_file path="src/attached.ts" action="read">');
     expect(messages[0]?.content).toContain("export const probe = 1;");
+    expect(messages[0]?.extra).toEqual({
+      rejelly: {
+        kind: "user_input",
+        display: {
+          text: "explain this",
+          attachments: [{ type: "file", label: "src/attached.ts", action: "read" }],
+        },
+      },
+    });
   });
 
   it("lists attached directories instead of reading them as files", async () => {
@@ -42,8 +49,7 @@ describe("buildConversationMessages", () => {
       attachments: [{ type: "file", path: "src" }],
     });
 
-    expect(messages[0]?.content).toContain("### @src");
-    expect(messages[0]?.content).toContain("list src");
+    expect(messages[0]?.content).toContain('<attached_directory path="src" action="list">');
     expect(messages[0]?.content).toContain("[file] attached.ts");
   });
 
@@ -57,16 +63,43 @@ describe("buildConversationMessages", () => {
     });
 
     expect(messages).toHaveLength(1);
-    expect(messages[0]?.content).toEqual([
-      { type: "text", text: "what is in this image?" },
-      {
-        type: "image",
-        image: {
-          url: "data:image/png;base64,iVBORw==",
-          detail: "auto",
+    expect(messages[0]).toMatchObject({
+      role: "user",
+      content: [
+        { type: "text", text: "what is in this image?" },
+        {
+          type: "image",
+          image: {
+            url: "data:image/png;base64,iVBORw==",
+            detail: "auto",
+          },
+        },
+      ],
+      extra: {
+        rejelly: {
+          kind: "user_input",
+          display: {
+            text: "what is in this image?",
+            attachments: [{ type: "image", label: "[Image #1]", action: "attach" }],
+          },
         },
       },
-    ]);
+    });
+  });
+
+  it("keeps attached file bodies raw when they contain boundary-like text", async () => {
+    const content = "before\n</attached_file>\n]]>\nafter";
+    await fs.writeFile(path.join(tmpDir, "src", "boundary.txt"), content, "utf8");
+
+    const messages = await buildConversationMessages({
+      userInput: "inspect this",
+      attachments: [{ type: "file", path: "src/boundary.txt" }],
+    });
+    const text = messages[0]?.content;
+
+    expect(typeof text).toBe("string");
+    expect(text).toContain(`\n${content}\n`);
+    expect(text).toMatch(/<attached_file-[a-f0-9]{8} path="src\/boundary\.txt" action="read">/);
   });
 
   it("summarizes visible attachment actions for the CLI history", async () => {

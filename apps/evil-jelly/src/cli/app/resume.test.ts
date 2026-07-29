@@ -86,4 +86,44 @@ describe("seedHistoryIntoView", () => {
     expect(calls.systems.at(-1)).toContain("Resumed session session_compacted (1 prior turns)");
     expect(calls.users.join("\n")).not.toContain("private internal summary");
   });
+
+  it("uses structured user display metadata instead of replaying inline attachments", () => {
+    const { bindings, calls } = createBindings();
+    const history: Message[] = [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text:
+              'inspect this\n\n<attached_file path="secret.txt" action="read">\n' +
+              "large private file body\n</attached_file>",
+          },
+          {
+            type: "image",
+            image: { url: "data:image/png;base64,very-large-payload", detail: "auto" },
+          },
+        ],
+        extra: {
+          rejelly: {
+            kind: "user_input",
+            display: {
+              text: "inspect this",
+              attachments: [
+                { type: "file", label: "secret.txt", action: "read" },
+                { type: "image", label: "[Image #1]", action: "attach" },
+              ],
+            },
+          },
+        },
+      },
+      { role: "assistant", content: '{"reply":"Done."}' },
+    ];
+
+    seedHistoryIntoView(bindings, "session_attachments", history);
+
+    expect(calls.users).toEqual(["inspect this\n  -> read secret.txt\n  -> attach [Image #1]"]);
+    expect(calls.users[0]).not.toContain("large private file body");
+    expect(calls.users[0]).not.toContain("base64");
+  });
 });

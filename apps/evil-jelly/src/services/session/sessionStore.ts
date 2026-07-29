@@ -11,6 +11,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { Message } from "@rejelly/core";
+import { getUserInputDisplay } from "../../shared/attachments/messageContent";
 import { resolveGlobalJellyDir } from "../../shared/globalPath";
 import {
   countConversationTurns,
@@ -118,7 +119,10 @@ function deriveTitle(messages: Message[]): string {
   const firstUser = messages.find(
     (message) => message.role === "user" && !isCompactionBridgeMessage(message),
   );
-  const raw = firstUser ? unwrapPriorUserMessageText(messageContentToText(firstUser.content)) : "";
+  const raw = firstUser
+    ? (getUserInputDisplay(firstUser)?.text ??
+      unwrapPriorUserMessageText(messageContentToText(firstUser.content)))
+    : "";
   const oneLine = raw.replace(/\s+/g, " ").trim();
   if (!oneLine) {
     return "(untitled)";

@@ -8,6 +8,10 @@ import {
   type SessionBudget,
   type SessionRecord,
 } from "../../services/session/sessionStore";
+import {
+  formatUserInputDisplay,
+  getUserInputDisplay,
+} from "../../shared/attachments/messageContent";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import {
   countConversationTurns,
@@ -128,7 +132,10 @@ export function seedHistoryIntoView(
       continue;
     }
     if (message.role === "user") {
-      bindings.logUserMessage(unwrapPriorUserMessageText(text));
+      const display = getUserInputDisplay(message);
+      bindings.logUserMessage(
+        display ? formatUserInputDisplay(display) : unwrapPriorUserMessageText(text),
+      );
     } else if (message.role === "assistant") {
       bindings.logAssistantMessage(assistantDisplayText(text));
     } else if (message.role === "tool") {
