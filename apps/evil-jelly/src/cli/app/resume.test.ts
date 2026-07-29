@@ -61,4 +61,69 @@ describe("seedHistoryIntoView", () => {
     expect(calls.assistants).toEqual(["package name is demo"]);
     expect(calls.systems[0]).toContain("Resumed session session_1");
   });
+
+  it("renders compaction as a system boundary instead of a user message", () => {
+    const { bindings, calls } = createBindings();
+    const history: Message[] = [
+      {
+        role: "user",
+        content: "<prior_user_message>\nfix the session store\n</prior_user_message>",
+      },
+      {
+        role: "user",
+        content:
+          "[Context was automatically compacted to fit the model window.]\n\n" +
+          "<compaction_summary>\nprivate internal summary\n</compaction_summary>",
+      },
+      { role: "assistant", content: '{"reply":"Continuing the work."}' },
+    ];
+
+    seedHistoryIntoView(bindings, "session_compacted", history);
+
+    expect(calls.users).toEqual(["fix the session store"]);
+    expect(calls.assistants).toEqual(["Continuing the work."]);
+    expect(calls.systems).toContain("Context was compacted in a previous run.\n");
+    expect(calls.systems.at(-1)).toContain("Resumed session session_compacted (1 prior turns)");
+    expect(calls.users.join("\n")).not.toContain("private internal summary");
+  });
+
+  it("uses structured user display metadata instead of replaying inline attachments", () => {
+    const { bindings, calls } = createBindings();
+    const history: Message[] = [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text:
+              'inspect this\n\n<attached_file path="secret.txt" action="read">\n' +
+              "large private file body\n</attached_file>",
+          },
+          {
+            type: "image",
+            image: { url: "data:image/png;base64,very-large-payload", detail: "auto" },
+          },
+        ],
+        extra: {
+          rejelly: {
+            kind: "user_input",
+            display: {
+              text: "inspect this",
+              attachments: [
+                { type: "file", label: "secret.txt", action: "read" },
+                { type: "image", label: "[Image #1]", action: "attach" },
+              ],
+            },
+          },
+        },
+      },
+      { role: "assistant", content: '{"reply":"Done."}' },
+    ];
+
+    seedHistoryIntoView(bindings, "session_attachments", history);
+
+    expect(calls.users).toEqual(["inspect this\n  -> read secret.txt\n  -> attach [Image #1]"]);
+    expect(calls.users[0]).not.toContain("large private file body");
+    expect(calls.users[0]).not.toContain("base64");
+  });
 });

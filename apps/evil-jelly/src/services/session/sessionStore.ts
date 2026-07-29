@@ -11,7 +11,13 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { Message } from "@rejelly/core";
+import { getUserInputDisplay } from "../../shared/attachments/messageContent";
 import { resolveGlobalJellyDir } from "../../shared/globalPath";
+import {
+  countConversationTurns,
+  isCompactionBridgeMessage,
+  unwrapPriorUserMessageText,
+} from "../../shared/lib/compactionMessages";
 
 /**
  * Cumulative resource usage for a session, surviving across resume segments.
@@ -110,8 +116,13 @@ export function messageContentToText(content: Message["content"]): string {
 }
 
 function deriveTitle(messages: Message[]): string {
-  const firstUser = messages.find((m) => m.role === "user");
-  const raw = firstUser ? messageContentToText(firstUser.content) : "";
+  const firstUser = messages.find(
+    (message) => message.role === "user" && !isCompactionBridgeMessage(message),
+  );
+  const raw = firstUser
+    ? (getUserInputDisplay(firstUser)?.text ??
+      unwrapPriorUserMessageText(messageContentToText(firstUser.content)))
+    : "";
   const oneLine = raw.replace(/\s+/g, " ").trim();
   if (!oneLine) {
     return "(untitled)";
@@ -126,7 +137,14 @@ function readRecord(filePath: string): SessionRecord | undefined {
     if (!parsed || typeof parsed !== "object" || !parsed.meta || !Array.isArray(parsed.messages)) {
       return undefined;
     }
-    return parsed;
+    return {
+      ...parsed,
+      meta: {
+        ...parsed.meta,
+        // Older V1 records counted the synthetic compaction bridge as a user turn.
+        turns: countConversationTurns(parsed.messages),
+      },
+    };
   } catch {
     return undefined;
   }
@@ -161,7 +179,7 @@ export function persistSession(input: PersistSessionInput): void {
       title: existing?.meta.title ?? deriveTitle(input.messages),
       createdAt: existing?.meta.createdAt ?? now,
       updatedAt: now,
-      turns: input.messages.filter((m) => m.role === "user").length,
+      turns: countConversationTurns(input.messages),
       traceIds: [...traceIds],
       budget: input.budget ?? existing?.meta.budget,
     };
