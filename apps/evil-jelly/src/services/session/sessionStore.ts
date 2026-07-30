@@ -57,19 +57,19 @@ export interface SessionRecord {
 const TITLE_MAX = 80;
 
 /** ~/.evil-jelly/sessions */
-function resolveSessionsRoot(): string {
+export function resolveSessionsRoot(): string {
   return path.join(resolveGlobalJellyDir(), "sessions");
 }
 
 /** Per-workspace bucket: <sanitized-basename>-<sha1(absRoot)[0..8]> so projects stay separate but readable. */
-function workspaceBucket(workspaceRoot: string): string {
+export function workspaceBucket(workspaceRoot: string): string {
   const abs = path.resolve(workspaceRoot);
   const hash = crypto.createHash("sha1").update(abs).digest("hex").slice(0, 8);
   const base = path.basename(abs).replace(/[^\w.-]+/g, "_") || "workspace";
   return `${base}-${hash}`;
 }
 
-function resolveWorkspaceDir(workspaceRoot: string): string {
+export function resolveWorkspaceDir(workspaceRoot: string): string {
   return path.join(resolveSessionsRoot(), workspaceBucket(workspaceRoot));
 }
 
