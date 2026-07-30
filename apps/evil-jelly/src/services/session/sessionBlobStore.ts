@@ -10,9 +10,25 @@ export const SESSION_BLOB_SCHEME = "rejelly-blob://";
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const DATA_IMAGE_PATTERN = /^data:([^;,]+);base64,([A-Za-z0-9+/]*={0,2})$/;
 
+declare const sessionBlobRefBrand: unique symbol;
+export type SessionBlobRef = string & { readonly [sessionBlobRefBrand]: true };
+
+export const sessionBlobRefSchema = z
+  .string()
+  .refine(
+    (value) => {
+      if (!value.startsWith(SESSION_BLOB_SCHEME)) {
+        return false;
+      }
+      return SHA256_PATTERN.test(value.slice(SESSION_BLOB_SCHEME.length));
+    },
+    { message: "Invalid session blob reference" },
+  )
+  .transform((value) => value as SessionBlobRef);
+
 export const sessionBlobMetadataSchema = z
   .object({
-    blobRef: z.string(),
+    blobRef: sessionBlobRefSchema,
     sha256: z.string().regex(SHA256_PATTERN),
     mediaType: z
       .string()
@@ -36,7 +52,7 @@ export const sessionBlobMetadataSchema = z
 
 export type SessionBlobMetadata = z.infer<typeof sessionBlobMetadataSchema>;
 
-const imageBlobMetadataMapSchema = z.record(z.string(), sessionBlobMetadataSchema);
+export const sessionImageBlobMetadataMapSchema = z.record(z.string(), sessionBlobMetadataSchema);
 
 export interface SessionBlobStoreOptions {
   blobRoot?: string;
@@ -71,14 +87,11 @@ async function syncBlobDirectory(directory: string): Promise<void> {
 }
 
 function parseBlobRef(blobRef: string): string {
-  if (!blobRef.startsWith(SESSION_BLOB_SCHEME)) {
-    throw new Error(`Unsupported session blob reference: ${blobRef}`);
-  }
-  const sha256 = blobRef.slice(SESSION_BLOB_SCHEME.length);
-  if (!SHA256_PATTERN.test(sha256)) {
+  const parsed = sessionBlobRefSchema.safeParse(blobRef);
+  if (!parsed.success) {
     throw new Error(`Invalid session blob reference: ${blobRef}`);
   }
-  return sha256;
+  return parsed.data.slice(SESSION_BLOB_SCHEME.length);
 }
 
 async function verifyExistingBlob(
@@ -142,7 +155,7 @@ export async function persistSessionBlob(
 
   const dimensions = mediaType.startsWith("image/") ? readImageDimensions(buffer) : undefined;
   return {
-    blobRef: `${SESSION_BLOB_SCHEME}${sha256}`,
+    blobRef: `${SESSION_BLOB_SCHEME}${sha256}` as SessionBlobRef,
     sha256,
     mediaType,
     byteLength: buffer.length,
@@ -254,11 +267,14 @@ function imageBlobMetadata(message: Message): Record<string, SessionBlobMetadata
   if (value === undefined) {
     return {};
   }
-  const parsed = imageBlobMetadataMapSchema.safeParse(value);
+  const parsed = sessionImageBlobMetadataMapSchema.safeParse(value);
   if (!parsed.success) {
     throw new Error("Invalid session image blob metadata");
   }
   for (const [blobRef, metadata] of Object.entries(parsed.data)) {
+    if (!metadata) {
+      throw new Error(`Missing session image blob metadata for ${blobRef}`);
+    }
     if (blobRef !== metadata.blobRef) {
       throw new Error(`Session image blob metadata key does not match ${metadata.blobRef}`);
     }
