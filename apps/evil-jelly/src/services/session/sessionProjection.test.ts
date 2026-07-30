@@ -29,7 +29,7 @@ describe("sessionProjection", () => {
         seq: 2,
         timestamp: 102,
         turnId: "turn-1",
-        source: "user_input",
+        source: { kind: "user_input", inputKind: "initial" },
         message: {
           role: "user",
           content: "raw body",
@@ -46,7 +46,7 @@ describe("sessionProjection", () => {
         seq: 3,
         timestamp: 103,
         turnId: "turn-1",
-        source: "model",
+        source: { kind: "model" },
         message: { role: "assistant", content: "done" },
       },
       {
@@ -90,6 +90,62 @@ describe("sessionProjection", () => {
       status: "idle",
       lastSeq: 6,
       budget: { totalTokens: 10 },
+    });
+  });
+
+  it("counts initial requests but not steers, view_image results, or compaction", () => {
+    const events: SessionEvent[] = [
+      {
+        type: "message_recorded",
+        seq: 1,
+        timestamp: 101,
+        turnId: "turn-1",
+        source: { kind: "user_input", inputKind: "initial" },
+        message: { role: "user", content: "Inspect this repository." },
+      },
+      {
+        type: "message_recorded",
+        seq: 2,
+        timestamp: 102,
+        turnId: "turn-1",
+        source: { kind: "user_input", inputKind: "steer" },
+        message: { role: "user", content: "Also run the tests." },
+      },
+      {
+        type: "message_recorded",
+        seq: 3,
+        timestamp: 103,
+        turnId: "turn-1",
+        source: { kind: "tool" },
+        message: {
+          role: "tool",
+          tool_call_id: "view-image-1",
+          content: [{ type: "image", image: { url: "https://example.test/image.png" } }],
+        },
+      },
+      {
+        type: "context_compacted",
+        seq: 4,
+        timestamp: 104,
+        trigger: "auto",
+        parentTurnId: "turn-1",
+        replacementHistory: [],
+        beforeMessageCount: 3,
+        afterMessageCount: 0,
+      },
+      {
+        type: "message_recorded",
+        seq: 5,
+        timestamp: 105,
+        turnId: "turn-2",
+        source: { kind: "user_input", inputKind: "initial" },
+        message: { role: "user", content: "Now fix the issue." },
+      },
+    ];
+
+    expect(projectSessionSummary(meta, events)).toMatchObject({
+      title: "Inspect this repository.",
+      userTurns: 2,
     });
   });
 

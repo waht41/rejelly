@@ -115,6 +115,23 @@ export const runSegmentEndedEventSchema = z
   })
   .passthrough();
 
+export const messageSourceSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("user_input"),
+      /**
+       * initial starts a top-level turn; steer is additional user-authored context injected while
+       * that same turn is still running.
+       */
+      inputKind: z.enum(["initial", "steer"]),
+    })
+    .passthrough(),
+  z.object({ kind: z.literal("model") }).passthrough(),
+  z.object({ kind: z.literal("tool") }).passthrough(),
+  z.object({ kind: z.literal("agent_runtime") }).passthrough(),
+  z.object({ kind: z.literal("recovery") }).passthrough(),
+]);
+
 export const messageRecordedEventSchema = z
   .object({
     ...eventBaseFields,
@@ -122,17 +139,15 @@ export const messageRecordedEventSchema = z
     /** One top-level user request and all model/tool activity it causes share a turnId. */
     turnId: z.string(),
     /**
-     * Origin of the canonical Core Message:
-     * - user_input: input explicitly submitted by the user
-     * - model: assistant message returned by the model, including tool_calls
-     * - tool: role=tool result, including view_image image content
-     * - agent_runtime: synthetic runtime message such as validation feedback
-     * - recovery: synthetic message added while repairing an interrupted turn
+     * Origin of the canonical Core Message. User input additionally distinguishes the initial
+     * request that starts a turn from later steers injected into that same turn. Model is an
+     * assistant message (including tool_calls); tool is a canonical role=tool result (including
+     * view_image image content); agent_runtime and recovery are synthetic messages.
      *
      * Adapter-only wire-role conversion is not persisted. Compact replacement messages live only
      * inside context_compacted.replacementHistory, not as message_recorded events.
      */
-    source: z.enum(["user_input", "model", "tool", "agent_runtime", "recovery"]),
+    source: messageSourceSchema,
     message: sessionMessageSchema,
   })
   .passthrough();
@@ -147,13 +162,20 @@ export const turnCompletedEventSchema = z
   })
   .passthrough();
 
+/**
+ * An active-context reconstruction boundary, not a conversation turn or transcript replacement.
+ * It never affects userTurns and may occur inside a running turn via parentTurnId.
+ */
 export const contextCompactedEventSchema = z
   .object({
     ...eventBaseFields,
     type: z.literal("context_compacted"),
     /** /compress is manual; context-window maintenance is auto. */
     trigger: z.enum(["auto", "manual"]),
-    /** Present when auto compaction happened while a user turn was still running. */
+    /**
+     * Present when auto compaction happened while a user turn was still running.
+     * The public parse boundaries reject parentTurnId on manual compaction.
+     */
     parentTurnId: z.string().optional(),
     replacementHistory: z.array(sessionMessageSchema),
     beforeMessageCount: nonNegativeIntSchema,
@@ -245,6 +267,7 @@ export const sessionEventEnvelopeSchema = z
 export type SessionBudgetData = z.infer<typeof sessionBudgetSchema>;
 export type SessionMetaLine = z.infer<typeof sessionMetaLineSchema>;
 export type SessionEventBase = z.infer<typeof sessionEventEnvelopeSchema>;
+export type MessageSource = z.infer<typeof messageSourceSchema>;
 export type RunSegmentStartedEvent = z.infer<typeof runSegmentStartedEventSchema>;
 export type RunSegmentEndedEvent = z.infer<typeof runSegmentEndedEventSchema>;
 export type MessageRecordedEvent = z.infer<typeof messageRecordedEventSchema>;
@@ -307,6 +330,7 @@ export function parseSessionEvent(value: unknown): SessionEvent {
   if (!parsed.success) {
     throw new SessionSchemaError(`Invalid ${envelope.data.type} event`, parsed.error);
   }
+  assertValidCompactionParent(parsed.data);
   return parsed.data;
 }
 
@@ -315,7 +339,24 @@ export function parseNewSessionEvent(value: unknown): NewSessionEvent {
   if (!parsed.success) {
     throw new SessionSchemaError("Invalid new Session V2 event", parsed.error);
   }
+  assertValidCompactionParent(parsed.data);
   return parsed.data;
+}
+
+/**
+ * Zod 3 cannot place a refined object inside a discriminated union, so keep this cross-field
+ * invariant at both public parse boundaries while the object schema remains the shape authority.
+ */
+function assertValidCompactionParent(event: KnownSessionEvent | NewSessionEvent): void {
+  if (
+    event.type === "context_compacted" &&
+    event.trigger === "manual" &&
+    event.parentTurnId !== undefined
+  ) {
+    throw new SessionSchemaError(
+      "Invalid context_compacted event: parentTurnId is only valid for automatic compaction",
+    );
+  }
 }
 
 export function parseSessionStateEvent(value: unknown): SessionStateEvent {

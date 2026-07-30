@@ -86,7 +86,11 @@ export function projectSessionSummary(
               : "interrupted";
         break;
       case "message_recorded":
-        if (event.source === "user_input" && !userTurnIds.has(event.turnId)) {
+        if (
+          event.source.kind === "user_input" &&
+          event.source.inputKind === "initial" &&
+          !userTurnIds.has(event.turnId)
+        ) {
           userTurnIds.add(event.turnId);
           userTurns += 1;
           title = title === "(untitled)" ? (titleFromMessage(event.message) ?? title) : title;
@@ -98,6 +102,9 @@ export function projectSessionSummary(
         } else if (event.status === "interrupted") {
           status = "interrupted";
         }
+        break;
+      case "context_compacted":
+        // Active-context boundary only; it does not change picker/summary metadata.
         break;
       case "budget_updated":
         budget = event.budget;

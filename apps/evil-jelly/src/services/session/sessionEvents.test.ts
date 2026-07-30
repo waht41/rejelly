@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isKnownSessionEvent,
+  parseNewSessionEvent,
   parseSessionEvent,
   parseSessionMetaLine,
   SESSION_SCHEMA_VERSION,
@@ -54,7 +55,33 @@ describe("sessionEvents", () => {
         seq: 1,
         timestamp: 2,
         turnId: "turn-1",
-        source: "user_input",
+        source: { kind: "user_input", inputKind: "initial" },
+      }),
+    ).toThrow(SessionSchemaError);
+  });
+
+  it("requires user input to distinguish an initial request from a steer", () => {
+    expect(
+      parseSessionEvent({
+        type: "message_recorded",
+        seq: 1,
+        timestamp: 2,
+        turnId: "turn-1",
+        source: { kind: "user_input", inputKind: "steer" },
+        message: { role: "user", content: "Please also check the tests." },
+      }),
+    ).toMatchObject({
+      source: { kind: "user_input", inputKind: "steer" },
+    });
+
+    expect(() =>
+      parseSessionEvent({
+        type: "message_recorded",
+        seq: 1,
+        timestamp: 2,
+        turnId: "turn-1",
+        source: { kind: "user_input" },
+        message: { role: "user", content: "Ambiguous user input" },
       }),
     ).toThrow(SessionSchemaError);
   });
@@ -92,10 +119,10 @@ describe("sessionEvents", () => {
         seq: 1,
         timestamp: 2,
         turnId: "turn-1",
-        source: "agent_runtime",
+        source: { kind: "agent_runtime" },
         message: { role: "user", content: "Validation failed; retry." },
       }),
-    ).toMatchObject({ source: "agent_runtime" });
+    ).toMatchObject({ source: { kind: "agent_runtime" } });
 
     expect(() =>
       parseSessionEvent({
@@ -107,6 +134,44 @@ describe("sessionEvents", () => {
         title: "Session",
         traceIds: ["trace-1"],
         status: "archived",
+      }),
+    ).toThrow(SessionSchemaError);
+  });
+
+  it("only associates automatic compaction with a running parent turn", () => {
+    const compact = {
+      type: "context_compacted" as const,
+      trigger: "auto" as const,
+      parentTurnId: "turn-1",
+      replacementHistory: [],
+      beforeMessageCount: 3,
+      afterMessageCount: 1,
+    };
+
+    expect(parseNewSessionEvent(compact)).toMatchObject({
+      trigger: "auto",
+      parentTurnId: "turn-1",
+    });
+    expect(
+      parseSessionEvent({
+        ...compact,
+        seq: 1,
+        timestamp: 2,
+      }),
+    ).toMatchObject({ trigger: "auto", parentTurnId: "turn-1" });
+
+    expect(() =>
+      parseNewSessionEvent({
+        ...compact,
+        trigger: "manual",
+      }),
+    ).toThrow(SessionSchemaError);
+    expect(() =>
+      parseSessionEvent({
+        ...compact,
+        trigger: "manual",
+        seq: 1,
+        timestamp: 2,
       }),
     ).toThrow(SessionSchemaError);
   });

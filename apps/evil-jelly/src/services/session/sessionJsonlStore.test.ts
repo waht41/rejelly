@@ -50,7 +50,7 @@ describe("sessionJsonlStore", () => {
       {
         type: "message_recorded",
         turnId: "turn-1",
-        source: "user_input",
+        source: { kind: "user_input", inputKind: "initial" },
         message: { role: "user", content: "你好\nworld" },
       },
       { timestamp: 101 },
@@ -111,7 +111,7 @@ describe("sessionJsonlStore", () => {
       writer.append({
         type: "message_recorded",
         turnId: "turn-1",
-        source: "user_input",
+        source: { kind: "user_input", inputKind: "initial" },
         message: { role: "user", content: "hello" },
       }),
       writer.append({
@@ -134,7 +134,7 @@ describe("sessionJsonlStore", () => {
     const append = writer.append({
       type: "message_recorded",
       turnId: "turn-1",
-      source: "user_input",
+      source: { kind: "user_input", inputKind: "initial" },
       message: {
         role: "user",
         content: [
@@ -297,7 +297,7 @@ describe("sessionJsonlStore", () => {
       writer.append({
         type: "message_recorded",
         turnId: "turn-1",
-        source: "not-a-source",
+        source: { kind: "not-a-source" },
         message: {
           role: "user",
           content: [
@@ -325,7 +325,7 @@ describe("sessionJsonlStore", () => {
     await writer.append({
       type: "message_recorded",
       turnId: "turn-1",
-      source: "user_input",
+      source: { kind: "user_input", inputKind: "initial" },
       message: { role: "user", content: "persisted" },
     });
     await writer.close();
@@ -361,7 +361,7 @@ describe("sessionJsonlStore", () => {
     await writer.append({
       type: "message_recorded",
       turnId: "turn-1",
-      source: "user_input",
+      source: { kind: "user_input", inputKind: "initial" },
       message: { role: "user", content: "persisted" },
     });
     await writer.close();
@@ -469,7 +469,7 @@ describe("sessionJsonlStore", () => {
     await writer.append({
       type: "message_recorded",
       turnId: "turn-1",
-      source: "user_input",
+      source: { kind: "user_input", inputKind: "initial" },
       message: {
         role: "user",
         content: [{ type: "image", image: { url: inlineUrl } }],
@@ -489,7 +489,7 @@ describe("sessionJsonlStore", () => {
     await writer.append({
       type: "message_recorded",
       turnId: "turn-1",
-      source: "user_input",
+      source: { kind: "user_input", inputKind: "initial" },
       message: { role: "user", content: "hello" },
     });
     await writer.append({
@@ -522,7 +522,7 @@ describe("sessionJsonlStore", () => {
     const appended = await writer.append({
       type: "message_recorded",
       turnId: "turn-1",
-      source: "user_input",
+      source: { kind: "user_input", inputKind: "initial" },
       message: { role: "user", content: "x".repeat(96 * 1024) },
     });
     await writer.close();
