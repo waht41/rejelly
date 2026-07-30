@@ -2,15 +2,13 @@ import path from "node:path";
 import type { Message } from "@rejelly/core";
 import { getUserInputDisplay } from "../../shared/attachments/messageContent";
 import { isCompactionBridgeMessage } from "../../shared/lib/compactionMessages";
-import {
-  isKnownSessionEvent,
-  type SessionEvent,
-  type SessionMetaLine,
-  type SessionStateEvent,
-  type SessionStatus,
-} from "./sessionEvents";
+import type { SessionMetaLine, SessionStateEvent, SessionStatus } from "./sessionEvents";
+import type { PreparedSessionReplay } from "./sessionReplay";
 import type { SessionBudget } from "./sessionStore";
 import { messageContentToText } from "./sessionStore";
+
+export type { PreparedSessionEvent, PreparedSessionReplay } from "./sessionReplay";
+export { prepareSessionReplay } from "./sessionReplay";
 
 const TITLE_MAX = 80;
 
@@ -49,22 +47,17 @@ function unique(values: string[]): string[] {
 
 export function projectSessionSummary(
   meta: SessionMetaLine,
-  events: SessionEvent[],
+  replay: PreparedSessionReplay,
   fileStat?: SessionFileStat,
 ): SessionSummary {
   let title = "(untitled)";
   let userTurns = 0;
   let budget: SessionBudget | undefined;
   let status: SessionStatus = "idle";
-  let lastSeq = 0;
   const traceIds: string[] = [];
   const userTurnIds = new Set<string>();
 
-  for (const event of events) {
-    lastSeq = event.seq;
-    if (!isKnownSessionEvent(event)) {
-      continue;
-    }
+  for (const event of replay.events) {
     switch (event.type) {
       case "legacy_snapshot": {
         title = event.legacyMeta.title || title;
@@ -129,12 +122,12 @@ export function projectSessionSummary(
     workspaceRoot: path.resolve(meta.workspaceRoot),
     title,
     createdAt: meta.createdAt,
-    updatedAt: fileStat?.mtimeMs ?? events.at(-1)?.timestamp ?? meta.createdAt,
+    updatedAt: fileStat?.mtimeMs ?? replay.lastTimestamp ?? meta.createdAt,
     userTurns,
     traceIds: unique(traceIds),
     budget,
     status,
-    lastSeq,
+    lastSeq: replay.lastSeq,
   };
 }
 

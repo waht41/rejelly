@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SessionEvent, SessionMetaLine } from "./sessionEvents";
 import { projectSessionSummary, projectSessionSummaryFromState } from "./sessionProjection";
+import { prepareSessionReplay } from "./sessionReplay";
 
 const meta: SessionMetaLine = {
   type: "session_meta",
@@ -81,7 +82,9 @@ describe("sessionProjection", () => {
       },
     ];
 
-    expect(projectSessionSummary(meta, events, { mtimeMs: 999 })).toMatchObject({
+    expect(
+      projectSessionSummary(meta, prepareSessionReplay(events), { mtimeMs: 999 }),
+    ).toMatchObject({
       id: "session-1",
       title: "A useful session title",
       updatedAt: 999,
@@ -143,7 +146,7 @@ describe("sessionProjection", () => {
       },
     ];
 
-    expect(projectSessionSummary(meta, events)).toMatchObject({
+    expect(projectSessionSummary(meta, prepareSessionReplay(events))).toMatchObject({
       title: "Inspect this repository.",
       userTurns: 2,
     });
