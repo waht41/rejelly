@@ -5,6 +5,7 @@ import {
   getUserInputDisplay,
   type UserInputAttachmentDisplay,
 } from "../../shared/attachments/messageContent";
+import { COMPACTION_STREAM_CHANNEL } from "../../shared/contracts/streamChannels";
 import { fileLocatorAttributes } from "../../shared/fs-policy/file-locator";
 import {
   COMPACTION_BRIDGE_MESSAGE_KIND,
@@ -72,13 +73,6 @@ export interface CompactionRoundInfo {
 
 export const DEFAULT_COMPACTION_MAX_ROUNDS = 4;
 export const DEFAULT_WARN_RATIO = 0.8;
-
-/**
- * Stream-event channel tag on the summarization side-turn. Its output is an internal handoff
- * (recorded into history, surfaced via `onCompacted`), not a reply - user-facing stream consumers
- * must skip this channel so the summary never renders as if the agent had answered.
- */
-export const COMPACTION_STREAM_CHANNEL = "compaction";
 
 const DEFAULT_KEEP_RECENT_USER_TOKENS = 64_000;
 const DEFAULT_SUMMARY_PREFIX = "## Summary of prior work (auto-compacted)";
