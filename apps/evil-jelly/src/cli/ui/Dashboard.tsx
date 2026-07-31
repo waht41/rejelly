@@ -153,16 +153,22 @@ function SteerQueueList({ items, columns }: { items: LineInputValue[]; columns: 
   );
 }
 
-const PHASE_META: Record<RuntimePhase, { label: string; color?: string }> = {
-  idle: { label: "Idle" },
-  connecting: { label: "Connecting" },
-  thinking: { label: "Thinking" },
-  streaming: { label: "Responding", color: "green" },
-  compacting: { label: "Compacting context", color: "cyan" },
-  tool: { label: "Running tools", color: "green" },
-  working: { label: "Working" },
-  awaiting_user: { label: "Waiting for you", color: "yellow" },
+/**
+ * Sub-activity shown dimmed after the fixed `Working` prefix while a turn is in flight.
+ * `working` itself is the neutral state and has no entry, so its line is just
+ * `● Working 12s`. Lowercase on purpose: it reads as a detail of "Working", not as a
+ * competing status. Idle and awaiting_user never reach this branch.
+ */
+const WORKING_DETAIL: Partial<Record<RuntimePhase, string>> = {
+  connecting: "connecting",
+  thinking: "thinking",
+  streaming: "responding",
+  compacting: "compacting context",
+  tool: "running tools",
 };
+
+const IDLE_LABEL = "Idle";
+const AWAITING_LABEL = "Waiting for you";
 
 /** Phases whose wait is a model round trip with nothing else on screen: phase duration is the stall signal. */
 const NETWORK_PHASES = new Set<RuntimePhase>(["connecting", "compacting"]);
@@ -197,10 +203,12 @@ function useElapsedSeconds(since: number): number {
  * Persistent status bar at the bottom of the transient region: what the runtime is doing and
  * how long the turn has been going.
  *
- * The number counts the whole turn from the moment it left the input wait, surviving phase
- * changes (thinking → streaming → tools) instead of zeroing on each one. A failed run that
- * froze in `connecting` still reads as `Connecting 23s`, so a slow model and a connection
- * that never opened stay distinguishable on sight.
+ * Every active phase shares one fixed `Working` prefix, so the line never re-identifies itself
+ * mid-turn; the specific sub-activity trails it dimmed. The number counts the whole turn from
+ * the moment it left the input wait, surviving phase changes (thinking → streaming → tools)
+ * instead of zeroing on each one. A failed run that froze in `connecting` still reads as
+ * `Working 23s · connecting`, so a slow model and a connection that never opened stay
+ * distinguishable on sight.
  */
 function RuntimeStatusLine() {
   const phase = useOutputStore((s) => s.runtime.phase);
@@ -208,8 +216,6 @@ function RuntimeStatusLine() {
   const turnStartedAt = useOutputStore((s) => s.runtime.turnStartedAt);
   const lastOutputAt = useOutputStore((s) => s.runtime.lastOutputAt);
   const detail = useOutputStore((s) => s.runtime.detail);
-
-  const meta = PHASE_META[phase];
   // Maintenance commands (`/compress`) reach the model without passing the shell's turn anchor,
   // so the displayed number falls back to the phase when no turn is running.
   const turnElapsed = useElapsedSeconds(statusTimerAnchor(turnStartedAt, phaseSince));
@@ -226,7 +232,7 @@ function RuntimeStatusLine() {
     return (
       <Box>
         <Text color="gray">● </Text>
-        <Text color="gray">{meta.label}</Text>
+        <Text color="gray">{IDLE_LABEL}</Text>
       </Box>
     );
   }
@@ -239,20 +245,26 @@ function RuntimeStatusLine() {
       <Box>
         <Text color="yellow">● </Text>
         <Text color="yellow">
-          {meta.label}
+          {AWAITING_LABEL}
           {detailSuffix}
         </Text>
       </Box>
     );
   }
 
-  const color = stalled ? "yellow" : meta.color;
+  // One fixed prefix for every active phase: the first words of the line stay put for the
+  // whole turn, so phase transitions (thinking → responding → running tools) read as progress
+  // in the dimmed suffix instead of the line re-identifying itself. The color stays neutral
+  // until the run stalls, when the whole line goes yellow and bold.
+  const detailSuffix = WORKING_DETAIL[phase];
+  const color = stalled ? "yellow" : undefined;
   return (
     <Box>
       <Text color={color ?? "gray"}>● </Text>
       <Text color={color} bold={stalled}>
-        {meta.label} {turnElapsed}s
+        Working {turnElapsed}s
       </Text>
+      {detailSuffix !== undefined ? <Text dimColor> · {detailSuffix}</Text> : null}
     </Box>
   );
 }
