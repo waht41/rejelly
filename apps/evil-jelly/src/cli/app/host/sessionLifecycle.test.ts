@@ -77,6 +77,24 @@ describe("non-TTY session lifecycle", () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
+  it.each([
+    { name: "exits immediately", inputs: ["/exit"] },
+    { name: "only checks status", inputs: ["/status", "/exit"] },
+  ])("does not create an empty session when it $name", async ({ inputs }) => {
+    const model = createMockModel();
+    await runEvilJellyHost(createMemoryBindings(inputs), {
+      model: model.adapter,
+      sessionId: "untouched",
+      sessionStartMode: "new",
+      sessionV2: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+    });
+
+    expect(model.calls.count()).toBe(0);
+    await expect(
+      fs.access(resolveV2SessionPath(workspaceRoot, "untouched", { sessionsRoot })),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("persists a tool turn, manual compaction, resume, and a continued turn", async () => {
     const firstModel = createMockModel();
     firstModel.sequence([
@@ -121,6 +139,7 @@ describe("non-TTY session lifecycle", () => {
     await runEvilJellyHost(createMemoryBindings(["Inspect the workspace", "/compress", "/exit"]), {
       model: firstModel.adapter,
       sessionId: "lifecycle",
+      sessionStartMode: "new",
       sessionV2: { enabled: true, appVersion: "1.0.0", sessionsRoot },
     });
 
@@ -148,6 +167,7 @@ describe("non-TTY session lifecycle", () => {
     await runEvilJellyHost(createMemoryBindings(["Continue from the inspection", "/exit"]), {
       model: secondModel.adapter,
       sessionId: "lifecycle",
+      sessionStartMode: "resumed",
       seedContext: firstResume?.messages,
       seedBudget: firstResume?.meta.budget,
       sessionV2: { enabled: true, appVersion: "1.0.0", sessionsRoot },
@@ -213,6 +233,14 @@ describe("non-TTY session lifecycle", () => {
     ).toBe(true);
 
     const stored = await readSessionEvents(workspaceRoot, "lifecycle", { sessionsRoot });
+    expect(stored.meta).toMatchObject({ type: "session_meta", sessionId: "lifecycle" });
+    expect(stored.events.slice(0, 2)).toMatchObject([
+      { type: "run_segment_started", kind: "created" },
+      {
+        type: "message_recorded",
+        source: { kind: "user_input", inputKind: "initial" },
+      },
+    ]);
     const starts = stored.events.filter((event) => event.type === "run_segment_started");
     expect(starts).toHaveLength(2);
     expect(new Set(starts.map((event) => event.traceId))).toHaveLength(2);
@@ -258,6 +286,7 @@ describe("non-TTY session lifecycle", () => {
     await runEvilJellyHost(createMemoryBindings(["Check the workspace twice", "/exit"]), {
       model: model.adapter,
       sessionId: "auto-compact",
+      sessionStartMode: "new",
       sessionV2: { enabled: true, appVersion: "1.0.0", sessionsRoot },
     });
 
@@ -360,6 +389,7 @@ describe("non-TTY session lifecycle", () => {
     await runEvilJellyHost(createMemoryBindings(["/exit"]), {
       model: model.adapter,
       sessionId: "user-only-crash",
+      sessionStartMode: "resumed",
       seedContext: seed?.messages,
       seedBudget: seed?.meta.budget,
       sessionV2: { enabled: true, appVersion: "1.0.0", sessionsRoot },
@@ -425,6 +455,7 @@ describe("non-TTY session lifecycle", () => {
       {
         model: firstModel.adapter,
         sessionId: "image-lifecycle",
+        sessionStartMode: "new",
         sessionV2: {
           enabled: true,
           appVersion: "1.0.0",
@@ -479,6 +510,7 @@ describe("non-TTY session lifecycle", () => {
       {
         model: compactModel.adapter,
         sessionId: "image-lifecycle",
+        sessionStartMode: "resumed",
         seedContext: firstResume?.messages,
         seedBudget: firstResume?.meta.budget,
         sessionV2: {

@@ -12,6 +12,7 @@ import {
 import type { ReviewOptions } from "@rejelly/core/debugger";
 import { UnifiedAgent } from "../../../features/unified/UnifiedAgent";
 import { setBinding } from "../../../services/binding/hostBindings";
+import { LazySessionRecorder } from "../../../services/session/lazySessionRecorder";
 import {
   openSessionRecorder,
   type SessionRecorder,
@@ -40,6 +41,11 @@ export interface RunEvilJellyHostOptions {
   enableSnapshot?: boolean;
   /** Durable session id for local persistence / resume (distinct from the run traceId). */
   sessionId?: string;
+  /**
+   * New sessions defer file creation until their first durable event. Resumed sessions open
+   * eagerly so writer locking and interrupted-turn recovery happen before accepting input.
+   */
+  sessionStartMode?: "new" | "resumed";
   /** Restored active model context seeded into the agent on resume. */
   seedContext?: Message[];
   /** @deprecated Compatibility alias; new callers should pass seedContext. */
@@ -99,7 +105,10 @@ async function openRunSessionRecorder(
   if (!sessionV2?.enabled) {
     throw new Error("Session V2 configuration is required for durable session execution");
   }
-  return openSessionRecorder({
+  if (!options.sessionStartMode) {
+    throw new Error("Session start mode is required for durable session execution");
+  }
+  const recorderOptions = {
     workspaceRoot: getWorkspaceFsPolicy().getRoot(),
     sessionId,
     traceId,
@@ -110,7 +119,11 @@ async function openRunSessionRecorder(
     cwd: process.cwd(),
     ...(sessionV2.sessionsRoot ? { sessionsRoot: sessionV2.sessionsRoot } : {}),
     ...(sessionV2.blobRoot ? { blobRoot: sessionV2.blobRoot } : {}),
-  });
+  };
+  const openRecorder = () => openSessionRecorder(recorderOptions);
+  return options.sessionStartMode === "new"
+    ? new LazySessionRecorder(sessionId, traceId, openRecorder)
+    : openRecorder();
 }
 
 async function endRunSegment(

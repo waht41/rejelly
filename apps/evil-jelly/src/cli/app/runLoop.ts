@@ -50,6 +50,7 @@ interface InteractiveSessionState {
   sessionId: string | undefined;
   snapshot: AgentSnapshot | undefined;
   resumeSeed: SessionResumeSeed | undefined;
+  sessionStartMode: "new" | "resumed";
 }
 
 interface ResumedSessionState extends InteractiveSessionState {
@@ -103,6 +104,7 @@ function startNewSession(isolateSessionState: boolean): InteractiveSessionState 
   return {
     sessionId: isolateSessionState ? undefined : generateSessionId(),
     resumeSeed: undefined,
+    sessionStartMode: "new",
     // A startup snapshot must not leak into a later logical session.
     snapshot: undefined,
   };
@@ -130,6 +132,7 @@ async function loadResumedSession(
     state: {
       sessionId: record.meta.id,
       resumeSeed: buildSessionResumeSeed(record),
+      sessionStartMode: "resumed",
       // Resume reconstructs history; it must not inherit a startup snapshot.
       snapshot: undefined,
     },
@@ -150,6 +153,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
     sessionId: params.sessionId,
     snapshot: params.snapshot,
     resumeSeed: initialResumeSeed,
+    sessionStartMode: initialResumeSeed ? "resumed" : "new",
   };
 
   // Legacy callers historically hydrated the view themselves unless they supplied
@@ -171,6 +175,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
         enableReview,
         snapshot: state.snapshot,
         sessionId: isolateSessionState ? undefined : state.sessionId,
+        sessionStartMode: state.sessionStartMode,
         seedContext: state.resumeSeed?.activeContext,
         seedBudget: state.resumeSeed?.budget,
         mcpProviders,

@@ -68,6 +68,7 @@ describe("runEvilJellyHost session teardown", () => {
     await runEvilJellyHost({ logSystemEvent } as unknown as EvilJellyHostBindings, {
       model: { id: "test-model" } as ModelAdapter,
       sessionId: "idle-session",
+      sessionStartMode: "resumed",
       sessionV2: { enabled: true, appVersion: "1.0.0", sessionsRoot: "/sessions" },
     });
 
@@ -78,6 +79,39 @@ describe("runEvilJellyHost session teardown", () => {
     });
     expect(close).toHaveBeenCalledOnce();
     expect(endSegment.mock.invocationCallOrder[0]).toBeLessThan(close.mock.invocationCallOrder[0]!);
+    expect(logSystemEvent).toHaveBeenCalledWith("\nRun interrupted by user.\n");
+  });
+
+  it("does not open a recorder when a new untouched session is interrupted while idle", async () => {
+    mocks.mainCliAgent.mockReturnValue(new Promise(() => undefined));
+    mocks.runWithReview.mockImplementation(
+      async (options: { run: () => Promise<unknown>; runWithOptions: { signal: AbortSignal } }) => {
+        const running = options.run();
+        const aborted = new Promise<never>((_resolve, reject) => {
+          options.runWithOptions.signal.addEventListener(
+            "abort",
+            () => {
+              const error = new Error("Stopped by user (Ctrl+C)");
+              error.name = "AbortError";
+              reject(error);
+            },
+            { once: true },
+          );
+        });
+        queueMicrotask(() => requestRunAbort("Stopped by user (Ctrl+C)"));
+        return Promise.race([running, aborted]);
+      },
+    );
+
+    const logSystemEvent = vi.fn();
+    await runEvilJellyHost({ logSystemEvent } as unknown as EvilJellyHostBindings, {
+      model: { id: "test-model" } as ModelAdapter,
+      sessionId: "new-idle-session",
+      sessionStartMode: "new",
+      sessionV2: { enabled: true, appVersion: "1.0.0", sessionsRoot: "/sessions" },
+    });
+
+    expect(mocks.openSessionRecorder).not.toHaveBeenCalled();
     expect(logSystemEvent).toHaveBeenCalledWith("\nRun interrupted by user.\n");
   });
 });

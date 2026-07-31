@@ -73,11 +73,13 @@ describe("runInteractiveLoop mock session isolation", () => {
     expect(runHostMock).toHaveBeenCalledTimes(2);
     expect(runHostMock.mock.calls[0]?.[1]).toMatchObject({
       sessionId: undefined,
+      sessionStartMode: "new",
       mockSourceTraceId: "trace_mock",
       isolateSessionState: true,
     });
     expect(runHostMock.mock.calls[1]?.[1]).toMatchObject({
       sessionId: undefined,
+      sessionStartMode: "new",
       mockSourceTraceId: "trace_mock",
       isolateSessionState: true,
     });
@@ -143,12 +145,14 @@ describe("runInteractiveLoop mock session isolation", () => {
     expect(runHostMock).toHaveBeenCalledTimes(2);
     expect(runHostMock.mock.calls[0]?.[1]).toMatchObject({
       sessionId: "session_old",
+      sessionStartMode: "resumed",
       seedContext: activeContext,
       seedBudget: budget,
     });
     expect(runHostMock.mock.calls[0]?.[1].snapshot).toBeDefined();
     expect(runHostMock.mock.calls[1]?.[1].sessionId).not.toBe("session_old");
     expect(runHostMock.mock.calls[1]?.[1]).toMatchObject({
+      sessionStartMode: "new",
       seedContext: undefined,
       seedBudget: undefined,
       snapshot: undefined,
@@ -204,6 +208,7 @@ describe("runInteractiveLoop mock session isolation", () => {
     expect(runHostMock).toHaveBeenCalledTimes(2);
     expect(runHostMock.mock.calls[1]?.[1]).toMatchObject({
       sessionId: "session_target",
+      sessionStartMode: "resumed",
       seedContext: messages,
       seedBudget: budget,
       snapshot: undefined,
