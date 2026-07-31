@@ -10,7 +10,12 @@ import type { LineInputValue } from "../../shared/AgentShared";
 import type { RuntimePhase } from "../../shared/types";
 import { composeToolTailWindow } from "../store/toolTailWindow";
 import { MODE_META, useModeStore } from "../store/useModeStore";
-import { isRuntimeActive, type RunningTool, useOutputStore } from "../store/useOutputStore";
+import {
+  isRuntimeActive,
+  type RunningTool,
+  statusTimerAnchor,
+  useOutputStore,
+} from "../store/useOutputStore";
 import { usePromptStore } from "../store/usePromptStore";
 import { useViewStore } from "../store/useViewStore";
 import { HistoryItem } from "./HistoryItem";
@@ -171,23 +176,20 @@ const GENERIC_STATUS_DETAILS = new Set(["Ready", "Waiting for input"]);
  * One second is deliberate: the number is the point, not animation. Dashboard remeasures its
  * transient region on every render (see the layout effect below), so a spinner-rate tick would
  * put that measure/repaint loop on a 10x faster cadence to say the same thing.
- * `null` (between turns) reads as 0 and stops the ticking entirely.
+ *
+ * Takes a real anchor, never null: an absent anchor used to read as a frozen 0s, which is the one
+ * thing a stall indicator must never show. Callers resolve their anchor first (see
+ * {@link statusTimerAnchor}).
  */
-function useElapsedSeconds(since: number | null): number {
+function useElapsedSeconds(since: number): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (since === null) {
-      return;
-    }
     // Re-baselined on every change so a new anchor reads 0s immediately instead of
     // inheriting up to a second of the previous one's tick.
     setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), 1_000);
     return () => clearInterval(timer);
   }, [since]);
-  if (since === null) {
-    return 0;
-  }
   return Math.max(0, Math.floor((now - since) / 1_000));
 }
 
@@ -208,7 +210,9 @@ function RuntimeStatusLine() {
   const detail = useOutputStore((s) => s.runtime.detail);
 
   const meta = PHASE_META[phase];
-  const turnElapsed = useElapsedSeconds(turnStartedAt);
+  // Maintenance commands (`/compress`) reach the model without passing the shell's turn anchor,
+  // so the displayed number falls back to the phase when no turn is running.
+  const turnElapsed = useElapsedSeconds(statusTimerAnchor(turnStartedAt, phaseSince));
   // The per-phase elapsed is kept internally just for the stall warning; the displayed
   // number above is the whole turn's. Streaming stalls measure silence instead: a long
   // answer keeps flushing output, so phase duration alone would cry wolf.

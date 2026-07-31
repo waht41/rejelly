@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   isRuntimeActive,
   resetOutputSession,
+  statusTimerAnchor,
   TOOL_FULL_CAP,
   type ToolBlock,
   useOutputStore,
@@ -14,6 +15,33 @@ beforeEach(() => {
 afterEach(() => {
   resetOutputSession();
   vi.useRealTimers();
+});
+
+describe("statusTimerAnchor", () => {
+  it("counts the whole turn while one is running", () => {
+    expect(statusTimerAnchor(1_000, 5_000)).toBe(1_000);
+  });
+
+  it("falls back to the phase when no turn is anchored", () => {
+    // `/compress` runs a model call the user waits on, but it never passes the shell's
+    // initial-input point, so the turn anchor stays null. Without the fallback the line read
+    // "Compacting context 0s" for the whole operation — a stall indicator that cannot count is
+    // worse than a coarse one.
+    expect(statusTimerAnchor(null, 5_000)).toBe(5_000);
+  });
+
+  it("stays read-only so a maintenance command cannot leak an anchor into the next turn", () => {
+    // beginTurn is idempotent while the anchor is set, so writing one here would make the next
+    // real turn count from whenever /compress started.
+    const store = useOutputStore.getState();
+    store.setPhase("compacting");
+    const { turnStartedAt, phaseSince } = useOutputStore.getState().runtime;
+    statusTimerAnchor(turnStartedAt, phaseSince);
+
+    expect(useOutputStore.getState().runtime.turnStartedAt).toBeNull();
+    store.beginTurn();
+    expect(useOutputStore.getState().runtime.turnStartedAt).not.toBeNull();
+  });
 });
 
 describe("isRuntimeActive", () => {

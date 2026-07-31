@@ -559,6 +559,22 @@ export function isRuntimeActive(phase: RuntimePhase, streamBuffer: string): bool
   return !isInactivePhase(phase);
 }
 
+/**
+ * The epoch ms the status line counts from: the whole turn when one is running, otherwise the
+ * current phase.
+ *
+ * `turnStartedAt` is anchored only by the shell's initial-input point, which maintenance commands
+ * deliberately skip — but `/compress` still runs a model call the user sits and waits on, and with
+ * no anchor the line read `Compacting context 0s` for the entire operation. A dead counter is worse
+ * than a coarse one: the number exists precisely so a stalled round trip is visible. Falling back to
+ * `phaseSince` times the phase instead, which is the honest unit when there is no turn to time, and
+ * keeps this read-only — an anchor written here would leak into the next real turn, whose
+ * `beginTurn` is idempotent and would not re-anchor.
+ */
+export function statusTimerAnchor(turnStartedAt: number | null, phaseSince: number): number {
+  return turnStartedAt ?? phaseSince;
+}
+
 /** Clear history/stream for a new CLI session (singleton store). */
 export function resetOutputSession(): void {
   turnIdCounter = 0;
