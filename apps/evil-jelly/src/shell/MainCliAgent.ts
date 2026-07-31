@@ -40,11 +40,19 @@ const UnifiedAgentWithAbort = UnifiedAgent.fork({ middlewares: [withAbort()] });
  * picker through host.requestChoice) and queues it for the outer loop.
  * Returns true when the run should end so the outer loop can switch sessions.
  */
-async function tryRequestResume(rawInput: string, host: EvilJellyHostBindings): Promise<boolean> {
+export async function tryRequestResume(
+  rawInput: string,
+  currentSessionId: string | undefined,
+  host: EvilJellyHostBindings,
+): Promise<boolean> {
   const arg = rawInput.slice("/resume".length).trim();
   const workspaceRoot = getWorkspaceFsPolicy().getRoot();
 
   if (arg) {
+    if (arg === currentSessionId) {
+      host.logSystemEvent(`Session ${arg} is already current.\n`);
+      return false;
+    }
     if (!(await loadSession(workspaceRoot, arg))) {
       host.logSystemEvent(`No saved session "${arg}" for this workspace.\n`);
       return false;
@@ -54,9 +62,11 @@ async function tryRequestResume(rawInput: string, host: EvilJellyHostBindings): 
     return true;
   }
 
-  const sessions = await listSessions(workspaceRoot);
+  const sessions = (await listSessions(workspaceRoot)).filter(
+    (session) => session.id !== currentSessionId,
+  );
   if (sessions.length === 0) {
-    host.logSystemEvent("No saved sessions for this workspace.\n");
+    host.logSystemEvent("No other saved sessions for this workspace.\n");
     return false;
   }
   const options = sessions.map((s, i) => ({
@@ -217,7 +227,7 @@ async function handleResume(runtime: RouterRuntime, rawInput: string): Promise<b
     runtime.host.logSystemEvent("Resume is disabled during mock replay.\n");
     return false;
   }
-  if (!(await tryRequestResume(rawInput, runtime.host))) {
+  if (!(await tryRequestResume(rawInput, runtime.props.sessionId, runtime.host))) {
     return false;
   }
   // End the run (no reborn) so this trace closes before the outer loop starts the target segment.
