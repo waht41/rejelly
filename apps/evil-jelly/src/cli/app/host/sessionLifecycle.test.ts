@@ -5,7 +5,6 @@ import type { Message } from "@rejelly/core";
 import { createMockModel } from "@rejelly/core/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { isKnownSessionEvent } from "../../../services/session/sessionEvents";
-import type { TranscriptItem } from "../../../services/session/sessionHistoryProjection";
 import {
   readSessionEvents,
   resolveV2SessionPath,
@@ -15,6 +14,7 @@ import { resumeSession } from "../../../services/session/sessionStore";
 import { setWorkspaceRoot } from "../../../shared/fs-policy/workspace-fs-policy";
 import { isCompactionBridgeMessage } from "../../../shared/lib/compactionMessages";
 import { messageContentToText } from "../../../shared/lib/tokens";
+import type { TranscriptItem } from "../../../shared/transcript";
 import type { EvilJellyHostBindings } from "../../../shared/types";
 import { runEvilJellyHost } from "./runHost";
 

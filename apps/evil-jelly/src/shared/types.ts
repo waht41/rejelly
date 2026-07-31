@@ -2,8 +2,8 @@
  * Host protocol: bindings between the terminal/UI and the agent loop (Electron, tests, etc.).
  */
 
-import type { TranscriptItem } from "../services/session/sessionHistoryProjection";
 import type { AgentMode, LineInputValue, ToolConfirmationHandler } from "./AgentShared";
+import type { TranscriptItem } from "./transcript";
 
 /** One row in a host-driven action menu (hotkey + arbitrary domain `value`). */
 export type HostChoiceOption = { key: string; label: string; value: string };

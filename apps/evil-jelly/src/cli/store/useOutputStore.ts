@@ -3,7 +3,7 @@
  */
 
 import { create } from "zustand";
-import type { TranscriptItem } from "../../services/session/sessionHistoryProjection";
+import type { TranscriptItem } from "../../shared/transcript";
 import type { ToolCallHandle, ToolTranscriptDetail } from "../../shared/types";
 import { StreamStableTailController } from "./streamStableTail";
 import { drainToolOutput } from "./toolTailWindow";

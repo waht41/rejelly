@@ -1,61 +1,16 @@
 import type { Message } from "@rejelly/core";
-import {
-  getUserInputDisplay,
-  type UserInputAttachmentDisplay,
-} from "../../shared/attachments/messageContent";
+import { getUserInputDisplay } from "../../shared/attachments/messageContent";
+import { SESSION_BLOB_SCHEME, sessionBlobRefSchema } from "../../shared/blobs/sessionBlobStore";
 import {
   isCompactionBridgeMessage,
   unwrapPriorUserMessageText,
 } from "../../shared/lib/compactionMessages";
 import { messageContentToText } from "../../shared/lib/tokens";
-import {
-  SESSION_BLOB_SCHEME,
-  type SessionBlobMetadata,
-  type SessionBlobRef,
-  sessionBlobRefSchema,
-} from "./sessionBlobStore";
+import type { TranscriptImage, TranscriptItem } from "../../shared/transcript";
 import type { SessionBudgetData } from "./sessionEvents";
 import { UNKNOWN_TOOL_OUTCOME_CONTENT } from "./sessionRecovery";
 import type { PreparedSessionReplay } from "./sessionReplay";
 import { getStoredSessionRejellyMetadata, type StoredSessionMessage } from "./storedSessionMessage";
-
-export interface TranscriptImage {
-  blobRef: SessionBlobRef;
-  detail?: "auto" | "low" | "high";
-  metadata: SessionBlobMetadata;
-}
-
-export type TranscriptItem =
-  | {
-      id: string;
-      type: "user" | "assistant";
-      turnId: string;
-      seq: number;
-      content: string;
-      inputKind?: "initial" | "steer";
-      attachments?: UserInputAttachmentDisplay[];
-      images?: TranscriptImage[];
-    }
-  | {
-      id: string;
-      type: "tool";
-      turnId: string;
-      seq: number;
-      toolCallId: string;
-      toolName: string;
-      arguments?: string;
-      result?: string;
-      resultImages?: TranscriptImage[];
-      ok: boolean;
-    }
-  | {
-      id: string;
-      type: "system";
-      turnId?: string;
-      seq: number;
-      kind: "compaction" | "interrupted" | "error";
-      content: string;
-    };
 
 export interface BuildTranscriptOptions {
   tailTurns?: number;

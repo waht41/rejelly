@@ -1,9 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import type { Message } from "@rejelly/core";
-import {
-  buildLegacyTranscript,
-  type TranscriptItem,
-} from "../../services/session/sessionHistoryProjection";
+import { buildLegacyTranscript } from "../../services/session/sessionHistoryProjection";
 import {
   generateSessionId,
   type LegacyMigrationOptions,
@@ -14,6 +11,7 @@ import {
 } from "../../services/session/sessionStore";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import { countConversationTurns } from "../../shared/lib/compactionMessages";
+import type { TranscriptItem } from "../../shared/transcript";
 import type { EvilJellyHostBindings } from "../../shared/types";
 
 export interface SessionResumeSeed {

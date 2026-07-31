@@ -4,13 +4,13 @@ import {
   takePendingNewSession,
   takePendingResume,
 } from "../../services/session/resumeControl";
-import type { TranscriptItem } from "../../services/session/sessionHistoryProjection";
 import {
   generateSessionId,
   resumeSession,
   type SessionBudget,
 } from "../../services/session/sessionStore";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
+import type { TranscriptItem } from "../../shared/transcript";
 import type { EvilJellyHostBindings } from "../../shared/types";
 import { connectMcpProviders } from "../../tools/mcpServerKit";
 import { type RunEvilJellyHostOptions, runEvilJellyHost } from "./host/runHost";

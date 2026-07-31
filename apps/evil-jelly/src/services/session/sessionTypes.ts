@@ -1,6 +1,6 @@
 import type { Message } from "@rejelly/core";
+import type { TranscriptItem } from "../../shared/transcript";
 import type { LegacySessionMeta, SessionBudgetData } from "./sessionEvents";
-import type { TranscriptItem } from "./sessionHistoryProjection";
 
 /**
  * Cumulative resource usage for a session across multiple resume segments.
