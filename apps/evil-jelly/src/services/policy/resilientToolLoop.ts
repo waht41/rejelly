@@ -11,7 +11,7 @@ import type { LineInputValue } from "../../shared/AgentShared";
 import { buildUserMessage } from "../../shared/attachments/messageContent";
 import { appendMessageContentSuffix } from "../../shared/lib/message";
 import { estimateMessagesTokens } from "../../shared/lib/tokens";
-import type { SessionRecorder } from "../session/sessionRecorder";
+import type { SessionMessageSink } from "../../shared/session/recorderPort";
 import {
   DEFAULT_COMPACTION_MAX_ROUNDS,
   DEFAULT_WARN_RATIO,
@@ -31,7 +31,7 @@ export interface ToolCallLoopPolicySnapshot {
   parser?: OutputParser;
   pendingUserInputs?: () => LineInputValue[] | Promise<LineInputValue[]>;
   compaction?: PromptChatCompactionConfig;
-  sessionRecorder?: SessionRecorder;
+  sessionRecorder?: SessionMessageSink;
   turnId?: string;
 }
 
@@ -44,7 +44,7 @@ class CompactionController {
     private readonly ctx: PromptContext,
     private readonly config: PromptChatCompactionConfig | undefined,
     baseMessages: Message[],
-    private readonly recorder?: SessionRecorder,
+    private readonly recorder?: SessionMessageSink,
     private readonly turnId?: string,
   ) {
     this.#baseMessages = baseMessages;

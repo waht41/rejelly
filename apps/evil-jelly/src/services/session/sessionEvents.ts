@@ -1,5 +1,6 @@
 import type { Message } from "@rejelly/core";
 import { z } from "zod";
+import { messageSourceSchema } from "../../shared/session/messageSource";
 
 export const SESSION_SCHEMA_VERSION = 2 as const;
 
@@ -114,23 +115,6 @@ export const runSegmentEndedEventSchema = z
     errorMessage: z.string().optional(),
   })
   .passthrough();
-
-export const messageSourceSchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("user_input"),
-      /**
-       * initial starts a top-level turn; steer is additional user-authored context injected while
-       * that same turn is still running.
-       */
-      inputKind: z.enum(["initial", "steer"]),
-    })
-    .passthrough(),
-  z.object({ kind: z.literal("model") }).passthrough(),
-  z.object({ kind: z.literal("tool") }).passthrough(),
-  z.object({ kind: z.literal("agent_runtime") }).passthrough(),
-  z.object({ kind: z.literal("recovery") }).passthrough(),
-]);
 
 export const messageRecordedEventSchema = z
   .object({
@@ -276,7 +260,6 @@ export type SessionBudgetData = z.infer<typeof sessionBudgetSchema>;
 export type LegacySessionMeta = z.infer<typeof legacySessionMetaSchema>;
 export type SessionMetaLine = z.infer<typeof sessionMetaLineSchema>;
 export type SessionEventBase = z.infer<typeof sessionEventEnvelopeSchema>;
-export type MessageSource = z.infer<typeof messageSourceSchema>;
 export type RunSegmentStartedEvent = z.infer<typeof runSegmentStartedEventSchema>;
 export type RunSegmentEndedEvent = z.infer<typeof runSegmentEndedEventSchema>;
 export type MessageRecordedEvent = z.infer<typeof messageRecordedEventSchema>;

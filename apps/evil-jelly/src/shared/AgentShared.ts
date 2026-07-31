@@ -3,7 +3,7 @@
  */
 
 import type { Message } from "@rejelly/core";
-import type { SessionRecorder } from "../services/session/sessionRecorder";
+import type { SessionMessageSink } from "./session/recorderPort";
 
 export type UserReplySurface = "terminal" | "markdown_document";
 export type AgentMode = "normal" | "auto";
@@ -40,8 +40,8 @@ export interface ConversationAgentProps {
   replySurface?: UserReplySurface;
   /** Internal top-level operation. Defaults to normal chat. */
   operation?: "chat" | "compress";
-  /** Awaited durable observer for the current top-level turn. */
-  sessionRecorder?: SessionRecorder;
+  /** Awaited durable message sink for the current top-level turn. */
+  sessionRecorder?: SessionMessageSink;
   /** Stable id shared by the initial input, steers, model rounds, and tool results. */
   turnId?: string;
 }

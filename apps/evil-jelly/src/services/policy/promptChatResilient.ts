@@ -7,8 +7,8 @@ import {
 } from "@rejelly/core/policy";
 import type { z } from "zod";
 import type { LineInputValue } from "../../shared/AgentShared";
-import { materializeMessageHistory } from "../session/sessionBlobStore";
-import type { SessionRecorder } from "../session/sessionRecorder";
+import { materializeMessageHistory } from "../../shared/blobs/sessionBlobStore";
+import type { SessionMessageSink } from "../../shared/session/recorderPort";
 import type { PromptChatCompactionConfig } from "./compaction";
 import {
   runResilientToolCallLoopPolicy,
@@ -53,7 +53,7 @@ export interface PromptChatResilientOptions<TSchema extends z.ZodTypeAny = z.Zod
   schema?: TSchema;
   pendingUserInputs?: () => LineInputValue[] | Promise<LineInputValue[]>;
   compaction?: PromptChatCompactionConfig;
-  sessionRecorder?: SessionRecorder;
+  sessionRecorder?: SessionMessageSink;
   turnId?: string;
   sessionBlobRoot?: string;
 }

@@ -1,5 +1,10 @@
 import type { Message } from "@rejelly/core";
-import type { MessageSource, NewSessionEvent, SessionEvent, SessionStatus } from "./sessionEvents";
+import type { MessageSource } from "../../shared/session/messageSource";
+import type {
+  SessionCompactionRecord,
+  SessionMessageSink,
+} from "../../shared/session/recorderPort";
+import type { NewSessionEvent, SessionEvent, SessionStatus } from "./sessionEvents";
 import { isKnownSessionEvent } from "./sessionEvents";
 import {
   createSessionMetaLine,
@@ -26,33 +31,19 @@ import { deriveSessionTitle } from "./sessionTitle";
  * durable item/round boundaries, turn/segment closure, and incremental `session_state`
  * checkpoints. It never treats compacted context as a replacement for transcript events.
  */
-export interface SessionCompactionRecord {
-  trigger: "auto" | "manual";
-  activeTurnId?: string;
-  replacementHistory: Message[];
-  beforeMessageCount: number;
-  beforeTokens?: number;
-  afterTokens?: number;
-  keptUserMessages?: number;
-  durationMs?: number;
-}
-
 /**
  * Awaited durable observer shared by MainCliAgent and the tool loop.
+ *
+ * The message-write half is the shared {@link SessionMessageSink} port; the turn/segment lifecycle
+ * added here is driven only by the shell.
  *
  * A method resolves only after its complete item/round batch has reached the file's durable
  * boundary. Callers must pass only immutable, completed messages.
  */
-export interface SessionRecorder {
+export interface SessionRecorder extends SessionMessageSink {
   readonly sessionId: string;
   readonly traceId: string;
   readonly ended: boolean;
-  recordMessage(turnId: string, source: MessageSource, message: Message): Promise<void>;
-  recordMessages(
-    turnId: string,
-    entries: readonly { source: MessageSource; message: Message }[],
-  ): Promise<void>;
-  recordCompaction(record: SessionCompactionRecord): Promise<void>;
   completeTurn(
     turnId: string,
     status: "completed" | "interrupted" | "error",

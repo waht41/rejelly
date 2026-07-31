@@ -1,7 +1,7 @@
 import type { Message } from "@rejelly/core";
 import type { PromptContext } from "@rejelly/core/policy";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { MessageSource } from "../session/sessionEvents";
+import type { MessageSource } from "../../shared/session/messageSource";
 import type { SessionRecorder } from "../session/sessionRecorder";
 
 const policyMocks = vi.hoisted(() => ({
