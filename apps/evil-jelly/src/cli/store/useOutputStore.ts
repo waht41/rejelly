@@ -424,13 +424,13 @@ export const useOutputStore = create<OutputState>((set) => ({
         hidden: shouldHideFinal,
       });
       if (duration !== null) {
-        // One dim line after the reply: how long the whole turn took, so a slow run
+        // One dim line after the reply: how long the agent worked, so a slow run
         // leaves evidence in scrollback even after the status line resets. Skipped
         // when no turn actually ran (e.g. resumed/hydrated sessions).
         turns.push({
           id: `s_${turnIdCounter++}`,
           type: "system",
-          content: `Turn took ${formatTurnDuration(duration)}`,
+          content: `Worked for ${formatTurnDuration(duration)}`,
           oneLine: true,
         });
       }

@@ -168,7 +168,7 @@ describe("turn timing", () => {
     const timing = history[history.length - 1]!;
     expect(timing.type).toBe("system");
     if (timing.type === "system") {
-      expect(timing.content).toMatch(/^Turn took \d+(\.\d+)?s$/);
+      expect(timing.content).toMatch(/^Worked for \d+(\.\d+)?s$/);
       expect(timing.oneLine).toBe(true);
     }
   });
@@ -249,7 +249,7 @@ describe("full conversation turn", () => {
     const timing = state.history[state.history.length - 1]!;
     expect(timing.type).toBe("system");
     if (timing.type === "system") {
-      expect(timing.content).toMatch(/^Turn took \d+(\.\d+)?s$/);
+      expect(timing.content).toMatch(/^Worked for \d+(\.\d+)?s$/);
     }
 
     // A fresh turn re-anchors from scratch.
@@ -271,7 +271,7 @@ describe("full conversation turn", () => {
     const timing = state.history[state.history.length - 1]!;
     expect(timing.type).toBe("system");
     if (timing.type === "system") {
-      expect(timing.content).toMatch(/^Turn took /);
+      expect(timing.content).toMatch(/^Worked for /);
     }
   });
 });
