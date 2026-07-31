@@ -10,6 +10,11 @@ import {
   type SessionWriter,
 } from "./sessionJsonlStore";
 import { projectSessionSummary } from "./sessionProjection";
+import {
+  findIncompleteTurnRecoveries,
+  type IncompleteTurnRecovery,
+  UNKNOWN_TOOL_OUTCOME_CONTENT,
+} from "./sessionRecovery";
 import { prepareSessionReplay } from "./sessionReplay";
 import type { SessionBudget } from "./sessionStore";
 import { deriveSessionTitle } from "./sessionTitle";
@@ -233,6 +238,27 @@ class JsonlSessionRecorder implements SessionRecorder {
     await this.writer.flush();
   }
 
+  async recoverInterruptedTurns(recoveries: readonly IncompleteTurnRecovery[]): Promise<void> {
+    for (const recovery of recoveries) {
+      if (recovery.missingToolCalls.length > 0) {
+        await this.recordMessages(
+          recovery.turnId,
+          recovery.missingToolCalls.map((toolCall) => ({
+            source: { kind: "recovery" } as const,
+            message: {
+              role: "tool" as const,
+              tool_call_id: toolCall.id,
+              name: toolCall.name,
+              content: UNKNOWN_TOOL_OUTCOME_CONTENT,
+              extra: { rejelly: { kind: "session_recovery" } },
+            },
+          })),
+        );
+      }
+      await this.completeTurn(recovery.turnId, "interrupted");
+    }
+  }
+
   async endSegment(input: {
     status: "completed" | "interrupted" | "error";
     reason: "exit" | "switch_session" | "new_session" | "abort" | "error";
@@ -288,6 +314,7 @@ export async function openSessionRecorder(
   try {
     const stored = await readSessionEvents(options.workspaceRoot, options.sessionId, options);
     const events = [...stored.events];
+    const recoveries = findIncompleteTurnRecoveries(events);
     const hasPriorSegment = events.some(
       (event) => isKnownSessionEvent(event) && event.type === "run_segment_started",
     );
@@ -303,7 +330,9 @@ export async function openSessionRecorder(
     });
     events.push(started.event);
     await writer.flush();
-    return new JsonlSessionRecorder(writer, events);
+    const recorder = new JsonlSessionRecorder(writer, events);
+    await recorder.recoverInterruptedTurns(recoveries);
+    return recorder;
   } catch (error) {
     await writer.close().catch(() => undefined);
     throw error;

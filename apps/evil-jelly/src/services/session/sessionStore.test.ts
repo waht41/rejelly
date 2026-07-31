@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Message } from "@rejelly/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { isKnownSessionEvent } from "./sessionEvents";
 import {
   createSessionMetaLine,
   findLatestSessionStateFromTail,
@@ -263,6 +264,213 @@ describe("mixed-format session store", () => {
     expect(await listSessions(workspaceRoot, { sessionsRoot })).toMatchObject([
       { id: "suffix", budget: suffixBudget },
     ]);
+  });
+
+  it("applies a compact event that was flushed before its state checkpoint", async () => {
+    const recorder = await openSessionRecorder({
+      workspaceRoot,
+      sessionId: "compact-suffix",
+      traceId: "trace-1",
+      originator: "test",
+      appVersion: "1.0.0",
+      modelId: "test-model",
+      cwd: workspaceRoot,
+      sessionsRoot,
+    });
+    await recorder.recordMessage(
+      "turn-1",
+      { kind: "user_input", inputKind: "initial" },
+      { role: "user", content: "retain this transcript" },
+    );
+    await recorder.recordMessage(
+      "turn-1",
+      { kind: "model" },
+      { role: "assistant", content: "large pre-compact response" },
+    );
+    await recorder.completeTurn("turn-1", "completed");
+    await recorder.close();
+
+    const writer = await openSessionWriter(
+      createSessionMetaLine({
+        sessionId: "compact-suffix",
+        workspaceRoot,
+        originator: "test",
+        appVersion: "1.0.0",
+      }),
+      { sessionsRoot },
+    );
+    await writer.append({
+      type: "context_compacted",
+      trigger: "manual",
+      replacementHistory: [{ role: "user", content: "bounded active checkpoint" }],
+      beforeMessageCount: 2,
+      afterMessageCount: 1,
+    });
+    await writer.close();
+
+    const stored = await readSessionEvents(workspaceRoot, "compact-suffix", { sessionsRoot });
+    expect(stored.events.at(-1)).toMatchObject({ type: "context_compacted" });
+
+    const resumed = await resumeSession(workspaceRoot, "compact-suffix", {
+      originator: "test",
+      appVersion: "1.0.0",
+      sessionsRoot,
+    });
+    expect(resumed?.messages).toEqual([{ role: "user", content: "bounded active checkpoint" }]);
+    expect(
+      resumed?.transcript?.flatMap((item) =>
+        item.type === "user" || item.type === "assistant" ? [item.content] : [],
+      ),
+    ).toEqual(["retain this transcript", "large pre-compact response"]);
+    await expect(listSessions(workspaceRoot, { sessionsRoot })).resolves.toMatchObject([
+      {
+        id: "compact-suffix",
+        title: "retain this transcript",
+        turns: 1,
+      },
+    ]);
+  });
+
+  it("recovers incomplete tool tails without retrying or discarding known results", async () => {
+    async function writeIncompleteToolTurn(
+      sessionId: string,
+      includeResult: boolean,
+    ): Promise<void> {
+      const recorder = await openSessionRecorder({
+        workspaceRoot,
+        sessionId,
+        traceId: `${sessionId}-trace`,
+        originator: "test",
+        appVersion: "1.0.0",
+        modelId: "test-model",
+        cwd: workspaceRoot,
+        sessionsRoot,
+      });
+      await recorder.recordMessage(
+        "turn-1",
+        { kind: "user_input", inputKind: "initial" },
+        { role: "user", content: "run the side-effecting tool" },
+      );
+      await recorder.recordMessage(
+        "turn-1",
+        { kind: "model" },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [{ id: "call-1", name: "side_effect", arguments: "{}" }],
+        },
+      );
+      if (includeResult) {
+        await recorder.recordMessage(
+          "turn-1",
+          { kind: "tool" },
+          {
+            role: "tool",
+            tool_call_id: "call-1",
+            name: "side_effect",
+            content: "effect completed",
+          },
+        );
+      }
+      await recorder.close();
+    }
+
+    await writeIncompleteToolTurn("unknown-outcome", false);
+    await writeIncompleteToolTurn("known-outcome", true);
+
+    for (const sessionId of ["unknown-outcome", "known-outcome"]) {
+      const recovery = await openSessionRecorder({
+        workspaceRoot,
+        sessionId,
+        traceId: `${sessionId}-recovery-trace`,
+        originator: "test",
+        appVersion: "1.0.0",
+        modelId: "test-model",
+        cwd: workspaceRoot,
+        sessionsRoot,
+      });
+      await recovery.endSegment({ status: "completed", reason: "exit" });
+      await recovery.close();
+    }
+
+    const unknown = await resumeSession(workspaceRoot, "unknown-outcome", {
+      originator: "test",
+      appVersion: "1.0.0",
+      sessionsRoot,
+    });
+    expect(unknown?.messages).toEqual([
+      expect.objectContaining({ role: "user" }),
+      expect.objectContaining({
+        role: "assistant",
+        tool_calls: [expect.objectContaining({ id: "call-1", name: "side_effect" })],
+      }),
+      expect.objectContaining({
+        role: "tool",
+        tool_call_id: "call-1",
+        content: expect.stringContaining("outcome is unknown"),
+      }),
+    ]);
+
+    const unknownStored = await readSessionEvents(workspaceRoot, "unknown-outcome", {
+      sessionsRoot,
+    });
+    const resumedStart = unknownStored.events.find(
+      (event) =>
+        event.type === "run_segment_started" && event.traceId === "unknown-outcome-recovery-trace",
+    );
+    const durableRecovery = unknownStored.events.find(
+      (event) =>
+        isKnownSessionEvent(event) &&
+        event.type === "message_recorded" &&
+        event.source.kind === "recovery" &&
+        event.turnId === "turn-1",
+    );
+    const durableClosure = unknownStored.events.find(
+      (event) =>
+        event.type === "turn_completed" &&
+        event.turnId === "turn-1" &&
+        event.status === "interrupted",
+    );
+    expect(durableRecovery).toMatchObject({
+      message: {
+        role: "tool",
+        tool_call_id: "call-1",
+        content: expect.stringContaining("outcome is unknown"),
+      },
+    });
+    expect(durableRecovery?.seq).toBeGreaterThan(resumedStart?.seq ?? Number.POSITIVE_INFINITY);
+    expect(durableClosure?.seq).toBeGreaterThan(durableRecovery?.seq ?? Number.POSITIVE_INFINITY);
+
+    const known = await resumeSession(workspaceRoot, "known-outcome", {
+      originator: "test",
+      appVersion: "1.0.0",
+      sessionsRoot,
+    });
+    expect(known?.messages).toEqual([
+      expect.objectContaining({ role: "user" }),
+      expect.objectContaining({ role: "assistant" }),
+      expect.objectContaining({
+        role: "tool",
+        tool_call_id: "call-1",
+        content: "effect completed",
+      }),
+    ]);
+    const knownStored = await readSessionEvents(workspaceRoot, "known-outcome", { sessionsRoot });
+    expect(
+      knownStored.events.filter(
+        (event) =>
+          isKnownSessionEvent(event) &&
+          event.type === "message_recorded" &&
+          event.source.kind === "recovery",
+      ),
+    ).toHaveLength(0);
+    expect(knownStored.events).toContainEqual(
+      expect.objectContaining({
+        type: "turn_completed",
+        turnId: "turn-1",
+        status: "interrupted",
+      }),
+    );
   });
 
   it("uses a final interrupted state as the current listing checkpoint without replaying history", async () => {

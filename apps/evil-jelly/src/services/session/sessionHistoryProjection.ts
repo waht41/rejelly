@@ -15,6 +15,7 @@ import {
   sessionBlobRefSchema,
 } from "./sessionBlobStore";
 import type { SessionBudgetData } from "./sessionEvents";
+import { UNKNOWN_TOOL_OUTCOME_CONTENT } from "./sessionRecovery";
 import type { PreparedSessionReplay } from "./sessionReplay";
 import { getStoredSessionRejellyMetadata, type StoredSessionMessage } from "./storedSessionMessage";
 
@@ -75,7 +76,7 @@ function closeDanglingToolCalls(messages: StoredSessionMessage[]): StoredSession
         output.push({
           role: "tool",
           tool_call_id: toolCallId,
-          content: "[Tool execution outcome is unknown because the turn was interrupted]",
+          content: UNKNOWN_TOOL_OUTCOME_CONTENT,
           extra: { rejelly: { kind: "session_recovery" } },
         });
       }
