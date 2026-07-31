@@ -319,7 +319,7 @@ export function buildTranscript(
         id: `${event.seq}:compaction`,
         type: "system",
         seq: event.seq,
-        ...(event.parentTurnId ? { turnId: event.parentTurnId } : {}),
+        ...(event.activeTurnId ? { turnId: event.activeTurnId } : {}),
         kind: "compaction",
         content: `Context compacted (${event.trigger}).`,
       });

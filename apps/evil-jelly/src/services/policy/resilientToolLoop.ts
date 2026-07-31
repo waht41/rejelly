@@ -97,7 +97,7 @@ class CompactionController {
     if (this.recorder && this.turnId) {
       await this.recorder.recordCompaction({
         trigger: "auto",
-        parentTurnId: this.turnId,
+        activeTurnId: this.turnId,
         replacementHistory: withoutEquippedPrefix(compactionResult.history),
         beforeMessageCount: working.length,
         beforeTokens,

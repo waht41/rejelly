@@ -164,7 +164,7 @@ export const turnCompletedEventSchema = z
 
 /**
  * An active-context reconstruction boundary, not a conversation turn or transcript replacement.
- * It never affects userTurns and may occur inside a running turn via parentTurnId.
+ * It never affects userTurns and may occur while a turn is active via activeTurnId.
  */
 export const contextCompactedEventSchema = z
   .object({
@@ -174,9 +174,9 @@ export const contextCompactedEventSchema = z
     trigger: z.enum(["auto", "manual"]),
     /**
      * Present when auto compaction happened while a user turn was still running.
-     * The public parse boundaries reject parentTurnId on manual compaction.
+     * The public parse boundaries reject activeTurnId on manual compaction.
      */
-    parentTurnId: z.string().optional(),
+    activeTurnId: z.string().optional(),
     replacementHistory: z.array(sessionMessageSchema),
     beforeMessageCount: nonNegativeIntSchema,
     afterMessageCount: nonNegativeIntSchema,
@@ -330,7 +330,7 @@ export function parseSessionEvent(value: unknown): SessionEvent {
   if (!parsed.success) {
     throw new SessionSchemaError(`Invalid ${envelope.data.type} event`, parsed.error);
   }
-  assertValidCompactionParent(parsed.data);
+  assertValidCompactionTurnAssociation(parsed.data);
   return parsed.data;
 }
 
@@ -339,7 +339,7 @@ export function parseNewSessionEvent(value: unknown): NewSessionEvent {
   if (!parsed.success) {
     throw new SessionSchemaError("Invalid new Session V2 event", parsed.error);
   }
-  assertValidCompactionParent(parsed.data);
+  assertValidCompactionTurnAssociation(parsed.data);
   return parsed.data;
 }
 
@@ -347,14 +347,14 @@ export function parseNewSessionEvent(value: unknown): NewSessionEvent {
  * Zod 3 cannot place a refined object inside a discriminated union, so keep this cross-field
  * invariant at both public parse boundaries while the object schema remains the shape authority.
  */
-function assertValidCompactionParent(event: KnownSessionEvent | NewSessionEvent): void {
+function assertValidCompactionTurnAssociation(event: KnownSessionEvent | NewSessionEvent): void {
   if (
     event.type === "context_compacted" &&
     event.trigger === "manual" &&
-    event.parentTurnId !== undefined
+    event.activeTurnId !== undefined
   ) {
     throw new SessionSchemaError(
-      "Invalid context_compacted event: parentTurnId is only valid for automatic compaction",
+      "Invalid context_compacted event: activeTurnId is only valid for automatic compaction",
     );
   }
 }

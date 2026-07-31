@@ -142,7 +142,7 @@ describe("sessionEvents", () => {
     const compact = {
       type: "context_compacted" as const,
       trigger: "auto" as const,
-      parentTurnId: "turn-1",
+      activeTurnId: "turn-1",
       replacementHistory: [],
       beforeMessageCount: 3,
       afterMessageCount: 1,
@@ -150,7 +150,7 @@ describe("sessionEvents", () => {
 
     expect(parseNewSessionEvent(compact)).toMatchObject({
       trigger: "auto",
-      parentTurnId: "turn-1",
+      activeTurnId: "turn-1",
     });
     expect(
       parseSessionEvent({
@@ -158,7 +158,7 @@ describe("sessionEvents", () => {
         seq: 1,
         timestamp: 2,
       }),
-    ).toMatchObject({ trigger: "auto", parentTurnId: "turn-1" });
+    ).toMatchObject({ trigger: "auto", activeTurnId: "turn-1" });
 
     expect(() =>
       parseNewSessionEvent({

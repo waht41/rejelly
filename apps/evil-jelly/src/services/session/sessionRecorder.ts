@@ -23,7 +23,7 @@ import { deriveSessionTitle } from "./sessionTitle";
  */
 export interface SessionCompactionRecord {
   trigger: "auto" | "manual";
-  parentTurnId?: string;
+  activeTurnId?: string;
   replacementHistory: Message[];
   beforeMessageCount: number;
   beforeTokens?: number;

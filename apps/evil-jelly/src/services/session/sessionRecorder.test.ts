@@ -59,7 +59,7 @@ describe("sessionRecorder", () => {
     );
     await recorder.recordCompaction({
       trigger: "auto",
-      parentTurnId: "turn-1",
+      activeTurnId: "turn-1",
       replacementHistory: [{ role: "user", content: "bounded checkpoint" }],
       beforeMessageCount: 2,
       beforeTokens: 100,

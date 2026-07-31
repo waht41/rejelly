@@ -131,7 +131,7 @@ describe("sessionProjection", () => {
         seq: 4,
         timestamp: 104,
         trigger: "auto",
-        parentTurnId: "turn-1",
+        activeTurnId: "turn-1",
         replacementHistory: [],
         beforeMessageCount: 3,
         afterMessageCount: 0,
