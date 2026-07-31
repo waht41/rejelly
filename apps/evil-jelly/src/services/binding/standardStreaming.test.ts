@@ -232,8 +232,20 @@ describe("phaseForStreamEvent", () => {
     // The engine emits one last complete-parse snapshot after turn_done; reading it as fresh
     // output would flip the line back to "Responding" and restart the timer on a finished turn.
     const ended = { modelSpoke: true, turnEnded: true };
-    expect(phaseForStreamEvent({ type: "structured_data" }, ended)).toBeNull();
-    expect(phaseForStreamEvent({ type: "structured_data" }, midTurn)).toBe("streaming");
+    expect(
+      phaseForStreamEvent({ type: "structured_data", data: { reply: "x" } }, ended),
+    ).toBeNull();
+    expect(phaseForStreamEvent({ type: "structured_data", data: { reply: "x" } }, midTurn)).toBe(
+      "streaming",
+    );
+  });
+
+  it("does not treat an empty structured snapshot as the model speaking", () => {
+    // Empty/initial parse states carry no output; flipping to "Responding" on them would
+    // cut "Thinking" short before the model actually said anything.
+    expect(phaseForStreamEvent({ type: "structured_data" }, midTurn)).toBeNull();
+    expect(phaseForStreamEvent({ type: "structured_data", data: null }, midTurn)).toBeNull();
+    expect(phaseForStreamEvent({ type: "structured_data", data: {} }, midTurn)).toBeNull();
   });
 
   it("surfaces the compaction side-turn even though its output stays hidden", () => {

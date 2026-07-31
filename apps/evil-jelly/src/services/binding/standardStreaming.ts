@@ -58,7 +58,7 @@ export interface StreamTurnProgress {
  * as real as any other — compaction is a full model round trip behind an otherwise empty screen.
  */
 export function phaseForStreamEvent(
-  event: Pick<AgentStreamEvent, "type" | "channel"> & { delta?: string },
+  event: Pick<AgentStreamEvent, "type" | "channel"> & { delta?: string; data?: unknown },
   { modelSpoke, turnEnded }: StreamTurnProgress,
 ): RuntimePhase | null {
   if (event.channel !== undefined) {
@@ -86,6 +86,17 @@ export function phaseForStreamEvent(
       }
       return turnEnded ? null : "streaming";
     case "structured_data":
+      // A snapshot that carries no value (empty/initial parse state) is not output yet:
+      // flipping to "streaming" on it would cut "thinking" short before the model spoke.
+      if (
+        turnEnded ||
+        event.data === undefined ||
+        event.data === null ||
+        (typeof event.data === "object" && Object.keys(event.data as object).length === 0)
+      ) {
+        return null;
+      }
+      return "streaming";
     case "tool_call_stream":
       return turnEnded ? null : "streaming";
     case "turn_done":
