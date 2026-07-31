@@ -1,187 +1,209 @@
 /**
- * Local session persistence for /resume.
+ * Mixed-format session facade.
  *
- * One file per session under ~/.evil-jelly/sessions/<workspace-bucket>/<sessionId>.json.
- * Stores only the top-level (router/Unified) conversation history plus light metadata;
- * sub-agent frames are ephemeral and intentionally not persisted. A logical session can span
- * several traceIds (one per launch/resume segment), recorded in meta.traceIds.
+ * V1/V2 readers preserve missing, corruption, and IO failures as distinct outcomes. This module
+ * owns only format priority, fallback, lazy-migration policy, and the stable API consumed by CLI
+ * resume flows.
  */
 
-import crypto from "node:crypto";
 import fs from "node:fs";
-import path from "node:path";
-import type { Message } from "@rejelly/core";
-import { resolveGlobalJellyDir } from "../../shared/globalPath";
-import { countConversationTurns } from "../../shared/lib/compactionMessages";
-import type { SessionBudgetData } from "./sessionEvents";
-import { deriveSessionTitleFromMessages } from "./sessionTitle";
+import { persistSession, readLegacySession } from "./legacySessionStore";
+import type { SessionStoragePaths } from "./sessionJsonlStore";
+import { type LegacyMigrationOptions, migrateLegacySession } from "./sessionMigration";
+import {
+  generateSessionId,
+  isValidSessionId,
+  resolveSessionsRoot,
+  resolveWorkspaceDir,
+  workspaceBucket,
+} from "./sessionPaths";
+import {
+  type SessionReadFailureKind,
+  type SessionReadResult,
+  SessionStoreReadError,
+} from "./sessionReadResult";
+import type {
+  PersistSessionInput,
+  SessionBudget,
+  SessionMeta,
+  SessionRecord,
+} from "./sessionTypes";
+import { readV2Session, readV2SessionMetaFast, readV2SessionMetaFull } from "./sessionV2Store";
+
+export { persistSession };
+export { generateSessionId, resolveSessionsRoot, resolveWorkspaceDir, workspaceBucket };
+export { SessionStoreReadError };
+export type {
+  LegacyMigrationOptions,
+  PersistSessionInput,
+  SessionBudget,
+  SessionMeta,
+  SessionRecord,
+};
+
+export interface LoadSessionOptions extends SessionStoragePaths {
+  /** When present, a V1 fallback is migrated before being returned to a resume caller. */
+  migrateLegacy?: {
+    originator: string;
+    appVersion: string;
+  };
+}
+
+function warningFor(format: "v1" | "v2", kind: SessionReadFailureKind): string {
+  return `The ${format.toUpperCase()} session file is ${kind}; using the compatible fallback.`;
+}
+
+function withWarning(record: SessionRecord, warning: string): SessionRecord {
+  return {
+    ...record,
+    warnings: [...(record.warnings ?? []), warning],
+  };
+}
+
+function throwReadFailure(
+  result: Exclude<SessionReadResult<unknown>, { kind: "found" }>,
+  format: "v1" | "v2",
+  sessionId: string,
+): never {
+  if (result.kind === "missing") {
+    throw new Error("Missing sessions are not exceptional at the facade boundary");
+  }
+  throw new SessionStoreReadError(result.kind, format, sessionId, result.error);
+}
 
 /**
- * Cumulative resource usage for a session, surviving across resume segments.
- * Tokens/cost are running sums; lastContextTokens is the most recent model call's input
- * tokens, used as an approximation of the live context-window occupancy (NOT a sum).
+ * Full V2-first resume load.
+ *
+ * Missing files return `undefined`. Corrupt V2 may fall back to a valid V1 source with an explicit
+ * warning; unreadable V2 never falls back because the facade cannot safely establish authority.
+ * Without a safe fallback, corrupt and unreadable results throw `SessionStoreReadError`.
  */
-/**
- * Cumulative session resource usage. The persisted V2 Zod schema is the type source of truth;
- * this alias keeps the existing V1/runtime import path stable.
- */
-export type SessionBudget = SessionBudgetData;
-
-export interface SessionMeta {
-  /** Durable session id (stable across resume; distinct from any single traceId). */
-  id: string;
-  /** Absolute workspace root the session belongs to. */
-  workspaceRoot: string;
-  /** First user line, truncated; used for the picker list. */
-  title: string;
-  createdAt: number;
-  updatedAt: number;
-  /** Number of user turns recorded. */
-  turns: number;
-  /** Chain of run traceIds across launch/resume segments (for devtool回链). */
-  traceIds: string[];
-  /** Cumulative token/cost usage; carried back into the run on resume. */
-  budget?: SessionBudget;
-}
-
-export interface SessionRecord {
-  meta: SessionMeta;
-  /** Top-level message_history (the Message[] MainCliAgent feeds back into the route handler). */
-  messages: Message[];
-}
-
-/** ~/.evil-jelly/sessions */
-export function resolveSessionsRoot(): string {
-  return path.join(resolveGlobalJellyDir(), "sessions");
-}
-
-/** Per-workspace bucket: <sanitized-basename>-<sha1(absRoot)[0..8]> so projects stay separate but readable. */
-export function workspaceBucket(workspaceRoot: string): string {
-  const abs = path.resolve(workspaceRoot);
-  const hash = crypto.createHash("sha1").update(abs).digest("hex").slice(0, 8);
-  const base = path.basename(abs).replace(/[^\w.-]+/g, "_") || "workspace";
-  return `${base}-${hash}`;
-}
-
-export function resolveWorkspaceDir(workspaceRoot: string): string {
-  return path.join(resolveSessionsRoot(), workspaceBucket(workspaceRoot));
-}
-
-function sessionFilePath(workspaceRoot: string, sessionId: string): string {
-  return path.join(resolveWorkspaceDir(workspaceRoot), `${sessionId}.json`);
-}
-
-/** Sortable, human-ish session id: base36 timestamp + short random suffix. */
-export function generateSessionId(): string {
-  return `${Date.now().toString(36)}-${crypto.randomBytes(3).toString("hex")}`;
-}
-
-/** OTLP-compatible 32 hex chars, matching core's generateTraceId so devtool ingestion is unaffected. */
-export function newTraceId(): string {
-  return crypto.randomBytes(16).toString("hex");
-}
-
-export function messageContentToText(content: Message["content"]): string {
-  if (typeof content === "string") {
-    return content;
+export async function loadSession(
+  workspaceRoot: string,
+  sessionId: string,
+  options: LoadSessionOptions = {},
+): Promise<SessionRecord | undefined> {
+  const v2 = await readV2Session(workspaceRoot, sessionId, options);
+  if (v2.kind === "found") {
+    return v2.value;
   }
-  if (Array.isArray(content)) {
-    const text = content
-      .map((part) =>
-        part && typeof part === "object" && "text" in part
-          ? String((part as { text: unknown }).text)
-          : "",
-      )
-      .join(" ")
-      .trim();
-    return text;
+  if (v2.kind === "unreadable") {
+    throwReadFailure(v2, "v2", sessionId);
   }
-  return "";
-}
 
-function readRecord(filePath: string): SessionRecord | undefined {
-  try {
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const parsed = JSON.parse(raw) as SessionRecord;
-    if (!parsed || typeof parsed !== "object" || !parsed.meta || !Array.isArray(parsed.messages)) {
+  const legacy = readLegacySession(workspaceRoot, sessionId, options);
+  if (legacy.kind !== "found") {
+    if (v2.kind === "corrupt") {
+      throwReadFailure(v2, "v2", sessionId);
+    }
+    if (legacy.kind === "missing") {
       return undefined;
     }
-    return {
-      ...parsed,
-      meta: {
-        ...parsed.meta,
-        // Older V1 records counted the synthetic compaction bridge as a user turn.
-        turns: countConversationTurns(parsed.messages),
-      },
-    };
-  } catch {
-    return undefined;
+    throwReadFailure(legacy, "v1", sessionId);
   }
+
+  if (v2.kind === "corrupt") {
+    return withWarning(legacy.value, warningFor("v2", "corrupt"));
+  }
+  if (!options.migrateLegacy) {
+    return legacy.value;
+  }
+
+  const migrated = await migrateLegacySession(legacy.value, {
+    ...options,
+    ...options.migrateLegacy,
+  });
+  return migrated.kind === "found"
+    ? migrated.value
+    : withWarning(legacy.value, warningFor("v2", migrated.kind));
 }
 
-export interface PersistSessionInput {
-  workspaceRoot: string;
-  sessionId: string;
-  /** Current run's traceId; appended to the session's trace chain if new. */
-  traceId?: string;
-  messages: Message[];
-  /** Cumulative usage snapshot for this session (replaces any prior value when provided). */
-  budget?: SessionBudget;
+async function readV2ListingMeta(
+  workspaceRoot: string,
+  sessionId: string,
+  options: SessionStoragePaths,
+): Promise<SessionReadResult<SessionMeta>> {
+  const fast = await readV2SessionMetaFast(workspaceRoot, sessionId, options);
+  return fast.kind === "needs_full_replay"
+    ? readV2SessionMetaFull(workspaceRoot, sessionId, options)
+    : fast;
 }
 
 /**
- * Best-effort persist of the top-level conversation. Merges with any existing record so
- * createdAt/title/traceIds stay stable across turns and resume segments. Never throws.
+ * Mixed V1/V2 picker listing, newest first and de-duplicated by session id.
+ *
+ * V2 normally reads only `session_meta`, a bounded tail checkpoint, the final event, and file
+ * metadata. It falls back to strict full replay when no checkpoint covers the complete log.
+ * Legacy V1 files must still be parsed in full because their metadata is embedded in one JSON
+ * snapshot. Listing never triggers migration.
  */
-export function persistSession(input: PersistSessionInput): void {
-  try {
-    const filePath = sessionFilePath(input.workspaceRoot, input.sessionId);
-    const existing = readRecord(filePath);
-    const now = Date.now();
-    const traceIds = new Set(existing?.meta.traceIds ?? []);
-    if (input.traceId) {
-      traceIds.add(input.traceId);
-    }
-    const meta: SessionMeta = {
-      id: input.sessionId,
-      workspaceRoot: path.resolve(input.workspaceRoot),
-      title: existing?.meta.title ?? deriveSessionTitleFromMessages(input.messages),
-      createdAt: existing?.meta.createdAt ?? now,
-      updatedAt: now,
-      turns: countConversationTurns(input.messages),
-      traceIds: [...traceIds],
-      budget: input.budget ?? existing?.meta.budget,
-    };
-    const record: SessionRecord = { meta, messages: input.messages };
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    const tmp = `${filePath}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(record, null, 2), "utf-8");
-    fs.renameSync(tmp, filePath);
-  } catch {
-    // Persistence is best-effort; a failed write must not break the turn.
-  }
-}
-
-/** Sessions for the given workspace, newest first. Returns metadata only (cheap for the picker). */
-export function listSessions(workspaceRoot: string): SessionMeta[] {
-  const dir = resolveWorkspaceDir(workspaceRoot);
+export async function listSessions(
+  workspaceRoot: string,
+  options: SessionStoragePaths = {},
+): Promise<SessionMeta[]> {
+  const dir = resolveWorkspaceDir(workspaceRoot, options.sessionsRoot);
   let entries: string[];
   try {
-    entries = fs.readdirSync(dir).filter((f) => f.endsWith(".json"));
-  } catch {
-    return [];
-  }
-  const metas: SessionMeta[] = [];
-  for (const entry of entries) {
-    const record = readRecord(path.join(dir, entry));
-    if (record) {
-      metas.push(record.meta);
+    entries = await fs.promises.readdir(dir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
     }
+    throw new SessionStoreReadError("unreadable", "store", "(session directory)", error);
   }
-  return metas.sort((a, b) => b.updatedAt - a.updatedAt);
-}
 
-/** Full record (meta + messages) for one session, or undefined if missing/corrupt. */
-export function loadSession(workspaceRoot: string, sessionId: string): SessionRecord | undefined {
-  return readRecord(sessionFilePath(workspaceRoot, sessionId));
+  const formats = new Map<string, { v1: boolean; v2: boolean }>();
+  for (const entry of entries) {
+    const match = /^(.*)\.(jsonl?)$/.exec(entry);
+    if (!match?.[1] || !match[2]) {
+      continue;
+    }
+    if (!isValidSessionId(match[1])) {
+      continue;
+    }
+    const current = formats.get(match[1]) ?? { v1: false, v2: false };
+    if (match[2] === "jsonl") {
+      current.v2 = true;
+    } else {
+      current.v1 = true;
+    }
+    formats.set(match[1], current);
+  }
+
+  const metas = await Promise.all(
+    [...formats].map(async ([id, format]) => {
+      let v2Failure: Exclude<SessionReadResult<SessionMeta>, { kind: "found" }> | undefined;
+      if (format.v2) {
+        const v2 = await readV2ListingMeta(workspaceRoot, id, options);
+        if (v2.kind === "found") {
+          return v2.value;
+        }
+        if (v2.kind === "unreadable") {
+          throwReadFailure(v2, "v2", id);
+        }
+        v2Failure = v2;
+      }
+
+      if (format.v1) {
+        const legacy = readLegacySession(workspaceRoot, id, options);
+        if (legacy.kind === "found") {
+          return legacy.value.meta;
+        }
+        if (v2Failure?.kind === "corrupt") {
+          throwReadFailure(v2Failure, "v2", id);
+        }
+        if (legacy.kind === "unreadable") {
+          throwReadFailure(legacy, "v1", id);
+        }
+        // A malformed legacy snapshot should not make every other picker entry unavailable.
+        // Unlike V2, V1 has no authoritative checkpoint to surface as a placeholder row.
+      }
+
+      if (v2Failure?.kind === "corrupt") {
+        throwReadFailure(v2Failure, "v2", id);
+      }
+      return undefined;
+    }),
+  );
+  return metas.flatMap((meta) => (meta ? [meta] : [])).sort((a, b) => b.updatedAt - a.updatedAt);
 }

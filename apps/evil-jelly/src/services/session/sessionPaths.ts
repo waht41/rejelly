@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { resolveGlobalJellyDir } from "../../shared/globalPath";
 
+const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
 /** ~/.evil-jelly/sessions */
 export function resolveSessionsRoot(): string {
   return path.join(resolveGlobalJellyDir(), "sessions");
@@ -17,6 +19,17 @@ export function workspaceBucket(workspaceRoot: string): string {
 
 export function resolveWorkspaceDir(workspaceRoot: string, sessionsRoot = resolveSessionsRoot()) {
   return path.join(sessionsRoot, workspaceBucket(workspaceRoot));
+}
+
+/** Whether a value is safe to use as one session filename stem. */
+export function isValidSessionId(sessionId: string): boolean {
+  return SESSION_ID_PATTERN.test(sessionId) && sessionId !== "." && sessionId !== "..";
+}
+
+export function assertSessionId(sessionId: string): void {
+  if (!isValidSessionId(sessionId)) {
+    throw new Error(`Unsafe session id: ${JSON.stringify(sessionId)}`);
+  }
 }
 
 /** Sortable, human-ish session id: base36 timestamp + short random suffix. */
