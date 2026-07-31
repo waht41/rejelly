@@ -192,7 +192,8 @@ function useElapsedSeconds(since: number | null): number {
 }
 
 /**
- * Persistent top status bar: what the runtime is doing and how long the turn has been going.
+ * Persistent status bar at the bottom of the transient region: what the runtime is doing and
+ * how long the turn has been going.
  *
  * The number counts the whole turn from the moment it left the input wait, surviving phase
  * changes (thinking → streaming → tools) instead of zeroing on each one. A failed run that
@@ -345,7 +346,6 @@ export function Dashboard({ onCtrlCAbort }: { onCtrlCAbort: CtrlCAbortHandler })
       ) : (
         <Box flexDirection="column" marginTop={1} marginBottom={1}>
           <Box ref={topTransientRef} flexDirection="column">
-            <RuntimeStatusLine />
             {runningTools.length > 0 ? (
               <RunningToolList tools={runningTools} maxTailRows={toolTailRows} />
             ) : null}
@@ -361,6 +361,9 @@ export function Dashboard({ onCtrlCAbort }: { onCtrlCAbort: CtrlCAbortHandler })
           ) : null}
           <Box ref={bottomTransientRef} flexDirection="column">
             <TransientPane view={view} columns={columns} />
+            <Box marginTop={1}>
+              <RuntimeStatusLine />
+            </Box>
             {prompt.type === "confirm" ? (
               <ConfirmPrompt message={prompt.message} defaultYes={prompt.defaultYes} />
             ) : prompt.type === "actionMenu" ? (
