@@ -153,6 +153,101 @@ describe("turn timing", () => {
   });
 });
 
+describe("full conversation turn", () => {
+  it("drives the whole lifecycle and keeps the turn timer anchored at the initial input", () => {
+    const store = useOutputStore.getState();
+
+    // Router: waiting for the user's next message.
+    store.setPhase("awaiting_user", "Waiting for input");
+    expect(useOutputStore.getState().runtime.phase).toBe("awaiting_user");
+
+    // User sends: getInput reports "working" (UI feedback only), logUser appends the
+    // message, and only the shell's initial-input record (beginTurn) anchors the timer.
+    store.setPhase("working", "Running…");
+    expect(useOutputStore.getState().runtime.turnStartedAt).toBeNull();
+    store.logUser("Inspect the repo");
+    expect(useOutputStore.getState().runtime.turnStartedAt).toBeNull();
+    store.beginTurn();
+    const turnStart = useOutputStore.getState().runtime.turnStartedAt;
+    expect(turnStart).not.toBeNull();
+
+    // Model turn 1: connecting → thinking → streaming → working; the anchor never moves.
+    store.setPhase("connecting");
+    store.setPhase("thinking");
+    store.setPhase("streaming");
+    store.setPhase("working");
+    expect(useOutputStore.getState().runtime.turnStartedAt).toBe(turnStart);
+
+    // Tool with a confirmation pause; resumeWork restores the tool phase afterwards.
+    const tool = store.beginTool({ toolName: "run_command", summary: "[Tools] npm test" });
+    store.appendToolOutput(tool.id, "passing\n");
+    store.setPhase("awaiting_user", "shell → workspace root");
+    expect(useOutputStore.getState().runtime.phase).toBe("awaiting_user");
+    store.resumeWork("Running…");
+    expect(useOutputStore.getState().runtime.phase).toBe("tool");
+    expect(useOutputStore.getState().runtime.turnStartedAt).toBe(turnStart);
+    store.logTool({
+      id: tool.id,
+      ordinal: tool.ordinal,
+      toolName: "run_command",
+      summary: "[Tools] npm test",
+      preview: "passing",
+      fullResult: "passing",
+      ok: true,
+    });
+    expect(useOutputStore.getState().runtime.phase).toBe("working");
+
+    // A steer injected mid-turn only appends history; the timer keeps counting.
+    store.logUser("Also check the tests");
+    expect(useOutputStore.getState().runtime.turnStartedAt).toBe(turnStart);
+
+    // Model turn 2 → the final reply ends the turn.
+    store.setPhase("connecting");
+    store.setPhase("streaming");
+    store.setPhase("working");
+    store.logAssistant("Done.");
+
+    const state = useOutputStore.getState();
+    expect(state.runtime.phase).toBe("idle");
+    expect(state.runtime.turnStartedAt).toBeNull();
+    expect(state.runtime.detail).toBe("Ready");
+    expect(state.history.map((turn) => turn.type)).toEqual([
+      "user",
+      "tool",
+      "user",
+      "assistant",
+      "system",
+    ]);
+    const timing = state.history[state.history.length - 1]!;
+    expect(timing.type).toBe("system");
+    if (timing.type === "system") {
+      expect(timing.content).toMatch(/^Turn took \d+(\.\d+)?s$/);
+    }
+
+    // A fresh turn re-anchors from scratch.
+    store.beginTurn();
+    expect(useOutputStore.getState().runtime.turnStartedAt).not.toBeNull();
+  });
+
+  it("closes an interrupted turn the same way", () => {
+    const store = useOutputStore.getState();
+    store.beginTurn();
+    store.setPhase("streaming");
+
+    // The abort path also lands on logAssistant, so it must carry the timing evidence.
+    store.logAssistant("Task has been interrupted by user.");
+
+    const state = useOutputStore.getState();
+    expect(state.runtime.phase).toBe("idle");
+    expect(state.runtime.turnStartedAt).toBeNull();
+    const timing = state.history[state.history.length - 1]!;
+    expect(timing.type).toBe("system");
+    if (timing.type === "system") {
+      expect(timing.content).toMatch(/^Turn took /);
+    }
+  });
+});
+
 describe("tool phase", () => {
   it("holds one timer across a parallel batch and releases it when the last tool ends", () => {
     const store = useOutputStore.getState();

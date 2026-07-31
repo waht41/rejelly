@@ -12,7 +12,11 @@ import { z } from "zod";
 import { COMPACTION_STREAM_CHANNEL } from "../../shared/contracts/streamChannels";
 import type { EvilJellyHostBindings, RuntimePhase } from "../../shared/types";
 import { setBinding } from "./hostBindings";
-import { phaseForStreamEvent, useStandardStreaming } from "./standardStreaming";
+import {
+  phaseForStreamEvent,
+  type StreamTurnProgress,
+  useStandardStreaming,
+} from "./standardStreaming";
 
 function createTestBindings(output: string[], phases: RuntimePhase[] = []): EvilJellyHostBindings {
   return {
@@ -273,5 +277,53 @@ describe("phaseForStreamEvent", () => {
     expect(
       phaseForStreamEvent({ type: "turn_done", channel: "some-future-turn" }, midTurn),
     ).toBeNull();
+  });
+
+  it("pins the full event × context × channel matrix", () => {
+    const mid = { modelSpoke: false, turnEnded: false };
+    const spoke = { modelSpoke: true, turnEnded: false };
+    const endedSpoke = { modelSpoke: true, turnEnded: true };
+    // [event, progress, expected phase (null = leave it alone)]
+    const cases: Array<
+      [Parameters<typeof phaseForStreamEvent>[0], StreamTurnProgress, RuntimePhase | null]
+    > = [
+      // turn_start: always the request wait, even if the previous turn ended.
+      [{ type: "turn_start" }, mid, "connecting"],
+      [{ type: "turn_start" }, endedSpoke, "connecting"],
+      // reasoning: only LEADING reasoning is "thinking"; turnEnded is irrelevant.
+      [{ type: "reasoning", delta: "hmm" }, mid, "thinking"],
+      [{ type: "reasoning", delta: "hmm" }, spoke, null],
+      [{ type: "reasoning", delta: "hmm" }, endedSpoke, null],
+      // text: empty deltas are ignored; non-empty text is streaming until the turn ends.
+      [{ type: "text", delta: "" }, mid, null],
+      [{ type: "text", delta: "hi" }, mid, "streaming"],
+      [{ type: "text", delta: "hi" }, spoke, "streaming"],
+      [{ type: "text", delta: "hi" }, endedSpoke, null],
+      // structured_data: needs a real value, and must not restart a finished turn.
+      [{ type: "structured_data" }, mid, null],
+      [{ type: "structured_data", data: {} }, mid, null],
+      [{ type: "structured_data", data: { reply: "hi" } }, mid, "streaming"],
+      [{ type: "structured_data", data: { reply: "hi" } }, endedSpoke, null],
+      // tool_call_stream: the model is mid-turn producing a call.
+      [{ type: "tool_call_stream" }, mid, "streaming"],
+      [{ type: "tool_call_stream" }, endedSpoke, null],
+      // turn_done: whoever comes next (tools, another turn, the reply) owns the phase.
+      [{ type: "turn_done" }, mid, "working"],
+      [{ type: "turn_done" }, endedSpoke, "working"],
+      // Compaction side-turn: its wait is labelled, its content stays invisible.
+      [{ type: "turn_start", channel: COMPACTION_STREAM_CHANNEL }, mid, "compacting"],
+      [{ type: "turn_done", channel: COMPACTION_STREAM_CHANNEL }, mid, "working"],
+      [{ type: "text", delta: "summary", channel: COMPACTION_STREAM_CHANNEL }, mid, null],
+      [{ type: "reasoning", delta: "x", channel: COMPACTION_STREAM_CHANNEL }, mid, null],
+      // Unknown side-turn: never guessed at.
+      [{ type: "turn_start", channel: "some-future-turn" }, mid, null],
+      [{ type: "turn_done", channel: "some-future-turn" }, mid, null],
+      [{ type: "text", delta: "x", channel: "some-future-turn" }, mid, null],
+    ];
+    for (const [event, progress, expected] of cases) {
+      expect(phaseForStreamEvent(event, progress), JSON.stringify({ event, progress })).toBe(
+        expected,
+      );
+    }
   });
 });
