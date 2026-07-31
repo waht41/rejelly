@@ -395,7 +395,9 @@ The host injects these UI-independent semantics:
 | `logUserMessage` | Append user input to history as soon as it is received, before model/routing work completes. |
 | `logAssistantMessage` | Append the final response, clear transient output, and restore ready status. |
 | `logSystemEvent` | Append startup, farewell, or fatal-error events and clear transient output. |
-| `onStatusUpdate?` | Update only the status line without writing history. |
+| `onPhaseUpdate?` | Report the coarse runtime phase (connecting/thinking/streaming/tool/…) for the status line. |
+| `onDetailUpdate?` | Update the status-line detail without writing history. |
+| `onTurnStart?` | Anchor the turn timer when an initial user input starts a turn. |
 | `confirmTool` | Show a transient highlighted unified diff and request Y/n confirmation. |
 | `requestChoice` | Show a generic hotkey menu with an optional transient diff for non-write decisions such as conflict policy. |
 

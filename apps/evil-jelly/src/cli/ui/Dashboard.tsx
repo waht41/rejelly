@@ -7,6 +7,7 @@ import { Box, measureElement, Static, Text, useInput, useWindowSize } from "ink"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getQueuedSteers, subscribeSteers } from "../../services/steer/steerControl";
 import type { LineInputValue } from "../../shared/AgentShared";
+import type { RuntimePhase } from "../../shared/types";
 import { composeToolTailWindow } from "../store/toolTailWindow";
 import { MODE_META, useModeStore } from "../store/useModeStore";
 import { isRuntimeActive, type RunningTool, useOutputStore } from "../store/useOutputStore";
@@ -25,6 +26,12 @@ import { StreamMarkdownViewer } from "./viewers/MarkdownViewer";
 const STEER_QUEUE_VISIBLE_ROWS = 3;
 const OUTER_VERTICAL_MARGIN_ROWS = 2;
 const TOOL_TAIL_MAX_ROWS = 8;
+/**
+ * When a network-bound phase outlives this, the line turns yellow. A round trip that has not
+ * produced a token in this long is usually stuck rather than slow, and the counter is the only
+ * evidence the CLI can offer before the SDK finally gives up.
+ */
+const STALLED_PHASE_SECONDS = 10;
 // Colors cycle by ordinal so parallel tools are told apart at a glance, the way
 // a prefixed multi-process runner does it.
 const TOOL_TAIL_COLORS = ["cyan", "magenta", "yellow", "blue", "green", "red"] as const;
@@ -141,13 +148,117 @@ function SteerQueueList({ items, columns }: { items: LineInputValue[]; columns: 
   );
 }
 
+const PHASE_META: Record<RuntimePhase, { label: string; color?: string }> = {
+  idle: { label: "Idle" },
+  connecting: { label: "Connecting" },
+  thinking: { label: "Thinking" },
+  streaming: { label: "Responding", color: "green" },
+  compacting: { label: "Compacting context", color: "cyan" },
+  tool: { label: "Running tools", color: "green" },
+  working: { label: "Working" },
+  awaiting_user: { label: "Waiting for you", color: "yellow" },
+};
+
+/** Phases whose wait is a model round trip with nothing else on screen: phase duration is the stall signal. */
+const NETWORK_PHASES = new Set<RuntimePhase>(["connecting", "compacting"]);
+
+/** Status details that say nothing beyond the phase label itself. */
+const GENERIC_STATUS_DETAILS = new Set(["Ready", "Waiting for input"]);
+
+/**
+ * Seconds since `since`, ticking once a second.
+ *
+ * One second is deliberate: the number is the point, not animation. Dashboard remeasures its
+ * transient region on every render (see the layout effect below), so a spinner-rate tick would
+ * put that measure/repaint loop on a 10x faster cadence to say the same thing.
+ * `null` (between turns) reads as 0 and stops the ticking entirely.
+ */
+function useElapsedSeconds(since: number | null): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (since === null) {
+      return;
+    }
+    // Re-baselined on every change so a new anchor reads 0s immediately instead of
+    // inheriting up to a second of the previous one's tick.
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, [since]);
+  if (since === null) {
+    return 0;
+  }
+  return Math.max(0, Math.floor((now - since) / 1_000));
+}
+
+/**
+ * Persistent top status bar: what the runtime is doing and how long the turn has been going.
+ *
+ * The number counts the whole turn from the moment it left the input wait, surviving phase
+ * changes (thinking → streaming → tools) instead of zeroing on each one. A failed run that
+ * froze in `connecting` still reads as `Connecting 23s`, so a slow model and a connection
+ * that never opened stay distinguishable on sight.
+ */
+function RuntimeStatusLine() {
+  const phase = useOutputStore((s) => s.runtime.phase);
+  const phaseSince = useOutputStore((s) => s.runtime.phaseSince);
+  const turnStartedAt = useOutputStore((s) => s.runtime.turnStartedAt);
+  const lastOutputAt = useOutputStore((s) => s.runtime.lastOutputAt);
+  const detail = useOutputStore((s) => s.runtime.detail);
+
+  const meta = PHASE_META[phase];
+  const turnElapsed = useElapsedSeconds(turnStartedAt);
+  // The per-phase elapsed is kept internally just for the stall warning; the displayed
+  // number above is the whole turn's. Streaming stalls measure silence instead: a long
+  // answer keeps flushing output, so phase duration alone would cry wolf.
+  const phaseElapsed = useElapsedSeconds(phaseSince);
+  const outputIdle = useElapsedSeconds(lastOutputAt);
+  const stalled = NETWORK_PHASES.has(phase)
+    ? phaseElapsed >= STALLED_PHASE_SECONDS
+    : phase === "streaming" && outputIdle >= STALLED_PHASE_SECONDS;
+
+  if (phase === "idle") {
+    return (
+      <Box>
+        <Text color="gray">● </Text>
+        <Text color="gray">{meta.label}</Text>
+      </Box>
+    );
+  }
+
+  if (phase === "awaiting_user") {
+    // The confirmation menus are exactly when "what the agent wants to send" matters most:
+    // show the detail (e.g. `shell → workspace root`) that the busy line has no room for.
+    const detailSuffix = detail && !GENERIC_STATUS_DETAILS.has(detail) ? ` · ${detail}` : "";
+    return (
+      <Box>
+        <Text color="yellow">● </Text>
+        <Text color="yellow">
+          {meta.label}
+          {detailSuffix}
+        </Text>
+      </Box>
+    );
+  }
+
+  const color = stalled ? "yellow" : meta.color;
+  return (
+    <Box>
+      <Text color={color ?? "gray"}>● </Text>
+      <Text color={color} bold={stalled}>
+        {meta.label} {turnElapsed}s
+      </Text>
+    </Box>
+  );
+}
+
 export function Dashboard({ onCtrlCAbort }: { onCtrlCAbort: CtrlCAbortHandler }) {
   const { columns, rows } = useWindowSize();
   const history = useOutputStore((s) => s.history);
   const clearedStaticTurns = useOutputStore((s) => s.clearedStaticTurns);
   const streamBuffer = useOutputStore((s) => s.streamBuffer);
   const runningTools = useOutputStore((s) => s.runningTools);
-  const status = useOutputStore((s) => s.status);
+  const phase = useOutputStore((s) => s.runtime.phase);
 
   const transcriptOpen = useViewStore((s) => s.transcriptOpen);
   const openTranscript = useViewStore((s) => s.openTranscript);
@@ -168,7 +279,7 @@ export function Dashboard({ onCtrlCAbort }: { onCtrlCAbort: CtrlCAbortHandler })
   // stream's budget already shrinks around it. Keep it a modest slice of the
   // terminal so a short window still leaves room for everything else.
   const toolTailRows = Math.max(0, Math.min(TOOL_TAIL_MAX_ROWS, Math.floor(rows / 4)));
-  const isAgentWorking = isRuntimeActive(status, streamBuffer);
+  const isAgentWorking = isRuntimeActive(phase, streamBuffer);
   const canShowLinePrompt = prompt.type !== "confirm" && prompt.type !== "actionMenu";
   const lineLabel = prompt.type === "line" ? prompt.label : "";
   const topTransientRef = useRef<DOMElement>(null);
@@ -234,6 +345,7 @@ export function Dashboard({ onCtrlCAbort }: { onCtrlCAbort: CtrlCAbortHandler })
       ) : (
         <Box flexDirection="column" marginTop={1} marginBottom={1}>
           <Box ref={topTransientRef} flexDirection="column">
+            <RuntimeStatusLine />
             {runningTools.length > 0 ? (
               <RunningToolList tools={runningTools} maxTailRows={toolTailRows} />
             ) : null}
@@ -257,11 +369,7 @@ export function Dashboard({ onCtrlCAbort }: { onCtrlCAbort: CtrlCAbortHandler })
               <Box flexDirection="column">
                 <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
                   <SteerQueueList items={queuedSteers} columns={columns} />
-                  {isAgentWorking ? (
-                    <Text dimColor color="yellow">
-                      Agent is running. Type /stop or press Esc to interrupt; exit to quit.
-                    </Text>
-                  ) : null}
+                  {isAgentWorking ? <Text dimColor> · /stop or Esc to interrupt</Text> : null}
                   <SmartLinePrompt label={lineLabel} />
                 </Box>
                 <ModeBadge />
