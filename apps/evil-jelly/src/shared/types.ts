@@ -30,6 +30,28 @@ export type ToolTranscriptDetail = {
   captionTitle?: string;
 };
 
+/**
+ * What the runtime is doing right now.
+ *
+ * Deliberately separate from the free-text status detail ({@link EvilJellyHostBindings.onStatusUpdate}):
+ * this enum answers "is the agent busy, and doing what" — which drives the status line's label,
+ * its elapsed timer, and the idle/active decision — while the detail string is only ever rendered.
+ * Folding both into one string is how `startsWith("Waiting for ")` ended up deciding whether the
+ * agent was running.
+ *
+ * `connecting` is the phase worth watching: it spans `turn_start` until the model's first stream
+ * event, so a wedged proxy or gateway shows up as a counter climbing with nothing else on screen.
+ */
+export type RuntimePhase =
+  | "idle"
+  | "connecting"
+  | "thinking"
+  | "streaming"
+  | "compacting"
+  | "tool"
+  | "working"
+  | "awaiting_user";
+
 export interface EvilJellyHostBindings {
   /** One line of user input per call; host may prefix with a prompt inside getInput. */
   getInput: () => Promise<LineInputValue>;
@@ -65,8 +87,13 @@ export interface EvilJellyHostBindings {
    * Shown at startup and again after `/clear` repaints from a clean slate.
    */
   showSessionBanner?: () => void; // todo some trivial
-  /** Host status line (e.g. “Waiting for input”, “Ready”) without adding history. */
+  /** Host status detail (e.g. “shell → workspace root”, “Ready”) without adding history. */
   onStatusUpdate?: (status: string) => void;
+  /**
+   * Coarse runtime phase for the host status line. Hosts that omit it lose the phase label and
+   * elapsed timer but nothing else; the detail from {@link onStatusUpdate} is unaffected.
+   */
+  onPhaseUpdate?: (phase: RuntimePhase) => void;
   /**
    * Announce a tool call before its handler runs, so the host can show it as
    * running and number it in call order. Hosts that omit this get no live view
