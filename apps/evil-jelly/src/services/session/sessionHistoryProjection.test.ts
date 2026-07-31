@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Message } from "@rejelly/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { persistMessageImageBlobs } from "./sessionBlobStore";
+import { persistMessageImageBlobs } from "../../shared/blobs/sessionBlobStore";
 import type { MessageRecordedEvent, SessionEvent } from "./sessionEvents";
 import {
   buildLatestBudget,

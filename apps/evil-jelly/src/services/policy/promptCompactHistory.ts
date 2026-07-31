@@ -1,6 +1,6 @@
 import type { Message } from "@rejelly/core";
 import { createAgentPolicy, normalizeMessages } from "@rejelly/core/policy";
-import { materializeMessageHistory } from "../session/sessionBlobStore";
+import { materializeMessageHistory } from "../../shared/blobs/sessionBlobStore";
 import {
   type PromptChatCompactionConfig,
   runContextCompaction,

@@ -6,7 +6,7 @@ import {
   type SessionBlobStoreOptions,
   sessionBlobRefSchema,
   sessionImageBlobMetadataMapSchema,
-} from "./sessionBlobStore";
+} from "../../shared/blobs/sessionBlobStore";
 import { sessionMessageSchema } from "./sessionEvents";
 
 export type SessionImageBlobMap = Record<string, SessionBlobMetadata>;

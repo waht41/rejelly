@@ -3,8 +3,8 @@ import { link, mkdir, open, readFile, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { ContentPart, Message } from "@rejelly/core";
 import { z } from "zod";
-import { resolveGlobalJellyDir } from "../../shared/globalPath";
-import { readImageDimensions } from "../../shared/lib/imageDimensions";
+import { resolveGlobalJellyDir } from "../globalPath";
+import { readImageDimensions } from "../lib/imageDimensions";
 
 export const SESSION_BLOB_SCHEME = "rejelly-blob://";
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
