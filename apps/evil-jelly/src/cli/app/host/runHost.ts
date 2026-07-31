@@ -12,9 +12,14 @@ import {
 import type { ReviewOptions } from "@rejelly/core/debugger";
 import { UnifiedAgent } from "../../../features/unified/UnifiedAgent";
 import { setBinding } from "../../../services/binding/hostBindings";
+import {
+  openSessionRecorder,
+  type SessionRecorder,
+} from "../../../services/session/sessionRecorder";
 import { newTraceId, type SessionBudget } from "../../../services/session/sessionStore";
 import { registerRunAbort } from "../../../services/stop/runControl";
 import { withAbort } from "../../../services/stop/withAbort";
+import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyHostBindings } from "../../../shared/types";
 import { MainCliAgent } from "../../../shell/MainCliAgent";
 import { runWithReview } from "./runWithReview";
@@ -34,7 +39,9 @@ export interface RunEvilJellyHostOptions {
   enableSnapshot?: boolean;
   /** Durable session id for local persistence / resume (distinct from the run traceId). */
   sessionId?: string;
-  /** Restored top-level conversation history seeded into the agent on resume. */
+  /** Restored active model context seeded into the agent on resume. */
+  seedContext?: Message[];
+  /** @deprecated Compatibility alias while Session V1 remains the default. */
   seedHistory?: Message[];
   /** Cumulative usage carried back from a resumed session, used as the /status base. */
   seedBudget?: SessionBudget;
@@ -51,6 +58,15 @@ export interface RunEvilJellyHostOptions {
   mockSourceTraceId?: string;
   /** Disable durable session reads/writes for replay-only runs. */
   isolateSessionState?: boolean;
+  /**
+   * Internal Phase 4 switch. The CLI composition root deliberately leaves this unset until the
+   * mixed V1/V2 listing and migration facade lands in Phase 5.
+   */
+  sessionV2?: {
+    enabled: true;
+    appVersion: string;
+    sessionsRoot?: string;
+  };
 }
 
 export interface RunDirectUnifiedOptions {
@@ -73,6 +89,60 @@ function wasAbortedByRunSignal(error: unknown, signal: AbortSignal): boolean {
   );
 }
 
+async function openRunSessionRecorder(
+  options: RunEvilJellyHostOptions,
+  traceId: string,
+): Promise<SessionRecorder | undefined> {
+  const { model, sessionId, sessionV2 } = options;
+  if (!sessionV2?.enabled || !sessionId || options.isolateSessionState) {
+    return undefined;
+  }
+  return openSessionRecorder({
+    workspaceRoot: getWorkspaceFsPolicy().getRoot(),
+    sessionId,
+    traceId,
+    originator: "evil-jelly-cli",
+    appVersion: sessionV2.appVersion,
+    modelId: model.id,
+    ...(model.provider ? { provider: model.provider } : {}),
+    cwd: process.cwd(),
+    ...(sessionV2.sessionsRoot ? { sessionsRoot: sessionV2.sessionsRoot } : {}),
+  });
+}
+
+async function endRunSegment(
+  recorder: SessionRecorder | undefined,
+  input: Parameters<SessionRecorder["endSegment"]>[0],
+): Promise<void> {
+  if (!recorder || recorder.ended) {
+    return;
+  }
+  await recorder.endSegment(input);
+}
+
+async function endRunSegmentBestEffort(
+  recorder: SessionRecorder | undefined,
+  input: Parameters<SessionRecorder["endSegment"]>[0],
+  bindings: EvilJellyHostBindings,
+): Promise<void> {
+  try {
+    await endRunSegment(recorder, input);
+  } catch (error) {
+    bindings.logSystemEvent(`\nSession close failed: ${formatRunFailure(error)}\n`);
+  }
+}
+
+async function closeRunSessionRecorder(
+  recorder: SessionRecorder | undefined,
+  bindings: EvilJellyHostBindings,
+): Promise<void> {
+  try {
+    await recorder?.close();
+  } catch (error) {
+    bindings.logSystemEvent(`\nSession writer close failed: ${formatRunFailure(error)}\n`);
+  }
+}
+
 /**
  * Starts one root run. Multi-turn control flow lives inside the agent via reborn().
  * Does not call process.exit - close resources in the caller after this resolves.
@@ -86,6 +156,7 @@ export async function runEvilJellyHost(
     snapshot,
     enableSnapshot: enableSnapshotOpt,
     sessionId,
+    seedContext,
     seedHistory,
     seedBudget,
   } = options;
@@ -93,6 +164,7 @@ export async function runEvilJellyHost(
   // One traceId per run segment. A logical session may span several of these across resumes;
   // session.id (below) is what groups them in devtool.
   const traceId = newTraceId();
+  const recorder = await openRunSessionRecorder(options, traceId);
   const runAbortController = new AbortController();
   // Ctrl+C routes here: abort the whole run so the cancel signal reaches the
   // agent tree + teardown and the trace closes before exit.
@@ -112,9 +184,11 @@ export async function runEvilJellyHost(
           ...bindings,
           sessionId,
           traceId,
+          seedContext,
           seedHistory,
           seedBudget,
           isolateSessionState: options.isolateSessionState,
+          sessionRecorder: recorder,
         }),
       runWithOptions: {
         snapshot,
@@ -133,14 +207,26 @@ export async function runEvilJellyHost(
         },
       },
     });
+    await endRunSegment(recorder, { status: "completed", reason: "exit" });
   } catch (error) {
     if (isAbortError(error) || wasAbortedByRunSignal(error, runAbortController.signal)) {
+      await endRunSegmentBestEffort(recorder, { status: "interrupted", reason: "abort" }, bindings);
       bindings.logSystemEvent("\nRun interrupted by user.\n");
       return;
     }
+    await endRunSegmentBestEffort(
+      recorder,
+      {
+        status: "error",
+        reason: "error",
+        errorMessage: formatRunFailure(error),
+      },
+      bindings,
+    );
     bindings.logSystemEvent(`\nRun failed: ${formatRunFailure(error)}\n`);
   } finally {
     unregisterRunAbort();
+    await closeRunSessionRecorder(recorder, bindings);
   }
 }
 

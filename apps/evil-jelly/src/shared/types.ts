@@ -2,6 +2,7 @@
  * Host protocol: bindings between the terminal/UI and the agent loop (Electron, tests, etc.).
  */
 
+import type { TranscriptItem } from "../services/session/sessionHistoryProjection";
 import type { AgentMode, LineInputValue, ToolConfirmationHandler } from "./AgentShared";
 
 /** One row in a host-driven action menu (hotkey + arbitrary domain `value`). */
@@ -47,6 +48,11 @@ export interface EvilJellyHostBindings {
   logAssistantMessage: (message: string) => void;
   /** Append a system line (startup, goodbye, fatal error) and reset the transient stream. */
   logSystemEvent: (message: string) => void;
+  /**
+   * Atomically hydrate a bounded resume transcript before live turns are appended. Hosts that do
+   * not implement it receive the compatibility replay through the individual log methods.
+   */
+  hydrateHistory?: (items: TranscriptItem[]) => void;
   /** Clear host-visible conversation history when the host supports it. */
   clearHistory?: () => void;
   /**

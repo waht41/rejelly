@@ -3,6 +3,7 @@
  */
 
 import { create } from "zustand";
+import type { TranscriptItem } from "../../services/session/sessionHistoryProjection";
 import type { ToolCallHandle, ToolTranscriptDetail } from "../../shared/types";
 import { StreamStableTailController } from "./streamStableTail";
 import { drainToolOutput } from "./toolTailWindow";
@@ -103,6 +104,51 @@ interface OutputState {
   logBanner: (banner: SessionBanner) => void;
   clearStream: () => void;
   clearHistory: () => void;
+  hydrateHistory: (items: readonly TranscriptItem[]) => void;
+}
+
+function transcriptTurn(item: TranscriptItem): Turn {
+  switch (item.type) {
+    case "user": {
+      const actions = item.attachments?.map(
+        (attachment) => `  -> ${attachment.action} ${attachment.label}`,
+      );
+      return {
+        id: `resume_${item.id}`,
+        type: "user",
+        content: actions?.length ? `${item.content}\n${actions.join("\n")}` : item.content,
+      };
+    }
+    case "assistant":
+      return {
+        id: `resume_${item.id}`,
+        type: "assistant",
+        content: item.content,
+        hidden: false,
+      };
+    case "system":
+      return { id: `resume_${item.id}`, type: "system", content: item.content };
+    case "tool": {
+      const compactArgs = item.arguments?.trim().replace(/\s+/g, " ");
+      const suffix =
+        compactArgs && compactArgs.length > 120 ? `${compactArgs.slice(0, 117)}...` : compactArgs;
+      const summary = `[Tools] ${item.toolName}${suffix ? ` ${suffix}` : ""} (resumed)`;
+      const fullResult = item.result ?? "";
+      return {
+        id: `resume_${item.id}`,
+        type: "tool",
+        content: summary,
+        tool: {
+          toolName: item.toolName,
+          summary,
+          args: item.arguments,
+          preview: fullResult.split("\n").slice(0, 6).join("\n").slice(0, 600),
+          fullResult,
+          ok: item.ok,
+        },
+      };
+    }
+  }
 }
 
 function capTransientStream(value: string): string {
@@ -345,6 +391,15 @@ export const useOutputStore = create<OutputState>((set) => ({
     set((state) => ({
       clearedStaticTurns: [...state.clearedStaticTurns, ...state.history],
       history: [],
+      streamBuffer: "",
+      runningTools: [],
+      status: "Ready",
+    }));
+  },
+  hydrateHistory: (items) => {
+    clearStreamState();
+    set((state) => ({
+      history: [...state.history, ...items.map(transcriptTurn)],
       streamBuffer: "",
       runningTools: [],
       status: "Ready",

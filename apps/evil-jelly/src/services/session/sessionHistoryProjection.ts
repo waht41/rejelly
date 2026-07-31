@@ -61,6 +61,10 @@ export interface BuildTranscriptOptions {
   includeCompactionBoundaries?: boolean;
 }
 
+/**
+ * Recovery is a projection, not a retry policy. Dangling calls receive synthetic unknown-outcome
+ * results solely to keep provider message ordering valid; no tool is executed during resume.
+ */
 function closeDanglingToolCalls(messages: StoredSessionMessage[]): StoredSessionMessage[] {
   const output: StoredSessionMessage[] = [];
   const pending = new Map<string, number>();
@@ -102,6 +106,8 @@ function closeDanglingToolCalls(messages: StoredSessionMessage[]): StoredSession
 }
 
 export function buildStoredActiveContext(replay: PreparedSessionReplay): StoredSessionMessage[] {
+  // message_recorded grows the current model context, while context_compacted resets only this
+  // projection. Transcript construction below continues reading the original message events.
   let messages: StoredSessionMessage[] = [];
   const openTurns = new Set<string>();
   let needsRecovery = false;
@@ -269,6 +275,8 @@ function tailTranscript(items: TranscriptItem[], tailTurns: number | undefined):
   if (tailTurns === 0) {
     return [];
   }
+  // Steers belong to their existing turn. Only initial inputs (or the conservative V1 synthetic
+  // boundaries) consume one slot in the terminal hydration limit.
   const starts = items
     .map((item, index) => ({ item, index }))
     .filter(
@@ -282,6 +290,9 @@ export function buildTranscript(
   replay: PreparedSessionReplay,
   options: BuildTranscriptOptions = {},
 ): TranscriptItem[] {
+  // Tool calls and results are folded into one display item, but their source events remain
+  // untouched. Compaction replacementHistory is deliberately ignored: it is model context, not
+  // user-visible conversation history.
   const items: TranscriptItem[] = [];
   const pendingTools = new Map<string, Extract<TranscriptItem, { type: "tool" }>>();
 
@@ -347,6 +358,38 @@ export function buildTranscript(
     }
   }
 
+  return tailTranscript(items, options.tailTurns);
+}
+
+/** Build the display projection for a V1 record without guessing durable turn/round boundaries. */
+export function buildLegacyTranscript(
+  messages: readonly Message[],
+  options: Pick<BuildTranscriptOptions, "tailTurns"> = {},
+): TranscriptItem[] {
+  const items: TranscriptItem[] = [];
+  const pendingTools = new Map<string, Extract<TranscriptItem, { type: "tool" }>>();
+  let legacyTurn = 0;
+  messages.forEach((message, index) => {
+    if (isCompactionBridgeMessage(message)) {
+      items.push({
+        id: `legacy:${index}:compaction`,
+        type: "system",
+        seq: index + 1,
+        kind: "compaction",
+        content: "Context was compacted in a previous run.",
+      });
+      return;
+    }
+    if (message.role === "user") {
+      legacyTurn += 1;
+    }
+    appendTranscriptMessage(items, pendingTools, message, {
+      seq: index + 1,
+      turnId: `legacy:0:${legacyTurn}`,
+      suffix: `legacy:${index}`,
+      legacy: true,
+    });
+  });
   return tailTranscript(items, options.tailTurns);
 }
 

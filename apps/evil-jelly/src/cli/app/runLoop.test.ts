@@ -1,4 +1,4 @@
-import type { ModelAdapter } from "@rejelly/core";
+import type { AgentSnapshot, Message, ModelAdapter } from "@rejelly/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   requestNewSession,
@@ -105,5 +105,109 @@ describe("runInteractiveLoop mock session isolation", () => {
 
     expect(loadSessionSpy).not.toHaveBeenCalled();
     expect(systemEvents).toContain("Resume is disabled during mock replay.\n");
+  });
+
+  it("clears the complete resume seed and startup snapshot when starting a new session", async () => {
+    const { bindings } = createBindings();
+    const activeContext: Message[] = [{ role: "user", content: "old task" }];
+    const budget = {
+      totalTokens: 10,
+      promptTokens: 7,
+      completionTokens: 3,
+      cacheReadTokens: 0,
+      callCount: 1,
+      costs: {},
+      lastContextTokens: 7,
+      lastCacheReadTokens: 0,
+    };
+    runHostMock
+      .mockImplementationOnce(async () => {
+        requestNewSession();
+      })
+      .mockResolvedValueOnce(undefined);
+
+    await runInteractiveLoop({
+      bindings,
+      model: {} as ModelAdapter,
+      enableReview: false,
+      snapshot: {} as AgentSnapshot,
+      sessionId: "session_old",
+      resumeSeed: {
+        activeContext,
+        transcript: [],
+        totalTurns: 1,
+        budget,
+      },
+    });
+
+    expect(runHostMock).toHaveBeenCalledTimes(2);
+    expect(runHostMock.mock.calls[0]?.[1]).toMatchObject({
+      sessionId: "session_old",
+      seedContext: activeContext,
+      seedBudget: budget,
+    });
+    expect(runHostMock.mock.calls[0]?.[1].snapshot).toBeDefined();
+    expect(runHostMock.mock.calls[1]?.[1].sessionId).not.toBe("session_old");
+    expect(runHostMock.mock.calls[1]?.[1]).toMatchObject({
+      seedContext: undefined,
+      seedBudget: undefined,
+      snapshot: undefined,
+    });
+  });
+
+  it("switches context, budget, snapshot, and transcript together on resume", async () => {
+    const { bindings } = createBindings();
+    const hydrated: Parameters<NonNullable<EvilJellyHostBindings["hydrateHistory"]>>[0][] = [];
+    bindings.hydrateHistory = (items) => hydrated.push(items);
+    const messages: Message[] = [
+      { role: "user", content: "resumed task" },
+      { role: "assistant", content: '{"reply":"resumed answer"}' },
+    ];
+    const budget = {
+      totalTokens: 20,
+      promptTokens: 15,
+      completionTokens: 5,
+      cacheReadTokens: 0,
+      callCount: 2,
+      costs: {},
+      lastContextTokens: 10,
+      lastCacheReadTokens: 0,
+    };
+    vi.spyOn(sessionStore, "loadSession").mockReturnValue({
+      meta: {
+        id: "session_target",
+        workspaceRoot: "workspace",
+        title: "resumed task",
+        createdAt: 1,
+        updatedAt: 2,
+        turns: 1,
+        traceIds: [],
+        budget,
+      },
+      messages,
+    });
+    runHostMock
+      .mockImplementationOnce(async () => {
+        requestResume("session_target");
+      })
+      .mockResolvedValueOnce(undefined);
+
+    await runInteractiveLoop({
+      bindings,
+      model: {} as ModelAdapter,
+      enableReview: false,
+      snapshot: {} as AgentSnapshot,
+      sessionId: "session_current",
+    });
+
+    expect(runHostMock).toHaveBeenCalledTimes(2);
+    expect(runHostMock.mock.calls[1]?.[1]).toMatchObject({
+      sessionId: "session_target",
+      seedContext: messages,
+      seedBudget: budget,
+      snapshot: undefined,
+    });
+    expect(hydrated).toHaveLength(1);
+    expect(hydrated[0]?.map((item) => item.type)).toEqual(["user", "assistant"]);
   });
 });
