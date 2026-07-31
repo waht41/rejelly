@@ -225,7 +225,9 @@ export function Dashboard({ onCtrlCAbort }: { onCtrlCAbort: CtrlCAbortHandler })
   // a sibling keeps the same <Static> instance mounted, so nothing gets re-flushed.
   return (
     <>
-      <Static items={staticTurns}>{(turn) => <HistoryItem key={turn.id} turn={turn} />}</Static>
+      <Static items={staticTurns}>
+        {(turn) => <HistoryItem key={turn.id} turn={turn} columns={columns} />}
+      </Static>
 
       {transcriptOpen ? (
         <TranscriptOverlay />
@@ -246,7 +248,7 @@ export function Dashboard({ onCtrlCAbort }: { onCtrlCAbort: CtrlCAbortHandler })
             </Box>
           ) : null}
           <Box ref={bottomTransientRef} flexDirection="column">
-            <TransientPane view={view} />
+            <TransientPane view={view} columns={columns} />
             {prompt.type === "confirm" ? (
               <ConfirmPrompt message={prompt.message} defaultYes={prompt.defaultYes} />
             ) : prompt.type === "actionMenu" ? (
