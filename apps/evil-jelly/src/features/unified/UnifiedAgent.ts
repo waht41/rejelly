@@ -154,6 +154,8 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
         message: await buildConversationMessages(props),
         pendingUserInputs: drainAndLogSteers,
         compaction: buildAutoCompactionConfig(),
+        sessionRecorder: props.sessionRecorder,
+        turnId: props.turnId,
       });
 
       if (result.aborted) {
@@ -161,6 +163,7 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
           reply: "Task has been interrupted by user.",
           delta: result.delta,
           ...(result.compactedHistory ? { compactHistory: result.compactedHistory } : {}),
+          interrupted: true,
         };
       }
 

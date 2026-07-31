@@ -7,6 +7,7 @@ import {
 } from "@rejelly/core/policy";
 import type { z } from "zod";
 import type { LineInputValue } from "../../shared/AgentShared";
+import type { SessionRecorder } from "../session/sessionRecorder";
 import type { PromptChatCompactionConfig } from "./compaction";
 import {
   runResilientToolCallLoopPolicy,
@@ -51,6 +52,8 @@ export interface PromptChatResilientOptions<TSchema extends z.ZodTypeAny = z.Zod
   schema?: TSchema;
   pendingUserInputs?: () => LineInputValue[] | Promise<LineInputValue[]>;
   compaction?: PromptChatCompactionConfig;
+  sessionRecorder?: SessionRecorder;
+  turnId?: string;
 }
 
 type PromptChatResilientStringOptions = Omit<PromptChatResilientOptions, "schema">;
@@ -86,6 +89,8 @@ export const promptChatResilient = createAgentPolicy({
       parser: options?.schema ? createJsonOutputParser(options.schema) : undefined,
       pendingUserInputs: options?.pendingUserInputs,
       compaction: options?.compaction,
+      sessionRecorder: options?.sessionRecorder,
+      turnId: options?.turnId,
     };
 
     return await runResilientToolCallLoopPolicy(runtime, snapshot);

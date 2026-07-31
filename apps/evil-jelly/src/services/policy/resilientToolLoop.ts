@@ -11,6 +11,7 @@ import type { LineInputValue } from "../../shared/AgentShared";
 import { buildUserMessage } from "../../shared/attachments/messageContent";
 import { appendMessageContentSuffix } from "../../shared/lib/message";
 import { estimateMessagesTokens } from "../../shared/lib/tokens";
+import type { SessionRecorder } from "../session/sessionRecorder";
 import {
   DEFAULT_COMPACTION_MAX_ROUNDS,
   DEFAULT_WARN_RATIO,
@@ -30,6 +31,8 @@ export interface ToolCallLoopPolicySnapshot {
   parser?: OutputParser;
   pendingUserInputs?: () => LineInputValue[] | Promise<LineInputValue[]>;
   compaction?: PromptChatCompactionConfig;
+  sessionRecorder?: SessionRecorder;
+  turnId?: string;
 }
 
 class CompactionController {
@@ -41,6 +44,8 @@ class CompactionController {
     private readonly ctx: PromptContext,
     private readonly config: PromptChatCompactionConfig | undefined,
     baseMessages: Message[],
+    private readonly recorder?: SessionRecorder,
+    private readonly turnId?: string,
   ) {
     this.#baseMessages = baseMessages;
   }
@@ -70,6 +75,7 @@ class CompactionController {
       return;
     }
 
+    const startedAt = Date.now();
     const compactionResult = await runContextCompaction(this.ctx, working, compaction);
     if (!compactionResult) {
       // Summarization produced nothing usable; stop retrying so we don't burn model turns.
@@ -81,12 +87,25 @@ class CompactionController {
     deltaMessages.length = 0;
     this.#compacted = true;
     this.#rounds += 1;
-    compaction.onCompacted?.({
+    const info = {
       round: this.#rounds,
       beforeTokens,
       afterTokens: estimateMessagesTokens(compactionResult.history),
       keptUserMessages: compactionResult.keptUserMessages,
-    });
+    };
+    compaction.onCompacted?.(info);
+    if (this.recorder && this.turnId) {
+      await this.recorder.recordCompaction({
+        trigger: "auto",
+        parentTurnId: this.turnId,
+        replacementHistory: withoutEquippedPrefix(compactionResult.history),
+        beforeMessageCount: working.length,
+        beforeTokens,
+        afterTokens: info.afterTokens,
+        keptUserMessages: info.keptUserMessages,
+        durationMs: Date.now() - startedAt,
+      });
+    }
   }
 
   maybeAppendWarnHint(deltaMessages: Message[], toolOutputs: Message[]): void {
@@ -141,7 +160,13 @@ export async function runResilientToolCallLoopPolicy<T = unknown>(
 ): Promise<PromptChatResilientResult<T>> {
   const maxTurnSteps = ctx.maxTurnSteps;
   const deltaMessages: Message[] = [];
-  const compaction = new CompactionController(ctx, snapshot.compaction, ctx.messages);
+  const compaction = new CompactionController(
+    ctx,
+    snapshot.compaction,
+    ctx.messages,
+    snapshot.sessionRecorder,
+    snapshot.turnId,
+  );
 
   let step = 0;
 
@@ -149,12 +174,18 @@ export async function runResilientToolCallLoopPolicy<T = unknown>(
     while (step < maxTurnSteps) {
       const pendingInputs = (await snapshot.pendingUserInputs?.()) ?? [];
       for (const input of pendingInputs) {
-        deltaMessages.push(
-          await buildUserMessage({
-            userInput: input.text,
-            attachments: input.attachments,
-          }),
-        );
+        const message = await buildUserMessage({
+          userInput: input.text,
+          attachments: input.attachments,
+        });
+        deltaMessages.push(message);
+        if (snapshot.sessionRecorder && snapshot.turnId) {
+          await snapshot.sessionRecorder.recordMessage(
+            snapshot.turnId,
+            { kind: "user_input", inputKind: "steer" },
+            message,
+          );
+        }
       }
 
       await compaction.maybeCompact(deltaMessages);
@@ -167,6 +198,18 @@ export async function runResilientToolCallLoopPolicy<T = unknown>(
       });
 
       deltaMessages.push(...result.deltaMessages);
+      if (snapshot.sessionRecorder && snapshot.turnId) {
+        await snapshot.sessionRecorder.recordMessages(
+          snapshot.turnId,
+          result.deltaMessages.map((message) => ({
+            source:
+              message.role === "assistant"
+                ? ({ kind: "model" } as const)
+                : ({ kind: "agent_runtime" } as const),
+            message,
+          })),
+        );
+      }
 
       if (result.kind === "content") {
         return buildSuccessResult(compaction, deltaMessages, result.data as T);
@@ -180,6 +223,12 @@ export async function runResilientToolCallLoopPolicy<T = unknown>(
       const toolRuntime = ctx.fork({ messages: compaction.messages(deltaMessages) });
       const toolOutputs = await executeTools(result.calls, { runtime: toolRuntime });
       deltaMessages.push(...toolOutputs);
+      if (snapshot.sessionRecorder && snapshot.turnId) {
+        await snapshot.sessionRecorder.recordMessages(
+          snapshot.turnId,
+          toolOutputs.map((message) => ({ source: { kind: "tool" } as const, message })),
+        );
+      }
       step++;
 
       compaction.maybeAppendWarnHint(deltaMessages, toolOutputs);
