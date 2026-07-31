@@ -33,7 +33,7 @@ export type ToolTranscriptDetail = {
 /**
  * What the runtime is doing right now.
  *
- * Deliberately separate from the free-text status detail ({@link EvilJellyHostBindings.onStatusUpdate}):
+ * Deliberately separate from the free-text status detail ({@link EvilJellyHostBindings.onDetailUpdate}):
  * this enum answers "is the agent busy, and doing what" — which drives the status line's label,
  * its elapsed timer, and the idle/active decision — while the detail string is only ever rendered.
  * Folding both into one string is how `startsWith("Waiting for ")` ended up deciding whether the
@@ -88,10 +88,10 @@ export interface EvilJellyHostBindings {
    */
   showSessionBanner?: () => void; // todo some trivial
   /** Host status detail (e.g. “shell → workspace root”, “Ready”) without adding history. */
-  onStatusUpdate?: (status: string) => void;
+  onDetailUpdate?: (detail: string) => void;
   /**
    * Coarse runtime phase for the host status line. Hosts that omit it lose the phase label and
-   * elapsed timer but nothing else; the detail from {@link onStatusUpdate} is unaffected.
+   * elapsed timer but nothing else; the detail from {@link onDetailUpdate} is unaffected.
    */
   onPhaseUpdate?: (phase: RuntimePhase) => void;
   /**

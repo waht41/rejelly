@@ -4,7 +4,7 @@
 
 import { create } from "zustand";
 import type { TranscriptItem } from "../../shared/transcript";
-import type { ToolCallHandle, ToolTranscriptDetail } from "../../shared/types";
+import type { RuntimePhase, ToolCallHandle, ToolTranscriptDetail } from "../../shared/types";
 import { StreamStableTailController } from "./streamStableTail";
 import { drainToolOutput } from "./toolTailWindow";
 
@@ -78,10 +78,27 @@ export type DiffBlockDetail = {
   captionTitle?: string;
 };
 
+/** The status-line slice: what the runtime is doing, its stall anchor, and the turn timer. */
+interface RuntimeStatus {
+  /** Free-text detail for the status line (e.g. `shell → workspace root`). Display only. */
+  detail: string;
+  /** What the runtime is doing; owns the idle/active decision and the status-line label. */
+  phase: RuntimePhase;
+  /** Epoch ms of the last actual phase change — the stall check counts from here. */
+  phaseSince: number;
+  /**
+   * Epoch ms when the current turn left idle/awaiting_user, or null between turns.
+   * Counts the whole turn: it survives phase changes and the mid-turn `awaiting_user`
+   * pauses of tool confirmations, and only a turn boundary (logAssistant / clear / reset)
+   * returns it to null. This is the number the status line displays.
+   */
+  turnStartedAt: number | null;
+}
+
 interface OutputState {
   streamBuffer: string;
   runningTools: RunningTool[];
-  status: string;
+  runtime: RuntimeStatus;
   history: Turn[];
   /**
    * Turns wiped by `/clear`, kept as a frozen prefix for the Dashboard `<Static>` items.
@@ -95,7 +112,9 @@ interface OutputState {
   appendStream: (text: string) => void;
   beginTool: (start: { toolName: string; summary: string }) => ToolCallHandle;
   appendToolOutput: (toolCallId: string, chunk: string) => void;
-  setStatus: (status: string) => void;
+  setDetail: (detail: string) => void;
+  /** Move to `phase`, optionally updating the detail in the same commit. */
+  setPhase: (phase: RuntimePhase, detail?: string) => void;
   logUser: (content: string) => void;
   logAssistant: (content: string) => void;
   logTool: (block: ToolBlock) => void;
@@ -240,10 +259,31 @@ function clearStreamState(): void {
   streamController.reset();
 }
 
+/** The runtime slice every turn boundary returns to: nothing in flight, timer restarted. */
+function idleRuntime(): RuntimeStatus {
+  return { detail: "Ready", phase: "idle", phaseSince: Date.now(), turnStartedAt: null };
+}
+
+/** `12345ms` → `12.3s`, `92345ms` → `1m 32s`. */
+function formatTurnDuration(ms: number): string {
+  const seconds = ms / 1000;
+  if (seconds < 60) {
+    return `${seconds.toFixed(1)}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.round(seconds % 60);
+  return `${minutes}m ${rest}s`;
+}
+
+/** Phases where the runtime is parked on the user: no turn in flight, nothing to time. */
+function isInactivePhase(phase: RuntimePhase): boolean {
+  return phase === "idle" || phase === "awaiting_user";
+}
+
 export const useOutputStore = create<OutputState>((set) => ({
   streamBuffer: "",
   runningTools: [],
-  status: "Ready",
+  runtime: idleRuntime(),
   history: [],
   clearedStaticTurns: [],
 
@@ -261,12 +301,30 @@ export const useOutputStore = create<OutputState>((set) => ({
       id: `tc_${toolName}_${++toolOrdinalCounter}`,
       ordinal: toolOrdinalCounter,
     };
-    set((state) => ({
-      runningTools: [
-        ...state.runningTools,
-        { id: handle.id, ordinal: handle.ordinal, summary, tail: [], partial: "", lineCount: 0 },
-      ],
-    }));
+    set((state) => {
+      const patch: Partial<OutputState> = {
+        runningTools: [
+          ...state.runningTools,
+          { id: handle.id, ordinal: handle.ordinal, summary, tail: [], partial: "", lineCount: 0 },
+        ],
+      };
+      const runtimePatch: Partial<RuntimeStatus> = {};
+      if (state.runtime.phase !== "tool") {
+        // The first concurrent call owns the timer; later ones join the same phase,
+        // so the counter measures the whole batch rather than restarting per tool.
+        runtimePatch.phase = "tool";
+        runtimePatch.phaseSince = Date.now();
+      }
+      if (state.runtime.turnStartedAt === null) {
+        // A tool can be the first thing the turn does (no model phase before it):
+        // start the turn timer here rather than leaving it unset.
+        runtimePatch.turnStartedAt = Date.now();
+      }
+      if (Object.keys(runtimePatch).length > 0) {
+        patch.runtime = { ...state.runtime, ...runtimePatch };
+      }
+      return patch;
+    });
     return handle;
   },
 
@@ -280,7 +338,29 @@ export const useOutputStore = create<OutputState>((set) => ({
     }
   },
 
-  setStatus: (status) => set({ status }),
+  setDetail: (detail) => set((state) => ({ runtime: { ...state.runtime, detail } })),
+
+  setPhase: (phase, detail) =>
+    set((state) => {
+      // Stream deltas arrive far faster than the phase changes, so a no-op must stay a no-op:
+      // restarting phaseSince here would peg the per-phase stall check at 0s.
+      if (phase === state.runtime.phase) {
+        return detail === undefined || detail === state.runtime.detail
+          ? {}
+          : { runtime: { ...state.runtime, detail } };
+      }
+      const runtimePatch: Partial<RuntimeStatus> = { phase, phaseSince: Date.now() };
+      if (detail !== undefined) {
+        runtimePatch.detail = detail;
+      }
+      if (!isInactivePhase(phase) && state.runtime.turnStartedAt === null) {
+        // The turn timer starts once and survives phase changes — and the mid-turn
+        // `awaiting_user` pauses of tool confirmations. Only a turn boundary
+        // (logAssistant / clear / reset) returns it to null.
+        runtimePatch.turnStartedAt = Date.now();
+      }
+      return { runtime: { ...state.runtime, ...runtimePatch } };
+    }),
 
   logUser: (content) =>
     set((state) => ({
@@ -290,30 +370,46 @@ export const useOutputStore = create<OutputState>((set) => ({
   logAssistant: (content) => {
     flushPendingStream();
     const { visualRemainder, shouldHideFinal } = streamController.finalize(content);
-    set((state) => ({
-      history: [
-        ...state.history,
-        ...(shouldHideFinal && visualRemainder.length > 0
-          ? [
-              {
-                id: `as_${turnIdCounter++}`,
-                type: "assistant_stream" as const,
-                content: visualRemainder,
-                final: true,
-              },
-            ]
-          : []),
-        {
-          id: `a_${turnIdCounter++}`,
-          type: "assistant",
-          content,
-          hidden: shouldHideFinal,
-        },
-      ],
-      streamBuffer: "",
-      runningTools: [],
-      status: "Ready",
-    }));
+    set((state) => {
+      const duration =
+        state.runtime.turnStartedAt === null
+          ? null
+          : Math.max(0, Date.now() - state.runtime.turnStartedAt);
+      // The reply's rows, in order: the streamed remainder (when the final text duplicated
+      // it), the assistant turn itself, and the one-line timing notice.
+      const turns: Turn[] = [];
+      if (shouldHideFinal && visualRemainder.length > 0) {
+        turns.push({
+          id: `as_${turnIdCounter++}`,
+          type: "assistant_stream",
+          content: visualRemainder,
+          final: true,
+        });
+      }
+      turns.push({
+        id: `a_${turnIdCounter++}`,
+        type: "assistant",
+        content,
+        hidden: shouldHideFinal,
+      });
+      if (duration !== null) {
+        // One dim line after the reply: how long the whole turn took, so a slow run
+        // leaves evidence in scrollback even after the status line resets. Skipped
+        // when no turn actually ran (e.g. resumed/hydrated sessions).
+        turns.push({
+          id: `s_${turnIdCounter++}`,
+          type: "system",
+          content: `Turn took ${formatTurnDuration(duration)}`,
+          oneLine: true,
+        });
+      }
+      return {
+        history: [...state.history, ...turns],
+        streamBuffer: "",
+        runningTools: [],
+        runtime: idleRuntime(),
+      };
+    });
   },
 
   logTool: (block: ToolBlock) => {
@@ -321,33 +417,46 @@ export const useOutputStore = create<OutputState>((set) => ({
     if (block.id !== undefined) {
       pendingToolOutput.delete(block.id);
     }
-    set((state) => ({
-      history: [
-        ...state.history,
-        {
-          id: `t_${turnIdCounter++}`,
-          type: "tool",
-          content: block.summary,
-          tool: {
-            ...block,
-            // Without a handle the host never numbered this call, so fall back to
-            // the order blocks land in.
-            ordinal:
-              block.ordinal ??
-              state.history.filter(
-                (turn): turn is Extract<Turn, { type: "tool" }> => turn.type === "tool",
-              ).length + 1,
-          },
-        },
-      ],
+    set((state) => {
       // The block replaces the live view, so this tool's rows leave the window
       // with it — a stale tail under a number that already scrolled past reads
       // as if the tool were still running.
-      runningTools:
+      const runningTools =
         block.id === undefined
           ? state.runningTools
-          : state.runningTools.filter((tool) => tool.id !== block.id),
-    }));
+          : state.runningTools.filter((tool) => tool.id !== block.id);
+      const patch: Partial<OutputState> = {
+        history: [
+          ...state.history,
+          {
+            id: `t_${turnIdCounter++}`,
+            type: "tool",
+            content: block.summary,
+            tool: {
+              ...block,
+              // Without a handle the host never numbered this call, so fall back to
+              // the order blocks land in.
+              ordinal:
+                block.ordinal ??
+                state.history.filter(
+                  (turn): turn is Extract<Turn, { type: "tool" }> => turn.type === "tool",
+                ).length + 1,
+            },
+          },
+        ],
+        runningTools,
+      };
+      if (state.runtime.phase === "tool" && runningTools.length === 0) {
+        // With the batch drained the agent is on its way back to the model; holding
+        // "Running tools" here would keep counting against a tool that already ended.
+        patch.runtime = {
+          ...state.runtime,
+          phase: "working",
+          phaseSince: Date.now(),
+        };
+      }
+      return patch;
+    });
   },
 
   logDiff: (diff) => {
@@ -381,7 +490,7 @@ export const useOutputStore = create<OutputState>((set) => ({
 
   clearStream: () => {
     clearStreamState();
-    set({ streamBuffer: "", runningTools: [], status: "Ready" });
+    set({ streamBuffer: "", runningTools: [], runtime: idleRuntime() });
   },
   clearHistory: () => {
     // turnIdCounter keeps counting: ids must stay unique across clearedStaticTurns + history.
@@ -393,7 +502,7 @@ export const useOutputStore = create<OutputState>((set) => ({
       history: [],
       streamBuffer: "",
       runningTools: [],
-      status: "Ready",
+      runtime: idleRuntime(),
     }));
   },
   hydrateHistory: (items) => {
@@ -402,19 +511,21 @@ export const useOutputStore = create<OutputState>((set) => ({
       history: [...state.history, ...items.map(transcriptTurn)],
       streamBuffer: "",
       runningTools: [],
-      status: "Ready",
+      runtime: idleRuntime(),
     }));
   },
 }));
 
-export function isRuntimeActive(status: string, streamBuffer: string): boolean {
+/**
+ * Whether the runtime is mid-flight, i.e. whether the transient surface and the interrupt hint
+ * belong on screen. Reads the phase, not the detail text: this used to sniff the status string for
+ * a `"Waiting for "` prefix, which made every new status a chance to silently report the agent idle.
+ */
+export function isRuntimeActive(phase: RuntimePhase, streamBuffer: string): boolean {
   if (streamBuffer.length > 0) {
     return true;
   }
-  if (status === "Ready" || status === "Waiting for input") {
-    return false;
-  }
-  return !status.startsWith("Waiting for ");
+  return !isInactivePhase(phase);
 }
 
 /** Clear history/stream for a new CLI session (singleton store). */
@@ -425,7 +536,7 @@ export function resetOutputSession(): void {
   useOutputStore.setState({
     streamBuffer: "",
     runningTools: [],
-    status: "Ready",
+    runtime: idleRuntime(),
     history: [],
     clearedStaticTurns: [],
   });
