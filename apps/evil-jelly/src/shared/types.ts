@@ -95,6 +95,11 @@ export interface EvilJellyHostBindings {
    */
   onPhaseUpdate?: (phase: RuntimePhase) => void;
   /**
+   * A new conversation turn has started (initial user input recorded). Hosts with a turn timer
+   * anchor it here; steers injected mid-turn and maintenance commands never trigger this.
+   */
+  onTurnStart?: () => void;
+  /**
    * Announce a tool call before its handler runs, so the host can show it as
    * running and number it in call order. Hosts that omit this get no live view
    * and fall back to numbering blocks as they complete.

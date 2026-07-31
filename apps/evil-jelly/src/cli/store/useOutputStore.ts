@@ -87,10 +87,10 @@ interface RuntimeStatus {
   /** Epoch ms of the last actual phase change — the stall check counts from here. */
   phaseSince: number;
   /**
-   * Epoch ms when the current turn left idle/awaiting_user, or null between turns.
-   * Counts the whole turn: it survives phase changes and the mid-turn `awaiting_user`
-   * pauses of tool confirmations, and only a turn boundary (logAssistant / clear / reset)
-   * returns it to null. This is the number the status line displays.
+   * Epoch ms when the current turn's initial user input was recorded (anchored by beginTurn),
+   * or null between turns. Counts the whole turn: it survives phase changes, mid-turn steers,
+   * and the `awaiting_user` pauses of tool confirmations, and only a turn boundary
+   * (logAssistant / clear / reset) returns it to null. This is the number the status line displays.
    */
   turnStartedAt: number | null;
 }
@@ -115,6 +115,8 @@ interface OutputState {
   setDetail: (detail: string) => void;
   /** Move to `phase`, optionally updating the detail in the same commit. */
   setPhase: (phase: RuntimePhase, detail?: string) => void;
+  /** Anchor the turn timer at an initial user input; steers and maintenance commands never call it. */
+  beginTurn: () => void;
   logUser: (content: string) => void;
   logAssistant: (content: string) => void;
   logTool: (block: ToolBlock) => void;
@@ -315,11 +317,6 @@ export const useOutputStore = create<OutputState>((set) => ({
         runtimePatch.phase = "tool";
         runtimePatch.phaseSince = Date.now();
       }
-      if (state.runtime.turnStartedAt === null) {
-        // A tool can be the first thing the turn does (no model phase before it):
-        // start the turn timer here rather than leaving it unset.
-        runtimePatch.turnStartedAt = Date.now();
-      }
       if (Object.keys(runtimePatch).length > 0) {
         patch.runtime = { ...state.runtime, ...runtimePatch };
       }
@@ -340,6 +337,14 @@ export const useOutputStore = create<OutputState>((set) => ({
 
   setDetail: (detail) => set((state) => ({ runtime: { ...state.runtime, detail } })),
 
+  /** Anchor the turn timer; idempotent until a turn boundary resets it. */
+  beginTurn: () =>
+    set((state) =>
+      state.runtime.turnStartedAt === null
+        ? { runtime: { ...state.runtime, turnStartedAt: Date.now() } }
+        : {},
+    ),
+
   setPhase: (phase, detail) =>
     set((state) => {
       // Stream deltas arrive far faster than the phase changes, so a no-op must stay a no-op:
@@ -353,12 +358,9 @@ export const useOutputStore = create<OutputState>((set) => ({
       if (detail !== undefined) {
         runtimePatch.detail = detail;
       }
-      if (!isInactivePhase(phase) && state.runtime.turnStartedAt === null) {
-        // The turn timer starts once and survives phase changes — and the mid-turn
-        // `awaiting_user` pauses of tool confirmations. Only a turn boundary
-        // (logAssistant / clear / reset) returns it to null.
-        runtimePatch.turnStartedAt = Date.now();
-      }
+      // The turn timer is anchored only by beginTurn (the shell's initial-input record point);
+      // phase transitions never start or restart it — steers and maintenance commands must not
+      // move the turn boundary.
       return { runtime: { ...state.runtime, ...runtimePatch } };
     }),
 

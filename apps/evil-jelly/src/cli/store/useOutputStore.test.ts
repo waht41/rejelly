@@ -75,20 +75,39 @@ describe("setPhase", () => {
 });
 
 describe("turn timing", () => {
-  it("counts the whole turn from the first active phase, not per phase", () => {
+  it("anchors the timer on beginTurn and survives phase changes", () => {
     const store = useOutputStore.getState();
-    store.setPhase("connecting");
+    store.beginTurn();
     const startedAt = useOutputStore.getState().runtime.turnStartedAt;
     expect(startedAt).not.toBeNull();
 
+    // Phase transitions (connecting → thinking → streaming) never move the anchor.
+    store.setPhase("connecting");
     store.setPhase("thinking");
     store.setPhase("streaming");
     expect(useOutputStore.getState().runtime.turnStartedAt).toBe(startedAt);
   });
 
+  it("is idempotent: a second beginTurn does not restart the timer", () => {
+    const store = useOutputStore.getState();
+    store.beginTurn();
+    const startedAt = useOutputStore.getState().runtime.turnStartedAt;
+
+    store.beginTurn();
+    expect(useOutputStore.getState().runtime.turnStartedAt).toBe(startedAt);
+  });
+
+  it("does not anchor the timer from setPhase or beginTool alone", () => {
+    const store = useOutputStore.getState();
+    store.setPhase("working");
+    store.beginTool({ toolName: "read_file", summary: "[Tools] read a" });
+    // A tool without an initial input (e.g. a maintenance flow) is not a turn.
+    expect(useOutputStore.getState().runtime.turnStartedAt).toBeNull();
+  });
+
   it("does not reset the turn timer on a mid-turn confirmation wait", () => {
     const store = useOutputStore.getState();
-    store.setPhase("connecting");
+    store.beginTurn();
     const startedAt = useOutputStore.getState().runtime.turnStartedAt;
 
     // confirmWrite pauses the same turn for the user; the timer must keep counting.
@@ -99,24 +118,20 @@ describe("turn timing", () => {
     expect(useOutputStore.getState().runtime.turnStartedAt).toBe(startedAt);
   });
 
-  it("starts the timer from a tool that runs before any model phase", () => {
-    const store = useOutputStore.getState();
-    store.beginTool({ toolName: "read_file", summary: "[Tools] read a" });
-    expect(useOutputStore.getState().runtime.turnStartedAt).not.toBeNull();
-  });
-
   it("ends the timer at the turn boundary and restarts fresh for the next turn", () => {
     const store = useOutputStore.getState();
+    store.beginTurn();
     store.setPhase("streaming");
     store.logAssistant("done");
     expect(useOutputStore.getState().runtime.turnStartedAt).toBeNull();
 
-    store.setPhase("connecting");
+    store.beginTurn();
     expect(useOutputStore.getState().runtime.turnStartedAt).not.toBeNull();
   });
 
   it("logs the turn duration as a one-line system notice after the reply", () => {
     const store = useOutputStore.getState();
+    store.beginTurn();
     store.setPhase("streaming");
     store.logAssistant("done");
 
