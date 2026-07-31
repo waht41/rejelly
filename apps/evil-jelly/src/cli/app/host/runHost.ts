@@ -16,10 +16,11 @@ import {
   openSessionRecorder,
   type SessionRecorder,
 } from "../../../services/session/sessionRecorder";
-import { newTraceId, type SessionBudget } from "../../../services/session/sessionStore";
+import type { SessionBudget } from "../../../services/session/sessionStore";
 import { registerRunAbort } from "../../../services/stop/runControl";
 import { withAbort } from "../../../services/stop/withAbort";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
+import { generateTraceId } from "../../../shared/lib/traceId";
 import type { EvilJellyHostBindings } from "../../../shared/types";
 import { MainCliAgent } from "../../../shell/MainCliAgent";
 import { runWithReview } from "./runWithReview";
@@ -41,7 +42,7 @@ export interface RunEvilJellyHostOptions {
   sessionId?: string;
   /** Restored active model context seeded into the agent on resume. */
   seedContext?: Message[];
-  /** @deprecated Compatibility alias while Session V1 remains the default. */
+  /** @deprecated Compatibility alias; new callers should pass seedContext. */
   seedHistory?: Message[];
   /** Cumulative usage carried back from a resumed session, used as the /status base. */
   seedBudget?: SessionBudget;
@@ -58,10 +59,7 @@ export interface RunEvilJellyHostOptions {
   mockSourceTraceId?: string;
   /** Disable durable session reads/writes for replay-only runs. */
   isolateSessionState?: boolean;
-  /**
-   * Internal Phase 4 switch. The CLI composition root deliberately leaves this unset until the
-   * mixed V1/V2 listing and migration facade lands in Phase 5.
-   */
+  /** Session V2 writer configuration. Omit only for isolated replay or V1 migration fallback. */
   sessionV2?: {
     enabled: true;
     appVersion: string;
@@ -163,7 +161,7 @@ export async function runEvilJellyHost(
   const enableSnapshot = enableSnapshotOpt ?? (snapshot != null ? true : undefined);
   // One traceId per run segment. A logical session may span several of these across resumes;
   // session.id (below) is what groups them in devtool.
-  const traceId = newTraceId();
+  const traceId = generateTraceId();
   const recorder = await openRunSessionRecorder(options, traceId);
   const runAbortController = new AbortController();
   // Ctrl+C routes here: abort the whole run so the cancel signal reaches the
@@ -236,7 +234,7 @@ export async function runDirectUnified(
   options: RunDirectUnifiedOptions,
 ): Promise<void> {
   const { model, userInput, history } = options;
-  const traceId = newTraceId();
+  const traceId = generateTraceId();
   try {
     const UnifiedAgentWithAbort = augmentAgent(UnifiedAgent, [withAbort()]);
     await runWithReview({

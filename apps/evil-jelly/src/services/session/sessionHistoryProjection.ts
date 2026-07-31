@@ -7,6 +7,7 @@ import {
   isCompactionBridgeMessage,
   unwrapPriorUserMessageText,
 } from "../../shared/lib/compactionMessages";
+import { messageContentToText } from "../../shared/lib/tokens";
 import {
   SESSION_BLOB_SCHEME,
   type SessionBlobMetadata,
@@ -15,7 +16,6 @@ import {
 } from "./sessionBlobStore";
 import type { SessionBudgetData } from "./sessionEvents";
 import type { PreparedSessionReplay } from "./sessionReplay";
-import { messageContentToText } from "./sessionStore";
 import { getStoredSessionRejellyMetadata, type StoredSessionMessage } from "./storedSessionMessage";
 
 export interface TranscriptImage {

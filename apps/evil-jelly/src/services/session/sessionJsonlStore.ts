@@ -11,7 +11,6 @@ import {
   type SessionMetaLine,
 } from "./sessionEvents";
 import {
-  assertSessionId,
   inspectSessionForAppend,
   type LocatedSessionEvent,
   MAX_EVENT_LINE_BYTES,
@@ -19,6 +18,7 @@ import {
   type SessionAppendPosition,
   type SessionStoragePaths,
 } from "./sessionJsonlReader";
+import { assertSessionId } from "./sessionPaths";
 import { acquireSessionWriterLock, releaseSessionWriterLock } from "./sessionWriterLock";
 
 /**

@@ -9,7 +9,7 @@ import {
   type SessionMetaLine,
   type SessionStateEvent,
 } from "./sessionEvents";
-import { resolveSessionsRoot, workspaceBucket } from "./sessionStore";
+import { assertSessionId, resolveSessionsRoot, workspaceBucket } from "./sessionPaths";
 
 /**
  * Session V2 has two deliberately different read paths:
@@ -25,7 +25,6 @@ const DEFAULT_TAIL_BYTES = 64 * 1024;
 const INITIAL_LINE_READ_BYTES = 64 * 1024;
 export const MAX_META_LINE_BYTES = 64 * 1024;
 export const MAX_EVENT_LINE_BYTES = 128 * 1024 * 1024;
-const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 export interface SessionStoragePaths {
   sessionsRoot?: string;
@@ -90,12 +89,6 @@ interface CompleteLineRead {
   bytes: Buffer;
   byteLength: number;
   complete: boolean;
-}
-
-export function assertSessionId(sessionId: string): void {
-  if (!SESSION_ID_PATTERN.test(sessionId) || sessionId === "." || sessionId === "..") {
-    throw new Error(`Unsafe session id: ${JSON.stringify(sessionId)}`);
-  }
 }
 
 export function resolveV2WorkspaceDir(

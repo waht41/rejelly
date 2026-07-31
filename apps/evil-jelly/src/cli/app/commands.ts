@@ -3,7 +3,6 @@ import { AuditAgent } from "../../features/audit/AuditAgent";
 import { createBackgroundHostBindings } from "../../services/binding/cliStubBindings";
 import { setBinding } from "../../services/binding/hostBindings";
 import { docMapPath, loadDocMap } from "../../services/doc-drift";
-import { newTraceId } from "../../services/session/sessionStore";
 import { withAbort } from "../../services/stop/withAbort";
 import {
   createOpenAIModelFromEnv,
@@ -11,6 +10,7 @@ import {
   readGlobalEnvValues,
   saveGlobalEnvValues,
 } from "../../shared/config";
+import { generateTraceId } from "../../shared/lib/traceId";
 import type { ParsedAuditArgs, ParsedRunArgs } from "./args";
 import { runDirectUnified } from "./host/runHost";
 import { runWithReview } from "./host/runWithReview";
@@ -63,7 +63,7 @@ function docDriftMissingMapMessage(): string {
 export async function runAuditCommand(args: ParsedAuditArgs): Promise<void> {
   const model = createOpenAIModelFromEnv();
   const bindings = createBackgroundHostBindings();
-  const traceId = newTraceId();
+  const traceId = generateTraceId();
   try {
     await runWithReview({
       model,
