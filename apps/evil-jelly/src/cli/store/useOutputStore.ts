@@ -93,6 +93,11 @@ interface RuntimeStatus {
    * (logAssistant / clear / reset) returns it to null. This is the number the status line displays.
    */
   turnStartedAt: number | null;
+  /**
+   * Epoch ms of the last model output flushed to the stream, for the streaming-stall check.
+   * The stream flush refreshes it; a long answer keeps it current, silence does not.
+   */
+  lastOutputAt: number;
 }
 
 interface OutputState {
@@ -117,6 +122,8 @@ interface OutputState {
   setPhase: (phase: RuntimePhase, detail?: string) => void;
   /** Anchor the turn timer at an initial user input; steers and maintenance commands never call it. */
   beginTurn: () => void;
+  /** After a mid-turn user pause (confirmation), resume the phase that fits: tools running → "tool", else "working". */
+  resumeWork: (detail?: string) => void;
   logUser: (content: string) => void;
   logAssistant: (content: string) => void;
   logTool: (block: ToolBlock) => void;
@@ -210,6 +217,7 @@ function flushPendingStream(): void {
             { id: `as_${turnIdCounter++}`, type: "assistant_stream", content: stableText },
           ],
     streamBuffer: capTransientStream(tailText),
+    runtime: { ...state.runtime, lastOutputAt: Date.now() },
   }));
 }
 
@@ -263,7 +271,13 @@ function clearStreamState(): void {
 
 /** The runtime slice every turn boundary returns to: nothing in flight, timer restarted. */
 function idleRuntime(): RuntimeStatus {
-  return { detail: "Ready", phase: "idle", phaseSince: Date.now(), turnStartedAt: null };
+  return {
+    detail: "Ready",
+    phase: "idle",
+    phaseSince: Date.now(),
+    turnStartedAt: null,
+    lastOutputAt: Date.now(),
+  };
 }
 
 /** `12345ms` → `12.3s`, `92345ms` → `1m 32s`. */
@@ -344,6 +358,21 @@ export const useOutputStore = create<OutputState>((set) => ({
         ? { runtime: { ...state.runtime, turnStartedAt: Date.now() } }
         : {},
     ),
+
+  /**
+   * After a confirmation the agent goes back to work; the label must match the state — a tool
+   * batch still draining is "Running tools", not a generic "Working" (the previous code always
+   * said "working", so confirmed tools never showed their own phase).
+   */
+  resumeWork: (detail) =>
+    set((state) => ({
+      runtime: {
+        ...state.runtime,
+        phase: state.runningTools.length > 0 ? "tool" : "working",
+        phaseSince: Date.now(),
+        ...(detail === undefined ? {} : { detail }),
+      },
+    })),
 
   setPhase: (phase, detail) =>
     set((state) => {

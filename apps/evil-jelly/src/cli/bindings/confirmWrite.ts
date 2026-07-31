@@ -131,14 +131,16 @@ async function confirmOutsideAccess(
     { key: "y", label: "Allow", value: "accept" },
     { key: "n", label: "Reject", value: "reject" },
   ];
-  useOutputStore.getState().setStatus(`outside ${params.mode} → ${params.targetPath}`);
+  useOutputStore
+    .getState()
+    .setPhase("awaiting_user", `outside ${params.mode} → ${params.targetPath}`);
   const selected = await usePromptStore
     .getState()
     .requestActionMenu(
       `Allow ${params.mode} outside workspace?\n${params.targetPath}\n\nApprove directory for this session:\n${params.approveDir}`,
       menuOptions,
     );
-  useOutputStore.getState().setStatus("Running…");
+  useOutputStore.getState().resumeWork("Running…");
   return selected === "accept" ? { action: "accept" } : { action: "reject" };
 }
 
@@ -206,7 +208,7 @@ async function confirmShellCommand(
   }
 
   const cwd = params.cwd?.trim() ? params.cwd.trim() : "workspace root";
-  useOutputStore.getState().setStatus(`shell → ${cwd}`);
+  useOutputStore.getState().setPhase("awaiting_user", `shell → ${cwd}`);
   if (blocked) {
     logNotice(
       "[Auto-allow] Disabled for this command (irreversible/privileged/outbound operation).",
@@ -219,7 +221,7 @@ async function confirmShellCommand(
       `Run shell command in ${cwd}?${safetyNote}\n> ${params.command}`,
       menuOptions,
     );
-  useOutputStore.getState().setStatus("Running…");
+  useOutputStore.getState().resumeWork("Running…");
 
   if (selected === "accept_shell_prefix") {
     shellAutoAllowPrefixes.add(suggestedPrefix);
@@ -256,7 +258,7 @@ async function confirmFsWrite(
   }
 
   const outsideLabel = params.outsideWorkspace ? " outside workspace" : "";
-  useOutputStore.getState().setStatus(`${kind}${outsideLabel} → ${filePath}`);
+  useOutputStore.getState().setPhase("awaiting_user", `${kind}${outsideLabel} → ${filePath}`);
   // Commit the reviewed diff to <Static> history instead of the transient view: it stays in
   // scrollback for later review, and the dynamic frame stays shorter than the viewport, so Ink
   // never enters its overflow full-repaint path while the menu is up.
@@ -267,7 +269,7 @@ async function confirmFsWrite(
   const selected = await usePromptStore
     .getState()
     .requestActionMenu(`Allow ${kind}${outsideLabel} ${filePath}?`, menuOptions);
-  useOutputStore.getState().setStatus("Running…");
+  useOutputStore.getState().resumeWork("Running…");
 
   if (selected === "accept_all_session") {
     policy.create = true;
@@ -282,14 +284,14 @@ async function confirmFsWrite(
     const modifiedContent = suspendInkForExternalProcess
       ? await suspendInkForExternalProcess(runEdit)
       : await runEdit();
-    useOutputStore.getState().setStatus("Running…");
+    useOutputStore.getState().resumeWork("Running…");
     return { action: "edit", modifiedContent };
   }
 
   if (selected === "retry") {
-    useOutputStore.getState().setStatus("Waiting for review comments…");
+    useOutputStore.getState().setPhase("awaiting_user", "Waiting for review comments…");
     const feedback = await usePromptStore.getState().requestLine("Review comments: ");
-    useOutputStore.getState().setStatus("Running…");
+    useOutputStore.getState().resumeWork("Running…");
     return { action: "retry", feedback };
   }
 

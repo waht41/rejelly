@@ -328,6 +328,26 @@ describe("logTool", () => {
     expect(TOOL_FULL_CAP).toBeGreaterThan(0);
   });
 
+  it("resumes as 'tool' when a confirmation paused a running tool batch", () => {
+    const store = useOutputStore.getState();
+    store.beginTurn();
+    store.beginTool({ toolName: "run_command", summary: "[Tools] build" });
+
+    // confirmWrite pauses the turn for the user…
+    store.setPhase("awaiting_user", "shell → workspace root");
+    expect(useOutputStore.getState().runtime.phase).toBe("awaiting_user");
+
+    // …and resumeWork must restore the tool phase, not a generic "working".
+    store.resumeWork("Running…");
+    expect(useOutputStore.getState().runtime.phase).toBe("tool");
+  });
+
+  it("resumes as 'working' when no tool is running", () => {
+    const store = useOutputStore.getState();
+    store.resumeWork("Running…");
+    expect(useOutputStore.getState().runtime.phase).toBe("working");
+  });
+
   it("survives a system notice logged while the tool runs", async () => {
     // Every auto-allowed confirmation lands here, between beginTool and the
     // first chunk. Treating it as a turn boundary retired the tool before it had
@@ -362,6 +382,18 @@ describe("appendStream", () => {
     expect(useOutputStore.getState().streamBuffer).toBe("");
     vi.advanceTimersByTime(1);
     expect(useOutputStore.getState().streamBuffer).toBe("hello");
+  });
+
+  it("stamps the last output time on every flushed stream chunk", () => {
+    vi.useFakeTimers();
+    const store = useOutputStore.getState();
+    const before = useOutputStore.getState().runtime.lastOutputAt;
+
+    store.appendStream("hel");
+    vi.advanceTimersByTime(50);
+
+    // The streaming-stall check reads this: a long answer keeps refreshing it, silence does not.
+    expect(useOutputStore.getState().runtime.lastOutputAt).toBeGreaterThan(before);
   });
 
   it("commits completed stream lines into history and keeps the partial line transient", () => {
@@ -457,6 +489,7 @@ describe("clearHistory", () => {
         phase: "working",
         phaseSince: Date.now(),
         turnStartedAt: null,
+        lastOutputAt: Date.now(),
       },
     });
 
