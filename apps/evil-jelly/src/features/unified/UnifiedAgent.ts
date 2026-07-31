@@ -111,6 +111,7 @@ async function runManualCompression(
     const compactHistory = await promptCompactHistory({
       message: props.history ?? [],
       compaction: buildAutoCompactionConfig(),
+      sessionBlobRoot: props.sessionBlobRoot,
     });
     return compactHistory
       ? { reply: "", compactHistory }
@@ -154,6 +155,9 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
         message: await buildConversationMessages(props),
         pendingUserInputs: drainAndLogSteers,
         compaction: buildAutoCompactionConfig(),
+        sessionRecorder: props.sessionRecorder,
+        turnId: props.turnId,
+        sessionBlobRoot: props.sessionBlobRoot,
       });
 
       if (result.aborted) {
@@ -161,6 +165,7 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
           reply: "Task has been interrupted by user.",
           delta: result.delta,
           ...(result.compactedHistory ? { compactHistory: result.compactedHistory } : {}),
+          interrupted: true,
         };
       }
 

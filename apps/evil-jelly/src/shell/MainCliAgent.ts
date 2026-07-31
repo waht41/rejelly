@@ -2,6 +2,7 @@
  * Session agent: runs the selected top-level mode and owns the interactive loop for chat modes.
  */
 
+import { randomBytes } from "node:crypto";
 import {
   createAgent,
   equipBudget,
@@ -19,13 +20,10 @@ import {
   formatTokenUsageLine,
 } from "../services/session/budgetStatus";
 import { requestNewSession, requestResume } from "../services/session/resumeControl";
-import {
-  listSessions,
-  loadSession,
-  persistSession,
-  type SessionBudget,
-} from "../services/session/sessionStore";
+import type { SessionRecorder } from "../services/session/sessionRecorder";
+import { listSessions, loadSession, type SessionBudget } from "../services/session/sessionStore";
 import { withAbort } from "../services/stop/withAbort";
+import type { LineInputValue } from "../shared/AgentShared";
 import {
   buildAttachmentActionSummary,
   buildUserMessage,
@@ -42,12 +40,20 @@ const UnifiedAgentWithAbort = UnifiedAgent.fork({ middlewares: [withAbort()] });
  * picker through host.requestChoice) and queues it for the outer loop.
  * Returns true when the run should end so the outer loop can switch sessions.
  */
-async function tryRequestResume(rawInput: string, host: EvilJellyHostBindings): Promise<boolean> {
+export async function tryRequestResume(
+  rawInput: string,
+  currentSessionId: string | undefined,
+  host: EvilJellyHostBindings,
+): Promise<boolean> {
   const arg = rawInput.slice("/resume".length).trim();
   const workspaceRoot = getWorkspaceFsPolicy().getRoot();
 
   if (arg) {
-    if (!loadSession(workspaceRoot, arg)) {
+    if (arg === currentSessionId) {
+      host.logSystemEvent(`Session ${arg} is already current.\n`);
+      return false;
+    }
+    if (!(await loadSession(workspaceRoot, arg))) {
       host.logSystemEvent(`No saved session "${arg}" for this workspace.\n`);
       return false;
     }
@@ -56,9 +62,11 @@ async function tryRequestResume(rawInput: string, host: EvilJellyHostBindings): 
     return true;
   }
 
-  const sessions = listSessions(workspaceRoot);
+  const sessions = (await listSessions(workspaceRoot)).filter(
+    (session) => session.id !== currentSessionId,
+  );
   if (sessions.length === 0) {
-    host.logSystemEvent("No saved sessions for this workspace.\n");
+    host.logSystemEvent("No other saved sessions for this workspace.\n");
     return false;
   }
   const options = sessions.map((s, i) => ({
@@ -82,17 +90,260 @@ export interface MainCliAgentProps extends EvilJellyHostBindings {
   sessionId?: string;
   /** Current run segment traceId, recorded in the session's trace chain. */
   traceId?: string;
-  /** Restored conversation seeded as the initial message_history on resume. */
+  /** Restored active model context seeded as message_history on resume. */
+  seedContext?: Message[];
+  /** Session image store consulted only when a model policy materializes durable locators. */
+  sessionBlobRoot?: string;
+  /** @deprecated Compatibility alias; new callers should pass seedContext. */
   seedHistory?: Message[];
   /** Cumulative usage carried back from a resumed session, used as the /status base. */
   seedBudget?: SessionBudget;
   /** Replay-only mode: do not read from or write to durable local sessions. */
   isolateSessionState?: boolean;
+  /** Session V2 writer. Undefined only for ephemeral or isolated runs. */
+  sessionRecorder?: SessionRecorder;
 }
 
-function isExitCommand(value: string): boolean {
-  const normalized = value.toLowerCase();
-  return normalized === "/exit" || normalized === "exit";
+type RouterIntent =
+  | { kind: "empty" }
+  | { kind: "exit" }
+  | { kind: "clear" }
+  | { kind: "status" }
+  | { kind: "compress" }
+  | { kind: "resume"; rawInput: string }
+  | { kind: "message"; lineInput: LineInputValue; userInput: string };
+
+interface RouterRuntime {
+  props: MainCliAgentProps;
+  host: EvilJellyHostBindings;
+  history: Message[];
+  setHistory: (messages: Message[]) => void;
+  currentBudget: () => SessionBudget;
+  appendTurn: (userMessage: Message, reply: string, delta?: Message[]) => void;
+}
+
+/** Short, session-local correlation ID with 96 bits of entropy and URL-safe characters. */
+function createTurnId(): string {
+  return randomBytes(12).toString("base64url");
+}
+
+function classifyRouterIntent(lineInput: LineInputValue): RouterIntent {
+  const userInput = lineInput.text.trim();
+  if (!userInput) {
+    return { kind: "empty" };
+  }
+  const normalized = userInput.toLowerCase();
+  if (normalized === "/exit" || normalized === "exit") {
+    return { kind: "exit" };
+  }
+  if (normalized === "/clear") {
+    return { kind: "clear" };
+  }
+  if (normalized === "/status") {
+    return { kind: "status" };
+  }
+  if (normalized === "/compress") {
+    return { kind: "compress" };
+  }
+  if (normalized === "/resume" || normalized.startsWith("/resume ")) {
+    return { kind: "resume", rawInput: userInput };
+  }
+  return { kind: "message", lineInput, userInput };
+}
+
+async function handleExit(runtime: RouterRuntime): Promise<void> {
+  await runtime.props.sessionRecorder?.endSegment({
+    status: "completed",
+    reason: "exit",
+    budget: runtime.currentBudget(),
+  });
+  runtime.host.logSystemEvent("Goodbye.\n");
+}
+
+async function handleClear(runtime: RouterRuntime): Promise<void> {
+  const previousBudget = runtime.currentBudget();
+  runtime.host.clearHistory?.();
+  runtime.host.clearScreen?.();
+  runtime.host.showSessionBanner?.();
+  const summary = [formatTokenUsageLine(previousBudget)];
+  // Only offer resume when a turn was persisted; an untouched session has no file on disk.
+  if (runtime.props.sessionId && runtime.history.length > 0) {
+    summary.push(`To continue the previous session, run /resume ${runtime.props.sessionId}`);
+  }
+  runtime.host.logSystemEvent(`${summary.join("\n")}\n`);
+  await runtime.props.sessionRecorder?.endSegment({
+    status: "completed",
+    reason: "new_session",
+    budget: previousBudget,
+  });
+  requestNewSession();
+}
+
+function handleStatus(runtime: RouterRuntime): void {
+  runtime.host.logSystemEvent(
+    formatSessionStatus({
+      sessionId: runtime.props.sessionId ?? "(ephemeral)",
+      workspace: getWorkspaceFsPolicy().getRoot(),
+      turns: countConversationTurns(runtime.history),
+      budget: runtime.currentBudget(),
+      modelId: env.OPENAI_MODEL_ID,
+      contextWindow: env.OPENAI_CONTEXT_WINDOW,
+    }),
+  );
+}
+
+async function handleCompress(runtime: RouterRuntime): Promise<void> {
+  if (runtime.history.length === 0) {
+    runtime.host.logSystemEvent("Nothing to compress yet.\n");
+    return;
+  }
+  runtime.host.logSystemEvent("Compressing session history…\n");
+  const result = await UnifiedAgentWithAbort({
+    userInput: "Compress the current session history.",
+    history: runtime.history,
+    operation: "compress",
+    sessionBlobRoot: runtime.props.sessionBlobRoot,
+  });
+  if (!result.compactHistory) {
+    runtime.host.logSystemEvent(`${result.reply || "Compression failed."}\n`);
+    return;
+  }
+
+  runtime.setHistory(result.compactHistory);
+  if (runtime.props.sessionRecorder) {
+    await runtime.props.sessionRecorder.recordCompaction({
+      trigger: "manual",
+      replacementHistory: result.compactHistory,
+      beforeMessageCount: runtime.history.length,
+    });
+  }
+  runtime.host.logSystemEvent(
+    `Session compressed: ${runtime.history.length} messages → ${result.compactHistory.length} messages.\n`,
+  );
+}
+
+async function handleResume(runtime: RouterRuntime, rawInput: string): Promise<boolean> {
+  if (runtime.props.isolateSessionState) {
+    runtime.host.logSystemEvent("Resume is disabled during mock replay.\n");
+    return false;
+  }
+  if (!(await tryRequestResume(rawInput, runtime.props.sessionId, runtime.host))) {
+    return false;
+  }
+  // End the run (no reborn) so this trace closes before the outer loop starts the target segment.
+  await runtime.props.sessionRecorder?.endSegment({
+    status: "completed",
+    reason: "switch_session",
+    budget: runtime.currentBudget(),
+  });
+  return true;
+}
+
+function formatPersistenceError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function closeTurnAfterFailure(
+  runtime: RouterRuntime,
+  turnId: string,
+  status: "interrupted" | "error",
+): Promise<void> {
+  await runtime.props.sessionRecorder
+    ?.completeTurn(turnId, status, runtime.currentBudget())
+    .catch((error) =>
+      runtime.host.logSystemEvent(
+        `\nSession turn close failed: ${formatPersistenceError(error)}\n`,
+      ),
+    );
+}
+
+async function runConversationTurn(
+  runtime: RouterRuntime,
+  lineInput: LineInputValue,
+  userInput: string,
+): Promise<void> {
+  let submittedUserMessage: Message | undefined;
+  let activeTurnId: string | undefined;
+  // Set before awaiting completeTurn: a partial append must not be retried as a second closure.
+  let turnClosureAttempted = false;
+
+  try {
+    const attachmentActions = await buildAttachmentActionSummary(lineInput.attachments);
+    const displayUserInput =
+      attachmentActions.length > 0
+        ? `${userInput}\n${attachmentActions.map((action) => `  -> ${action}`).join("\n")}`
+        : userInput;
+    runtime.host.logUserMessage(displayUserInput);
+    submittedUserMessage = await buildUserMessage({
+      userInput,
+      attachments: lineInput.attachments,
+    });
+    activeTurnId = createTurnId();
+    await runtime.props.sessionRecorder?.recordMessage(
+      activeTurnId,
+      { kind: "user_input", inputKind: "initial" },
+      submittedUserMessage,
+    );
+
+    const result = await UnifiedAgentWithAbort({
+      userInput,
+      attachments: lineInput.attachments,
+      history: runtime.history,
+      sessionBlobRoot: runtime.props.sessionBlobRoot,
+      sessionRecorder: runtime.props.sessionRecorder,
+      turnId: activeTurnId,
+    });
+
+    if (result.compactHistory) {
+      // The auto-compact event already reset V2 active context. Keep the live memory aligned with
+      // its replacement plus post-compact delta.
+      runtime.setHistory(result.compactHistory);
+    } else {
+      runtime.appendTurn(submittedUserMessage, result.reply, result.delta);
+    }
+
+    if (runtime.props.sessionRecorder) {
+      if (!result.interrupted && (!result.delta || result.delta.length === 0) && result.reply) {
+        await runtime.props.sessionRecorder.recordMessage(
+          activeTurnId,
+          { kind: "agent_runtime" },
+          { role: "assistant", content: result.reply },
+        );
+      }
+      turnClosureAttempted = true;
+      await runtime.props.sessionRecorder.completeTurn(
+        activeTurnId,
+        result.interrupted ? "interrupted" : "completed",
+        runtime.currentBudget(),
+      );
+    }
+    runtime.host.logAssistantMessage(result.reply);
+  } catch (error) {
+    if (isAbortError(error)) {
+      const abortedReply = "Task has been interrupted by user.";
+      if (runtime.props.sessionRecorder && activeTurnId) {
+        if (!turnClosureAttempted) {
+          await closeTurnAfterFailure(runtime, activeTurnId, "interrupted");
+        }
+      } else {
+        runtime.appendTurn(
+          submittedUserMessage ?? {
+            role: "user",
+            content: userInput,
+          },
+          abortedReply,
+        );
+      }
+      runtime.host.logAssistantMessage(abortedReply);
+      runtime.host.logSystemEvent("\n[System] Current task aborted. Returning to router.\n");
+      return;
+    }
+
+    if (runtime.props.sessionRecorder && activeTurnId && !turnClosureAttempted) {
+      await closeTurnAfterFailure(runtime, activeTurnId, "error");
+    }
+    throw error;
+  }
 }
 
 export const MainCliAgent = createAgent<MainCliAgentProps, void>({
@@ -103,7 +354,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
     const host = getBinding();
     const [history, setHistory] = equipMemory<Message[]>(
       "message_history",
-      props.seedHistory ?? [],
+      props.seedContext ?? props.seedHistory ?? [],
     );
     // Approx live context-window size: the most recent model call's input tokens (and its cached
     // subset). Kept in memory so they survive reborn (each turn re-runs this handler); seeded from
@@ -141,158 +392,58 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
         cacheReadTokens: liveCacheTokens,
       });
 
-    // Persist boundary is the completed turn (after appendTurn), not sub-agent completion:
-    // a turn is the atomic resumable point and sub-agents finish many times per turn.
-    const persistTurn = (messages: Message[]) => {
-      if (!props.sessionId) {
-        return;
-      }
-      persistSession({
-        workspaceRoot: getWorkspaceFsPolicy().getRoot(),
-        sessionId: props.sessionId,
-        traceId: props.traceId,
-        messages,
-        budget: currentBudget(),
-      });
-    };
-
     const appendTurn = (userMessage: Message, reply: string, delta?: Message[]) => {
       const assistantDelta =
         delta && delta.length > 0 ? delta : [{ role: "assistant" as const, content: reply }];
       const next = [...history, userMessage, ...assistantDelta];
       setHistory(next);
-      persistTurn(next);
     };
 
-    let userInput = "";
-    let submittedUserMessage: Message | undefined;
+    const runtime: RouterRuntime = {
+      props,
+      host,
+      history,
+      setHistory,
+      currentBudget,
+      appendTurn,
+    };
+
     try {
       const lineInput = await host.getInput();
-      userInput = lineInput.text.trim();
-
-      if (isExitCommand(userInput)) {
-        host.logSystemEvent("Goodbye.\n");
-        return;
-      }
-
-      if (!userInput) {
-        host.onStatusUpdate?.("Ready");
-        return reborn();
-      }
-
-      if (userInput.toLowerCase() === "/clear") {
-        const previousBudget = currentBudget();
-        host.clearHistory?.();
-        host.clearScreen?.();
-        host.showSessionBanner?.();
-        const summary = [formatTokenUsageLine(previousBudget)];
-        // Only offer resume when a turn was persisted; an untouched session has no file on disk.
-        if (props.sessionId && history.length > 0) {
-          summary.push(`To continue the previous session, run /resume ${props.sessionId}`);
-        }
-        host.logSystemEvent(`${summary.join("\n")}\n`);
-        requestNewSession();
-        return;
-      }
-
-      if (userInput.toLowerCase() === "/status") {
-        host.logSystemEvent(
-          formatSessionStatus({
-            sessionId: props.sessionId ?? "(ephemeral)",
-            workspace: getWorkspaceFsPolicy().getRoot(),
-            turns: countConversationTurns(history),
-            budget: currentBudget(),
-            modelId: env.OPENAI_MODEL_ID,
-            contextWindow: env.OPENAI_CONTEXT_WINDOW,
-          }),
-        );
-        return reborn();
-      }
-
-      if (userInput.toLowerCase() === "/compress") {
-        if (history.length === 0) {
-          host.logSystemEvent("Nothing to compress yet.\n");
+      const intent = classifyRouterIntent(lineInput);
+      switch (intent.kind) {
+        case "empty":
+          host.onStatusUpdate?.("Ready");
           return reborn();
-        }
-        host.logSystemEvent("Compressing session history…\n");
-        const result = await UnifiedAgentWithAbort({
-          userInput: "Compress the current session history.",
-          history,
-          operation: "compress",
-        });
-        if (result.compactHistory) {
-          setHistory(result.compactHistory);
-          persistTurn(result.compactHistory);
-          host.logSystemEvent(
-            `Session compressed: ${history.length} messages → ${result.compactHistory.length} messages.\n`,
-          );
-          return reborn();
-        }
-        host.logSystemEvent(`${result.reply || "Compression failed."}\n`);
-        return reborn();
-      }
-
-      if (userInput.toLowerCase() === "/resume" || userInput.toLowerCase().startsWith("/resume ")) {
-        if (props.isolateSessionState) {
-          host.logSystemEvent("Resume is disabled during mock replay.\n");
-          return reborn();
-        }
-        // End the run (no reborn) so this run's trace closes; outer loop starts the new segment.
-        if (await tryRequestResume(userInput, host)) {
+        case "exit":
+          await handleExit(runtime);
           return;
-        }
-        return reborn();
+        case "clear":
+          await handleClear(runtime);
+          return;
+        case "status":
+          handleStatus(runtime);
+          return reborn();
+        case "compress":
+          await handleCompress(runtime);
+          return reborn();
+        case "resume":
+          if (await handleResume(runtime, intent.rawInput)) {
+            return;
+          }
+          return reborn();
+        case "message":
+          await runConversationTurn(runtime, intent.lineInput, intent.userInput);
+          return reborn();
       }
-
-      const attachmentActions = await buildAttachmentActionSummary(lineInput.attachments);
-      const displayUserInput =
-        attachmentActions.length > 0
-          ? `${userInput}\n${attachmentActions.map((action) => `  -> ${action}`).join("\n")}`
-          : userInput;
-      host.logUserMessage(displayUserInput);
-      submittedUserMessage = await buildUserMessage({
-        userInput,
-        attachments: lineInput.attachments,
-      });
-
-      const result = await UnifiedAgentWithAbort({
-        userInput,
-        attachments: lineInput.attachments,
-        history,
-      });
-
-      if (result.compactHistory) {
-        // Mid-loop auto-compaction (or /compress) already produced the full replacement history,
-        // including this turn's user message and reply. Replace rather than append, otherwise the
-        // pre-compaction bulk re-inflates on the next turn.
-        setHistory(result.compactHistory);
-        persistTurn(result.compactHistory);
-      } else {
-        appendTurn(submittedUserMessage, result.reply, result.delta);
-      }
-      host.logAssistantMessage(result.reply);
     } catch (error) {
       if (isAbortError(error)) {
-        // Abort while idle at the prompt makes getInput() throw before any real input exists.
-        // That is not a conversation turn — recording a placeholder user message would pollute
-        // history (and resume replay) with empty "N/A" / "interrupted" pairs. Only persist an
-        // aborted turn when the user actually submitted something.
-        if (userInput) {
-          const abortedReply = "Task has been interrupted by user.";
-          appendTurn(
-            submittedUserMessage ?? {
-              role: "user",
-              content: userInput,
-            },
-            abortedReply,
-          );
-          host.logAssistantMessage(abortedReply);
-        }
+        // Only prompt/maintenance aborts reach the router. Real message turns own their interrupted
+        // boundary inside runConversationTurn and therefore never create a placeholder idle turn.
         host.logSystemEvent("\n[System] Current task aborted. Returning to router.\n");
         return reborn();
       }
       throw error;
     }
-    return reborn();
   },
 });

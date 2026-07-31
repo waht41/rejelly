@@ -7,6 +7,8 @@ import {
 } from "@rejelly/core/policy";
 import type { z } from "zod";
 import type { LineInputValue } from "../../shared/AgentShared";
+import { materializeMessageHistory } from "../../shared/blobs/sessionBlobStore";
+import type { SessionMessageSink } from "../../shared/session/recorderPort";
 import type { PromptChatCompactionConfig } from "./compaction";
 import {
   runResilientToolCallLoopPolicy,
@@ -51,6 +53,9 @@ export interface PromptChatResilientOptions<TSchema extends z.ZodTypeAny = z.Zod
   schema?: TSchema;
   pendingUserInputs?: () => LineInputValue[] | Promise<LineInputValue[]>;
   compaction?: PromptChatCompactionConfig;
+  sessionRecorder?: SessionMessageSink;
+  turnId?: string;
+  sessionBlobRoot?: string;
 }
 
 type PromptChatResilientStringOptions = Omit<PromptChatResilientOptions, "schema">;
@@ -71,7 +76,10 @@ export const promptChatResilient = createAgentPolicy({
     ctx,
     options?: PromptChatResilientOptions,
   ): Promise<PromptChatResilientResult<unknown>> => {
-    const customMessages = normalizePromptChatMessages(options?.message);
+    const customMessages = await materializeMessageHistory(
+      normalizePromptChatMessages(options?.message),
+      options?.sessionBlobRoot ? { blobRoot: options.sessionBlobRoot } : {},
+    );
     const jsonSchema = options?.schema ? transferJsonSchema(options.schema) : undefined;
 
     if (jsonSchema) {
@@ -86,6 +94,8 @@ export const promptChatResilient = createAgentPolicy({
       parser: options?.schema ? createJsonOutputParser(options.schema) : undefined,
       pendingUserInputs: options?.pendingUserInputs,
       compaction: options?.compaction,
+      sessionRecorder: options?.sessionRecorder,
+      turnId: options?.turnId,
     };
 
     return await runResilientToolCallLoopPolicy(runtime, snapshot);

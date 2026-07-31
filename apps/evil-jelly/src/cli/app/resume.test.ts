@@ -1,7 +1,7 @@
 import type { Message } from "@rejelly/core";
 import { describe, expect, it } from "vitest";
 import type { EvilJellyHostBindings } from "../../shared/types";
-import { seedHistoryIntoView } from "./resume";
+import { buildLegacyResumeSeed, hydrateResumeSeed } from "./resume";
 
 function createBindings() {
   const calls: {
@@ -28,7 +28,7 @@ function createBindings() {
   return { bindings, calls };
 }
 
-describe("seedHistoryIntoView", () => {
+describe("hydrateResumeSeed", () => {
   it("reconstructs persisted tool messages into host tool blocks for transcript overlay", () => {
     const { bindings, calls } = createBindings();
     const history: Message[] = [
@@ -48,7 +48,7 @@ describe("seedHistoryIntoView", () => {
       { role: "assistant", content: '{"reply":"package name is demo"}' },
     ];
 
-    seedHistoryIntoView(bindings, "session_1", history);
+    hydrateResumeSeed(bindings, "session_1", buildLegacyResumeSeed(history));
 
     expect(calls.users).toEqual(["read package"]);
     expect(calls.tools).toHaveLength(1);
@@ -78,7 +78,7 @@ describe("seedHistoryIntoView", () => {
       { role: "assistant", content: '{"reply":"Continuing the work."}' },
     ];
 
-    seedHistoryIntoView(bindings, "session_compacted", history);
+    hydrateResumeSeed(bindings, "session_compacted", buildLegacyResumeSeed(history));
 
     expect(calls.users).toEqual(["fix the session store"]);
     expect(calls.assistants).toEqual(["Continuing the work."]);
@@ -120,10 +120,47 @@ describe("seedHistoryIntoView", () => {
       { role: "assistant", content: '{"reply":"Done."}' },
     ];
 
-    seedHistoryIntoView(bindings, "session_attachments", history);
+    hydrateResumeSeed(bindings, "session_attachments", buildLegacyResumeSeed(history));
 
     expect(calls.users).toEqual(["inspect this\n  -> read secret.txt\n  -> attach [Image #1]"]);
     expect(calls.users[0]).not.toContain("large private file body");
     expect(calls.users[0]).not.toContain("base64");
+  });
+
+  it("hydrates a bounded transcript in one host call and reports omitted earlier turns", () => {
+    const { bindings, calls } = createBindings();
+    const hydrated: Parameters<NonNullable<EvilJellyHostBindings["hydrateHistory"]>>[0][] = [];
+    bindings.hydrateHistory = (items) => hydrated.push(items);
+
+    hydrateResumeSeed(bindings, "session_tail", {
+      activeContext: [],
+      transcript: [
+        {
+          id: "11:user",
+          type: "user",
+          turnId: "turn-11",
+          seq: 11,
+          content: "recent task",
+          inputKind: "initial",
+        },
+        {
+          id: "12:assistant",
+          type: "assistant",
+          turnId: "turn-11",
+          seq: 12,
+          content: "recent answer",
+        },
+      ],
+      totalTurns: 25,
+      budget: undefined,
+    });
+
+    expect(hydrated).toHaveLength(1);
+    expect(hydrated[0]).toHaveLength(2);
+    expect(calls.users).toEqual([]);
+    expect(calls.assistants).toEqual([]);
+    expect(calls.systems).toContain(
+      "Showing the last 1 of 25 prior turns; earlier history remains saved in the session transcript.\n",
+    );
   });
 });

@@ -3,6 +3,7 @@
  */
 
 import type { AgentMode, LineInputValue, ToolConfirmationHandler } from "./AgentShared";
+import type { TranscriptItem } from "./transcript";
 
 /** One row in a host-driven action menu (hotkey + arbitrary domain `value`). */
 export type HostChoiceOption = { key: string; label: string; value: string };
@@ -47,6 +48,11 @@ export interface EvilJellyHostBindings {
   logAssistantMessage: (message: string) => void;
   /** Append a system line (startup, goodbye, fatal error) and reset the transient stream. */
   logSystemEvent: (message: string) => void;
+  /**
+   * Atomically hydrate a bounded resume transcript before live turns are appended. Hosts that do
+   * not implement it receive the compatibility replay through the individual log methods.
+   */
+  hydrateHistory?: (items: TranscriptItem[]) => void;
   /** Clear host-visible conversation history when the host supports it. */
   clearHistory?: () => void;
   /**

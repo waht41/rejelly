@@ -13,7 +13,7 @@ import { initSettings } from "../shared/settings";
 import { getCliVersion, parseCliArgs } from "./app/args";
 import { applyWorkspaceRootFromArgs } from "./app/bootstrap";
 import { runAuditCommand, runHeadlessUnifiedCommand, runInitCommand } from "./app/commands";
-import { resolveInitialSession, seedHistoryIntoView } from "./app/resume";
+import { resolveInitialSession } from "./app/resume";
 import { runInteractiveLoop } from "./app/runLoop";
 import { loadStartupSnapshot } from "./app/snapshot";
 import { createCliHostBindings } from "./bindings/cliBinding";
@@ -28,6 +28,7 @@ export { runEvilJellyHost } from "./app/host/runHost";
 
 async function main() {
   const args = parseCliArgs();
+  const appVersion = getCliVersion();
   if (args.kind === "init") {
     await runInitCommand(args.cliApiKey, args.initBaseUrl, args.initModelId);
     process.exit(0);
@@ -56,19 +57,17 @@ async function main() {
     process.exit(process.exitCode ?? 0);
   }
 
-  const { sessionId, seedHistory, seedBudget } = await resolveInitialSession({
+  const { sessionId, resumeSeed } = await resolveInitialSession({
     resume: args.startup.kind === "resume",
     resumeSessionId: args.startup.kind === "resume" ? args.startup.sessionId : undefined,
+    appVersion,
   });
 
   const { bindings, dispose } = createCliHostBindings({
-    version: getCliVersion(),
+    version: appVersion,
     seedInput: args.startup.seedInput,
     reviewCliFlag: args.review,
   });
-  if (seedHistory) {
-    seedHistoryIntoView(bindings, sessionId, seedHistory);
-  }
   const mockTraceId = args.startup.kind === "mock" ? args.startup.traceId : undefined;
   const mockReplay = mockTraceId ? await loadMockReplayFromTraceId(mockTraceId) : undefined;
   if (mockReplay) {
@@ -100,10 +99,10 @@ async function main() {
       enableReview: args.review || env.REJELLY_ENABLE_REVIEW,
       snapshot,
       sessionId,
-      seedHistory,
-      seedBudget,
+      resumeSeed,
       mockSourceTraceId: mockReplay ? mockTraceId : undefined,
       isolateSessionState: Boolean(mockReplay),
+      sessionV2: { enabled: true, appVersion },
     });
   } finally {
     dispose();

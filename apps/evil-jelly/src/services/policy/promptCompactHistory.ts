@@ -1,5 +1,6 @@
 import type { Message } from "@rejelly/core";
 import { createAgentPolicy, normalizeMessages } from "@rejelly/core/policy";
+import { materializeMessageHistory } from "../../shared/blobs/sessionBlobStore";
 import {
   type PromptChatCompactionConfig,
   runContextCompaction,
@@ -12,6 +13,7 @@ export interface PromptCompactHistoryOptions {
   /** Conversation to summarize (persisted history; the runtime supplies the equipped prefix). */
   message: Message[];
   compaction: PromptChatCompactionConfig;
+  sessionBlobRoot?: string;
 }
 
 /**
@@ -26,9 +28,11 @@ export const promptCompactHistory = createAgentPolicy({
     if (!options) {
       throw new Error("promptCompactHistory requires a history and a compaction config.");
     }
-    const runtime = ctx.fork({
-      messages: normalizeMessages([...ctx.messages, ...options.message]),
-    });
+    const history = await materializeMessageHistory(
+      options.message,
+      options.sessionBlobRoot ? { blobRoot: options.sessionBlobRoot } : {},
+    );
+    const runtime = ctx.fork({ messages: normalizeMessages([...ctx.messages, ...history]) });
     const result = await runContextCompaction(runtime, runtime.messages, options.compaction);
     return result ? withoutEquippedPrefix(result.history) : null;
   },

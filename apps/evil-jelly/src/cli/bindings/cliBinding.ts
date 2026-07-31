@@ -63,6 +63,7 @@ function createOutputBindings(): Pick<
   | "logToolStart"
   | "appendToolOutput"
   | "logToolBlock"
+  | "hydrateHistory"
 > {
   const out = () => useOutputStore.getState();
 
@@ -82,6 +83,9 @@ function createOutputBindings(): Pick<
     },
     logSystemEvent: (message: string) => {
       out().logSystem(message);
+    },
+    hydrateHistory: (items) => {
+      out().hydrateHistory(items);
     },
     clearHistory: () => {
       out().clearHistory();
