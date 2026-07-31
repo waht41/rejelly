@@ -177,25 +177,38 @@ const NETWORK_PHASES = new Set<RuntimePhase>(["connecting", "compacting"]);
 const GENERIC_STATUS_DETAILS = new Set(["Ready", "Waiting for input"]);
 
 /**
- * Seconds since `since`, ticking once a second.
+ * One shared 1 Hz tick for the whole status line, and no tick at all while it has no number to
+ * show.
  *
- * One second is deliberate: the number is the point, not animation. Dashboard remeasures its
- * transient region on every render (see the layout effect below), so a spinner-rate tick would
- * put that measure/repaint loop on a 10x faster cadence to say the same thing.
- *
- * Takes a real anchor, never null: an absent anchor used to read as a frozen 0s, which is the one
- * thing a stall indicator must never show. Callers resolve their anchor first (see
- * {@link statusTimerAnchor}).
+ * One second is deliberate: the number is the point, not animation. Ink rewrites the entire frame
+ * on every commit and Dashboard remeasures its transient region on every render (see the layout
+ * effect below), so each tick costs a repaint that disturbs the input cursor. This used to be one
+ * timer per displayed value, at unsynchronised offsets: three repaints a second, including while
+ * the user was only typing at an idle prompt with no counter on screen.
  */
-function useElapsedSeconds(since: number): number {
+function useNowTick(active: boolean): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    // Re-baselined on every change so a new anchor reads 0s immediately instead of
-    // inheriting up to a second of the previous one's tick.
+    if (!active) {
+      return;
+    }
+    // Re-baselined on resume so the first frame counts from the live anchor instead of whatever
+    // `now` was frozen at while the line was parked.
     setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), 1_000);
     return () => clearInterval(timer);
-  }, [since]);
+  }, [active]);
+  return now;
+}
+
+/**
+ * Whole seconds between an epoch-ms anchor and the current tick.
+ *
+ * Anchors are always real, never null: an absent anchor used to read as a frozen 0s, which is the
+ * one thing a stall indicator must never show. Callers resolve theirs first (see
+ * {@link statusTimerAnchor}).
+ */
+function elapsedSeconds(now: number, since: number): number {
   return Math.max(0, Math.floor((now - since) / 1_000));
 }
 
@@ -214,16 +227,25 @@ function RuntimeStatusLine() {
   const phase = useOutputStore((s) => s.runtime.phase);
   const phaseSince = useOutputStore((s) => s.runtime.phaseSince);
   const turnStartedAt = useOutputStore((s) => s.runtime.turnStartedAt);
-  const lastOutputAt = useOutputStore((s) => s.runtime.lastOutputAt);
+  // Quantized inside the selector: `lastOutputAt` is rewritten on every 50 ms stream flush, while
+  // the stall threshold is 10 s. Subscribing to the raw value repainted the whole frame 20 times a
+  // second to learn nothing; zustand compares the selected value, so equal seconds never render.
+  // The floor can only make the silence read up to 1 s longer, i.e. warn a beat early, never late.
+  const lastOutputSecond = useOutputStore((s) => Math.floor(s.runtime.lastOutputAt / 1_000));
   const detail = useOutputStore((s) => s.runtime.detail);
+
+  // Only the active branch below prints a number, so the idle and awaiting_user lines are static
+  // and must not keep a timer alive behind them.
+  const showsTimer = phase !== "idle" && phase !== "awaiting_user";
+  const now = useNowTick(showsTimer);
   // Maintenance commands (`/compress`) reach the model without passing the shell's turn anchor,
   // so the displayed number falls back to the phase when no turn is running.
-  const turnElapsed = useElapsedSeconds(statusTimerAnchor(turnStartedAt, phaseSince));
+  const turnElapsed = elapsedSeconds(now, statusTimerAnchor(turnStartedAt, phaseSince));
   // The per-phase elapsed is kept internally just for the stall warning; the displayed
   // number above is the whole turn's. Streaming stalls measure silence instead: a long
   // answer keeps flushing output, so phase duration alone would cry wolf.
-  const phaseElapsed = useElapsedSeconds(phaseSince);
-  const outputIdle = useElapsedSeconds(lastOutputAt);
+  const phaseElapsed = elapsedSeconds(now, phaseSince);
+  const outputIdle = elapsedSeconds(now, lastOutputSecond * 1_000);
   const stalled = NETWORK_PHASES.has(phase)
     ? phaseElapsed >= STALLED_PHASE_SECONDS
     : phase === "streaming" && outputIdle >= STALLED_PHASE_SECONDS;
