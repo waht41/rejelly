@@ -3,7 +3,13 @@ import os from "node:os";
 import path from "node:path";
 import type { Message } from "@rejelly/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createSessionMetaLine, openSessionWriter, readSessionEvents } from "./sessionJsonlStore";
+import {
+  createSessionMetaLine,
+  findLatestSessionStateFromTail,
+  openSessionWriter,
+  readSessionEvents,
+  resolveV2SessionPath,
+} from "./sessionJsonlStore";
 import { openSessionRecorder } from "./sessionRecorder";
 import {
   listSessions,
@@ -257,5 +263,47 @@ describe("mixed-format session store", () => {
     expect(await listSessions(workspaceRoot, { sessionsRoot })).toMatchObject([
       { id: "suffix", budget: suffixBudget },
     ]);
+  });
+
+  it("uses a final interrupted state as the current listing checkpoint without replaying history", async () => {
+    const recorder = await openSessionRecorder({
+      workspaceRoot,
+      sessionId: "idle-abort",
+      traceId: "trace-1",
+      originator: "test",
+      appVersion: "1.0.0",
+      modelId: "test-model",
+      cwd: workspaceRoot,
+      sessionsRoot,
+    });
+    await recorder.endSegment({ status: "interrupted", reason: "abort" });
+    await recorder.close();
+
+    const checkpoint = await findLatestSessionStateFromTail(workspaceRoot, "idle-abort", {
+      sessionsRoot,
+    });
+    expect(checkpoint?.event).toMatchObject({
+      type: "session_state",
+      status: "interrupted",
+    });
+
+    // A current listing checkpoint deliberately makes picker metadata independent of historical
+    // replay. Corrupting a covered middle event therefore breaks strict resume, but not listing.
+    const filePath = resolveV2SessionPath(workspaceRoot, "idle-abort", { sessionsRoot });
+    const lines = (await fs.readFile(filePath, "utf8")).split("\n");
+    lines[1] = "{not-json";
+    await fs.writeFile(filePath, lines.join("\n"), "utf8");
+
+    await expect(listSessions(workspaceRoot, { sessionsRoot })).resolves.toMatchObject([
+      {
+        id: "idle-abort",
+        title: "(untitled)",
+        turns: 0,
+        traceIds: ["trace-1"],
+      },
+    ]);
+    await expect(loadSession(workspaceRoot, "idle-abort", { sessionsRoot })).rejects.toThrow(
+      /corrupt/i,
+    );
   });
 });
