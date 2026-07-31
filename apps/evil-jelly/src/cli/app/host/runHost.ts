@@ -59,7 +59,7 @@ export interface RunEvilJellyHostOptions {
   mockSourceTraceId?: string;
   /** Disable durable session reads/writes for replay-only runs. */
   isolateSessionState?: boolean;
-  /** Session V2 writer configuration. Omit only for isolated replay or V1 migration fallback. */
+  /** Session V2 writer configuration. Required whenever a durable sessionId is supplied. */
   sessionV2?: {
     enabled: true;
     appVersion: string;
@@ -92,8 +92,11 @@ async function openRunSessionRecorder(
   traceId: string,
 ): Promise<SessionRecorder | undefined> {
   const { model, sessionId, sessionV2 } = options;
-  if (!sessionV2?.enabled || !sessionId || options.isolateSessionState) {
+  if (!sessionId || options.isolateSessionState) {
     return undefined;
+  }
+  if (!sessionV2?.enabled) {
+    throw new Error("Session V2 configuration is required for durable session execution");
   }
   return openSessionRecorder({
     workspaceRoot: getWorkspaceFsPolicy().getRoot(),

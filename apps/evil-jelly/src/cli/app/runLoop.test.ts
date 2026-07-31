@@ -86,7 +86,7 @@ describe("runInteractiveLoop mock session isolation", () => {
 
   it("does not load durable sessions when a resume request leaks into isolated mock replay", async () => {
     const { bindings, systemEvents } = createBindings();
-    const loadSessionSpy = vi.spyOn(sessionStore, "loadSession");
+    const loadSessionSpy = vi.spyOn(sessionStore, "resumeSession");
     runHostMock.mockImplementationOnce(async () => {
       requestResume("session_real");
     });
@@ -173,7 +173,7 @@ describe("runInteractiveLoop mock session isolation", () => {
       lastContextTokens: 10,
       lastCacheReadTokens: 0,
     };
-    vi.spyOn(sessionStore, "loadSession").mockReturnValue({
+    vi.spyOn(sessionStore, "resumeSession").mockResolvedValue({
       meta: {
         id: "session_target",
         workspaceRoot: "workspace",
@@ -198,6 +198,7 @@ describe("runInteractiveLoop mock session isolation", () => {
       enableReview: false,
       snapshot: {} as AgentSnapshot,
       sessionId: "session_current",
+      sessionV2: { enabled: true, appVersion: "1.0.0" },
     });
 
     expect(runHostMock).toHaveBeenCalledTimes(2);
@@ -206,6 +207,7 @@ describe("runInteractiveLoop mock session isolation", () => {
       seedContext: messages,
       seedBudget: budget,
       snapshot: undefined,
+      sessionV2: { enabled: true, appVersion: "1.0.0" },
     });
     expect(hydrated).toHaveLength(1);
     expect(hydrated[0]?.map((item) => item.type)).toEqual(["user", "assistant"]);

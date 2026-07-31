@@ -21,12 +21,7 @@ import {
 } from "../services/session/budgetStatus";
 import { requestNewSession, requestResume } from "../services/session/resumeControl";
 import type { SessionRecorder } from "../services/session/sessionRecorder";
-import {
-  listSessions,
-  loadSession,
-  persistSession,
-  type SessionBudget,
-} from "../services/session/sessionStore";
+import { listSessions, loadSession, type SessionBudget } from "../services/session/sessionStore";
 import { withAbort } from "../services/stop/withAbort";
 import type { LineInputValue } from "../shared/AgentShared";
 import {
@@ -50,7 +45,7 @@ async function tryRequestResume(rawInput: string, host: EvilJellyHostBindings): 
   const workspaceRoot = getWorkspaceFsPolicy().getRoot();
 
   if (arg) {
-    if (!loadSession(workspaceRoot, arg)) {
+    if (!(await loadSession(workspaceRoot, arg))) {
       host.logSystemEvent(`No saved session "${arg}" for this workspace.\n`);
       return false;
     }
@@ -59,7 +54,7 @@ async function tryRequestResume(rawInput: string, host: EvilJellyHostBindings): 
     return true;
   }
 
-  const sessions = listSessions(workspaceRoot);
+  const sessions = await listSessions(workspaceRoot);
   if (sessions.length === 0) {
     host.logSystemEvent("No saved sessions for this workspace.\n");
     return false;
@@ -87,13 +82,13 @@ export interface MainCliAgentProps extends EvilJellyHostBindings {
   traceId?: string;
   /** Restored active model context seeded as message_history on resume. */
   seedContext?: Message[];
-  /** @deprecated Compatibility alias while the V1 runtime remains the default. */
+  /** @deprecated Compatibility alias; new callers should pass seedContext. */
   seedHistory?: Message[];
   /** Cumulative usage carried back from a resumed session, used as the /status base. */
   seedBudget?: SessionBudget;
   /** Replay-only mode: do not read from or write to durable local sessions. */
   isolateSessionState?: boolean;
-  /** Internal Session V2 writer. Undefined keeps the current V1 persistence path. */
+  /** Session V2 writer. Undefined only for ephemeral or isolated runs. */
   sessionRecorder?: SessionRecorder;
 }
 
@@ -112,7 +107,6 @@ interface RouterRuntime {
   history: Message[];
   setHistory: (messages: Message[]) => void;
   currentBudget: () => SessionBudget;
-  persistTurn: (messages: Message[]) => void;
   appendTurn: (userMessage: Message, reply: string, delta?: Message[]) => void;
 }
 
@@ -209,8 +203,6 @@ async function handleCompress(runtime: RouterRuntime): Promise<void> {
       replacementHistory: result.compactHistory,
       beforeMessageCount: runtime.history.length,
     });
-  } else {
-    runtime.persistTurn(result.compactHistory);
   }
   runtime.host.logSystemEvent(
     `Session compressed: ${runtime.history.length} messages → ${result.compactHistory.length} messages.\n`,
@@ -290,9 +282,8 @@ async function runConversationTurn(
 
     if (result.compactHistory) {
       // The auto-compact event already reset V2 active context. Keep the live memory aligned with
-      // its replacement plus post-compact delta; V1 still snapshots this complete active history.
+      // its replacement plus post-compact delta.
       runtime.setHistory(result.compactHistory);
-      runtime.persistTurn(result.compactHistory);
     } else {
       runtime.appendTurn(submittedUserMessage, result.reply, result.delta);
     }
@@ -387,27 +378,11 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
         cacheReadTokens: liveCacheTokens,
       });
 
-    // Compatibility V1 boundary only. Session V2 bypasses this snapshot writer and records stable
-    // model/tool items through the awaited recorder before the turn-completed boundary.
-    const persistTurn = (messages: Message[]) => {
-      if (!props.sessionId || props.sessionRecorder) {
-        return;
-      }
-      persistSession({
-        workspaceRoot: getWorkspaceFsPolicy().getRoot(),
-        sessionId: props.sessionId,
-        traceId: props.traceId,
-        messages,
-        budget: currentBudget(),
-      });
-    };
-
     const appendTurn = (userMessage: Message, reply: string, delta?: Message[]) => {
       const assistantDelta =
         delta && delta.length > 0 ? delta : [{ role: "assistant" as const, content: reply }];
       const next = [...history, userMessage, ...assistantDelta];
       setHistory(next);
-      persistTurn(next);
     };
 
     const runtime: RouterRuntime = {
@@ -416,7 +391,6 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
       history,
       setHistory,
       currentBudget,
-      persistTurn,
       appendTurn,
     };
 

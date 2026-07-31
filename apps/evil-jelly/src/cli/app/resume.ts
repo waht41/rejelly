@@ -6,8 +6,9 @@ import {
 } from "../../services/session/sessionHistoryProjection";
 import {
   generateSessionId,
+  type LegacyMigrationOptions,
   listSessions,
-  loadSession,
+  resumeSession,
   type SessionBudget,
   type SessionRecord,
 } from "../../services/session/sessionStore";
@@ -20,6 +21,7 @@ export interface SessionResumeSeed {
   transcript: TranscriptItem[];
   totalTurns: number;
   budget: SessionBudget | undefined;
+  warnings?: string[];
 }
 
 /**
@@ -30,16 +32,17 @@ export interface SessionResumeSeed {
 async function resolveResumeSession(
   workspaceRoot: string,
   sessionId: string | undefined,
+  migrationOptions: LegacyMigrationOptions,
 ): Promise<SessionRecord | undefined> {
   if (sessionId) {
-    const record = loadSession(workspaceRoot, sessionId);
+    const record = await resumeSession(workspaceRoot, sessionId, migrationOptions);
     if (!record) {
       console.error(`--resume: no saved session "${sessionId}" for this workspace.`);
       process.exit(1);
     }
     return record;
   }
-  const sessions = listSessions(workspaceRoot);
+  const sessions = await listSessions(workspaceRoot, migrationOptions);
   if (sessions.length === 0) {
     console.log("No saved sessions for this workspace. Starting a new session.");
     return undefined;
@@ -66,7 +69,7 @@ async function resolveResumeSession(
     console.error(`Invalid selection "${answer}". Starting a new session.`);
     return undefined;
   }
-  return loadSession(workspaceRoot, shown[idx - 1]!.id);
+  return resumeSession(workspaceRoot, shown[idx - 1]!.id, migrationOptions);
 }
 
 function previewOf(text: string, maxLines = 6, maxChars = 600): string {
@@ -94,6 +97,19 @@ export function buildLegacyResumeSeed(
     transcript: buildLegacyTranscript(messages, { tailTurns: 10 }),
     totalTurns: options.totalTurns ?? countConversationTurns(messages),
     budget: options.budget,
+  };
+}
+
+/** Convert either facade format into the context/display bundle consumed by the CLI. */
+export function buildSessionResumeSeed(record: SessionRecord): SessionResumeSeed {
+  const legacy = buildLegacyResumeSeed(record.messages, {
+    totalTurns: record.meta.turns,
+    budget: record.meta.budget,
+  });
+  return {
+    ...legacy,
+    ...(record.transcript ? { transcript: record.transcript } : {}),
+    ...(record.warnings ? { warnings: record.warnings } : {}),
   };
 }
 
@@ -148,6 +164,9 @@ export function hydrateResumeSeed(
         "in the session transcript.\n",
     );
   }
+  for (const warning of seed.warnings ?? []) {
+    bindings.logSystemEvent(`Session warning: ${warning}\n`);
+  }
   bindings.logSystemEvent(`Resumed session ${sessionId} (${priorTurns} prior turns).\n`);
 }
 
@@ -159,21 +178,20 @@ export interface InitialSessionState {
 export async function resolveInitialSession(options: {
   resume: boolean;
   resumeSessionId: string | undefined;
+  appVersion: string;
 }): Promise<InitialSessionState> {
   let sessionId = generateSessionId();
   let resumeSeed: SessionResumeSeed | undefined;
 
   if (options.resume) {
-    const record = await resolveResumeSession(
-      getWorkspaceFsPolicy().getRoot(),
-      options.resumeSessionId,
-    );
+    const workspaceRoot = getWorkspaceFsPolicy().getRoot();
+    const record = await resolveResumeSession(workspaceRoot, options.resumeSessionId, {
+      originator: "evil-jelly-cli",
+      appVersion: options.appVersion,
+    });
     if (record) {
       sessionId = record.meta.id;
-      resumeSeed = buildLegacyResumeSeed(record.messages, {
-        totalTurns: record.meta.turns,
-        budget: record.meta.budget,
-      });
+      resumeSeed = buildSessionResumeSeed(record);
     }
   }
 

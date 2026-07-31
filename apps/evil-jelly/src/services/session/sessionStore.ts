@@ -7,7 +7,7 @@
  */
 
 import fs from "node:fs";
-import { persistSession, readLegacySession } from "./legacySessionStore";
+import { readLegacySession } from "./legacySessionStore";
 import type { SessionStoragePaths } from "./sessionJsonlStore";
 import { type LegacyMigrationOptions, migrateLegacySession } from "./sessionMigration";
 import {
@@ -17,48 +17,15 @@ import {
   resolveWorkspaceDir,
   workspaceBucket,
 } from "./sessionPaths";
-import {
-  type SessionReadFailureKind,
-  type SessionReadResult,
-  SessionStoreReadError,
-} from "./sessionReadResult";
-import type {
-  PersistSessionInput,
-  SessionBudget,
-  SessionMeta,
-  SessionRecord,
-} from "./sessionTypes";
+import { type SessionReadResult, SessionStoreReadError } from "./sessionReadResult";
+import type { SessionBudget, SessionMeta, SessionRecord } from "./sessionTypes";
 import { readV2Session, readV2SessionMetaFast, readV2SessionMetaFull } from "./sessionV2Store";
 
-export { persistSession };
 export { generateSessionId, resolveSessionsRoot, resolveWorkspaceDir, workspaceBucket };
 export { SessionStoreReadError };
-export type {
-  LegacyMigrationOptions,
-  PersistSessionInput,
-  SessionBudget,
-  SessionMeta,
-  SessionRecord,
-};
+export type { LegacyMigrationOptions, SessionBudget, SessionMeta, SessionRecord };
 
-export interface LoadSessionOptions extends SessionStoragePaths {
-  /** When present, a V1 fallback is migrated before being returned to a resume caller. */
-  migrateLegacy?: {
-    originator: string;
-    appVersion: string;
-  };
-}
-
-function warningFor(format: "v1" | "v2", kind: SessionReadFailureKind): string {
-  return `The ${format.toUpperCase()} session file is ${kind}; using the compatible fallback.`;
-}
-
-function withWarning(record: SessionRecord, warning: string): SessionRecord {
-  return {
-    ...record,
-    warnings: [...(record.warnings ?? []), warning],
-  };
-}
+export type LoadSessionOptions = SessionStoragePaths;
 
 function throwReadFailure(
   result: Exclude<SessionReadResult<unknown>, { kind: "found" }>,
@@ -72,11 +39,11 @@ function throwReadFailure(
 }
 
 /**
- * Full V2-first resume load.
+ * Read one session without mutating storage.
  *
- * Missing files return `undefined`. Corrupt V2 may fall back to a valid V1 source with an explicit
- * warning; unreadable V2 never falls back because the facade cannot safely establish authority.
- * Without a safe fallback, corrupt and unreadable results throw `SessionStoreReadError`.
+ * V2 is authoritative whenever present: corrupt or unreadable V2 never falls back to V1. A V1
+ * record is returned only when V2 is genuinely missing, primarily for listing and migration
+ * preflight. Runtime resume must use `resumeSession`, which guarantees a validated V2 result.
  */
 export async function loadSession(
   workspaceRoot: string,
@@ -87,35 +54,60 @@ export async function loadSession(
   if (v2.kind === "found") {
     return v2.value;
   }
-  if (v2.kind === "unreadable") {
+  if (v2.kind !== "missing") {
     throwReadFailure(v2, "v2", sessionId);
   }
 
   const legacy = readLegacySession(workspaceRoot, sessionId, options);
+  if (legacy.kind === "found") {
+    return legacy.value;
+  }
+  if (legacy.kind === "missing") {
+    return undefined;
+  }
+  throwReadFailure(legacy, "v1", sessionId);
+}
+
+/**
+ * Resolve a session for model execution.
+ *
+ * This is the only runtime resume entry point. It returns only validated V2 data: a legacy V1
+ * source must migrate successfully, and every corrupt/unreadable/migration failure aborts resume.
+ */
+export async function resumeSession(
+  workspaceRoot: string,
+  sessionId: string,
+  options: LegacyMigrationOptions,
+): Promise<SessionRecord | undefined> {
+  const v2 = await readV2Session(workspaceRoot, sessionId, options);
+  if (v2.kind === "found") {
+    return v2.value;
+  }
+  if (v2.kind !== "missing") {
+    throwReadFailure(v2, "v2", sessionId);
+  }
+
+  const legacy = readLegacySession(workspaceRoot, sessionId, options);
+  if (legacy.kind === "missing") {
+    return undefined;
+  }
   if (legacy.kind !== "found") {
-    if (v2.kind === "corrupt") {
-      throwReadFailure(v2, "v2", sessionId);
-    }
-    if (legacy.kind === "missing") {
-      return undefined;
-    }
     throwReadFailure(legacy, "v1", sessionId);
   }
 
-  if (v2.kind === "corrupt") {
-    return withWarning(legacy.value, warningFor("v2", "corrupt"));
+  const migrated = await migrateLegacySession(legacy.value, options);
+  if (migrated.kind === "found") {
+    return migrated.value;
   }
-  if (!options.migrateLegacy) {
-    return legacy.value;
+  if (migrated.kind === "missing") {
+    throw new SessionStoreReadError(
+      "corrupt",
+      "v2",
+      sessionId,
+      new Error("Migration completed without a readable V2 session"),
+    );
   }
-
-  const migrated = await migrateLegacySession(legacy.value, {
-    ...options,
-    ...options.migrateLegacy,
-  });
-  return migrated.kind === "found"
-    ? migrated.value
-    : withWarning(legacy.value, warningFor("v2", migrated.kind));
+  throwReadFailure(migrated, "v2", sessionId);
 }
 
 async function readV2ListingMeta(

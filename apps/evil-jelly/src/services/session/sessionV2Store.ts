@@ -113,7 +113,6 @@ export async function readV2Session(
         meta: sessionMetaFromSummary(summary),
         messages: buildStoredActiveContext(replay),
         transcript: buildTranscript(replay, { tailTurns: 10 }),
-        storageVersion: 2,
         ...(warnings ? { warnings } : {}),
       },
     };

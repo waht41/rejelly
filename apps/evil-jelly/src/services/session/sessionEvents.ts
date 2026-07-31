@@ -222,15 +222,23 @@ export const budgetUpdatedEventSchema = z
   })
   .passthrough();
 
-const legacyMetaSchema = z
+export const legacySessionMetaSchema = z
   .object({
-    id: z.string(),
+    /** Durable session id, stable across resume segments and distinct from any trace id. */
+    id: z.string().min(1),
+    /** Absolute workspace root whose bucket owns the session. */
     workspaceRoot: z.string(),
+    /** First real user line, truncated for picker display. */
     title: z.string(),
+    /** Creation time retained from the original V1 record when a session is migrated. */
     createdAt: nonNegativeIntSchema,
+    /** Last durable update time, used to sort the session picker. */
     updatedAt: nonNegativeIntSchema,
+    /** Count of real initial user turns; steers and compaction bridges do not increment it. */
     turns: nonNegativeIntSchema,
+    /** Run trace ids accumulated across launch/resume segments for devtool correlation. */
     traceIds: z.array(z.string()),
+    /** Latest cumulative token/cost snapshot, restored by `/status` after resume. */
     budget: sessionBudgetSchema.optional(),
   })
   .passthrough();
@@ -241,7 +249,7 @@ export const legacySnapshotImportedEventSchema = z
     type: z.literal("legacy_snapshot"),
     sourceSchemaVersion: z.literal(1),
     importedAt: nonNegativeIntSchema,
-    legacyMeta: legacyMetaSchema,
+    legacyMeta: legacySessionMetaSchema,
     messages: z.array(sessionMessageSchema),
   })
   .passthrough();
@@ -265,6 +273,7 @@ export const sessionEventEnvelopeSchema = z
   .passthrough();
 
 export type SessionBudgetData = z.infer<typeof sessionBudgetSchema>;
+export type LegacySessionMeta = z.infer<typeof legacySessionMetaSchema>;
 export type SessionMetaLine = z.infer<typeof sessionMetaLineSchema>;
 export type SessionEventBase = z.infer<typeof sessionEventEnvelopeSchema>;
 export type MessageSource = z.infer<typeof messageSourceSchema>;

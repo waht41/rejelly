@@ -28,6 +28,7 @@ export { runEvilJellyHost } from "./app/host/runHost";
 
 async function main() {
   const args = parseCliArgs();
+  const appVersion = getCliVersion();
   if (args.kind === "init") {
     await runInitCommand(args.cliApiKey, args.initBaseUrl, args.initModelId);
     process.exit(0);
@@ -59,10 +60,11 @@ async function main() {
   const { sessionId, resumeSeed } = await resolveInitialSession({
     resume: args.startup.kind === "resume",
     resumeSessionId: args.startup.kind === "resume" ? args.startup.sessionId : undefined,
+    appVersion,
   });
 
   const { bindings, dispose } = createCliHostBindings({
-    version: getCliVersion(),
+    version: appVersion,
     seedInput: args.startup.seedInput,
     reviewCliFlag: args.review,
   });
@@ -100,6 +102,7 @@ async function main() {
       resumeSeed,
       mockSourceTraceId: mockReplay ? mockTraceId : undefined,
       isolateSessionState: Boolean(mockReplay),
+      sessionV2: { enabled: true, appVersion },
     });
   } finally {
     dispose();

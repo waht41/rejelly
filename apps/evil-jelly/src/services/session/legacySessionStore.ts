@@ -5,28 +5,14 @@ import {
   countConversationTurns,
   isCompactionBridgeMessage,
 } from "../../shared/lib/compactionMessages";
-import { sessionBudgetSchema, sessionMessageSchema } from "./sessionEvents";
+import { legacySessionMetaSchema, sessionMessageSchema } from "./sessionEvents";
 import type { SessionStoragePaths } from "./sessionJsonlStore";
 import { resolveWorkspaceDir } from "./sessionPaths";
 import { readFailure, type SessionReadResult } from "./sessionReadResult";
-import { deriveSessionTitleFromMessages } from "./sessionTitle";
-import type { PersistSessionInput, SessionMeta, SessionRecord } from "./sessionTypes";
-
-const legacyMetaSchema = z
-  .object({
-    id: z.string().min(1),
-    workspaceRoot: z.string(),
-    title: z.string(),
-    createdAt: z.number().int().nonnegative(),
-    updatedAt: z.number().int().nonnegative(),
-    turns: z.number().int().nonnegative(),
-    traceIds: z.array(z.string()),
-    budget: sessionBudgetSchema.optional(),
-  })
-  .passthrough();
+import type { SessionRecord } from "./sessionTypes";
 
 const legacyRecordSchema = z.object({
-  meta: legacyMetaSchema,
+  meta: legacySessionMetaSchema,
   messages: z.array(sessionMessageSchema),
 });
 
@@ -69,7 +55,6 @@ export function readLegacySession(
           turns: countConversationTurns(parsed.messages),
         },
         messages: parsed.messages,
-        storageVersion: 1,
         ...(parsed.messages.some(isCompactionBridgeMessage)
           ? {
               warnings: [
@@ -81,42 +66,5 @@ export function readLegacySession(
     };
   } catch (error) {
     return readFailure(error);
-  }
-}
-
-/**
- * Best-effort compatibility V1 writer.
- *
- * New CLI sessions use SessionRecorder/V2. This fallback preserves V1 behavior after a migration
- * failure: merge stable metadata, write a complete temporary snapshot, then rename it into place.
- * It never throws into the conversation turn.
- */
-export function persistSession(input: PersistSessionInput): void {
-  try {
-    const paths = input.sessionsRoot ? { sessionsRoot: input.sessionsRoot } : {};
-    const filePath = resolveLegacySessionPath(input.workspaceRoot, input.sessionId, paths);
-    const existingResult = readLegacySession(input.workspaceRoot, input.sessionId, paths);
-    const existing = existingResult.kind === "found" ? existingResult.value : undefined;
-    const now = Date.now();
-    const traceIds = new Set(existing?.meta.traceIds ?? []);
-    if (input.traceId) {
-      traceIds.add(input.traceId);
-    }
-    const meta: SessionMeta = {
-      id: input.sessionId,
-      workspaceRoot: path.resolve(input.workspaceRoot),
-      title: existing?.meta.title ?? deriveSessionTitleFromMessages(input.messages),
-      createdAt: existing?.meta.createdAt ?? now,
-      updatedAt: now,
-      turns: countConversationTurns(input.messages),
-      traceIds: [...traceIds],
-      budget: input.budget ?? existing?.meta.budget,
-    };
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    const tmp = `${filePath}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify({ meta, messages: input.messages }, null, 2), "utf8");
-    fs.renameSync(tmp, filePath);
-  } catch {
-    // Persistence is best-effort; a failed write must not break the turn.
   }
 }

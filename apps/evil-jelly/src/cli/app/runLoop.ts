@@ -7,14 +7,19 @@ import {
 import type { TranscriptItem } from "../../services/session/sessionHistoryProjection";
 import {
   generateSessionId,
-  loadSession,
+  resumeSession,
   type SessionBudget,
 } from "../../services/session/sessionStore";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyHostBindings } from "../../shared/types";
 import { connectMcpProviders } from "../../tools/mcpServerKit";
 import { type RunEvilJellyHostOptions, runEvilJellyHost } from "./host/runHost";
-import { buildLegacyResumeSeed, hydrateResumeSeed, type SessionResumeSeed } from "./resume";
+import {
+  buildLegacyResumeSeed,
+  buildSessionResumeSeed,
+  hydrateResumeSeed,
+  type SessionResumeSeed,
+} from "./resume";
 
 export interface RunInteractiveLoopParams {
   bindings: EvilJellyHostBindings;
@@ -37,7 +42,7 @@ export interface RunInteractiveLoopParams {
   mockSourceTraceId?: string;
   /** Keep replay sessions away from durable local session state. */
   isolateSessionState?: boolean;
-  /** Internal Phase 4 switch; deliberately absent from the production composition root. */
+  /** Session V2 writer configuration. */
   sessionV2?: RunEvilJellyHostOptions["sessionV2"];
 }
 
@@ -103,11 +108,19 @@ function startNewSession(isolateSessionState: boolean): InteractiveSessionState 
   };
 }
 
-function loadResumedSession(
+async function loadResumedSession(
   state: InteractiveSessionState,
   requestedSessionId: string,
-): { state: ResumedSessionState; isSameSession: boolean } | undefined {
-  const record = loadSession(getWorkspaceFsPolicy().getRoot(), requestedSessionId);
+  sessionV2: RunEvilJellyHostOptions["sessionV2"],
+): Promise<{ state: ResumedSessionState; isSameSession: boolean } | undefined> {
+  if (!sessionV2) {
+    throw new Error("Session V2 configuration is required to resume a durable session");
+  }
+  const record = await resumeSession(getWorkspaceFsPolicy().getRoot(), requestedSessionId, {
+    originator: "evil-jelly-cli",
+    appVersion: sessionV2.appVersion,
+    ...(sessionV2?.sessionsRoot ? { sessionsRoot: sessionV2.sessionsRoot } : {}),
+  });
   if (!record) {
     return undefined;
   }
@@ -115,10 +128,7 @@ function loadResumedSession(
     isSameSession: record.meta.id === state.sessionId,
     state: {
       sessionId: record.meta.id,
-      resumeSeed: buildLegacyResumeSeed(record.messages, {
-        totalTurns: record.meta.turns,
-        budget: record.meta.budget,
-      }),
+      resumeSeed: buildSessionResumeSeed(record),
       // Resume reconstructs history; it must not inherit a startup snapshot.
       snapshot: undefined,
     },
@@ -134,10 +144,11 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
     isolateSessionState = false,
     sessionV2,
   } = params;
+  const initialResumeSeed = normalizeInitialResumeSeed(params);
   let state: InteractiveSessionState = {
     sessionId: params.sessionId,
     snapshot: params.snapshot,
-    resumeSeed: normalizeInitialResumeSeed(params),
+    resumeSeed: initialResumeSeed,
   };
 
   // Legacy callers historically hydrated the view themselves unless they supplied
@@ -186,7 +197,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
             bindings.logSystemEvent("Resume is disabled during mock replay.\n");
             return;
           }
-          const resumed = loadResumedSession(state, intent.sessionId);
+          const resumed = await loadResumedSession(state, intent.sessionId, sessionV2);
           if (!resumed) {
             bindings.logSystemEvent(`Resume failed: session ${intent.sessionId} not found.\n`);
             return;
