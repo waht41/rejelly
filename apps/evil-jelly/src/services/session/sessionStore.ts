@@ -11,14 +11,10 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { Message } from "@rejelly/core";
-import { getUserInputDisplay } from "../../shared/attachments/messageContent";
 import { resolveGlobalJellyDir } from "../../shared/globalPath";
-import {
-  countConversationTurns,
-  isCompactionBridgeMessage,
-  unwrapPriorUserMessageText,
-} from "../../shared/lib/compactionMessages";
+import { countConversationTurns } from "../../shared/lib/compactionMessages";
 import type { SessionBudgetData } from "./sessionEvents";
+import { deriveSessionTitleFromMessages } from "./sessionTitle";
 
 /**
  * Cumulative resource usage for a session, surviving across resume segments.
@@ -53,8 +49,6 @@ export interface SessionRecord {
   /** Top-level message_history (the Message[] MainCliAgent feeds back into the route handler). */
   messages: Message[];
 }
-
-const TITLE_MAX = 80;
 
 /** ~/.evil-jelly/sessions */
 export function resolveSessionsRoot(): string {
@@ -105,21 +99,6 @@ export function messageContentToText(content: Message["content"]): string {
   return "";
 }
 
-function deriveTitle(messages: Message[]): string {
-  const firstUser = messages.find(
-    (message) => message.role === "user" && !isCompactionBridgeMessage(message),
-  );
-  const raw = firstUser
-    ? (getUserInputDisplay(firstUser)?.text ??
-      unwrapPriorUserMessageText(messageContentToText(firstUser.content)))
-    : "";
-  const oneLine = raw.replace(/\s+/g, " ").trim();
-  if (!oneLine) {
-    return "(untitled)";
-  }
-  return oneLine.length > TITLE_MAX ? `${oneLine.slice(0, TITLE_MAX - 1)}…` : oneLine;
-}
-
 function readRecord(filePath: string): SessionRecord | undefined {
   try {
     const raw = fs.readFileSync(filePath, "utf-8");
@@ -166,7 +145,7 @@ export function persistSession(input: PersistSessionInput): void {
     const meta: SessionMeta = {
       id: input.sessionId,
       workspaceRoot: path.resolve(input.workspaceRoot),
-      title: existing?.meta.title ?? deriveTitle(input.messages),
+      title: existing?.meta.title ?? deriveSessionTitleFromMessages(input.messages),
       createdAt: existing?.meta.createdAt ?? now,
       updatedAt: now,
       turns: countConversationTurns(input.messages),

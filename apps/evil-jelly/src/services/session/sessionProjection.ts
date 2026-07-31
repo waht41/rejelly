@@ -1,16 +1,18 @@
 import path from "node:path";
-import type { Message } from "@rejelly/core";
-import { getUserInputDisplay } from "../../shared/attachments/messageContent";
-import { isCompactionBridgeMessage } from "../../shared/lib/compactionMessages";
 import type { SessionMetaLine, SessionStateEvent, SessionStatus } from "./sessionEvents";
 import type { PreparedSessionReplay } from "./sessionReplay";
 import type { SessionBudget } from "./sessionStore";
-import { messageContentToText } from "./sessionStore";
+import { deriveSessionTitle } from "./sessionTitle";
 
+/**
+ * Picker/status projection.
+ *
+ * This is intentionally independent from transcript and active-context projections: compaction
+ * changes model memory, but must not change the title, user-turn count, or trace chain shown for
+ * the durable session.
+ */
 export type { PreparedSessionEvent, PreparedSessionReplay } from "./sessionReplay";
 export { prepareSessionReplay } from "./sessionReplay";
-
-const TITLE_MAX = 80;
 
 export interface SessionSummary {
   id: string;
@@ -29,18 +31,6 @@ export interface SessionFileStat {
   mtimeMs: number;
 }
 
-function titleFromMessage(message: Message): string | undefined {
-  if (message.role !== "user" || isCompactionBridgeMessage(message)) {
-    return undefined;
-  }
-  const raw = getUserInputDisplay(message)?.text ?? messageContentToText(message.content);
-  const oneLine = raw.replace(/\s+/g, " ").trim();
-  if (!oneLine) {
-    return undefined;
-  }
-  return oneLine.length > TITLE_MAX ? `${oneLine.slice(0, TITLE_MAX - 1)}…` : oneLine;
-}
-
 function unique(values: string[]): string[] {
   return [...new Set(values)];
 }
@@ -50,6 +40,9 @@ export function projectSessionSummary(
   replay: PreparedSessionReplay,
   fileStat?: SessionFileStat,
 ): SessionSummary {
+  // A valid state checkpoint replaces the accumulated summary through its preceding seq. Events
+  // after it still replay normally, which covers crashes between a business event and the next
+  // checkpoint without making session_state a correctness dependency.
   let title = "(untitled)";
   let userTurns = 0;
   let budget: SessionBudget | undefined;
@@ -86,7 +79,7 @@ export function projectSessionSummary(
         ) {
           userTurnIds.add(event.turnId);
           userTurns += 1;
-          title = title === "(untitled)" ? (titleFromMessage(event.message) ?? title) : title;
+          title = title === "(untitled)" ? (deriveSessionTitle(event.message) ?? title) : title;
         }
         break;
       case "turn_completed":
@@ -103,6 +96,8 @@ export function projectSessionSummary(
         budget = event.budget;
         break;
       case "session_state":
+        // The writer contract emits state immediately after the events it covers. Reject a
+        // structurally valid but misplaced checkpoint rather than letting it erase suffix state.
         if (event.coveredThroughSeq !== event.seq - 1) {
           break;
         }
@@ -131,7 +126,10 @@ export function projectSessionSummary(
   };
 }
 
-/** Fast-path summary when a validated tail checkpoint is available. */
+/**
+ * Bounded listing fast path. Callers may use this only after the tail reader has validated the
+ * checkpoint pointer; otherwise they must fall back to projectSessionSummary over a replay.
+ */
 export function projectSessionSummaryFromState(
   meta: SessionMetaLine,
   state: SessionStateEvent,
