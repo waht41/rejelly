@@ -1,5 +1,5 @@
 import { link as terminalLink } from "ansi-escapes";
-import { Box, Text, useWindowSize } from "ink";
+import { Box, Text } from "ink";
 import type { ReactNode } from "react";
 import stringWidth from "string-width";
 import wrapAnsi from "wrap-ansi";
@@ -428,7 +428,7 @@ export function splitStreamingMarkdown(markdown: string): { stable: string; tail
  * Markdown renderer for a live stream: renders completed blocks via
  * {@link MarkdownViewer} and keeps the in-progress trailing block raw.
  */
-export function StreamMarkdownViewer({ text, columns }: { text: string; columns?: number }) {
+export function StreamMarkdownViewer({ text, columns }: { text: string; columns: number }) {
   const { stable, tail } = splitStreamingMarkdown(text);
   return (
     <Box flexDirection="column">
@@ -438,15 +438,7 @@ export function StreamMarkdownViewer({ text, columns }: { text: string; columns?
   );
 }
 
-export function MarkdownViewer({
-  text,
-  columns: explicitColumns,
-}: {
-  text: string;
-  columns?: number;
-}) {
-  const { columns: windowColumns } = useWindowSize();
-  const columns = explicitColumns ?? windowColumns;
+export function MarkdownViewer({ text, columns }: { text: string; columns: number }) {
   const blocks = parseMarkdownBlocks(text);
   const truncated = blocks.length > MAX_RENDER_BLOCKS;
   const visibleBlocks = truncated ? blocks.slice(0, MAX_RENDER_BLOCKS) : blocks;

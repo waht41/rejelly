@@ -1,4 +1,4 @@
-import { Box, Text, useStdout } from "ink";
+import { Box, Text } from "ink";
 import type { Turn } from "../store/useOutputStore";
 import { DiffBlock } from "./viewers/DiffViewer";
 import { MarkdownViewer } from "./viewers/MarkdownViewer";
@@ -55,9 +55,7 @@ function compactToolPreview(
   return contentLines.slice(0, TOOL_PREVIEW_OUTPUT_ROWS);
 }
 
-export function HistoryItem({ turn }: { turn: Turn }) {
-  const { stdout } = useStdout();
-  const columns = stdout?.columns ?? 80;
+export function HistoryItem({ turn, columns }: { turn: Turn; columns: number }) {
   if (turn.type === "banner") {
     const { model, dir, version } = turn.banner;
     return (
