@@ -82,6 +82,8 @@ export interface MainCliAgentProps extends EvilJellyHostBindings {
   traceId?: string;
   /** Restored active model context seeded as message_history on resume. */
   seedContext?: Message[];
+  /** Session image store consulted only when a model policy materializes durable locators. */
+  sessionBlobRoot?: string;
   /** @deprecated Compatibility alias; new callers should pass seedContext. */
   seedHistory?: Message[];
   /** Cumulative usage carried back from a resumed session, used as the /status base. */
@@ -190,6 +192,7 @@ async function handleCompress(runtime: RouterRuntime): Promise<void> {
     userInput: "Compress the current session history.",
     history: runtime.history,
     operation: "compress",
+    sessionBlobRoot: runtime.props.sessionBlobRoot,
   });
   if (!result.compactHistory) {
     runtime.host.logSystemEvent(`${result.reply || "Compression failed."}\n`);
@@ -276,6 +279,7 @@ async function runConversationTurn(
       userInput,
       attachments: lineInput.attachments,
       history: runtime.history,
+      sessionBlobRoot: runtime.props.sessionBlobRoot,
       sessionRecorder: runtime.props.sessionRecorder,
       turnId: activeTurnId,
     });

@@ -34,6 +34,8 @@ export interface ConversationAgentProps {
   attachments?: UserAttachment[];
   /** Prior conversation as model messages. */
   history?: Message[];
+  /** Session image store used to materialize durable locators only at the model policy boundary. */
+  sessionBlobRoot?: string;
   /** Where the final user-visible reply will be consumed. Defaults to terminal. */
   replySurface?: UserReplySurface;
   /** Internal top-level operation. Defaults to normal chat. */

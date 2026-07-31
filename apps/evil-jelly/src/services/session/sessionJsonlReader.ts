@@ -28,6 +28,8 @@ export const MAX_EVENT_LINE_BYTES = 128 * 1024 * 1024;
 
 export interface SessionStoragePaths {
   sessionsRoot?: string;
+  /** Content-addressed payload root; overridden alongside sessionsRoot by isolated tests/hosts. */
+  blobRoot?: string;
 }
 
 export interface SessionReadWarning {

@@ -100,7 +100,7 @@ export interface SessionWriter {
   close(options?: { flush?: boolean }): Promise<void>;
 }
 
-export interface OpenSessionWriterOptions extends SessionStoragePaths, SessionBlobStoreOptions {
+export interface OpenSessionWriterOptions extends SessionStoragePaths {
   traceId?: string;
 }
 

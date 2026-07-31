@@ -64,6 +64,7 @@ export interface RunEvilJellyHostOptions {
     enabled: true;
     appVersion: string;
     sessionsRoot?: string;
+    blobRoot?: string;
   };
 }
 
@@ -108,6 +109,7 @@ async function openRunSessionRecorder(
     ...(model.provider ? { provider: model.provider } : {}),
     cwd: process.cwd(),
     ...(sessionV2.sessionsRoot ? { sessionsRoot: sessionV2.sessionsRoot } : {}),
+    ...(sessionV2.blobRoot ? { blobRoot: sessionV2.blobRoot } : {}),
   });
 }
 
@@ -188,6 +190,7 @@ export async function runEvilJellyHost(
           seedContext,
           seedHistory,
           seedBudget,
+          sessionBlobRoot: options.sessionV2?.blobRoot,
           isolateSessionState: options.isolateSessionState,
           sessionRecorder: recorder,
         }),

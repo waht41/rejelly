@@ -120,6 +120,7 @@ async function loadResumedSession(
     originator: "evil-jelly-cli",
     appVersion: sessionV2.appVersion,
     ...(sessionV2?.sessionsRoot ? { sessionsRoot: sessionV2.sessionsRoot } : {}),
+    ...(sessionV2?.blobRoot ? { blobRoot: sessionV2.blobRoot } : {}),
   });
   if (!record) {
     return undefined;
