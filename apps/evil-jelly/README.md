@@ -32,6 +32,25 @@ evil audit --family clone
 
 Run `evil` to chat, inspect and search code, edit files with diff confirmation, execute commands, and verify changes in one unified session.
 
+### Durable sessions
+
+Interactive conversations are saved locally and can be continued with `evil --resume` or the in-session `/resume` command. Sessions are scoped to the active workspace, and the picker shows the most recently updated sessions for that workspace.
+
+New conversations use an append-only JSONL event log. A session file is created only after the first user message is submitted, so opening Evil Jelly to inspect `/status` or exiting immediately does not leave an empty session. Only one process may write a session at a time.
+
+Compaction keeps two views of the conversation:
+
+- The transcript retains the complete user-visible history.
+- The active model context uses the latest compacted summary and bounded recent context.
+
+Resuming restores the active context, cumulative usage, and a bounded tail of the transcript without loading the complete UI history into the terminal. Interrupted turns are closed during recovery and are not automatically rerun. In particular, a tool call whose result is unknown is recorded as interrupted rather than executed again.
+
+Pasted images are copied into Evil Jelly's content-addressed blob store when the message is submitted. Session history therefore does not depend on the clipboard's temporary source file. Compaction may omit older images from model context to stay within its token budget, but it does not delete their transcript events or stored blobs.
+
+Legacy `.json` sessions remain visible. The first resume migrates a legacy session to a self-contained V2 `.jsonl` log while leaving the original file unchanged. Migration, corruption, and permission failures stop resume instead of silently falling back to a different copy. History already discarded by legacy compaction cannot be reconstructed.
+
+Session logs are stored under `~/.evil-jelly/sessions/<workspace-bucket>/`; image blobs are stored under `~/.evil-jelly/blobs/`. Evil Jelly does not yet provide session deletion, retention, or blob garbage collection. To remove all locally saved conversations, stop Evil Jelly and delete both directories. Deleting a single session log does not reclaim shared blobs.
+
 ### One-shot audits
 
 Run `evil audit --family <name>` to analyze a workspace without modifying it. Reports and their ledger are written to `.evil-jelly/audit/`.

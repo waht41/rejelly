@@ -2,4 +2,6 @@
 "@rejelly/evil-jelly": minor
 ---
 
-Store new sessions in append-only JSONL logs, keep legacy JSON sessions visible, and safely migrate a legacy session the first time it is resumed without overwriting its original file.
+Store interactive sessions in append-only JSONL logs with single-writer protection and interrupted-turn recovery. Keep the complete transcript separate from compacted model context, persist pasted images in a content-addressed blob store, and avoid creating files for untouched new sessions.
+
+Legacy JSON sessions remain visible and migrate to a self-contained V2 log on first resume without overwriting the original file. Corrupt or unreadable sessions and failed migrations now stop resume instead of silently falling back.
