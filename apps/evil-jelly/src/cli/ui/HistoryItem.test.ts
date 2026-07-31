@@ -1,26 +1,16 @@
 import { renderToString } from "ink";
 import { createElement } from "react";
 import stripAnsi from "strip-ansi";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { Turn } from "../store/useOutputStore";
 import { HistoryItem } from "./HistoryItem";
 
 const COLUMNS = 60;
 
-// HistoryItem sizes itself from useStdout(), which renderToString does not
-// provide — its `columns` option only sets the Yoga root. Both have to agree or
-// the component pins a width the render surface does not have.
-let realColumns: number | undefined;
-beforeEach(() => {
-  realColumns = process.stdout.columns;
-  process.stdout.columns = COLUMNS;
-});
-afterEach(() => {
-  process.stdout.columns = realColumns as number;
-});
-
 function renderTurn(turn: Turn): string[] {
-  const output = renderToString(createElement(HistoryItem, { turn }), { columns: COLUMNS });
+  const output = renderToString(createElement(HistoryItem, { turn, columns: COLUMNS }), {
+    columns: COLUMNS,
+  });
   return stripAnsi(output).split("\n");
 }
 
