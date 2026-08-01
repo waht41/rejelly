@@ -18,6 +18,8 @@ import {
 const MAX_FALLBACK_FILE_BYTES = 200 * 1024;
 const MAX_FALLBACK_FILES = 8000;
 const TRUNCATE_MAX_LINES = 300;
+/** Bound every model-facing grep line, including native backend output and context lines. */
+export const MAX_GREP_OUTPUT_LINE_BYTES = 4 * 1024;
 const DEFAULT_CONTEXT_LINES = 3;
 const MAX_CONTEXT_LINES = 12;
 
@@ -37,11 +39,57 @@ const GrepSearchSchema = z.object({
     ),
 });
 
+function utf8Prefix(value: string, maxBytes: number): string {
+  let low = 0;
+  let high = value.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (Buffer.byteLength(value.slice(0, middle), "utf8") <= maxBytes) {
+      low = middle;
+    } else {
+      high = middle - 1;
+    }
+  }
+  while (low > 0 && /[\uD800-\uDBFF]/.test(value[low - 1] ?? "")) {
+    low -= 1;
+  }
+  return value.slice(0, low);
+}
+
+function utf8Suffix(value: string, maxBytes: number): string {
+  let low = 0;
+  let high = value.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (Buffer.byteLength(value.slice(middle), "utf8") <= maxBytes) {
+      high = middle;
+    } else {
+      low = middle + 1;
+    }
+  }
+  while (low < value.length && /[\uDC00-\uDFFF]/.test(value[low] ?? "")) {
+    low += 1;
+  }
+  return value.slice(low);
+}
+
+function truncateLongOutputLine(line: string): string {
+  const originalBytes = Buffer.byteLength(line, "utf8");
+  if (originalBytes <= MAX_GREP_OUTPUT_LINE_BYTES) {
+    return line;
+  }
+  const marker = ` … [grep line truncated: ${originalBytes} bytes] … `;
+  const contentBudget = MAX_GREP_OUTPUT_LINE_BYTES - Buffer.byteLength(marker, "utf8");
+  const prefixBudget = Math.ceil((contentBudget * 2) / 3);
+  const suffixBudget = contentBudget - prefixBudget;
+  return `${utf8Prefix(line, prefixBudget)}${marker}${utf8Suffix(line, suffixBudget)}`;
+}
+
 function truncateOutput(text: string, maxLines = TRUNCATE_MAX_LINES): string {
   const trimmed = text.trimEnd();
-  const lines = trimmed.split("\n");
+  const lines = trimmed.split("\n").map(truncateLongOutputLine);
   if (lines.length <= maxLines) {
-    return trimmed.length > 0 ? trimmed : text;
+    return trimmed.length > 0 ? lines.join("\n") : text;
   }
   return [
     ...lines.slice(0, maxLines),
@@ -130,7 +178,16 @@ function runRipgrep(
   // Keep native backends consistent: git grep and Node fallback both search case-insensitively.
   // NB: ripgrep's -I means --no-filename (it would cancel -H); ripgrep already skips binary files
   // by default, so the binary-skip intent needs no flag here.
-  const args = ["-n", "-H", "-i", query, ...rgExcludeGlobs()];
+  const args = [
+    "-n",
+    "-H",
+    "-i",
+    "--max-columns",
+    String(MAX_GREP_OUTPUT_LINE_BYTES),
+    "--max-columns-preview",
+    query,
+    ...rgExcludeGlobs(),
+  ];
   args.push("-C", String(clampContextLines(contextLines)));
   if (filePattern) {
     args.push("-g", filePattern);
@@ -328,6 +385,7 @@ export const GrepSearchTool: ToolDefinition<typeof GrepSearchSchema> = {
     "Skips node_modules and .git. Uses ripgrep when available, then git grep if rg is missing, then a bounded Node scan only if both native tools are unavailable. " +
     "Native tools mostly respect .gitignore; git grep expands trailing `*.{ext,...}` style globs into multiple pathspecs. " +
     "Supports configurable context lines (default 3, max 12). " +
+    `Every output line is capped at ${MAX_GREP_OUTPUT_LINE_BYTES / 1024} KB; oversized matching or context lines retain their beginning and end with a truncation marker. ` +
     "The Node fallback uses case-insensitive JavaScript RegExp (`i` flag) and picomatch for filePattern.",
   parameters: GrepSearchSchema,
   handler: async ({ query, filePattern, contextLines }) => {

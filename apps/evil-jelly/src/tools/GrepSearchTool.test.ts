@@ -16,7 +16,7 @@ vi.mock("node:child_process", () => ({
   execFileSync: execFileSyncMock,
 }));
 
-import { executeGrepSearch, GrepSearchTool } from "./GrepSearchTool";
+import { executeGrepSearch, GrepSearchTool, MAX_GREP_OUTPUT_LINE_BYTES } from "./GrepSearchTool";
 
 describe("GrepSearchTool contextLines", () => {
   beforeEach(() => {
@@ -78,6 +78,34 @@ describe("GrepSearchTool contextLines", () => {
       expect.arrayContaining(["-i"]),
       expect.any(Object),
     );
+  });
+
+  it("asks ripgrep to preview rather than emit unbounded source lines", async () => {
+    execFileSyncMock.mockReturnValue("src/file.ts:1:needle\n");
+
+    await executeGrepSearch("needle", "*.ts", 0);
+
+    expect(execFileSyncMock).toHaveBeenCalledWith(
+      "rg",
+      expect.arrayContaining([
+        "--max-columns",
+        String(MAX_GREP_OUTPUT_LINE_BYTES),
+        "--max-columns-preview",
+      ]),
+      expect.any(Object),
+    );
+  });
+
+  it("bounds native backend output lines while retaining their beginning and end", async () => {
+    const longLine = `src/bundle.js:1:needle-${"x".repeat(MAX_GREP_OUTPUT_LINE_BYTES * 2)}-tail`;
+    execFileSyncMock.mockReturnValue(`${longLine}\n`);
+
+    const out = await executeGrepSearch("needle", "*.js", 0);
+
+    expect(Buffer.byteLength(out, "utf8")).toBeLessThanOrEqual(MAX_GREP_OUTPUT_LINE_BYTES);
+    expect(out).toContain("src/bundle.js:1:needle-");
+    expect(out).toContain("[grep line truncated:");
+    expect(out).toContain("-tail");
   });
 
   it("accepts out-of-range contextLines in schema and clamps in handler", async () => {
@@ -164,5 +192,28 @@ describe("GrepSearchTool Node fallback context merge", () => {
     expect(out).toContain("sample.ts-8-around-c");
     expect(out).toContain("sample.ts:9:needle");
     expect(out).toContain("sample.ts-10-around-d");
+  });
+
+  it("bounds oversized matching lines in the Node fallback", async () => {
+    const missingBinaryError = () =>
+      Object.assign(new Error("missing binary"), {
+        code: "ENOENT",
+      });
+    execFileSyncMock.mockImplementation(() => {
+      throw missingBinaryError();
+    });
+    await fs.writeFile(
+      path.join(tmpDir, "bundle.ts"),
+      `needle-${"界".repeat(MAX_GREP_OUTPUT_LINE_BYTES)}-tail`,
+      "utf8",
+    );
+
+    const out = await executeGrepSearch("needle", "*.ts", 0);
+
+    expect(Buffer.byteLength(out, "utf8")).toBeLessThanOrEqual(MAX_GREP_OUTPUT_LINE_BYTES);
+    expect(out).toContain("bundle.ts:1:needle-");
+    expect(out).toContain("[grep line truncated:");
+    expect(out).toContain("-tail");
+    expect(out).not.toContain("�");
   });
 });

@@ -109,7 +109,7 @@ describe("ReadFileTool", () => {
     const output = await ReadFileTool.handler({ filePaths: ["bundle.js"] });
 
     expect(output).toContain(`above the ${MAX_READ_LINE_BYTES / 1024} KB single-line limit`);
-    expect(output).toContain("use grep_search");
+    expect(output).toContain("use grep");
     expect(output).not.toContain("x".repeat(100));
   });
 

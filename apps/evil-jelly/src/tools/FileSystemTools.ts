@@ -196,7 +196,7 @@ function oversizedLineError(hit: { line: number; bytes: number }): string {
   return (
     `Error: Line ${hit.line} is ${hit.bytes} bytes, above the ` +
     `${MAX_READ_LINE_BYTES / 1024} KB single-line limit. ` +
-    "This is likely generated/minified output or a pathological log line; use grep_search " +
+    "This is likely generated/minified output or a pathological log line; use grep " +
     "to locate a smaller, relevant result instead of loading the line into context."
   );
 }
