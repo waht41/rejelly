@@ -11,7 +11,11 @@ export default defineConfig({
   splitting: false,
   sourcemap: false,
   external: ["undici"],
-  noExternal: ["@rejelly/core", "@rejelly/adapter-openai", "openai", "ink"],
+  // Ink delegates every `<Text wrap="wrap">` to wrap-ansi. Keep the patched
+  // CJK-aware implementation in the published executable; leaving it external
+  // would make the installed CLI depend on whichever unpatched copy Node finds
+  // beside dist at runtime.
+  noExternal: ["@rejelly/core", "@rejelly/adapter-openai", "openai", "ink", "wrap-ansi"],
   banner: {
     js: [
       "#!/usr/bin/env node",
