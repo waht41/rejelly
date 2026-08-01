@@ -221,6 +221,16 @@ function flushPendingStream(): void {
   }));
 }
 
+/**
+ * Everything the stream still holds, ready to be committed: the batched deltas first (so their
+ * stable part reaches history in order), then the source the markdown holdback has not released.
+ * Leaves the controller reset, so text arriving after the interruption starts a fresh fragment.
+ */
+function takeStreamTail(): string {
+  flushPendingStream();
+  return streamController.drain();
+}
+
 function clearToolOutputFlushTimer(): void {
   if (toolOutputFlushTimer === undefined) {
     return;
@@ -508,12 +518,27 @@ export const useOutputStore = create<OutputState>((set) => ({
     // `/expand-tool` — so it must not retire the running tools or report the
     // agent idle. The real boundaries (logAssistant, clearStream, clearHistory)
     // still reset both.
-    clearPendingStream();
-    streamController.reset();
+    //
+    // The stream it interrupts must be committed rather than dropped: text the model
+    // wrote before calling a tool is on screen only as the transient tail, and the
+    // markdown holdback keeps a whole trailing list or table there — which is the shape
+    // "here is what I am about to do" output takes. Discarding it here erased that
+    // reasoning from the transcript at every auto-allowed call.
+    const tail = takeStreamTail();
     set((state) => ({
       history: [
         ...state.history,
-        { id: `s_${turnIdCounter++}`, type: "system", content, oneLine: options?.oneLine },
+        // Ahead of the notice: this text was written before whatever the notice reports.
+        ...(tail.length > 0
+          ? [
+              {
+                id: `as_${turnIdCounter++}`,
+                type: "assistant_stream" as const,
+                content: tail,
+              },
+            ]
+          : []),
+        { id: `s_${turnIdCounter++}`, type: "system" as const, content, oneLine: options?.oneLine },
       ],
       streamBuffer: "",
     }));
