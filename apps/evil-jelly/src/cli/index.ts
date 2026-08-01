@@ -30,13 +30,25 @@ async function main() {
   const args = parseCliArgs();
   const appVersion = getCliVersion();
   if (args.kind === "init") {
-    await runInitCommand(args.cliApiKey, args.initBaseUrl, args.initModelId);
+    await runInitCommand({
+      apiKey: args.cliApiKey,
+      baseUrl: args.initBaseUrl,
+      modelId: args.initModelId,
+      envFile: args.envFile,
+    });
     process.exit(0);
   }
   applyWorkspaceRootFromArgs(args.workspace);
   initSettings(args.settings);
 
-  loadEvilJellyEnv({ cliApiKey: args.cliApiKey });
+  try {
+    loadEvilJellyEnv({ cliApiKey: args.cliApiKey, envFile: args.envFile });
+  } catch (error) {
+    // A misnamed profile or a profile that would leak a key across endpoints: user-facing
+    // config errors, so print the line rather than the stack the top-level catch would show.
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
 
   switch (args.kind) {
     case "audit":

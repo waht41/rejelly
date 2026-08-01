@@ -21,6 +21,7 @@ const trackedEnvKeys = [
   "OPENAI_PROVIDER",
   "OPENAI_MODEL_ID",
   "OPENAI_CONTEXT_WINDOW",
+  "WEB_TIMEOUT_MS",
   "USE_PROXY",
   "PROXY_URL",
   "HTTP_PROXY",
@@ -51,6 +52,22 @@ function createWorkspaceWithEnv(content: string): string {
 function writeGlobalEnv(homeDir: string, content: string): void {
   fs.mkdirSync(path.join(homeDir, ".evil-jelly"), { recursive: true });
   fs.writeFileSync(path.join(homeDir, ".evil-jelly", ".env"), content, "utf-8");
+}
+
+/** Write a named `--env` profile beside the global file under the mocked home dir. */
+function writeEnvProfile(homeDir: string, name: string, content: string): string {
+  const dir = path.join(homeDir, ".evil-jelly");
+  fs.mkdirSync(dir, { recursive: true });
+  const filePath = path.join(dir, `${name}.env`);
+  fs.writeFileSync(filePath, content, "utf-8");
+  return filePath;
+}
+
+/** Temp home dir bound as `os.homedir()`, so ~/.evil-jelly resolves inside it. */
+function useHomeDir(): string {
+  const homeDir = createTempDir("evil-jelly-home-");
+  vi.spyOn(os, "homedir").mockReturnValue(homeDir);
+  return homeDir;
 }
 
 function restoreTrackedEnv() {
@@ -216,6 +233,94 @@ describe("loadEvilJellyEnv", () => {
 
     expect(undiciMock.EnvHttpProxyAgent).not.toHaveBeenCalled();
     expect(undiciMock.setGlobalDispatcher).not.toHaveBeenCalled();
+  });
+});
+
+describe("loadEvilJellyEnv with --env", () => {
+  it("resolves a bare name to ~/.evil-jelly/<name>.env and outranks the shell", () => {
+    const homeDir = useHomeDir();
+    writeEnvProfile(homeDir, "luna", "OPENAI_API_KEY=luna-key\nOPENAI_MODEL_ID=luna-model\n");
+    createWorkspaceWithEnv("OPENAI_MODEL_ID=workspace-model\n");
+    process.env.OPENAI_MODEL_ID = "shell-model";
+
+    loadEvilJellyEnv({ envFile: "luna" });
+
+    // The whole point of the flag: an exported model id must not survive an explicit profile.
+    expect(process.env.OPENAI_MODEL_ID).toBe("luna-model");
+    expect(process.env.OPENAI_API_KEY).toBe("luna-key");
+  });
+
+  it("still loses to --api-key", () => {
+    const homeDir = useHomeDir();
+    writeEnvProfile(homeDir, "luna", "OPENAI_API_KEY=luna-key\n");
+    createWorkspaceWithEnv("");
+
+    loadEvilJellyEnv({ envFile: "luna", cliApiKey: "cli-key" });
+
+    expect(process.env.OPENAI_API_KEY).toBe("cli-key");
+  });
+
+  it("falls through to the lower layers for vars the profile does not set", () => {
+    const homeDir = useHomeDir();
+    writeEnvProfile(homeDir, "luna", "OPENAI_API_KEY=luna-key\n");
+    writeGlobalEnv(homeDir, "WEB_TIMEOUT_MS=9000\n");
+    createWorkspaceWithEnv("");
+    delete process.env.WEB_TIMEOUT_MS;
+
+    loadEvilJellyEnv({ envFile: "luna" });
+
+    expect(process.env.WEB_TIMEOUT_MS).toBe("9000");
+  });
+
+  it("accepts a path instead of a profile name", () => {
+    useHomeDir();
+    const dir = createTempDir("evil-jelly-profile-");
+    const filePath = path.join(dir, "custom.env");
+    fs.writeFileSync(filePath, "OPENAI_API_KEY=path-key\n", "utf-8");
+    createWorkspaceWithEnv("");
+
+    loadEvilJellyEnv({ envFile: filePath });
+
+    expect(process.env.OPENAI_API_KEY).toBe("path-key");
+  });
+
+  it("fails on an unknown profile and names the ones that exist", () => {
+    const homeDir = useHomeDir();
+    writeEnvProfile(homeDir, "luna", "OPENAI_API_KEY=luna-key\n");
+    writeEnvProfile(homeDir, "ds-max", "OPENAI_API_KEY=ds-key\n");
+    // The default file shares the directory but is the unnamed identity, not a profile.
+    writeGlobalEnv(homeDir, "OPENAI_API_KEY=global-key\n");
+    createWorkspaceWithEnv("");
+
+    expect(() => loadEvilJellyEnv({ envFile: "typo" })).toThrow("Known profiles: ds-max, luna.");
+  });
+
+  it("aborts when a profile redirects the endpoint without carrying its own key", () => {
+    const homeDir = useHomeDir();
+    writeEnvProfile(homeDir, "luna", "OPENAI_BASE_URL=https://elsewhere.example/v1\n");
+    writeGlobalEnv(homeDir, "OPENAI_API_KEY=global-key\n");
+    createWorkspaceWithEnv("");
+    delete process.env.OPENAI_API_KEY;
+
+    expect(() => loadEvilJellyEnv({ envFile: "luna" })).toThrow(
+      /sets OPENAI_BASE_URL without OPENAI_API_KEY/,
+    );
+  });
+
+  it("accepts routing vars when the profile carries its own key", () => {
+    const homeDir = useHomeDir();
+    writeEnvProfile(
+      homeDir,
+      "luna",
+      "OPENAI_API_KEY=luna-key\nOPENAI_BASE_URL=https://elsewhere.example/v1\n",
+    );
+    createWorkspaceWithEnv("");
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_BASE_URL;
+
+    loadEvilJellyEnv({ envFile: "luna" });
+
+    expect(process.env.OPENAI_BASE_URL).toBe("https://elsewhere.example/v1");
   });
 });
 

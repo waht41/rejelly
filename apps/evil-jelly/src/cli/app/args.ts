@@ -13,6 +13,8 @@ import type { SettingsCliOverrides } from "../../shared/settings";
 type CommonParsedArgs = {
   /** OPENAI_API_KEY override from CLI; highest priority. */
   cliApiKey: string | undefined;
+  /** `--env` profile name or path: one file per endpoint identity, outranking the shell. */
+  envFile: string | undefined;
   review: boolean;
   /** Resolved absolute path when --workspace is set (agent workspace fs policy root). */
   workspace: string | undefined;
@@ -215,6 +217,10 @@ cli
   .usage("[command] [options]")
   .option("--api-key <key>", "OPENAI_API_KEY override for this command")
   .option(
+    "--env <name|path>",
+    "Env profile to load above the shell: a name resolves to ~/.evil-jelly/<name>.env",
+  )
+  .option(
     "--workspace <dir>",
     "Workspace root for config and agent tools; defaults to the current directory",
   )
@@ -399,6 +405,7 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
   const auditLedgerGcDays = resolvePositiveInteger(options.ledgerGcDays, "--ledger-gc-days");
   const common: CommonParsedArgs = {
     cliApiKey: resolveOptionalString(options.apiKey),
+    envFile: resolveOptionalString(options.env),
     review: Boolean(options.review),
     workspace,
     settings: {

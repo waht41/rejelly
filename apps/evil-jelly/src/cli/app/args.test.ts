@@ -92,6 +92,12 @@ describe("parseCliArgs", () => {
     expect(args.initModelId).toBe("deepseek-chat");
   });
 
+  it("carries --env on both the run loop and init", () => {
+    expect(parseCliArgs(["node", "evil", "--env", "luna"]).envFile).toBe("luna");
+    expect(parseCliArgs(["node", "evil", "init", "--env", "luna"]).envFile).toBe("luna");
+    expect(parseCliArgs(["node", "evil"]).envFile).toBeUndefined();
+  });
+
   it("parses --headless --input as the direct UnifiedAgent headless mode", () => {
     const args = parseCliArgs(["node", "evil", "--headless", "--input", "hello"]);
     expect(args.kind).toBe("run");
