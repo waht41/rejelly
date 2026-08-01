@@ -583,6 +583,7 @@ onStream(
 - `onStream` 绑定在**当前 Generation** 上，不跨 reborn 复用。
 - consumer 会在 `promptAgent()` / `promptChat()` 跨过 draft barrier 后启动；即使后续一条流事件都没有（例如模型调用立即失败），consumer 也会收到结束信号，`finally` 仍会执行。
 - 当前 Generation 结束时（正常返回、抛错、取消、reborn），框架会主动关闭该 Generation 的 stream。
+- **没有 Generation 级别的“流结束”事件，这是刻意的。** generator 结束本身就是这个信号；每个 turn 则由 `turn_done` 标记边界。Generation 关闭流以及任一 signal 取消时，循环都会正常退出。生产侧失败通过 `error` 事件送达，不会使 generator 抛出；consumer 自己的代码仍可能抛错，因此必须在所有路径上执行的清理应放在包住循环的 `finally` 里。
 
 **事件模型：**
 
@@ -622,10 +623,25 @@ type AgentStreamEvent =
   - `status: 'partial'`：流尚未结束，当前是中间态。
   - `status: 'complete'`：流已结束，最终结构化结果有效。
   - `status: 'error'`：流已结束，但最终结构化结果无效或不完整。
-- `tool_call_stream`：底层工具调用 chunk，保留原始分片。
-- `tool_call`：框架已把 chunk 合并成完整 `ToolCall`。
+  - 未提供 schema 时，只有文本被成功识别为 JSON 对象才会发出快照；普通文本不会产生解析失败噪音。
+- `tool_call_stream`：底层工具调用 chunk，保留原始分片。一次调用会流出多个 chunk，它们共享同一个 `chunk.index`。
+- `tool_call`：框架已把 chunk 合并成完整 `ToolCall`。它在本 turn 的 `turn_done` 之前、工具开始执行之前发出。
 - `extra`：适配器/模型返回的额外元数据。
-- `turn_done`：当前 turn 完成；可用于从“流式状态”切换到“静态状态”。
+- `turn_done`：本 turn 的最后一个流事件，携带适配器的 `finishReason`（成功结束但适配器未提供时为 `unknown`）；此时最终快照与完整调用均已就绪，但工具尚未开始执行。
+
+**单个 turn 内的事件顺序：**
+
+适配器报告 `finish` 时，框架会先保留其 `finishReason`；只有在完整消费适配器流并准备好所有派生事件后，才发出 `turn_done`：
+
+```
+turn_start → text / reasoning / structured_data(partial) / tool_call_stream …
+  → structured_data (complete|error)   ← 权威的解析结果
+  → tool_call × n                      ← 装配完成的调用
+  → turn_done                          ← 本 turn 的最后一个事件
+  → （工具执行，然后是下一个 turn_start）
+```
+
+consumer 可以安全地把 `turn_done` 当成本 turn 的汇总点：此时本轮所有 `tool_call` 均已发出，工具尚未开始执行。
 
 **常见 UI 策略：先输出 `text`，一旦收到 `structured_data` 就停掉本 turn 后续的普通 `text`。**
 

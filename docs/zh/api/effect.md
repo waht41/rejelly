@@ -43,16 +43,22 @@ const result = await promptAgent(ResponseSchema);
 | `text` | 模型正文增量，字段为 `delta` |
 | `reasoning` | 推理/思考增量，字段为 `delta` |
 | `structured_data` | 当前文本缓冲解析出的结构化数据 |
-| `tool_call_stream` | 工具调用参数的流式分片 |
-| `tool_call` | 工具调用已组装完成 |
+| `tool_call_stream` | 工具调用参数的流式分片；一次调用会流出多个 chunk，共享同一个 `chunk.index` |
+| `tool_call` | 工具调用已组装完成；在 `turn_done` 之前、工具执行之前发出 |
 | `usage` | token usage |
 | `extra` | 适配器/模型返回的额外元数据 |
-| `turn_done` | 一个 LLM turn 结束 |
+| `turn_done` | 本 turn 的最后一个事件，携带适配器的 `finishReason`（缺省时为 `unknown`）；工具尚未开始执行 |
 | `error` | 流式过程中出现错误 |
+
+框架在适配器报告 `finish` 时保留 `finishReason`，随后完整消费适配器流，按需发出最终 `structured_data` 快照和每个装配完成的 `tool_call`，最后才发出 `turn_done`。因此可以安全地在这里汇总本轮。完整顺序见 [Core API 的 `onStream`](./core.md#onstream-consumer-options)。
+
+Generation 流没有单独的结束事件：`for await...of` 循环结束就是这个信号。正常关闭、取消以及生产侧失败后（失败会先作为 `error` 事件送达），循环都会正常退出。consumer 自己的代码仍可能抛错，因此必须始终执行的清理要放进 `finally`。
 
 ### `structured_data`
 
 `structured_data` 是结构化输出 UI 最常用的事件：
+
+未提供 schema 时，只有累积文本被成功识别为 JSON 对象才会发出该事件；普通文本不会产生无效快照或最终解析错误。
 
 ```typescript
 onStream(

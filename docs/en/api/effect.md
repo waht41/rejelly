@@ -43,16 +43,22 @@ const result = await promptAgent(ResponseSchema);
 | `text` | Model text delta, field is `delta` |
 | `reasoning` | Reasoning/thinking delta, field is `delta` |
 | `structured_data` | Structured data parsed from the current text buffer |
-| `tool_call_stream` | Streaming chunks of tool call parameters |
-| `tool_call` | Tool call fully assembled |
+| `tool_call_stream` | Streaming chunks of tool call parameters; one call streams many chunks sharing a `chunk.index` |
+| `tool_call` | Tool call fully assembled; emitted before `turn_done` and before the tools run |
 | `usage` | Token usage |
 | `extra` | Extra metadata returned by the adapter/model |
-| `turn_done` | An LLM turn ends |
+| `turn_done` | Final event of the turn, with the adapter's `finishReason` (`unknown` if omitted); tools have not started yet |
 | `error` | An error occurred during streaming |
+
+The engine retains the adapter's `finishReason`, drains the adapter stream, emits the final `structured_data` snapshot when applicable and one `tool_call` per assembled call, then emits `turn_done`. It is therefore safe to summarize the turn there. See [`onStream` in the Core API](./core.md#onstream-consumer-options) for the full ordering.
+
+The Generation stream has no separate end event: the `for await...of` loop ending is the signal. It ends normally on close, cancellation, and after producer failures (which arrive as `error` events). A consumer can still throw from its own code, so use `finally` for cleanup that must always run.
 
 ### `structured_data`
 
 `structured_data` is the most commonly used event for structured output UIs:
+
+Without a schema, it is emitted only when the accumulated text is successfully recognized as a JSON object. Ordinary prose does not emit invalid snapshots or a final parse error.
 
 ```typescript
 onStream(
