@@ -323,9 +323,9 @@ describe("phaseForStreamEvent", () => {
     expect(phaseForStreamEvent({ type: "text", delta: "" }, midTurn)).toBeNull();
   });
 
-  it("ignores the final structured snapshot that lands after the turn ended", () => {
-    // The engine emits one last complete-parse snapshot after turn_done; reading it as fresh
-    // output would flip the line back to "Responding" and restart the timer on a finished turn.
+  it("ignores a late structured snapshot after the turn ended", () => {
+    // turn_done is the engine's final per-turn event; keep the helper robust to late or
+    // externally supplied snapshots so they cannot restart the timer on a finished turn.
     const ended = { modelSpoke: true, turnEnded: true };
     expect(
       phaseForStreamEvent({ type: "structured_data", data: { reply: "x" } }, ended),
