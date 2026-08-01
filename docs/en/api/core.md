@@ -583,6 +583,7 @@ onStream(
 - `onStream` is bound to the **current Generation** and does not survive reborn.
 - The consumer starts after `promptAgent()` / `promptChat()` crosses the draft barrier; even if no stream events follow (e.g., model call fails immediately), the consumer receives an end signal, and `finally` still executes.
 - When the current Generation ends (normal return, error, cancellation, reborn), the framework actively closes that Generation's stream.
+- **There is no Generation-level "stream ended" event, by design.** The generator completing is that signal; `turn_done` marks each individual turn. The loop exits normally when the Generation closes the stream and when either signal cancels it. Producer failures arrive as `error` events and do not make the generator throw. A consumer can still throw from its own code, so cleanup that must run on every path belongs in a `finally` around the loop.
 
 **Event model:**
 
@@ -622,10 +623,25 @@ type AgentStreamEvent =
   - `status: 'partial'`: Stream not yet ended, currently an intermediate state.
   - `status: 'complete'`: Stream ended, final structured result is valid.
   - `status: 'error'`: Stream ended, but final structured result is invalid or incomplete.
-- `tool_call_stream`: Underlying tool call chunks, preserving raw fragments.
-- `tool_call`: Framework has merged chunks into a complete `ToolCall`.
+  - Without a schema, snapshots are emitted only when the text is successfully recognized as a JSON object; ordinary prose does not produce parse-error noise.
+- `tool_call_stream`: Underlying tool call chunks, preserving raw fragments. One call streams as many chunks, all carrying the same `chunk.index`.
+- `tool_call`: Framework has merged chunks into a complete `ToolCall`. Emitted before this turn's `turn_done` and before the tools run.
 - `extra`: Extra metadata from the adapter/model.
-- `turn_done`: Current turn completed; useful for transitioning from "streaming state" to "static state."
+- `turn_done`: The turn's final stream event. It carries the adapter's `finishReason` (`unknown` if a successful adapter stream supplied none); all final snapshots and assembled calls are already available, but tools have not started yet.
+
+**Event ordering within one turn:**
+
+The adapter's `finishReason` is retained when `finish` arrives, but `turn_done` is emitted only after the adapter stream has been fully drained and all events derived from it are ready:
+
+```
+turn_start → text / reasoning / structured_data(partial) / tool_call_stream …
+  → structured_data (complete|error)   ← the authoritative parse
+  → tool_call × n                      ← the assembled calls
+  → turn_done                    ← final event of this turn
+  → (tools run, then the next turn_start)
+```
+
+Consumers can safely use `turn_done` as the per-turn summary point. At that point every `tool_call` for the turn has been emitted and the tools have not started executing.
 
 **Common UI strategy: output `text` first, once `structured_data` is received, stop subsequent plain `text` for this turn.**
 

@@ -97,6 +97,12 @@ function createLLMStreamEmitter(options: {
       schema,
     });
 
+    // Schema-less chat may still expose structured snapshots when its text is a JSON object,
+    // but ordinary prose failing an optional parse is not a structured-output error.
+    if (!schema && !result.parsed) {
+      return;
+    }
+
     emitStreamEvent(ctx, {
       type: "structured_data",
       turnIndex,
@@ -151,15 +157,6 @@ function createLLMStreamEmitter(options: {
         turnIndex,
         channel,
         usage: usagePayload,
-      });
-    },
-    emitTurnDone(finishReasonValue: FinishReason): void {
-      if (!ctx) return;
-      emitStreamEvent(ctx, {
-        type: "turn_done",
-        turnIndex,
-        channel,
-        finishReason: finishReasonValue,
       });
     },
     emitError(error: unknown): void {
@@ -312,7 +309,6 @@ async function _callLLM(
       } else if (event.type === "finish") {
         if (event.usage !== undefined) usage = event.usage;
         finishReason = event.finishReason;
-        streamEmitter.emitTurnDone(event.finishReason);
       } else if (event.type === "error") {
         streamEmitter.emitError(event.error);
         streamErrorEmitted = true;

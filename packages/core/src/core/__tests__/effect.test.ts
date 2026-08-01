@@ -70,17 +70,19 @@ describe("onStream", () => {
     const result = await agent({});
 
     expect(result.data).toBe("final answer");
-    expect(received).toEqual(
-      expect.arrayContaining([
-        { type: "turn_start", turnIndex: 0 },
-        { type: "tool_call_stream", turnIndex: 0 },
-        { type: "usage", turnIndex: 0 },
-        { type: "tool_call", turnIndex: 0 },
-        { type: "turn_start", turnIndex: 1 },
-        { type: "text", turnIndex: 1 },
-        { type: "usage", turnIndex: 1 },
-      ]),
-    );
+    expect(received.filter((event) => event.turnIndex === 0)).toEqual([
+      { type: "turn_start", turnIndex: 0 },
+      { type: "tool_call_stream", turnIndex: 0 },
+      { type: "usage", turnIndex: 0 },
+      { type: "tool_call", turnIndex: 0 },
+      { type: "turn_done", turnIndex: 0 },
+    ]);
+    expect(received.filter((event) => event.turnIndex === 1)).toEqual([
+      { type: "turn_start", turnIndex: 1 },
+      { type: "text", turnIndex: 1 },
+      { type: "usage", turnIndex: 1 },
+      { type: "turn_done", turnIndex: 1 },
+    ]);
   });
 
   it("leaves main conversation stream events on the default channel", async () => {
@@ -120,6 +122,7 @@ describe("onStream", () => {
     const model = createStreamEventModel([
       { type: "reasoning", content: "thinking" },
       { type: "text", content: '{"done":true}' },
+      { type: "finish", finishReason: "tool_calls" },
       { type: "extra", extra: { source: "compact" } },
       {
         type: "tool_call",
@@ -134,7 +137,6 @@ describe("onStream", () => {
         type: "usage",
         usage: { promptTokens: 4, completionTokens: 6, totalTokens: 10 },
       },
-      { type: "finish", finishReason: "tool_calls" },
     ]);
 
     const channelledPolicy = createAgentPolicy({
@@ -168,15 +170,14 @@ describe("onStream", () => {
       "turn_start",
       "reasoning",
       "structured_data",
-      "structured_data",
       "text",
       "extra",
       "structured_data",
       "tool_call_stream",
       "usage",
-      "turn_done",
       "structured_data",
       "tool_call",
+      "turn_done",
     ]);
     expect(received.every((event) => event.channel === "context_compaction")).toBe(true);
   });

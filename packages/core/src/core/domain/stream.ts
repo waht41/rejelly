@@ -77,12 +77,25 @@ export interface AgentToolCallStreamEvent extends AgentStreamEventBase {
 
 export interface AgentToolCallReadyEvent extends AgentStreamEventBase {
   type: "tool_call";
-  /** Fully assembled tool call after chunk merge. */
+  /**
+   * Fully assembled tool call after chunk merge.
+   *
+   * Emitted once the model stream has closed and the buffered chunks can be merged. It arrives
+   * before this turn's {@link AgentTurnDoneStreamEvent} and before the tools run.
+   */
   toolCall: ToolCall;
 }
 
 export interface AgentTurnDoneStreamEvent extends AgentStreamEventBase {
   type: "turn_done";
+  /**
+   * Why the model stopped, taken from the adapter's `finish` event. This is `"unknown"` when
+   * the adapter completes successfully without providing a `finish` event.
+   *
+   * This is the turn's final stream event. The adapter stream has been fully drained, the final
+   * `structured_data` snapshot (when applicable) and assembled `tool_call` events have already
+   * been emitted, and usage has been recorded. Tools have not started executing yet.
+   */
   finishReason: FinishReason;
 }
 
@@ -125,6 +138,9 @@ export type AgentStreamEvent =
 
 /**
  * Async stream consumed by onStream subscribers.
+ *
+ * There is deliberately no Generation-level "stream ended" event: the generator completing is
+ * that signal. Per-turn boundaries are represented by {@link AgentTurnDoneStreamEvent}.
  */
 export type AgentStream = AsyncGenerator<AgentStreamEvent, void, void>;
 
@@ -133,6 +149,12 @@ export type AgentStream = AsyncGenerator<AgentStreamEvent, void, void>;
  *
  * The consumer should drain the generator with `for await...of`.
  * Runtime will isolate consumer failures from the producer side.
+ *
+ * The loop exits normally when the Generation closes the stream and when either the Generation's
+ * signal or the consumer's own `signal` cancels the subscription. Producer failures are delivered
+ * as {@link AgentErrorStreamEvent} before the Generation shuts down; they do not make this
+ * generator throw. A consumer can still throw from its own code, so cleanup that must run on every
+ * path belongs in a `finally` around the loop.
  */
 export type OnStreamConsumer = (stream: AgentStream) => void | Promise<void>;
 

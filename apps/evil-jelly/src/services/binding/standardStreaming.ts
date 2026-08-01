@@ -44,8 +44,8 @@ export interface StreamTurnProgress {
    */
   modelSpoke: boolean;
   /**
-   * Whether `turn_done` has already arrived. The engine emits a final `structured_data` snapshot
-   * after it, and reading that as fresh output would restart the timer on a finished turn.
+   * Whether `turn_done` has already arrived. It is the final event in the current engine contract;
+   * retaining this guard also keeps late or externally supplied events from restarting the timer.
    */
   turnEnded: boolean;
 }
@@ -137,10 +137,10 @@ export function useStandardStreaming(options?: string | StandardStreamingOptions
     let toolRequested = false;
     /**
      * Distinct tool calls requested this turn, keyed by the adapter's chunk index because a
-     * single call streams as many chunks. Counted from `tool_call_stream` rather than the
-     * assembled `tool_call`: the latter is emitted after `turn_done`, and the batch has to be
-     * announced before its tools start running. An adapter that omits the index collapses to
-     * one entry, which degrades to no header rather than a wrong one.
+     * single call streams as many chunks. Counting the chunks lets the UI know the batch size as
+     * early as possible; the assembled `tool_call` events also arrive before `turn_done` now.
+     * An adapter that omits the index collapses to one entry, which degrades to no header rather
+     * than a wrong one.
      */
     const toolCallIndexes = new Set<number>();
     /** Whether the model has produced answer-shaped output yet, for reasoning/streaming ordering. */
