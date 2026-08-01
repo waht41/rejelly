@@ -175,8 +175,12 @@ function renderResolvedReadFileResult(
   });
 }
 
-function renderResolvedReadFileError(resolved: ResolvedFsPath, error: string): string {
-  return renderResolvedReadFileResult(resolved, error, { status: "error" });
+function renderResolvedReadFileError(
+  resolved: ResolvedFsPath,
+  error: string,
+  attributes?: PseudoXmlAttributes,
+): string {
+  return renderResolvedReadFileResult(resolved, error, { status: "error", ...attributes });
 }
 
 function findOversizedLine(
@@ -196,9 +200,24 @@ function oversizedLineError(hit: { line: number; bytes: number }): string {
   return (
     `Error: Line ${hit.line} is ${hit.bytes} bytes, above the ` +
     `${MAX_READ_LINE_BYTES / 1024} KB single-line limit. ` +
-    "This is likely generated/minified output or a pathological log line; use grep " +
-    "to locate a smaller, relevant result instead of loading the line into context."
+    "This is likely generated/minified output or a pathological log line. " +
+    "Use a narrower search or another targeted inspection method instead of loading the line into context."
   );
+}
+
+function oversizedLineAttributes(
+  statSize: number,
+  totalLines: number,
+  hit: { line: number; bytes: number },
+): PseudoXmlAttributes {
+  return {
+    reason: "oversized-line",
+    "size-bytes": String(statSize),
+    "total-lines": String(totalLines),
+    "offending-line": String(hit.line),
+    "line-bytes": String(hit.bytes),
+    "max-line-bytes": String(MAX_READ_LINE_BYTES),
+  };
 }
 
 export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
@@ -233,8 +252,13 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
               renderResolvedReadFileError(
                 resolved,
                 `Error: Combined file sizes exceed the ${MAX_READ_BYTES_PER_CALL / 1024} KB limit for this tool call. ` +
-                  "Read fewer files, pass { path, offset, limit } to read a line range, " +
-                  "or use ast_document_symbols / ast_read_symbol_code for JS/TS files.",
+                  "Read fewer files or narrow the request with a line range, search, or structural inspection.",
+                {
+                  reason: "combined-size-limit",
+                  "size-bytes": String(stat.size),
+                  "remaining-call-bytes": String(MAX_READ_BYTES_PER_CALL - totalBytes),
+                  "max-call-bytes": String(MAX_READ_BYTES_PER_CALL),
+                },
               ),
             );
             continue;
@@ -242,10 +266,17 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
 
           totalBytes += stat.size;
           const content = await policy.readResolved(resolved);
-          const oversizedLine = findOversizedLine(content.split(/\r?\n/));
+          const lines = content.split(/\r?\n/);
+          const oversizedLine = findOversizedLine(lines);
           if (oversizedLine) {
             totalBytes -= stat.size;
-            results.push(renderResolvedReadFileError(resolved, oversizedLineError(oversizedLine)));
+            results.push(
+              renderResolvedReadFileError(
+                resolved,
+                oversizedLineError(oversizedLine),
+                oversizedLineAttributes(stat.size, lines.length, oversizedLine),
+              ),
+            );
             continue;
           }
           results.push(renderResolvedReadFileResult(resolved, content));
@@ -258,7 +289,12 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
               resolved,
               `Error: File is ${Math.ceil(stat.size / 1024)} KB, above the ` +
                 `${MAX_RANGED_READ_SOURCE_BYTES / 1024 / 1024} MB cap for ranged reads. ` +
-                "Use grep_search to locate the relevant lines instead.",
+                "Use a narrower search or another targeted inspection method instead.",
+              {
+                reason: "ranged-source-limit",
+                "size-bytes": String(stat.size),
+                "max-source-bytes": String(MAX_RANGED_READ_SOURCE_BYTES),
+              },
             ),
           );
           continue;
@@ -282,7 +318,13 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
         const selectedLines = lines.slice(startLine - 1, endLine);
         const oversizedLine = findOversizedLine(selectedLines, startLine);
         if (oversizedLine) {
-          results.push(renderResolvedReadFileError(resolved, oversizedLineError(oversizedLine)));
+          results.push(
+            renderResolvedReadFileError(
+              resolved,
+              oversizedLineError(oversizedLine),
+              oversizedLineAttributes(stat.size, lines.length, oversizedLine),
+            ),
+          );
           continue;
         }
         const snippet = selectedLines.join("\n");
@@ -293,6 +335,16 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
               resolved,
               `Error: Requested line range exceeds the combined ${MAX_READ_BYTES_PER_CALL / 1024} KB limit for this tool call. ` +
                 "Request a smaller limit or split the request into multiple calls.",
+              {
+                reason: "combined-size-limit",
+                "size-bytes": String(stat.size),
+                "range-bytes": String(snippetBytes),
+                "remaining-call-bytes": String(MAX_READ_BYTES_PER_CALL - totalBytes),
+                "max-call-bytes": String(MAX_READ_BYTES_PER_CALL),
+                "start-line": String(startLine),
+                "end-line": String(endLine),
+                "total-lines": String(lines.length),
+              },
             ),
           );
           continue;

@@ -79,6 +79,9 @@ describe("ReadFileTool", () => {
 
     const wholeRead = await ReadFileTool.handler({ filePaths: ["big.txt"] });
     expect(wholeRead).toContain("Error: Combined file sizes exceed");
+    expect(wholeRead).toContain('reason="combined-size-limit"');
+    expect(wholeRead).toContain(`size-bytes="${Buffer.byteLength(bigContent, "utf8")}"`);
+    expect(wholeRead).toContain(`max-call-bytes="${MAX_READ_BYTES_PER_CALL}"`);
 
     const rangedRead = await ReadFileTool.handler({
       filePaths: [{ path: "big.txt", offset: 5, limit: 2 }],
@@ -109,7 +112,12 @@ describe("ReadFileTool", () => {
     const output = await ReadFileTool.handler({ filePaths: ["bundle.js"] });
 
     expect(output).toContain(`above the ${MAX_READ_LINE_BYTES / 1024} KB single-line limit`);
-    expect(output).toContain("use grep");
+    expect(output).toContain('reason="oversized-line"');
+    expect(output).toContain('offending-line="2"');
+    expect(output).toContain(`line-bytes="${MAX_READ_LINE_BYTES + 1}"`);
+    expect(output).toContain(`max-line-bytes="${MAX_READ_LINE_BYTES}"`);
+    expect(output).toContain('total-lines="2"');
+    expect(output).not.toContain("use grep");
     expect(output).not.toContain("x".repeat(100));
   });
 
@@ -126,6 +134,9 @@ describe("ReadFileTool", () => {
 
     expect(output).toContain("Line 2");
     expect(output).toContain("single-line limit");
+    expect(output).toContain('reason="oversized-line"');
+    expect(output).toContain('offending-line="2"');
+    expect(output).toContain('total-lines="3"');
     expect(output).not.toContain("y".repeat(100));
   });
 
