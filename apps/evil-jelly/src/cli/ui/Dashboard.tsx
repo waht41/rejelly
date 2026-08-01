@@ -223,7 +223,7 @@ function elapsedSeconds(now: number, since: number): number {
  * `Working 23s · connecting`, so a slow model and a connection that never opened stay
  * distinguishable on sight.
  */
-function RuntimeStatusLine() {
+export function RuntimeStatusLine() {
   const phase = useOutputStore((s) => s.runtime.phase);
   const phaseSince = useOutputStore((s) => s.runtime.phaseSince);
   const turnStartedAt = useOutputStore((s) => s.runtime.turnStartedAt);
