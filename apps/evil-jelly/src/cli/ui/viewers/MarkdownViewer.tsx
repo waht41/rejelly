@@ -474,7 +474,12 @@ export function MarkdownViewer({ text, columns }: { text: string; columns: numbe
             <Box key={key} flexDirection="column" marginTop={index === 0 ? 0 : 1}>
               {block.items.map((item, itemIndex) => (
                 <Box key={`${key}-${itemIndex}`} paddingLeft={markdownListItemIndent(item)}>
-                  <Text color="cyan">{markdownListItemPrefix(item)}</Text>
+                  {/* flexShrink={0}: once the row is width-constrained, Yoga resolves an
+                      over-wide line by squeezing this marker instead of wrapping the text,
+                      which silently eats the space after "1." and misaligns the item. */}
+                  <Box flexShrink={0}>
+                    <Text color="cyan">{markdownListItemPrefix(item)}</Text>
+                  </Box>
                   <Text wrap="wrap">{renderInlineNodes(item.nodes, `${key}-${itemIndex}`)}</Text>
                 </Box>
               ))}
