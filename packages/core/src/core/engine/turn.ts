@@ -3,7 +3,7 @@ import { hashValue } from "../../utils/hash";
 import { getCurrentContextSafe } from "../context/accessor";
 import { ModelNotFoundError, TurnBudgetExceededError, toErrorInfo } from "../domain/errors";
 import type { TurnToolConfig } from "../domain/event-payload";
-import type { JsonSchema, Message } from "../domain/model";
+import type { FinishReason, JsonSchema, Message } from "../domain/model";
 import { assertUniqueToolNames, type ToolChoice, type ToolDefinition } from "../domain/tool";
 import { toolDefinitionsToToolSchemas } from "../observability/tool-schema";
 import { withSpan } from "../observability/trace";
@@ -176,52 +176,63 @@ export async function executeTurn(
       messageCount: messages.length,
     });
 
+    let isCacheHit = false;
+
     try {
       const replayedEntry = ctx.snapshot
         ? getJournalEntry(ctx, callId, { type: "prompt", contentHash: turnInputHash })
         : null;
+      let message: Message;
+      let finishReason: FinishReason;
+
       if (replayedEntry?.output !== undefined) {
-        const message = messageFromJournalOutput(replayedEntry.output);
-        // Re-record the journal entry with the normalized Message shape so that
-        // subsequent dumps stop persisting legacy plain-string outputs.
-        recordJournal(ctx, callId, {
-          type: "prompt",
-          output: message,
-          contentHash: turnInputHash,
+        message = messageFromJournalOutput(replayedEntry.output);
+        finishReason = message.tool_calls?.length ? "tool_calls" : "unknown";
+        isCacheHit = true;
+      } else {
+        const llmResult: LLMCallResult = await callLLM(model, messages, {
+          schema: options.jsonSchema,
+          signal: ctx.signal,
+          tools: turnTools.length > 0 ? turnTools : undefined,
+          toolChoice: options.toolChoice,
+          additionalOptions: options.additionalOptions,
+          turnIndex: step,
+          channel: options.channel,
         });
 
-        emitTurnEndSuccess(
-          emitter,
-          step,
-          messages,
-          options,
-          turnTools,
-          message,
-          turnInputHash,
-          true,
-          0,
-        );
-        return { message, isCacheHit: true, contentHash: turnInputHash };
+        message = messageFromLLMResult(llmResult);
+        finishReason = llmResult.finishReason ?? "unknown";
       }
 
-      const llmResult: LLMCallResult = await callLLM(model, messages, {
-        schema: options.jsonSchema,
-        signal: ctx.signal,
-        tools: turnTools.length > 0 ? turnTools : undefined,
-        toolChoice: options.toolChoice,
-        additionalOptions: options.additionalOptions,
-        turnIndex: step,
-        channel: options.channel,
-      });
-
-      const message = messageFromLLMResult(llmResult);
+      // On replay this also replaces legacy plain-string output with the normalized Message
+      // shape, so subsequent dumps stop persisting the legacy representation.
       recordJournal(ctx, callId, {
         type: "prompt",
         output: message,
         contentHash: turnInputHash,
       });
 
-      const duration = elapsed();
+      // A replay bypasses callLLM, so reproduce the assembled-call events that live execution
+      // already emitted before publishing the common per-turn boundary below.
+      if (isCacheHit) {
+        for (const toolCall of message.tool_calls ?? []) {
+          emitStreamEvent(ctx, {
+            type: "tool_call",
+            turnIndex: step,
+            channel: options.channel,
+            toolCall,
+          });
+        }
+      }
+
+      emitStreamEvent(ctx, {
+        type: "turn_done",
+        turnIndex: step,
+        channel: options.channel,
+        finishReason,
+      });
+
+      const duration = isCacheHit ? 0 : elapsed();
       emitTurnEndSuccess(
         emitter,
         step,
@@ -230,10 +241,10 @@ export async function executeTurn(
         turnTools,
         message,
         turnInputHash,
-        false,
+        isCacheHit,
         duration,
       );
-      return { message, isCacheHit: false, contentHash: turnInputHash };
+      return { message, isCacheHit, contentHash: turnInputHash };
     } catch (error) {
       emitter?.turnEnd({
         step,
@@ -246,7 +257,7 @@ export async function executeTurn(
         success: false,
         error: toErrorInfo(error as Error),
         contentHash: turnInputHash,
-        cache: false,
+        cache: isCacheHit,
       });
       throw error;
     }
