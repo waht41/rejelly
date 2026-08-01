@@ -186,7 +186,7 @@ export function SmartLinePrompt({ label }: { label: string }) {
   const addSelectedImage = usePromptStore((s) => s.addSelectedImage);
   const clearSelectedImages = usePromptStore((s) => s.clearSelectedImages);
   const clearDraftSeed = usePromptStore((s) => s.clearDraftSeed);
-  const status = useOutputStore((s) => s.status);
+  const phase = useOutputStore((s) => s.runtime.phase);
   const streamBuffer = useOutputStore((s) => s.streamBuffer);
   const rowRef = useRef<DOMElement>(null);
   const buf = useTextBuffer();
@@ -508,7 +508,7 @@ export function SmartLinePrompt({ label }: { label: string }) {
   useLineKeybindings({
     buf,
     overlayKeys: overlayKeysRef,
-    isAgentRunning: isRuntimeActive(status, streamBuffer),
+    isAgentRunning: isRuntimeActive(phase, streamBuffer),
     selectedFiles,
     selectedImages,
     submitLine,

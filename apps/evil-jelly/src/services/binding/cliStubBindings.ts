@@ -46,8 +46,8 @@ function createStubHostBindings(
     logSystemEvent: (message: string) => {
       console.log(`[${logPrefix}][system] ${message}`);
     },
-    onStatusUpdate: (status: string) => {
-      console.log(`[${logPrefix}][status] ${status}`);
+    onDetailUpdate: (detail: string) => {
+      console.log(`[${logPrefix}][detail] ${detail}`);
     },
     confirmTool: async (params) => {
       if (autoAcceptWrite) {

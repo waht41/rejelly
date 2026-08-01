@@ -279,6 +279,10 @@ async function runConversationTurn(
       attachments: lineInput.attachments,
     });
     activeTurnId = createTurnId();
+    // The session layer marks the turn start here (inputKind: "initial"); the status line's
+    // timer must anchor at exactly this point so steers and maintenance commands never
+    // start (or restart) a turn.
+    runtime.host.onTurnStart?.();
     await runtime.props.sessionRecorder?.recordMessage(
       activeTurnId,
       { kind: "user_input", inputKind: "initial" },
@@ -413,7 +417,8 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
       const intent = classifyRouterIntent(lineInput);
       switch (intent.kind) {
         case "empty":
-          host.onStatusUpdate?.("Ready");
+          host.onDetailUpdate?.("Ready");
+          host.onPhaseUpdate?.("idle");
           return reborn();
         case "exit":
           await handleExit(runtime);

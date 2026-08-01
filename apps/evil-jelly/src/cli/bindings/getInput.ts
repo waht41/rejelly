@@ -69,7 +69,7 @@ export function createInkGetInput(options?: InkGetInputOptions): () => Promise<L
     if (pendingSeed) {
       pendingSeed = false;
       const line = (options?.seedLine ?? "").trim();
-      useOutputStore.getState().setStatus("Running…");
+      useOutputStore.getState().setPhase("working", "Running…");
       return { text: line };
     }
     const pendingSteers = drainSteers();
@@ -78,14 +78,14 @@ export function createInkGetInput(options?: InkGetInputOptions): () => Promise<L
       for (const line of rest) {
         enqueueLineInput(line);
       }
-      useOutputStore.getState().setStatus("Running…");
+      useOutputStore.getState().setPhase("working", "Running…");
       return next!;
     }
-    useOutputStore.getState().setStatus("Waiting for input");
+    useOutputStore.getState().setPhase("awaiting_user", "Waiting for input");
     setAwaitingMainInput(true);
     try {
       const line = await dequeueLineInput();
-      useOutputStore.getState().setStatus("Running…");
+      useOutputStore.getState().setPhase("working", "Running…");
       return line;
     } finally {
       setAwaitingMainInput(false);

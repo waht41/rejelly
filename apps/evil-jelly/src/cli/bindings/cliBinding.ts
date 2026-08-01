@@ -42,11 +42,11 @@ function createInkRequestChoice(): EvilJellyHostBindings["requestChoice"] {
     view?: HostChoiceView,
   ): Promise<string> => {
     return runPromptSession(async () => {
-      useOutputStore.getState().setStatus("Waiting for user choice…");
+      useOutputStore.getState().setPhase("awaiting_user", "Waiting for user choice…");
       const selected = await usePromptStore
         .getState()
         .requestActionMenu(message, options, toTransientView(view));
-      useOutputStore.getState().setStatus("Running…");
+      useOutputStore.getState().resumeWork("Running…");
       return selected;
     });
   };
@@ -59,7 +59,9 @@ function createOutputBindings(): Pick<
   | "logAssistantMessage"
   | "logSystemEvent"
   | "clearHistory"
-  | "onStatusUpdate"
+  | "onDetailUpdate"
+  | "onPhaseUpdate"
+  | "onTurnStart"
   | "logToolStart"
   | "appendToolOutput"
   | "logToolBlock"
@@ -97,8 +99,14 @@ function createOutputBindings(): Pick<
           : block.fullResult;
       out().logTool({ ...block, fullResult: full });
     },
-    onStatusUpdate: (status: string) => {
-      out().setStatus(status);
+    onDetailUpdate: (detail: string) => {
+      out().setDetail(detail);
+    },
+    onPhaseUpdate: (phase) => {
+      out().setPhase(phase);
+    },
+    onTurnStart: () => {
+      out().beginTurn();
     },
   };
 }
