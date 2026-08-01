@@ -180,7 +180,17 @@ function appendTranscriptMessage(
         content: assistantDisplayText(text),
       });
     }
-    for (const [index, call] of (message.tool_calls ?? []).entries()) {
+    const calls = message.tool_calls ?? [];
+    if (calls.length > 1) {
+      items.push({
+        id: `${identity.seq}:${identity.suffix}:tool-round`,
+        type: "tool_round",
+        turnId: identity.turnId,
+        seq: identity.seq,
+        calls: calls.length,
+      });
+    }
+    for (const [index, call] of calls.entries()) {
       const item: Extract<TranscriptItem, { type: "tool" }> = {
         id: `${identity.seq}:${identity.suffix}:tool:${index}`,
         type: "tool",

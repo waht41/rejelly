@@ -685,6 +685,44 @@ describe("logSystem", () => {
   });
 });
 
+describe("logToolRound", () => {
+  it("heads the batch, after the text that introduced it", () => {
+    vi.useFakeTimers();
+    const store = useOutputStore.getState();
+
+    store.appendStream("Checking both:\n- the config\n");
+    vi.advanceTimersByTime(50);
+    store.logToolRound(2);
+
+    expect(useOutputStore.getState().history).toEqual([
+      { id: "as_0", type: "assistant_stream", content: "Checking both:\n" },
+      { id: "as_1", type: "assistant_stream", content: "- the config\n" },
+      { id: "tr_2", type: "tool_round", calls: 2 },
+    ]);
+    expect(useOutputStore.getState().streamBuffer).toBe("");
+  });
+
+  it("rebuilds the header from a resumed multi-call assistant message", () => {
+    useOutputStore.getState().hydrateHistory([
+      { id: "1:a:tool-round", type: "tool_round", turnId: "t1", seq: 1, calls: 2 },
+      {
+        id: "1:a:tool:0",
+        type: "tool",
+        turnId: "t1",
+        seq: 1,
+        toolCallId: "call_1",
+        toolName: "grep",
+        ok: true,
+      },
+    ]);
+
+    expect(useOutputStore.getState().history.map((turn) => turn.type)).toEqual([
+      "tool_round",
+      "tool",
+    ]);
+  });
+});
+
 describe("clearHistory", () => {
   it("clears history, stream, and status", () => {
     useOutputStore.setState({

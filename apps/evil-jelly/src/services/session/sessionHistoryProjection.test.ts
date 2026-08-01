@@ -202,6 +202,79 @@ describe("session history projections", () => {
     ]);
   });
 
+  it("heads a multi-call assistant message so a resumed batch reads as one", () => {
+    // Derived from tool_calls.length, not stored: the batch is already recorded as that array,
+    // so the live view and a resumed transcript group identically without a new event type.
+    const events: SessionEvent[] = [
+      userEvent(1, "turn-1", "check both"),
+      event(
+        {
+          type: "message_recorded",
+          turnId: "turn-1",
+          source: { kind: "model" },
+          message: {
+            role: "assistant",
+            content: null,
+            tool_calls: [
+              { id: "call-1", name: "read_file", arguments: '{"path":"a.ts"}' },
+              { id: "call-2", name: "grep", arguments: '{"pattern":"x"}' },
+            ],
+          },
+        },
+        2,
+      ),
+      event(
+        {
+          type: "message_recorded",
+          turnId: "turn-1",
+          source: { kind: "tool" },
+          message: { role: "tool", tool_call_id: "call-1", content: "file body" },
+        },
+        3,
+      ),
+      event(
+        {
+          type: "message_recorded",
+          turnId: "turn-1",
+          source: { kind: "tool" },
+          message: { role: "tool", tool_call_id: "call-2", content: "match" },
+        },
+        4,
+      ),
+    ];
+
+    expect(buildTranscript(replay(events)).map((item) => item.type)).toEqual([
+      "user",
+      "tool_round",
+      "tool",
+      "tool",
+    ]);
+    expect(buildTranscript(replay(events))).toContainEqual(
+      expect.objectContaining({ type: "tool_round", calls: 2, turnId: "turn-1" }),
+    );
+  });
+
+  it("leaves a single tool call unheaded, since one block is its own batch", () => {
+    const events: SessionEvent[] = [
+      userEvent(1, "turn-1", "check one"),
+      event(
+        {
+          type: "message_recorded",
+          turnId: "turn-1",
+          source: { kind: "model" },
+          message: {
+            role: "assistant",
+            content: null,
+            tool_calls: [{ id: "call-1", name: "read_file", arguments: "{}" }],
+          },
+        },
+        2,
+      ),
+    ];
+
+    expect(buildTranscript(replay(events)).map((item) => item.type)).toEqual(["user", "tool"]);
+  });
+
   it("closes a dangling tool call in an incomplete tail without retrying it", () => {
     const events: SessionEvent[] = [
       userEvent(1, "turn-1", "run tool"),

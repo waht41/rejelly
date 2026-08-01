@@ -114,6 +114,17 @@ export function HistoryItem({ turn, columns }: { turn: Turn; columns: number }) 
       </Box>
     );
   }
+  if (turn.type === "tool_round") {
+    // A rule sized to the terminal, so the blocks below read as one batch. No closing rule:
+    // the last block of a batch is only known once the next model call starts, and `<Static>`
+    // rows cannot be revised — the next header (or the reply) ends the group implicitly.
+    const label = ` ${turn.calls} parallel calls `;
+    return (
+      <Box width={columns}>
+        <Text dimColor>{`──${label}${"─".repeat(Math.max(0, columns - label.length - 2))}`}</Text>
+      </Box>
+    );
+  }
   if (turn.type === "diff") {
     return (
       <Box flexDirection="column" paddingBottom={1}>

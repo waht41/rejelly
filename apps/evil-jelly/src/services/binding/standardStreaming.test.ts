@@ -18,7 +18,11 @@ import {
   useStandardStreaming,
 } from "./standardStreaming";
 
-function createTestBindings(output: string[], phases: RuntimePhase[] = []): EvilJellyHostBindings {
+function createTestBindings(
+  output: string[],
+  phases: RuntimePhase[] = [],
+  rounds: number[] = [],
+): EvilJellyHostBindings {
   return {
     getInput: async () => ({ text: "" }),
     printOut: (message) => output.push(message),
@@ -26,6 +30,7 @@ function createTestBindings(output: string[], phases: RuntimePhase[] = []): Evil
     logAssistantMessage: () => {},
     logToolBlock: () => {},
     logSystemEvent: () => {},
+    logToolRound: (calls) => rounds.push(calls),
     onPhaseUpdate: (phase) => phases.push(phase),
     confirmTool: async () => ({ action: "accept" }),
     requestChoice: async (_message, options) => options[0]?.value ?? "",
@@ -174,6 +179,92 @@ describe("useStandardStreaming", () => {
 
     expect(result.data).toEqual({ type: "answer", reply: "Done" });
     expect(output.join("")).toBe("I will inspect the workspace.\n\nDone\n");
+  });
+
+  it("announces a batch of tool calls once, after the preamble and before the tools", async () => {
+    // The count is complete at turn_done — the model decides the whole batch before any of it
+    // runs — so the host can head the group without knowing which block finishes first.
+    const output: string[] = [];
+    const rounds: number[] = [];
+    const model = createStreamingModel((callIndex) =>
+      callIndex === 0
+        ? [
+            { type: "text", content: "Checking both." },
+            {
+              type: "tool_call",
+              toolCall: { index: 0, id: "call_1", name: "lookup", arguments: '{"query":"a"}' },
+            },
+            {
+              type: "tool_call",
+              toolCall: { index: 1, id: "call_2", name: "lookup", arguments: '{"query":"b"}' },
+            },
+            { type: "finish", finishReason: "tool_calls" },
+          ]
+        : [
+            { type: "text", content: '{"type":"answer","reply":"Done"}' },
+            { type: "finish", finishReason: "stop" },
+          ],
+    );
+
+    const agent = createAgent({
+      id: "standard-streaming-tool-round",
+      model,
+      handler: async () => {
+        await setBinding(createTestBindings(output, [], rounds));
+        equipTool({
+          name: "lookup",
+          description: "Lookup test data.",
+          parameters: z.object({ query: z.string() }),
+          handler: async () => "lookup result",
+        });
+        useStandardStreaming("reply");
+        return promptChat({ message: [{ role: "user", content: "hi" }], schema: AnswerSchema });
+      },
+    });
+
+    await agent({});
+
+    expect(rounds).toEqual([2]);
+    expect(output.join("")).toBe("Checking both.\n\nDone\n");
+  });
+
+  it("stays silent for a single tool call, which is trivially its own batch", async () => {
+    const output: string[] = [];
+    const rounds: number[] = [];
+    const model = createStreamingModel((callIndex) =>
+      callIndex === 0
+        ? [
+            {
+              type: "tool_call",
+              toolCall: { index: 0, id: "call_1", name: "lookup", arguments: '{"query":"a"}' },
+            },
+            { type: "finish", finishReason: "tool_calls" },
+          ]
+        : [
+            { type: "text", content: '{"type":"answer","reply":"Done"}' },
+            { type: "finish", finishReason: "stop" },
+          ],
+    );
+
+    const agent = createAgent({
+      id: "standard-streaming-single-tool",
+      model,
+      handler: async () => {
+        await setBinding(createTestBindings(output, [], rounds));
+        equipTool({
+          name: "lookup",
+          description: "Lookup test data.",
+          parameters: z.object({ query: z.string() }),
+          handler: async () => "lookup result",
+        });
+        useStandardStreaming("reply");
+        return promptChat({ message: [{ role: "user", content: "hi" }], schema: AnswerSchema });
+      },
+    });
+
+    await agent({});
+
+    expect(rounds).toEqual([]);
   });
 
   it("reports the request wait, the reply, and the turn end as distinct phases", async () => {
