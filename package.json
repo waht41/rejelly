@@ -28,7 +28,8 @@
       "esbuild"
     ],
     "patchedDependencies": {
-      "ink@7.0.0": "patches/ink@7.0.0.patch"
+      "ink@7.0.0": "patches/ink@7.0.0.patch",
+      "wrap-ansi@10.0.0": "patches/wrap-ansi@10.0.0.patch"
     }
   },
   "devDependencies": {

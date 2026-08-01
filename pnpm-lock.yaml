@@ -95,6 +95,9 @@ patchedDependencies:
   ink@7.0.0:
     hash: 8979a6ce139494893a2f628255dd06a16d84be9e4c07e82fe887fbd69403e99e
     path: patches/ink@7.0.0.patch
+  wrap-ansi@10.0.0:
+    hash: 364f4aea4223f1c6dbfe340fdfed7dd4338d2e2974378884844c4a774c5dfba1
+    path: patches/wrap-ansi@10.0.0.patch
 
 importers:
 
@@ -394,8 +397,8 @@ importers:
         specifier: ^11.0.5
         version: 11.0.5
       wrap-ansi:
-        specifier: ^10.0.0
-        version: 10.0.0
+        specifier: 10.0.0
+        version: 10.0.0(patch_hash=364f4aea4223f1c6dbfe340fdfed7dd4338d2e2974378884844c4a774c5dfba1)
       zod:
         specifier: 'catalog:'
         version: 3.25.76
@@ -10198,7 +10201,7 @@ snapshots:
       terminal-size: 4.0.1
       type-fest: 5.5.0
       widest-line: 6.0.0
-      wrap-ansi: 10.0.0
+      wrap-ansi: 10.0.0(patch_hash=364f4aea4223f1c6dbfe340fdfed7dd4338d2e2974378884844c4a774c5dfba1)
       ws: 8.20.0
       yoga-layout: 3.2.1
     optionalDependencies:
@@ -12707,7 +12710,7 @@ snapshots:
 
   wordwrap@1.0.0: {}
 
-  wrap-ansi@10.0.0:
+  wrap-ansi@10.0.0(patch_hash=364f4aea4223f1c6dbfe340fdfed7dd4338d2e2974378884844c4a774c5dfba1):
     dependencies:
       ansi-styles: 6.2.3
       string-width: 8.2.0

@@ -1,0 +1,181 @@
+diff --git a/index.js b/index.js
+index 481217064e01ac9b09025e850d07e5c7b337ca96..d03b09774e74d6e632c3ac4b0ac80343d164f15c 100644
+--- a/index.js
++++ b/index.js
+@@ -30,8 +30,18 @@ ANSI_SGR_MODIFIER_CLOSE_CODES.delete(ANSI_SGR_RESET);
+ 
+ const segmenter = new Intl.Segmenter();
+ const getGraphemes = string => Array.from(segmenter.segment(string), ({segment}) => segment);
++const wordSegmenter = new Intl.Segmenter(undefined, {granularity: 'word'});
+ const TAB_SIZE = 8;
+ 
++// CJK prose does not contain ASCII spaces between words. The default wrapping
++// algorithm therefore treats a whole mixed Chinese/English clause as one word
++// and moves it wholesale to the next row. Segment only strings that actually
++// contain a CJK script, preserving wrap-ansi's existing behaviour everywhere
++// else.
++const CJK_PATTERN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
++const FORBIDDEN_LINE_START = new Set('!%),.:;?]}\u00BB\u2019\u201D\u3001\u3002\u3009\u300B\u300D\u300F\u3011\u3015\u3017\u3019\u301B\uFF01\uFF05\uFF09\uFF0C\uFF0E\uFF1A\uFF1B\uFF1F\uFF3D\uFF5D'.split(''));
++const FORBIDDEN_LINE_END = new Set('([{\u00AB\u2018\u201C\u3008\u300A\u300C\u300E\u3010\u3014\u3016\u3018\u301A\uFF08\uFF3B\uFF5B'.split(''));
++
+ const wrapAnsiCode = code => `${ANSI_ESCAPE}${ANSI_CSI}${code}${ANSI_SGR_TERMINATOR}`;
+ const wrapAnsiHyperlink = url => `${ANSI_ESCAPE}${ANSI_ESCAPE_LINK}${url}${ANSI_ESCAPE_BELL}`;
+ 
+@@ -237,9 +247,100 @@ const applyLeadingSgrResets = (string, activeStyles) => {
+ const getClosingSgrSequence = activeStyles => [...activeStyles].reverse().map(activeStyle => wrapAnsiCode(activeStyle.close)).join('');
+ const getOpeningSgrSequence = activeStyles => activeStyles.map(activeStyle => wrapAnsiCode(activeStyle.open)).join('');
+ 
+-// Calculate the length of words split on ' ', ignoring
+-// the extra characters added by ANSI escape codes
+-const wordLengths = string => string.split(' ').map(word => stringWidth(word));
++const matchAnsiEscape = string => {
++	if (string.startsWith(ANSI_ESCAPE) && string[1] !== '\\') {
++		return ANSI_ESCAPE_REGEX.exec(string)?.[0];
++	}
++
++	if (string.startsWith(ANSI_ESCAPE_CSI)) {
++		return ANSI_ESCAPE_CSI_REGEX.exec(string)?.[0];
++	}
++};
++
++// Slice an ANSI-bearing string at offsets measured in its visible, stripped
++// counterpart. Segmenter offsets are UTF-16 offsets, so ordinary code points
++// advance by their JS string length while complete escape sequences advance by
++// zero. This keeps every SGR/OSC sequence intact and makes the returned pieces
++// concatenate byte-for-byte to the input.
++const sliceAtVisibleOffsets = (string, offsets) => {
++	if (offsets.length === 0) {
++		return [string];
++	}
++
++	const pieces = [];
++	let pieceStart = 0;
++	let rawOffset = 0;
++	let visibleOffset = 0;
++	let boundaryIndex = 0;
++
++	while (rawOffset < string.length && boundaryIndex < offsets.length) {
++		const remainder = string.slice(rawOffset);
++		const escape = matchAnsiEscape(remainder);
++		if (escape) {
++			rawOffset += escape.length;
++			continue;
++		}
++
++		const codePoint = String.fromCodePoint(string.codePointAt(rawOffset));
++		rawOffset += codePoint.length;
++		visibleOffset += codePoint.length;
++
++		if (visibleOffset === offsets[boundaryIndex]) {
++			pieces.push(string.slice(pieceStart, rawOffset));
++			pieceStart = rawOffset;
++			boundaryIndex++;
++		}
++	}
++
++	pieces.push(string.slice(pieceStart));
++	return pieces;
++};
++
++const mergeForbiddenBreaks = pieces => {
++	const merged = [];
++
++	for (const piece of pieces) {
++		const visible = stripAnsi(piece);
++		if (merged.length > 0 && FORBIDDEN_LINE_START.has(getGraphemes(visible)[0])) {
++			merged[merged.length - 1] += piece;
++			continue;
++		}
++
++		merged.push(piece);
++	}
++
++	for (let index = merged.length - 2; index >= 0; index--) {
++		const visible = stripAnsi(merged[index]);
++		if (FORBIDDEN_LINE_END.has(getGraphemes(visible).at(-1))) {
++			merged[index] += merged[index + 1];
++			merged.splice(index + 1, 1);
++		}
++	}
++
++	return merged;
++};
++
++const segmentCjkWord = word => {
++	const visible = stripAnsi(word);
++	if (!CJK_PATTERN.test(visible)) {
++		return [word];
++	}
++
++	const boundaries = Array.from(wordSegmenter.segment(visible), segment => segment.index)
++		.filter(offset => offset > 0);
++	return mergeForbiddenBreaks(sliceAtVisibleOffsets(word, boundaries));
++};
++
++// Keep ASCII spaces as explicit separators (including repeated/trailing ones
++// under trim:false), but add language-aware break opportunities inside a
++// space-delimited word when it contains CJK text.
++const tokenizeForWrapping = string => string.split(' ').flatMap((word, wordIndex) =>
++	segmentCjkWord(word).map((value, segmentIndex) => ({
++		value,
++		length: stringWidth(value),
++		spaceBefore: wordIndex > 0 && segmentIndex === 0,
++	})),
++);
+ 
+ // Wrap a long word across multiple rows
+ // ANSI escape codes do not count towards length
+@@ -355,17 +456,18 @@ const exec = (string, columns, options = {}) => {
+ 	let escapeUrl;
+ 	const activeStyles = [];
+ 
+-	const lengths = wordLengths(string);
++	const tokens = tokenizeForWrapping(string);
+ 	let rows = [''];
+ 
+-	for (const [index, word] of string.split(' ').entries()) {
++	for (const token of tokens) {
++		const {value: word, length: wordLength, spaceBefore} = token;
+ 		if (options.trim !== false) {
+ 			rows[rows.length - 1] = rows.at(-1).trimStart();
+ 		}
+ 
+ 		let rowLength = stringWidth(rows.at(-1));
+ 
+-		if (index !== 0) {
++		if (spaceBefore) {
+ 			if (rowLength >= columns && (options.wordWrap === false || options.trim === false)) {
+ 				// If we start with a new word but the current row length equals the length of the columns, add a new row
+ 				rows.push('');
+@@ -379,10 +481,10 @@ const exec = (string, columns, options = {}) => {
+ 		}
+ 
+ 		// In 'hard' wrap mode, the length of a line is never allowed to extend past 'columns'
+-		if (options.hard && options.wordWrap !== false && lengths[index] > columns) {
++		if (options.hard && options.wordWrap !== false && wordLength > columns) {
+ 			const remainingColumns = columns - rowLength;
+-			const breaksStartingThisLine = 1 + Math.floor((lengths[index] - remainingColumns - 1) / columns);
+-			const breaksStartingNextLine = Math.floor((lengths[index] - 1) / columns);
++			const breaksStartingThisLine = 1 + Math.floor((wordLength - remainingColumns - 1) / columns);
++			const breaksStartingNextLine = Math.floor((wordLength - 1) / columns);
+ 			if (breaksStartingNextLine < breaksStartingThisLine) {
+ 				rows.push('');
+ 			}
+@@ -391,7 +493,7 @@ const exec = (string, columns, options = {}) => {
+ 			continue;
+ 		}
+ 
+-		if (rowLength + lengths[index] > columns && rowLength > 0 && lengths[index] > 0) {
++		if (rowLength + wordLength > columns && rowLength > 0 && wordLength > 0) {
+ 			if (options.wordWrap === false && rowLength < columns) {
+ 				wrapWord(rows, word, columns);
+ 				continue;
+@@ -400,7 +502,7 @@ const exec = (string, columns, options = {}) => {
+ 			rows.push('');
+ 		}
+ 
+-		if (rowLength + lengths[index] > columns && options.wordWrap === false) {
++		if (rowLength + wordLength > columns && options.wordWrap === false) {
+ 			wrapWord(rows, word, columns);
+ 			continue;
+ 		}
