@@ -100,6 +100,13 @@ export interface EvilJellyHostBindings {
    */
   onTurnStart?: () => void;
   /**
+   * A model call issued several tool calls at once, announced before any of them runs.
+   * They execute concurrently and their blocks land in completion order, so without this
+   * a host cannot tell one batch from several sequential calls. Never fired for a single
+   * call: one block is trivially its own batch, and a header on every tool call is noise.
+   */
+  logToolRound?: (calls: number) => void;
+  /**
    * Announce a tool call before its handler runs, so the host can show it as
    * running and number it in call order. Hosts that omit this get no live view
    * and fall back to numbering blocks as they complete.

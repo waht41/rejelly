@@ -115,7 +115,7 @@ export function phaseForStreamEvent(
  * Call once per turn, immediately before promptAgent()/promptChat().
  */
 export function useStandardStreaming(options?: string | StandardStreamingOptions): void {
-  const { printOut, onPhaseUpdate } = getBinding();
+  const { printOut, onPhaseUpdate, logToolRound } = getBinding();
   const { structuredKey, textMode } = normalizeStandardStreamingOptions(options);
   onStream(async (stream) => {
     // Mirrored locally so the per-delta calls below collapse to nothing: text events arrive
@@ -135,6 +135,14 @@ export function useStandardStreaming(options?: string | StandardStreamingOptions
     let streamedThisTurn = false;
     let turnEnded = false;
     let toolRequested = false;
+    /**
+     * Distinct tool calls requested this turn, keyed by the adapter's chunk index because a
+     * single call streams as many chunks. Counted from `tool_call_stream` rather than the
+     * assembled `tool_call`: the latter is emitted after `turn_done`, and the batch has to be
+     * announced before its tools start running. An adapter that omits the index collapses to
+     * one entry, which degrades to no header rather than a wrong one.
+     */
+    const toolCallIndexes = new Set<number>();
     /** Whether the model has produced answer-shaped output yet, for reasoning/streaming ordering. */
     let modelSpoke = false;
 
@@ -145,6 +153,7 @@ export function useStandardStreaming(options?: string | StandardStreamingOptions
       streamedThisTurn = false;
       turnEnded = false;
       toolRequested = false;
+      toolCallIndexes.clear();
       modelSpoke = false;
     };
 
@@ -214,6 +223,7 @@ export function useStandardStreaming(options?: string | StandardStreamingOptions
 
         case "tool_call_stream":
           toolRequested = true;
+          toolCallIndexes.add(event.chunk.index);
           break;
 
         case "turn_done":
@@ -226,6 +236,11 @@ export function useStandardStreaming(options?: string | StandardStreamingOptions
           }
           if (streamedThisTurn) {
             printOut("\n");
+          }
+          // After the text, before the tools: the batch is announced where it was decided, so
+          // the confirmations and blocks that follow read as belonging to it.
+          if (toolCallIndexes.size > 1) {
+            logToolRound?.(toolCallIndexes.size);
           }
           turnEnded = true;
           break;

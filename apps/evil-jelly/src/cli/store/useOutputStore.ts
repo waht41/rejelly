@@ -67,6 +67,12 @@ export type Turn =
   | { id: string; type: "system"; content: string; oneLine?: boolean }
   | { id: string; type: "assistant"; content: string; hidden?: boolean }
   | { id: string; type: "assistant_stream"; content: string; final?: boolean }
+  /**
+   * Heads the tool blocks one model call issued together. Only written for two or more:
+   * a single block is trivially its own batch, so a header on every call would be noise,
+   * and the rule stays unambiguous — a block with no header above it is a batch of one.
+   */
+  | { id: string; type: "tool_round"; calls: number }
   | { id: string; type: "tool"; content: string; tool: ToolBlock }
   | { id: string; type: "diff"; diff: DiffBlockDetail }
   | { id: string; type: "banner"; banner: SessionBanner };
@@ -126,6 +132,8 @@ interface OutputState {
   resumeWork: (detail?: string) => void;
   logUser: (content: string) => void;
   logAssistant: (content: string) => void;
+  /** Head the batch a single model call issued; callers filter out single-call rounds. */
+  logToolRound: (calls: number) => void;
   logTool: (block: ToolBlock) => void;
   logDiff: (diff: DiffBlockDetail) => void;
   logSystem: (content: string, options?: { oneLine?: boolean }) => void;
@@ -156,6 +164,8 @@ function transcriptTurn(item: TranscriptItem): Turn {
       };
     case "system":
       return { id: `resume_${item.id}`, type: "system", content: item.content };
+    case "tool_round":
+      return { id: `resume_${item.id}`, type: "tool_round", calls: item.calls };
     case "tool": {
       const compactArgs = item.arguments?.trim().replace(/\s+/g, " ");
       const suffix =
@@ -451,6 +461,22 @@ export const useOutputStore = create<OutputState>((set) => ({
         runtime: idleRuntime(),
       };
     });
+  },
+
+  logToolRound: (calls) => {
+    // Same commit-before-interrupting rule as logSystem: the text that introduced this batch
+    // is still the transient tail, and it was written before the header.
+    const tail = takeStreamTail();
+    set((state) => ({
+      history: [
+        ...state.history,
+        ...(tail.length > 0
+          ? [{ id: `as_${turnIdCounter++}`, type: "assistant_stream" as const, content: tail }]
+          : []),
+        { id: `tr_${turnIdCounter++}`, type: "tool_round" as const, calls },
+      ],
+      streamBuffer: "",
+    }));
   },
 
   logTool: (block: ToolBlock) => {

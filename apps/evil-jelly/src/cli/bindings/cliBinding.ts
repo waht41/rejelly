@@ -62,6 +62,7 @@ function createOutputBindings(): Pick<
   | "onDetailUpdate"
   | "onPhaseUpdate"
   | "onTurnStart"
+  | "logToolRound"
   | "logToolStart"
   | "appendToolOutput"
   | "logToolBlock"
@@ -72,6 +73,9 @@ function createOutputBindings(): Pick<
   return {
     printOut: (message: string) => {
       out().appendStream(message);
+    },
+    logToolRound: (calls: number) => {
+      out().logToolRound(calls);
     },
     logToolStart: (start) => out().beginTool(start),
     appendToolOutput: (toolCallId: string, chunk: string) => {

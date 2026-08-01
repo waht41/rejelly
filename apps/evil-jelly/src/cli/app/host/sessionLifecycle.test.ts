@@ -216,7 +216,7 @@ describe("non-TTY session lifecycle", () => {
     expect(
       transcript.some(
         (item) =>
-          item.type !== "tool" && item.content.includes("Inspected the workspace and found README"),
+          "content" in item && item.content.includes("Inspected the workspace and found README"),
       ),
     ).toBe(false);
 
@@ -333,7 +333,7 @@ describe("non-TTY session lifecycle", () => {
     expect(
       transcript.some(
         (item) =>
-          item.type !== "tool" &&
+          "content" in item &&
           item.content.includes("Both directory checks found README.md; continue"),
       ),
     ).toBe(false);

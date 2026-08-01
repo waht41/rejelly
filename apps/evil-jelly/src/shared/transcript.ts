@@ -26,6 +26,18 @@ export type TranscriptItem =
       attachments?: UserInputAttachmentDisplay[];
       images?: TranscriptImage[];
     }
+  /**
+   * Heads the tool items one assistant message issued together, so a resumed transcript groups
+   * them the way the live view does. Derived from `tool_calls.length`, never stored: the batch
+   * is already recorded as that array, and only batches of two or more get an item.
+   */
+  | {
+      id: string;
+      type: "tool_round";
+      turnId: string;
+      seq: number;
+      calls: number;
+    }
   | {
       id: string;
       type: "tool";
