@@ -98,14 +98,18 @@ export function HistoryItem({ turn, columns }: { turn: Turn; columns: number }) 
       return null;
     }
     return (
-      <Box paddingBottom={1}>
+      // width={columns} for the same reason the tool block below pins it: `<Static>` lays its
+      // children out at their content width, so an unpinned Box lets a paragraph size itself to
+      // its *unwrapped* text and emit a row wider than the terminal, which then soft-wraps it
+      // mid-token at column 0 with none of this layout's indentation.
+      <Box paddingBottom={1} width={columns}>
         <MarkdownViewer text={turn.content} columns={columns} />
       </Box>
     );
   }
   if (turn.type === "assistant_stream") {
     return (
-      <Box paddingBottom={turn.final ? 1 : 0}>
+      <Box paddingBottom={turn.final ? 1 : 0} width={columns}>
         <MarkdownViewer text={turn.content} columns={columns} />
       </Box>
     );

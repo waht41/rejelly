@@ -1,5 +1,6 @@
-import { renderToString } from "ink";
+import { renderToString, Static } from "ink";
 import { createElement } from "react";
+import stringWidth from "string-width";
 import stripAnsi from "strip-ansi";
 import { describe, expect, it } from "vitest";
 import type { Turn } from "../store/useOutputStore";
@@ -99,5 +100,51 @@ describe("HistoryItem system turn", () => {
 
     expect(lines.filter((line) => line.trim().length > 0).length).toBeGreaterThan(2);
     expect(lines.join("\n")).toContain("#3 run_command");
+  });
+});
+
+describe("HistoryItem assistant markdown", () => {
+  const assistantTurn = (content: string): Turn => ({ id: "a_1", type: "assistant", content });
+
+  // Long enough that every wrap point lands mid-sentence, mixing CJK with ASCII identifiers the
+  // way model prose does.
+  const longItem =
+    "1. **`status` 现在是死数据** —— 全仓库没有任何 UI 读 `status` 字段。" +
+    "`confirmWrite.ts`/`getInput.ts` 里精心构造的 `shell → workspace root` 都写进 store 后无人消费。";
+
+  /**
+   * Through `<Static>`, which is the only way this defect appears: Static sizes its children by
+   * their content rather than by the terminal, so a Box with no pinned width lets a paragraph
+   * measure itself against its *unwrapped* text. Rendering HistoryItem on its own puts it at the
+   * root, where it inherits the terminal width and looks fine either way.
+   */
+  function renderThroughStatic(content: string, columns: number): string[] {
+    const output = renderToString(
+      createElement(Static, {
+        items: [assistantTurn(content)],
+        children: (turn: unknown) =>
+          createElement(HistoryItem, { key: "a_1", turn: turn as Turn, columns }),
+      }),
+      { columns },
+    );
+    return stripAnsi(output).split("\n");
+  }
+
+  it("never emits a row wider than the terminal", () => {
+    // An over-wide row is left for the terminal to soft-wrap, which it does at the column edge:
+    // mid-token, landing at column 0 with none of this layout's indentation.
+    for (const columns of [60, 80, 100, 120, 140]) {
+      for (const line of renderThroughStatic(longItem, columns)) {
+        expect(stringWidth(line)).toBeLessThanOrEqual(columns);
+      }
+    }
+  });
+
+  it("keeps the space after a list marker", () => {
+    // Once the row is width-constrained, Yoga balances an over-wide line by shrinking the marker
+    // instead of wrapping the text further, turning "1. status" into "1.status".
+    for (const columns of [60, 80, 100, 120, 140]) {
+      expect(renderThroughStatic(longItem, columns).join("\n")).toContain("1. ");
+    }
   });
 });
