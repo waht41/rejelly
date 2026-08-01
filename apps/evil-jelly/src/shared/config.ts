@@ -218,34 +218,34 @@ export function readGlobalEnvValues(): Record<string, string> {
   return readEnvValues(resolveGlobalEnvPath());
 }
 
-/** Named env profiles live here: ~/.evil-jelly/envs/<name>.env */
-export function resolveEnvProfileDir(): string {
-  return path.join(resolveGlobalJellyDir(), "envs");
-}
-
 /**
- * Resolve `--env <name|path>`. A bare name (no separator, no `.env` suffix) is a profile in
- * the global profile directory; anything else is a filesystem path. Naming a profile is the
- * expected use — one file per endpoint identity, so key, model, proxy, and web-search
- * substrate switch together and can never be half-applied.
+ * Resolve `--env <name|path>`. A bare name (no separator, no `.env` suffix) is a profile
+ * beside the global file, `~/.evil-jelly/<name>.env`; anything else is a filesystem path.
+ * Naming a profile is the expected use — one file per endpoint identity, so key, model,
+ * proxy, and web-search substrate switch together and can never be half-applied. The default
+ * `.env` sits in the same directory on purpose: it is the identity used when none is named.
  */
 export function resolveEnvProfilePath(nameOrPath: string): string {
   const raw = nameOrPath.trim();
   if (!/[\\/]/.test(raw) && !raw.endsWith(".env")) {
-    return path.join(resolveEnvProfileDir(), `${raw}.env`);
+    return path.join(resolveGlobalJellyDir(), `${raw}.env`);
   }
   return path.resolve(raw);
 }
 
-/** Profile names available to `--env`, for error messages and future pickers. */
+/**
+ * Profile names available to `--env`, for error messages and future pickers. `.env` is the
+ * unnamed default rather than a profile, so it is excluded — otherwise it would list as one
+ * with an empty name.
+ */
 export function listEnvProfileNames(): string[] {
-  const dir = resolveEnvProfileDir();
+  const dir = resolveGlobalJellyDir();
   if (!fs.existsSync(dir)) {
     return [];
   }
   return fs
     .readdirSync(dir)
-    .filter((name) => name.endsWith(".env"))
+    .filter((name) => name !== ".env" && name.endsWith(".env"))
     .map((name) => name.slice(0, -".env".length))
     .sort();
 }

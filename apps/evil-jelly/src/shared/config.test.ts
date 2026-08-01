@@ -54,9 +54,9 @@ function writeGlobalEnv(homeDir: string, content: string): void {
   fs.writeFileSync(path.join(homeDir, ".evil-jelly", ".env"), content, "utf-8");
 }
 
-/** Write a named `--env` profile under the mocked home dir. */
+/** Write a named `--env` profile beside the global file under the mocked home dir. */
 function writeEnvProfile(homeDir: string, name: string, content: string): string {
-  const dir = path.join(homeDir, ".evil-jelly", "envs");
+  const dir = path.join(homeDir, ".evil-jelly");
   fs.mkdirSync(dir, { recursive: true });
   const filePath = path.join(dir, `${name}.env`);
   fs.writeFileSync(filePath, content, "utf-8");
@@ -237,7 +237,7 @@ describe("loadEvilJellyEnv", () => {
 });
 
 describe("loadEvilJellyEnv with --env", () => {
-  it("resolves a bare name under ~/.evil-jelly/envs and outranks the shell", () => {
+  it("resolves a bare name to ~/.evil-jelly/<name>.env and outranks the shell", () => {
     const homeDir = useHomeDir();
     writeEnvProfile(homeDir, "luna", "OPENAI_API_KEY=luna-key\nOPENAI_MODEL_ID=luna-model\n");
     createWorkspaceWithEnv("OPENAI_MODEL_ID=workspace-model\n");
@@ -288,9 +288,11 @@ describe("loadEvilJellyEnv with --env", () => {
     const homeDir = useHomeDir();
     writeEnvProfile(homeDir, "luna", "OPENAI_API_KEY=luna-key\n");
     writeEnvProfile(homeDir, "ds-max", "OPENAI_API_KEY=ds-key\n");
+    // The default file shares the directory but is the unnamed identity, not a profile.
+    writeGlobalEnv(homeDir, "OPENAI_API_KEY=global-key\n");
     createWorkspaceWithEnv("");
 
-    expect(() => loadEvilJellyEnv({ envFile: "typo" })).toThrow(/Known profiles: ds-max, luna/);
+    expect(() => loadEvilJellyEnv({ envFile: "typo" })).toThrow("Known profiles: ds-max, luna.");
   });
 
   it("aborts when a profile redirects the endpoint without carrying its own key", () => {
