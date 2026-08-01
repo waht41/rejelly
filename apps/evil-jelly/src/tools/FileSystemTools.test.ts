@@ -6,7 +6,7 @@ import { createTestHostBindings } from "../__tests__/testHostBindings";
 import type { FsOutsideAccessPayload } from "../shared/AgentShared";
 import { getWorkspaceFsPolicy, setWorkspaceRoot } from "../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyHostBindings } from "../shared/types";
-import { MAX_READ_BYTES_PER_CALL, ReadFileTool } from "./FileSystemTools";
+import { MAX_READ_BYTES_PER_CALL, MAX_READ_LINE_BYTES, ReadFileTool } from "./FileSystemTools";
 
 const hostBindingMock = vi.hoisted(() => ({
   current: null as EvilJellyHostBindings | null,
@@ -97,6 +97,36 @@ describe("ReadFileTool", () => {
     });
 
     expect(output).toContain("Error: offset 10 is past the end of the file (3 lines).");
+  });
+
+  it("refuses an oversized line in a whole-file read", async () => {
+    await fs.writeFile(
+      path.join(tmpDir, "bundle.js"),
+      `prefix\n${"x".repeat(MAX_READ_LINE_BYTES + 1)}`,
+      "utf8",
+    );
+
+    const output = await ReadFileTool.handler({ filePaths: ["bundle.js"] });
+
+    expect(output).toContain(`above the ${MAX_READ_LINE_BYTES / 1024} KB single-line limit`);
+    expect(output).toContain("use grep_search");
+    expect(output).not.toContain("x".repeat(100));
+  });
+
+  it("refuses an oversized line selected by a ranged read", async () => {
+    await fs.writeFile(
+      path.join(tmpDir, "long.log"),
+      `short\n${"y".repeat(MAX_READ_LINE_BYTES + 1)}\ntail`,
+      "utf8",
+    );
+
+    const output = await ReadFileTool.handler({
+      filePaths: [{ path: "long.log", offset: 2, limit: 1 }],
+    });
+
+    expect(output).toContain("Line 2");
+    expect(output).toContain("single-line limit");
+    expect(output).not.toContain("y".repeat(100));
   });
 
   it("mixes plain paths and ranged entries in one call", async () => {

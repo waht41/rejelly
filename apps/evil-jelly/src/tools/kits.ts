@@ -16,6 +16,7 @@ import {
   AstWorkspaceSymbolsTool,
 } from "./heuristicAstTools/document-symbol";
 import { AstGetFunctionDependenciesTool } from "./heuristicAstTools/function-dependencies";
+import { equipReadFileDedupMiddleware } from "./hooks/readFileDedup";
 import { evilJellyToolLoggerMiddleware } from "./middlewares/withToolLogger";
 import { ReadWebpageTool } from "./readWebpageTool";
 import { RunCommandTool } from "./runCommandTool";
@@ -67,15 +68,16 @@ export interface ReadOnlyWorkspaceKitOptions {
 /**
  * Read-only workspace exploration: list, fuzzy paths, grep, AST/symbol tools, read_file.
  *
- * Kits equip tools only — they install NO context/cost budget. A caller that wants a hard intake
- * ceiling declares one explicitly at its own top level (see seedEvaluator), via
- * `equipContextIntakeBudgetMiddleware` over {@link READ_ONLY_WORKSPACE_TOOL_NAMES}. The interactive
- * coding agent instead relies on the tool-call loop's occupancy-based auto-compaction as its single
- * top-level context bound.
+ * The kit also equips read_file's context-aware result deduplication, but installs NO context/cost
+ * budget. A caller that wants a hard intake ceiling declares one explicitly at its own top level
+ * (see seedEvaluator), via `equipContextIntakeBudgetMiddleware` over
+ * {@link READ_ONLY_WORKSPACE_TOOL_NAMES}. The interactive coding agent instead relies on the
+ * tool-call loop's occupancy-based auto-compaction as its single top-level context bound.
  */
 export async function equipReadOnlyWorkspaceKit(
   options: ReadOnlyWorkspaceKitOptions = {},
 ): Promise<void> {
+  equipReadFileDedupMiddleware();
   const tools = createReadOnlyWorkspaceTools(options.quiet ?? false);
   for (const tool of tools) {
     equipTool(tool);

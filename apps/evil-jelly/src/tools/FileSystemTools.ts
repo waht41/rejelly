@@ -19,6 +19,8 @@ import { resolveToolFsPath } from "./outsideAccess";
 export const MAX_READ_BYTES_PER_CALL = 100 * 1024;
 /** Ranged reads load the whole file to slice lines; refuse sources beyond this. */
 export const MAX_RANGED_READ_SOURCE_BYTES = 10 * 1024 * 1024;
+/** Refuse minified bundles and pathological logs before one line can dominate context. */
+export const MAX_READ_LINE_BYTES = 32 * 1024;
 export const MAX_DIR_DEPTH = 3;
 export const MAX_DIRECTORY_OUTPUT_CHARS = 15_000;
 
@@ -177,11 +179,35 @@ function renderResolvedReadFileError(resolved: ResolvedFsPath, error: string): s
   return renderResolvedReadFileResult(resolved, error, { status: "error" });
 }
 
+function findOversizedLine(
+  lines: readonly string[],
+  startLine = 1,
+): { line: number; bytes: number } | undefined {
+  for (let index = 0; index < lines.length; index += 1) {
+    const bytes = Buffer.byteLength(lines[index] ?? "", "utf8");
+    if (bytes > MAX_READ_LINE_BYTES) {
+      return { line: startLine + index, bytes };
+    }
+  }
+  return undefined;
+}
+
+function oversizedLineError(hit: { line: number; bytes: number }): string {
+  return (
+    `Error: Line ${hit.line} is ${hit.bytes} bytes, above the ` +
+    `${MAX_READ_LINE_BYTES / 1024} KB single-line limit. ` +
+    "This is likely generated/minified output or a pathological log line; use grep_search " +
+    "to locate a smaller, relevant result instead of loading the line into context."
+  );
+}
+
 export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
   name: "read_file",
   description:
     `Read one or more files with a strict combined ${MAX_READ_BYTES_PER_CALL / 1024} KB size limit. ` +
+    `Lines above ${MAX_READ_LINE_BYTES / 1024} KB are refused to keep minified bundles and pathological logs out of context. ` +
     "Returns one XML-like <file> envelope per result while leaving each file body unchanged. " +
+    'An unchanged result may be returned as <file ... status="unchanged" reference="previous-read" /> when the identical prior result is still in context. ' +
     "Pass { path, offset, limit } entries to read a line range from files too large to read whole, or around a known line; range metadata is in the envelope attributes and is not added to the body. " +
     `Use ast_document_symbols first if you only need file structure or declarations. ${AGENT_SCRATCH_DIR}/ is the agent scratch directory for temporary files.`,
   parameters: readFileParameters,
@@ -216,6 +242,12 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
 
           totalBytes += stat.size;
           const content = await policy.readResolved(resolved);
+          const oversizedLine = findOversizedLine(content.split(/\r?\n/));
+          if (oversizedLine) {
+            totalBytes -= stat.size;
+            results.push(renderResolvedReadFileError(resolved, oversizedLineError(oversizedLine)));
+            continue;
+          }
           results.push(renderResolvedReadFileResult(resolved, content));
           continue;
         }
@@ -247,7 +279,13 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
 
         const endLine =
           limit === undefined ? lines.length : Math.min(lines.length, startLine + limit - 1);
-        const snippet = lines.slice(startLine - 1, endLine).join("\n");
+        const selectedLines = lines.slice(startLine - 1, endLine);
+        const oversizedLine = findOversizedLine(selectedLines, startLine);
+        if (oversizedLine) {
+          results.push(renderResolvedReadFileError(resolved, oversizedLineError(oversizedLine)));
+          continue;
+        }
+        const snippet = selectedLines.join("\n");
         const snippetBytes = Buffer.byteLength(snippet, "utf8");
         if (totalBytes + snippetBytes > MAX_READ_BYTES_PER_CALL) {
           results.push(
