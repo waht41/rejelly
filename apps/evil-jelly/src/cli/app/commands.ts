@@ -7,8 +7,10 @@ import { withAbort } from "../../services/stop/withAbort";
 import {
   createOpenAIModelFromEnv,
   env,
-  readGlobalEnvValues,
-  saveGlobalEnvValues,
+  readEnvValues,
+  resolveEnvProfilePath,
+  resolveGlobalEnvPath,
+  saveEnvValues,
 } from "../../shared/config";
 import { generateTraceId } from "../../shared/lib/traceId";
 import type { ParsedAuditArgs, ParsedRunArgs } from "./args";
@@ -18,11 +20,16 @@ import { collectInitConfig } from "./initConfig";
 
 const AuditAgentWithAbort = AuditAgent.fork({ middlewares: [withAbort()] });
 
-export async function runInitCommand(
-  apiKeyFromCli: string | undefined,
-  baseUrlFromCli: string | undefined,
-  modelIdFromCli: string | undefined,
-): Promise<void> {
+export async function runInitCommand(options: {
+  apiKey: string | undefined;
+  baseUrl: string | undefined;
+  modelId: string | undefined;
+  /** With --env, write the named profile instead of the global file. */
+  envFile: string | undefined;
+}): Promise<void> {
+  const targetPath = options.envFile
+    ? resolveEnvProfilePath(options.envFile)
+    : resolveGlobalEnvPath();
   const interactive = process.stdin.isTTY === true && process.stdout.isTTY === true;
   const readline = interactive
     ? createInterface({
@@ -31,8 +38,8 @@ export async function runInitCommand(
       })
     : undefined;
   const { apiKey, baseUrl, modelId } = await collectInitConfig(
-    { apiKey: apiKeyFromCli, baseUrl: baseUrlFromCli, modelId: modelIdFromCli },
-    readGlobalEnvValues(),
+    { apiKey: options.apiKey, baseUrl: options.baseUrl, modelId: options.modelId },
+    readEnvValues(targetPath),
     readline ? (question) => readline.question(question) : undefined,
   ).finally(() => readline?.close());
   if (!apiKey) {
@@ -43,7 +50,7 @@ export async function runInitCommand(
     );
     process.exit(1);
   }
-  const filePath = saveGlobalEnvValues({
+  const filePath = saveEnvValues(targetPath, {
     OPENAI_API_KEY: apiKey,
     ...(baseUrl ? { OPENAI_BASE_URL: baseUrl } : {}),
     ...(modelId ? { OPENAI_MODEL_ID: modelId } : {}),

@@ -208,9 +208,46 @@ export function resolveGlobalEnvPath(): string {
   return path.join(resolveGlobalJellyDir(), ".env");
 }
 
+/** Read values already persisted in an env file; a missing file reads as empty. */
+export function readEnvValues(filePath: string): Record<string, string> {
+  return readEnvFile(filePath);
+}
+
 /** Read values already persisted by `evil init`. */
 export function readGlobalEnvValues(): Record<string, string> {
-  return readEnvFile(resolveGlobalEnvPath());
+  return readEnvValues(resolveGlobalEnvPath());
+}
+
+/** Named env profiles live here: ~/.evil-jelly/envs/<name>.env */
+export function resolveEnvProfileDir(): string {
+  return path.join(resolveGlobalJellyDir(), "envs");
+}
+
+/**
+ * Resolve `--env <name|path>`. A bare name (no separator, no `.env` suffix) is a profile in
+ * the global profile directory; anything else is a filesystem path. Naming a profile is the
+ * expected use — one file per endpoint identity, so key, model, proxy, and web-search
+ * substrate switch together and can never be half-applied.
+ */
+export function resolveEnvProfilePath(nameOrPath: string): string {
+  const raw = nameOrPath.trim();
+  if (!/[\\/]/.test(raw) && !raw.endsWith(".env")) {
+    return path.join(resolveEnvProfileDir(), `${raw}.env`);
+  }
+  return path.resolve(raw);
+}
+
+/** Profile names available to `--env`, for error messages and future pickers. */
+export function listEnvProfileNames(): string[] {
+  const dir = resolveEnvProfileDir();
+  if (!fs.existsSync(dir)) {
+    return [];
+  }
+  return fs
+    .readdirSync(dir)
+    .filter((name) => name.endsWith(".env"))
+    .map((name) => name.slice(0, -".env".length))
+    .sort();
 }
 
 function quoteEnvValue(raw: string): string {
@@ -221,9 +258,8 @@ function quoteEnvValue(raw: string): string {
   return `"${escaped}"`;
 }
 
-/** Merge values into ~/.evil-jelly/.env (existing keys are kept unless overwritten). */
-export function saveGlobalEnvValues(values: Record<string, string>): string {
-  const filePath = resolveGlobalEnvPath();
+/** Merge values into an env file (existing keys are kept unless overwritten). */
+export function saveEnvValues(filePath: string, values: Record<string, string>): string {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const trimmed = Object.fromEntries(
     Object.entries(values).map(([key, value]) => [key, value.trim()]),
@@ -234,13 +270,19 @@ export function saveGlobalEnvValues(values: Record<string, string>): string {
   return filePath;
 }
 
+/** Merge values into ~/.evil-jelly/.env. */
+export function saveGlobalEnvValues(values: Record<string, string>): string {
+  return saveEnvValues(resolveGlobalEnvPath(), values);
+}
+
 /** Workspace-local env file: secrets stay out of git (settings.jsonc holds the shareable repo facts). */
 export const WORKSPACE_ENV_REL_PATH = ".evil-jelly/.env";
 
-type EnvLayer = "cli" | "shell" | "workspace" | "global";
+type EnvLayer = "cli" | "envFile" | "shell" | "workspace" | "global";
 
 const ENV_LAYER_LABELS: Record<EnvLayer, string> = {
   cli: "--api-key",
+  envFile: "--env",
   shell: "the shell environment",
   workspace: WORKSPACE_ENV_REL_PATH,
   global: "~/.evil-jelly/.env",
@@ -269,19 +311,73 @@ function warnOnWorkspaceRoutedForeignKey(sources: Map<string, EnvLayer>): void {
   }
 }
 
+/** Read a `--env` profile, failing loudly instead of silently running the default identity. */
+function readEnvProfile(filePath: string, requested: string): Record<string, string> {
+  if (!fs.existsSync(filePath)) {
+    const names = listEnvProfileNames();
+    throw new Error(
+      `--env ${requested}: no env file at ${filePath}.` +
+        (names.length > 0
+          ? ` Known profiles: ${names.join(", ")}.`
+          : ` Create one there, or pass a path.`),
+    );
+  }
+  return readEnvFile(filePath);
+}
+
+/**
+ * A profile that redirects the endpoint must carry its own key. Vars absent from the profile
+ * fall through to the layers below — deliberate, so shared knobs (timeouts, review, audit)
+ * stay in one place — but for the routing vars that fall-through means sending the previous
+ * provider's key to a new endpoint. Cheap to get wrong and impossible to take back, so this
+ * one aborts where the workspace equivalent only warns.
+ */
+function assertSelfContainedRouting(values: Record<string, string>, filePath: string): void {
+  const routing = KEY_ROUTING_VARS.filter((name) => hasEnvValue(values[name]));
+  if (routing.length === 0 || hasEnvValue(values.OPENAI_API_KEY)) {
+    return;
+  }
+  throw new Error(
+    `${filePath} sets ${routing.join(" and ")} without OPENAI_API_KEY. An env profile that ` +
+      `redirects the endpoint must carry its own key, otherwise the key from a lower layer ` +
+      `is sent to it. Add OPENAI_API_KEY to the profile.`,
+  );
+}
+
 /**
  * Load env with cascading priority (closest to the invocation wins):
- * CLI --api-key > process.env (shell) > workspace .evil-jelly/.env > ~/.evil-jelly/.env.
+ * CLI --api-key > --env <profile> > process.env (shell) > workspace .evil-jelly/.env >
+ * ~/.evil-jelly/.env.
+ *
+ * `--env` outranks the shell on purpose, unlike the other file layers: it is per-run intent,
+ * not a machine fact, and a profile silently losing its model id to an exported OPENAI_MODEL_ID
+ * is the exact failure the flag exists to prevent. Vars it does not set still fall through.
  *
  * The workspace's plain `.env` is deliberately NOT read: it belongs to the app under
  * development (tests/examples), not to evil the tool. Evil-specific secrets live in the
  * tool's own namespace, mirroring `.evil-jelly/settings.jsonc` for shareable repo facts.
  */
-export function loadEvilJellyEnv(options?: { cliApiKey?: string | undefined }): void {
+export function loadEvilJellyEnv(options?: {
+  cliApiKey?: string | undefined;
+  envFile?: string | undefined;
+}): void {
   const sources = new Map<string, EnvLayer>();
   for (const varName of ["OPENAI_API_KEY", ...KEY_ROUTING_VARS]) {
     if (hasEnvValue(process.env[varName])) {
       sources.set(varName, "shell");
+    }
+  }
+
+  const requestedProfile = options?.envFile?.trim();
+  if (hasEnvValue(requestedProfile)) {
+    const profilePath = resolveEnvProfilePath(requestedProfile);
+    const values = readEnvProfile(profilePath, requestedProfile);
+    assertSelfContainedRouting(values, profilePath);
+    for (const [key, value] of Object.entries(values)) {
+      if (hasEnvValue(value)) {
+        process.env[key] = value;
+        sources.set(key, "envFile");
+      }
     }
   }
 
