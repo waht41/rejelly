@@ -4,7 +4,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { createOpenAIAdapter } from "@rejelly/adapter-openai";
+import { type ChatCompletionParams, createOpenAIAdapter } from "@rejelly/adapter-openai";
 import { augmentModel, type ModelAdapter } from "@rejelly/core";
 import type { ReviewOptions } from "@rejelly/core/debugger";
 import { parse as parseEnv } from "dotenv";
@@ -146,6 +146,8 @@ const ENV_VARS = {
   OPENAI_AUTO_COMPACT_TOKENS: positiveInt(),
   /** Auto-compact trigger as a fraction of the context window; default ratio lives in UnifiedAgent. */
   OPENAI_AUTO_COMPACT_RATIO: ratio(),
+  /** Thinking budget for reasoning models (e.g. DeepSeek `max`); unset sends nothing. */
+  OPENAI_REASONING_EFFORT: str(),
   OPENAI_RETRY_MAX_ATTEMPTS: positiveInt(3),
   REJELLY_ENABLE_REVIEW: flag(),
   REJELLY_REVIEW_ENDPOINT: str(FALLBACK_REVIEW_ENDPOINT),
@@ -317,6 +319,27 @@ export function exitIfMissingOpenAIKey(): void {
   }
 }
 
+/**
+ * Reasoning knobs, or undefined when the var is unset (provider default applies).
+ *
+ * The effort value is forwarded verbatim: vocabularies differ per provider (`max` is
+ * DeepSeek's, `minimal` is OpenAI's) and the SDK's ReasoningEffort union covers neither
+ * fully, so the value is validated server-side rather than here. DeepSeek also gates
+ * thinking behind its own `thinking` switch, which is not an SDK field at all — the
+ * adapter merges these params into the request body, so it rides along untyped.
+ */
+function resolveReasoningParams(isDeepSeek: boolean): ChatCompletionParams | undefined {
+  const effort = env.OPENAI_REASONING_EFFORT.trim().toLowerCase();
+  if (!effort) {
+    return undefined;
+  }
+  const params: Record<string, unknown> = { reasoning_effort: effort };
+  if (isDeepSeek) {
+    params.thinking = { type: effort === "none" ? "disabled" : "enabled" };
+  }
+  return params as ChatCompletionParams;
+}
+
 /** Model adapter from current process.env (after loadEvilJellyEnv). */
 export function createOpenAIModelFromEnv(): ModelAdapter {
   const apiKey = env.OPENAI_API_KEY;
@@ -327,6 +350,7 @@ export function createOpenAIModelFromEnv(): ModelAdapter {
   // DeepSeek has a native JSON mode (response_format: json_object) but no strict
   // json_schema; route it there.
   const isDeepSeek = isDeepSeekModelConfig({ modelId, provider, baseURL });
+  const chatCompletionParams = resolveReasoningParams(isDeepSeek);
 
   const adapter = createOpenAIAdapter({
     modelId,
@@ -334,6 +358,7 @@ export function createOpenAIModelFromEnv(): ModelAdapter {
     provider,
     apiKey,
     ...(isDeepSeek ? { schemaMode: "json_object" as const } : {}),
+    ...(chatCompletionParams ? { chatCompletionParams } : {}),
   });
 
   return augmentModel(adapter, [
