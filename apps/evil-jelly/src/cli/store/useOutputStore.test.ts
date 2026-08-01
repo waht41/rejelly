@@ -601,6 +601,90 @@ describe("appendStream", () => {
   });
 });
 
+describe("logSystem", () => {
+  // A notice fires between the model's text and the tool it announces — every auto-allowed
+  // call. It used to reset the stream controller and wipe the transient buffer without
+  // committing either, so anything the markdown holdback still owned was erased. That
+  // holdback covers trailing lists and tables, i.e. exactly the shape of the "here is my
+  // plan" text that precedes a tool batch.
+  it("commits the held-back stream tail ahead of the notice", () => {
+    vi.useFakeTimers();
+    const store = useOutputStore.getState();
+
+    store.appendStream("Checking three things:\n- the config\n- the adapter\n");
+    vi.advanceTimersByTime(50);
+    expect(useOutputStore.getState().streamBuffer).toBe("- the config\n- the adapter\n");
+
+    store.logSystem("[Auto-allowed] declared read_only → rg config", { oneLine: true });
+
+    expect(useOutputStore.getState().history).toEqual([
+      { id: "as_0", type: "assistant_stream", content: "Checking three things:\n" },
+      { id: "as_1", type: "assistant_stream", content: "- the config\n- the adapter\n" },
+      {
+        id: "s_2",
+        type: "system",
+        content: "[Auto-allowed] declared read_only → rg config",
+        oneLine: true,
+      },
+    ]);
+    expect(useOutputStore.getState().streamBuffer).toBe("");
+  });
+
+  it("commits a preamble that was held back from its first character", () => {
+    // Nothing reached history yet, so the controller's emitted prefix is empty. Draining
+    // through finalize("") would take the "the final message already covers it" branch here
+    // and drop the list — the reason drain() exists as its own operation.
+    vi.useFakeTimers();
+    const store = useOutputStore.getState();
+
+    store.appendStream("- read the config\n- find the caller\n");
+    vi.advanceTimersByTime(50);
+    expect(useOutputStore.getState().history).toEqual([]);
+
+    store.logSystem("[Auto-allowed] safe shell (read-only)", { oneLine: true });
+
+    expect(useOutputStore.getState().history[0]).toEqual({
+      id: "as_0",
+      type: "assistant_stream",
+      content: "- read the config\n- find the caller\n",
+    });
+  });
+
+  it("keeps unflushed deltas that the batch timer has not written yet", () => {
+    vi.useFakeTimers();
+    const store = useOutputStore.getState();
+
+    store.appendStream("about to run it\n");
+    store.logSystem("[Auto-allowed] shell prefix: ls", { oneLine: true });
+
+    expect(useOutputStore.getState().history.map((turn) => turn.type)).toEqual([
+      "assistant_stream",
+      "system",
+    ]);
+    expect(useOutputStore.getState().history[0]).toMatchObject({
+      content: "about to run it\n",
+    });
+  });
+
+  it("does not replay the committed tail when the turn finishes", () => {
+    vi.useFakeTimers();
+    const store = useOutputStore.getState();
+
+    store.appendStream("- step one\n");
+    vi.advanceTimersByTime(50);
+    store.logSystem("[Auto-allowed] safe shell (read-only)", { oneLine: true });
+    store.appendStream("Done.\n");
+    vi.advanceTimersByTime(50);
+    store.logAssistant("Done.");
+
+    const contents = useOutputStore
+      .getState()
+      .history.filter((turn) => turn.type === "assistant_stream")
+      .map((turn) => turn.content);
+    expect(contents).toEqual(["- step one\n", "Done.\n"]);
+  });
+});
+
 describe("clearHistory", () => {
   it("clears history, stream, and status", () => {
     useOutputStore.setState({

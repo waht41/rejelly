@@ -62,6 +62,22 @@ export class StreamStableTailController {
     };
   }
 
+  /**
+   * Release whatever the holdback still owns and reset.
+   *
+   * Unlike {@link finalize} there is no final message to reconcile against: the caller is
+   * interrupting a stream that has not produced its reply yet (a system notice landing between
+   * tool calls), not replacing it. Passing `""` to finalize would look equivalent but silently
+   * drops the remainder whenever nothing was emitted yet — an entirely list-shaped preamble is
+   * held back from the first character, so `emittedPrefix` is empty and `"".startsWith("")`
+   * takes the "final content already covers it" branch.
+   */
+  drain(): string {
+    const remainder = this.source.slice(this.emittedSourceLength);
+    this.reset();
+    return remainder;
+  }
+
   reset(): void {
     this.source = "";
     this.emittedSourceLength = 0;
