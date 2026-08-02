@@ -21,6 +21,8 @@ export const MAX_READ_BYTES_PER_CALL = 100 * 1024;
 export const MAX_RANGED_READ_SOURCE_BYTES = 10 * 1024 * 1024;
 /** Refuse minified bundles and pathological logs before one line can dominate context. */
 export const MAX_READ_LINE_BYTES = 32 * 1024;
+const MAX_NON_TEXT_CHARACTER_RATIO = 0.05;
+const MIN_NON_TEXT_CHARACTERS = 4;
 export const MAX_DIR_DEPTH = 3;
 export const MAX_DIRECTORY_OUTPUT_CHARS = 15_000;
 
@@ -143,7 +145,7 @@ const readFileParameters = z.object({
     .min(1)
     .describe(
       "One or more files to read. Each entry is a path string, or { path, offset, limit } to read a line range " +
-        "(e.g. a large file, or context around a grep_search hit). " +
+        "(e.g. a large file, or context around a search hit). " +
         `Combined file contents are capped at ${MAX_READ_BYTES_PER_CALL / 1024} KB per call.`,
     ),
 });
@@ -220,6 +222,61 @@ function oversizedLineAttributes(
   };
 }
 
+interface NonTextContent {
+  reason: "nul-byte" | "control-characters" | "replacement-characters";
+  count: number;
+}
+
+function detectNonTextContent(content: string): NonTextContent | undefined {
+  let nulBytes = 0;
+  let controlCharacters = 0;
+  let replacementCharacters = 0;
+  for (const character of content) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code === 0) {
+      nulBytes += 1;
+    } else if ((code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) || code === 0x7f) {
+      controlCharacters += 1;
+    } else if (code === 0xfffd) {
+      replacementCharacters += 1;
+    }
+  }
+  if (nulBytes > 0) {
+    return { reason: "nul-byte", count: nulBytes };
+  }
+  const length = Math.max(1, content.length);
+  if (
+    controlCharacters >= MIN_NON_TEXT_CHARACTERS &&
+    controlCharacters / length > MAX_NON_TEXT_CHARACTER_RATIO
+  ) {
+    return { reason: "control-characters", count: controlCharacters };
+  }
+  if (
+    replacementCharacters >= MIN_NON_TEXT_CHARACTERS &&
+    replacementCharacters / length > MAX_NON_TEXT_CHARACTER_RATIO
+  ) {
+    return { reason: "replacement-characters", count: replacementCharacters };
+  }
+  return undefined;
+}
+
+function nonTextContentError(
+  resolved: ResolvedFsPath,
+  sizeBytes: number,
+  hit: NonTextContent,
+): string {
+  return renderResolvedReadFileError(
+    resolved,
+    "Error: File does not appear to contain normal UTF-8 text. Use an appropriate binary, image, or targeted inspection tool.",
+    {
+      reason: "binary-content",
+      "size-bytes": String(sizeBytes),
+      "binary-signal": hit.reason,
+      "signal-count": String(hit.count),
+    },
+  );
+}
+
 export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
   name: "read_file",
   description:
@@ -264,21 +321,42 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
             continue;
           }
 
-          totalBytes += stat.size;
           const content = await policy.readResolved(resolved);
-          const lines = content.split(/\r?\n/);
-          const oversizedLine = findOversizedLine(lines);
-          if (oversizedLine) {
-            totalBytes -= stat.size;
+          const contentBytes = Buffer.byteLength(content, "utf8");
+          if (totalBytes + contentBytes > MAX_READ_BYTES_PER_CALL) {
             results.push(
               renderResolvedReadFileError(
                 resolved,
-                oversizedLineError(oversizedLine),
-                oversizedLineAttributes(stat.size, lines.length, oversizedLine),
+                `Error: Combined file sizes exceed the ${MAX_READ_BYTES_PER_CALL / 1024} KB limit for this tool call. ` +
+                  "Read fewer files or narrow the request with a line range, search, or structural inspection.",
+                {
+                  reason: "combined-size-limit",
+                  "size-bytes": String(contentBytes),
+                  "remaining-call-bytes": String(MAX_READ_BYTES_PER_CALL - totalBytes),
+                  "max-call-bytes": String(MAX_READ_BYTES_PER_CALL),
+                },
               ),
             );
             continue;
           }
+          const nonText = detectNonTextContent(content);
+          if (nonText) {
+            results.push(nonTextContentError(resolved, contentBytes, nonText));
+            continue;
+          }
+          const lines = content.split(/\r?\n/);
+          const oversizedLine = findOversizedLine(lines);
+          if (oversizedLine) {
+            results.push(
+              renderResolvedReadFileError(
+                resolved,
+                oversizedLineError(oversizedLine),
+                oversizedLineAttributes(contentBytes, lines.length, oversizedLine),
+              ),
+            );
+            continue;
+          }
+          totalBytes += contentBytes;
           results.push(renderResolvedReadFileResult(resolved, content));
           continue;
         }
@@ -301,6 +379,12 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
         }
 
         const content = await policy.readResolved(resolved);
+        const contentBytes = Buffer.byteLength(content, "utf8");
+        const nonText = detectNonTextContent(content);
+        if (nonText) {
+          results.push(nonTextContentError(resolved, contentBytes, nonText));
+          continue;
+        }
         const lines = content.split(/\r?\n/);
         const startLine = offset ?? 1;
         if (startLine > lines.length) {

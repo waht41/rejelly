@@ -16,7 +16,12 @@ vi.mock("node:child_process", () => ({
   execFileSync: execFileSyncMock,
 }));
 
-import { executeGrepSearch, GrepSearchTool, MAX_GREP_OUTPUT_LINE_BYTES } from "./GrepSearchTool";
+import {
+  executeGrepSearch,
+  GrepSearchTool,
+  MAX_GREP_OUTPUT_BYTES,
+  MAX_GREP_OUTPUT_LINE_BYTES,
+} from "./GrepSearchTool";
 
 describe("GrepSearchTool contextLines", () => {
   beforeEach(() => {
@@ -106,6 +111,20 @@ describe("GrepSearchTool contextLines", () => {
     expect(out).toContain("src/bundle.js:1:needle-");
     expect(out).toContain("[grep line truncated:");
     expect(out).toContain("-tail");
+  });
+
+  it("bounds the complete native backend response", async () => {
+    const lines = Array.from(
+      { length: 80 },
+      (_, index) => `src/file-${index}.ts:1:needle-${"x".repeat(2000)}`,
+    );
+    execFileSyncMock.mockReturnValue(`${lines.join("\n")}\n`);
+
+    const out = await executeGrepSearch("needle", "*.ts", 0);
+
+    expect(Buffer.byteLength(out, "utf8")).toBeLessThanOrEqual(MAX_GREP_OUTPUT_BYTES);
+    expect(out).toContain(`[grep output truncated at ${MAX_GREP_OUTPUT_BYTES} bytes;`);
+    expect(out).toContain("narrow the query or file pattern");
   });
 
   it("accepts out-of-range contextLines in schema and clamps in handler", async () => {

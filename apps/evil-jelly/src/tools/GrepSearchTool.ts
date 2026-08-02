@@ -20,6 +20,8 @@ const MAX_FALLBACK_FILES = 8000;
 const TRUNCATE_MAX_LINES = 300;
 /** Bound every model-facing grep line, including native backend output and context lines. */
 export const MAX_GREP_OUTPUT_LINE_BYTES = 4 * 1024;
+/** Bound the full response so many individually valid lines cannot overshoot context. */
+export const MAX_GREP_OUTPUT_BYTES = 100 * 1024;
 const DEFAULT_CONTEXT_LINES = 3;
 const MAX_CONTEXT_LINES = 12;
 
@@ -85,16 +87,31 @@ function truncateLongOutputLine(line: string): string {
   return `${utf8Prefix(line, prefixBudget)}${marker}${utf8Suffix(line, suffixBudget)}`;
 }
 
+function truncateTotalOutput(text: string): string {
+  if (Buffer.byteLength(text, "utf8") <= MAX_GREP_OUTPUT_BYTES) {
+    return text;
+  }
+  const marker =
+    `\n... [grep output truncated at ${MAX_GREP_OUTPUT_BYTES} bytes; ` +
+    "narrow the query or file pattern]";
+  const contentBudget = MAX_GREP_OUTPUT_BYTES - Buffer.byteLength(marker, "utf8");
+  const bounded = utf8Prefix(text, contentBudget);
+  const lastNewline = bounded.lastIndexOf("\n");
+  const completeLines = lastNewline >= 0 ? bounded.slice(0, lastNewline) : bounded;
+  return `${completeLines}${marker}`;
+}
+
 function truncateOutput(text: string, maxLines = TRUNCATE_MAX_LINES): string {
   const trimmed = text.trimEnd();
   const lines = trimmed.split("\n").map(truncateLongOutputLine);
   if (lines.length <= maxLines) {
-    return trimmed.length > 0 ? lines.join("\n") : text;
+    return trimmed.length > 0 ? truncateTotalOutput(lines.join("\n")) : text;
   }
-  return [
-    ...lines.slice(0, maxLines),
-    `... (+${lines.length - maxLines} more matches truncated)`,
-  ].join("\n");
+  return truncateTotalOutput(
+    [...lines.slice(0, maxLines), `... (+${lines.length - maxLines} more matches truncated)`].join(
+      "\n",
+    ),
+  );
 }
 
 function execFileStdout(
@@ -386,6 +403,7 @@ export const GrepSearchTool: ToolDefinition<typeof GrepSearchSchema> = {
     "Native tools mostly respect .gitignore; git grep expands trailing `*.{ext,...}` style globs into multiple pathspecs. " +
     "Supports configurable context lines (default 3, max 12). " +
     `Every output line is capped at ${MAX_GREP_OUTPUT_LINE_BYTES / 1024} KB; oversized matching or context lines retain their beginning and end with a truncation marker. ` +
+    `The complete response is capped at ${MAX_GREP_OUTPUT_BYTES / 1024} KB. ` +
     "The Node fallback uses case-insensitive JavaScript RegExp (`i` flag) and picomatch for filePattern.",
   parameters: GrepSearchSchema,
   handler: async ({ query, filePattern, contextLines }) => {

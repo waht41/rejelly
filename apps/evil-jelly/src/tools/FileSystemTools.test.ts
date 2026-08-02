@@ -140,6 +140,31 @@ describe("ReadFileTool", () => {
     expect(output).not.toContain("y".repeat(100));
   });
 
+  it("rejects NUL-containing content as binary without consuming the batch budget", async () => {
+    await fs.writeFile(path.join(tmpDir, "binary.dat"), "prefix\0payload", "utf8");
+    const safeContent = Array.from({ length: 2048 }, () => "s".repeat(48)).join("\n");
+    await fs.writeFile(path.join(tmpDir, "safe.txt"), safeContent, "utf8");
+
+    const output = await ReadFileTool.handler({ filePaths: ["binary.dat", "safe.txt"] });
+
+    expect(output).toContain('path="binary.dat"');
+    expect(output).toContain('reason="binary-content"');
+    expect(output).toContain('binary-signal="nul-byte"');
+    expect(output).toContain('signal-count="1"');
+    expect(output).toContain('path="safe.txt"');
+    expect(output).toContain(safeContent.slice(0, 100));
+  });
+
+  it("rejects text with an abnormal control-character ratio", async () => {
+    await fs.writeFile(path.join(tmpDir, "controls.txt"), "\u0001\u0002\u0003\u0004text", "utf8");
+
+    const output = await ReadFileTool.handler({ filePaths: ["controls.txt"] });
+
+    expect(output).toContain('reason="binary-content"');
+    expect(output).toContain('binary-signal="control-characters"');
+    expect(output).toContain('signal-count="4"');
+  });
+
   it("mixes plain paths and ranged entries in one call", async () => {
     await fs.writeFile(path.join(tmpDir, "whole.txt"), "whole content", "utf8");
     await fs.writeFile(path.join(tmpDir, "part.txt"), "p1\np2\np3\np4", "utf8");
