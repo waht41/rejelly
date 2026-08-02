@@ -2,14 +2,16 @@ import {
   type ContributionProvenance,
   qualifiedContributionName,
 } from "../../services/plugin/contracts";
-import { SKILL_LIMITS } from "./skillLimits";
+import { EXTENSION_LIMITS } from "../../shared/extensionLimits";
+
+/** The manifest contribution kind this consumer claims. Registered with the plugin catalog. */
+export const SKILL_CONTRIBUTION_KIND = "skills" as const;
 
 export type IdentifierValidationResult =
   | { readonly ok: true; readonly value: string }
   | { readonly ok: false; readonly value: string; readonly reason: string };
 
 const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
-const PLUGIN_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/;
 
 /** Trim and validate a model-facing, contribution-local skill name without rewriting its case. */
 export function validateSkillName(input: string): IdentifierValidationResult {
@@ -17,11 +19,11 @@ export function validateSkillName(input: string): IdentifierValidationResult {
   if (value.length === 0) {
     return { ok: false, value, reason: "Skill name must not be empty." };
   }
-  if (value.length > SKILL_LIMITS.skillNameChars) {
+  if (value.length > EXTENSION_LIMITS.skillNameChars) {
     return {
       ok: false,
       value,
-      reason: `Skill name must be at most ${SKILL_LIMITS.skillNameChars} characters.`,
+      reason: `Skill name must be at most ${EXTENSION_LIMITS.skillNameChars} characters.`,
     };
   }
   if (!SKILL_NAME_PATTERN.test(value)) {
@@ -30,30 +32,6 @@ export function validateSkillName(input: string): IdentifierValidationResult {
       value,
       reason:
         "Skill name must start with a lowercase ASCII letter or digit and contain only a-z, 0-9, dot, underscore, or hyphen.",
-    };
-  }
-  return { ok: true, value };
-}
-
-/** Trim and validate a stable, dot-segmented formal plugin id. */
-export function validatePluginId(input: string): IdentifierValidationResult {
-  const value = input.trim();
-  if (value.length === 0) {
-    return { ok: false, value, reason: "Plugin id must not be empty." };
-  }
-  if (value.length > SKILL_LIMITS.pluginIdChars) {
-    return {
-      ok: false,
-      value,
-      reason: `Plugin id must be at most ${SKILL_LIMITS.pluginIdChars} characters.`,
-    };
-  }
-  if (!PLUGIN_ID_PATTERN.test(value)) {
-    return {
-      ok: false,
-      value,
-      reason:
-        "Plugin id must contain lowercase ASCII dot-separated segments; each segment may contain internal hyphens.",
     };
   }
   return { ok: true, value };

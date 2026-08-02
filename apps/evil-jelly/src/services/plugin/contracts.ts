@@ -1,3 +1,5 @@
+import { EXTENSION_LIMITS } from "../../shared/extensionLimits";
+
 /**
  * App-local plugin envelope and provenance contracts.
  *
@@ -10,6 +12,36 @@ export const PLUGIN_MANIFEST_VERSION = 1 as const;
 export const PLUGIN_MANIFEST_FILE_NAME = "plugin.jsonc" as const;
 /** Detected only to produce a migration diagnostic; never parsed as a manifest. */
 export const UNSUPPORTED_PLUGIN_MANIFEST_FILE_NAME = "plugin.json" as const;
+
+export type PluginIdValidationResult =
+  | { readonly ok: true; readonly value: string }
+  | { readonly ok: false; readonly value: string; readonly reason: string };
+
+const PLUGIN_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/;
+
+/** Trim and validate a stable, dot-segmented formal plugin id. */
+export function validatePluginId(input: string): PluginIdValidationResult {
+  const value = input.trim();
+  if (value.length === 0) {
+    return { ok: false, value, reason: "Plugin id must not be empty." };
+  }
+  if (value.length > EXTENSION_LIMITS.pluginIdChars) {
+    return {
+      ok: false,
+      value,
+      reason: `Plugin id must be at most ${EXTENSION_LIMITS.pluginIdChars} characters.`,
+    };
+  }
+  if (!PLUGIN_ID_PATTERN.test(value)) {
+    return {
+      ok: false,
+      value,
+      reason:
+        "Plugin id must contain lowercase ASCII dot-separated segments; each segment may contain internal hyphens.",
+    };
+  }
+  return { ok: true, value };
+}
 
 /** One independently-versioned contribution block inside a plugin manifest. */
 export interface VersionedContribution<TSpec> {
@@ -62,6 +94,7 @@ export type ExtensionLoadDiagnosticCode =
   | "plugin.source.missing"
   | "plugin.source.duplicate"
   | "plugin.source.escape"
+  | "plugin.source.invalid"
   | "plugin.manifest.invalid-jsonc"
   | "plugin.manifest.invalid"
   | "plugin.manifest.unsupported-filename"

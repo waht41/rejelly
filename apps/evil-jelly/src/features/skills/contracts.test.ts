@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
-import {
-  qualifiedSkillName,
-  type SkillRecord,
-  validatePluginId,
-  validateSkillName,
-} from "./contracts";
-import { SKILL_LIMITS } from "./skillLimits";
+import { validatePluginId } from "../../services/plugin/contracts";
+import { EXTENSION_LIMITS } from "../../shared/extensionLimits";
+import { qualifiedSkillName, type SkillRecord, validateSkillName } from "./contracts";
 
 describe("skill identifiers", () => {
   it("trims valid skill names without rewriting their content", () => {
@@ -27,8 +23,8 @@ describe("skill identifiers", () => {
   });
 
   it("enforces the skill name length boundary", () => {
-    expect(validateSkillName("a".repeat(SKILL_LIMITS.skillNameChars)).ok).toBe(true);
-    expect(validateSkillName("a".repeat(SKILL_LIMITS.skillNameChars + 1)).ok).toBe(false);
+    expect(validateSkillName("a".repeat(EXTENSION_LIMITS.skillNameChars)).ok).toBe(true);
+    expect(validateSkillName("a".repeat(EXTENSION_LIMITS.skillNameChars + 1)).ok).toBe(false);
   });
 
   it.each(["com.example.plugin", "plugin", "a.b-c.d2"])("accepts valid plugin id %j", (id) => {
@@ -47,8 +43,8 @@ describe("skill identifiers", () => {
   });
 
   it("enforces the plugin id length boundary", () => {
-    expect(validatePluginId("a".repeat(SKILL_LIMITS.pluginIdChars)).ok).toBe(true);
-    expect(validatePluginId("a".repeat(SKILL_LIMITS.pluginIdChars + 1)).ok).toBe(false);
+    expect(validatePluginId("a".repeat(EXTENSION_LIMITS.pluginIdChars)).ok).toBe(true);
+    expect(validatePluginId("a".repeat(EXTENSION_LIMITS.pluginIdChars + 1)).ok).toBe(false);
   });
 });
 
@@ -75,6 +71,6 @@ describe("qualifiedSkillName", () => {
 
 describe("skill limits", () => {
   it("freezes the shared v1 limit table", () => {
-    expect(Object.isFrozen(SKILL_LIMITS)).toBe(true);
+    expect(Object.isFrozen(EXTENSION_LIMITS)).toBe(true);
   });
 });
