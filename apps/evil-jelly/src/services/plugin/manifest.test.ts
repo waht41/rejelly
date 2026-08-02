@@ -106,6 +106,17 @@ describe("plugin manifest loader", () => {
     });
   });
 
+  it("treats an omitted contributions block as an empty one", async () => {
+    await writeManifest(`{"manifestVersion":1,"id":"com.example.plugin"}`);
+
+    const result = await loadPluginManifest(candidate());
+
+    expect(result).toMatchObject({ ok: true, diagnostics: [] });
+    if (result.ok) {
+      expect(result.plugin.manifest.contributions).toEqual({});
+    }
+  });
+
   it("degrades pathological nesting into a diagnostic instead of an exception", async () => {
     // Nesting that fits in the byte budget can still exhaust the stack inside the JSONC parser and
     // the duplicate-key walk. Every recursive stage must stay behind the loader's result contract.

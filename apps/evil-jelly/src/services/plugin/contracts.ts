@@ -103,6 +103,7 @@ export type ExtensionLoadDiagnosticCode =
   | "plugin.id.duplicate"
   | "plugin.contribution.invalid"
   | "plugin.contribution.unsupported"
+  | "plugin.contribution.empty"
   | "skill.frontmatter.invalid"
   | "skill.invalid"
   | "skill.duplicate"

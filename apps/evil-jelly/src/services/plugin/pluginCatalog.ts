@@ -33,16 +33,33 @@ function duplicateIdDiagnostic(plugin: PluginDescriptor): ExtensionLoadDiagnosti
 }
 
 /**
- * Report contribution kinds this host cannot consume.
+ * Report what dispatch did with each declared kind.
  *
- * The raw value stays in the descriptor so a forward-compatible manifest survives a round trip,
- * but the plugin must be reported as only partially loaded rather than silently accepted.
+ * A plugin that contributes nothing still loads: it is a valid distribution unit and its id stays
+ * available for provenance. But neither an empty block nor a kind this host cannot consume may
+ * pass silently, because both look identical to a working plugin from the author's side.
+ *
+ * Unknown kinds keep their raw value in the descriptor so a forward-compatible manifest survives
+ * the round trip; only assembly is skipped.
  */
-function unsupportedKindDiagnostics(
+function contributionDiagnostics(
   plugin: PluginDescriptor,
   knownContributionKinds: ReadonlySet<string>,
 ): ExtensionLoadDiagnostic[] {
-  return Object.keys(plugin.manifest.contributions)
+  const kinds = Object.keys(plugin.manifest.contributions);
+  if (kinds.length === 0) {
+    return [
+      {
+        severity: "warning",
+        code: "plugin.contribution.empty",
+        message:
+          `Plugin ${plugin.id} declares no contributions and adds nothing to this session; ` +
+          'add a block such as "skills": { "apiVersion": 1 } to its manifest.',
+        source: plugin.source.manifestPath,
+      },
+    ];
+  }
+  return kinds
     .filter((kind) => !knownContributionKinds.has(kind))
     .sort(compareCodeUnits)
     .map((kind) => ({
@@ -99,7 +116,7 @@ export async function loadPluginCatalog(
     if (group.length === 1) {
       const plugin = group[0]!;
       plugins.push(plugin);
-      diagnostics.push(...unsupportedKindDiagnostics(plugin, knownKinds));
+      diagnostics.push(...contributionDiagnostics(plugin, knownKinds));
     } else {
       diagnostics.push(...group.map(duplicateIdDiagnostic));
     }

@@ -17,7 +17,9 @@ const manifestEnvelopeSchema = z
   .object({
     manifestVersion: z.number().int(),
     id: z.string(),
-    contributions: z.record(z.string(), z.unknown()),
+    // Omitted and empty must converge: both mean "declares nothing", and the catalog reports that
+    // once. A fresh object per parse keeps plugins from sharing one frozen default.
+    contributions: z.record(z.string(), z.unknown()).default(() => ({}) as Record<string, unknown>),
   })
   .passthrough();
 
