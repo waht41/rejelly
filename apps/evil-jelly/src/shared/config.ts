@@ -275,7 +275,7 @@ export function saveGlobalEnvValues(values: Record<string, string>): string {
   return saveEnvValues(resolveGlobalEnvPath(), values);
 }
 
-/** Workspace-local env file: secrets stay out of git (settings.jsonc holds the shareable repo facts). */
+/** Workspace-local Evil Jelly env file; keep secrets and machine-specific values out of git. */
 export const WORKSPACE_ENV_REL_PATH = ".evil-jelly/.env";
 
 type EnvLayer = "cli" | "envFile" | "shell" | "workspace" | "global";
@@ -354,8 +354,8 @@ function assertSelfContainedRouting(values: Record<string, string>, filePath: st
  * is the exact failure the flag exists to prevent. Vars it does not set still fall through.
  *
  * The workspace's plain `.env` is deliberately NOT read: it belongs to the app under
- * development (tests/examples), not to evil the tool. Evil-specific secrets live in the
- * tool's own namespace, mirroring `.evil-jelly/settings.jsonc` for shareable repo facts.
+ * development (tests/examples), not to evil the tool. Evil-specific values live in the tool's
+ * own `.evil-jelly/.env` namespace; non-secret preferences use settings.jsonc files.
  */
 export function loadEvilJellyEnv(options?: {
   cliApiKey?: string | undefined;

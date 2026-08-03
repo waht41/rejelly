@@ -1,30 +1,45 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import os, { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getWorkspaceFsPolicy, setWorkspaceRoot } from "./fs-policy/workspace-fs-policy";
-import { DOC_MAP_DEFAULT_PATH, getSettings, initSettings } from "./settings";
+import {
+  DOC_MAP_DEFAULT_PATH,
+  getSettings,
+  initSettings,
+  resolveUserSettingsPath,
+} from "./settings";
 
 describe("settings resolution", () => {
-  let prevRoot: string;
-  let dir: string;
+  let previousWorkspaceRoot: string;
+  let homeDir: string;
+  let workspaceDir: string;
 
   beforeEach(() => {
-    prevRoot = getWorkspaceFsPolicy().getRoot();
-    dir = mkdtempSync(join(tmpdir(), "evil-jelly-settings-"));
-    setWorkspaceRoot(dir);
+    previousWorkspaceRoot = getWorkspaceFsPolicy().getRoot();
+    homeDir = mkdtempSync(join(tmpdir(), "evil-jelly-settings-home-"));
+    workspaceDir = mkdtempSync(join(tmpdir(), "evil-jelly-settings-workspace-"));
+    vi.spyOn(os, "homedir").mockReturnValue(homeDir);
+    setWorkspaceRoot(workspaceDir);
     initSettings({});
   });
 
   afterEach(() => {
-    setWorkspaceRoot(prevRoot);
+    setWorkspaceRoot(previousWorkspaceRoot);
     initSettings({});
-    rmSync(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+    rmSync(homeDir, { recursive: true, force: true });
+    rmSync(workspaceDir, { recursive: true, force: true });
   });
 
-  function writeSettingsFile(content: string): void {
-    mkdirSync(join(dir, ".evil-jelly"), { recursive: true });
-    writeFileSync(join(dir, ".evil-jelly", "settings.jsonc"), content);
+  function writeUserSettingsFile(content: string): void {
+    mkdirSync(join(homeDir, ".evil-jelly"), { recursive: true });
+    writeFileSync(join(homeDir, ".evil-jelly", "settings.jsonc"), content);
+  }
+
+  function writeWorkspaceSettingsFile(content: string): void {
+    mkdirSync(join(workspaceDir, ".evil-jelly"), { recursive: true });
+    writeFileSync(join(workspaceDir, ".evil-jelly", "settings.jsonc"), content);
   }
 
   it("falls back to built-in defaults when no settings file exists", () => {
@@ -39,14 +54,13 @@ describe("settings resolution", () => {
     expect(s.devtoolMcp).toBe(false);
   });
 
-  it("reads values from .evil-jelly/settings.jsonc (JSONC comments allowed)", () => {
-    writeSettingsFile(`{
+  it("reads values from workspace .evil-jelly/settings.jsonc", () => {
+    writeWorkspaceSettingsFile(`{
       // repo facts
       "audit": { "concurrency": 8, "maxSeeds": 64, "ledgerGcDays": 14 }
     }`);
-    const s = getSettings();
-    expect(s.docMap).toBe(DOC_MAP_DEFAULT_PATH);
-    expect(s.audit).toEqual({
+
+    expect(getSettings().audit).toEqual({
       concurrency: 8,
       maxSeeds: 64,
       ledgerGcDays: 14,
@@ -54,7 +68,47 @@ describe("settings resolution", () => {
     });
   });
 
-  it("applies CLI overrides over built-in defaults", () => {
+  it("reads ~/.evil-jelly/settings.jsonc (JSONC comments allowed)", () => {
+    writeUserSettingsFile(`{
+      // personal defaults
+      "audit": { "concurrency": 4, "maxSeeds": 48, "ledgerGcDays": 21 }
+    }`);
+
+    expect(getSettings().audit).toEqual({
+      concurrency: 4,
+      maxSeeds: 48,
+      ledgerGcDays: 21,
+      disableLedgerGc: false,
+    });
+  });
+
+  it("resolves the user settings path through the global directory authority", () => {
+    expect(resolveUserSettingsPath()).toBe(join(homeDir, ".evil-jelly", "settings.jsonc"));
+  });
+
+  it("resolves each workspace field over its user default", () => {
+    writeUserSettingsFile(`{
+      "audit": { "concurrency": 4, "maxSeeds": 48, "ledgerGcDays": 21 }
+    }`);
+    writeWorkspaceSettingsFile(`{
+      "audit": { "concurrency": 8, "ledgerGcDays": 14 }
+    }`);
+
+    expect(getSettings().audit).toEqual({
+      concurrency: 8,
+      maxSeeds: 48,
+      ledgerGcDays: 14,
+      disableLedgerGc: false,
+    });
+  });
+
+  it("applies CLI overrides over workspace and user values", () => {
+    writeUserSettingsFile(`{
+      "audit": { "maxSeeds": 48, "ledgerGcDays": 21 }
+    }`);
+    writeWorkspaceSettingsFile(`{
+      "audit": { "maxSeeds": 40, "ledgerGcDays": 14 }
+    }`);
     initSettings({
       docMap: "other/map.jsonc",
       devtoolMcp: true,
@@ -73,23 +127,38 @@ describe("settings resolution", () => {
   });
 
   it("rejects the removed sync key loudly", () => {
-    writeSettingsFile(`{ "sync": { "zhDir": "cn", "enDir": "en" } }`);
+    writeWorkspaceSettingsFile(`{ "sync": { "zhDir": "cn", "enDir": "en" } }`);
     expect(() => getSettings()).toThrow(/failed validation/);
   });
 
   it("rejects the removed docMap key loudly", () => {
-    writeSettingsFile(`{ "docMap": "docs/map.jsonc" }`);
+    writeWorkspaceSettingsFile(`{ "docMap": "docs/map.jsonc" }`);
     expect(() => getSettings()).toThrow(/failed validation/);
   });
 
-  it("throws loudly on malformed JSON", () => {
-    writeSettingsFile("{ nope");
+  it("throws loudly on malformed workspace settings", () => {
+    writeWorkspaceSettingsFile("{ nope");
     expect(() => getSettings()).toThrow(/not valid JSON/);
   });
 
-  it("throws loudly on unknown keys", () => {
-    writeSettingsFile(`{ "docsMap": "typo.jsonc" }`);
+  it("throws loudly on unknown workspace setting keys", () => {
+    writeWorkspaceSettingsFile(`{ "docsMap": "typo.jsonc" }`);
     expect(() => getSettings()).toThrow(/failed validation/);
+  });
+
+  it("throws loudly on malformed user settings", () => {
+    writeUserSettingsFile("{ nope");
+    expect(() => getSettings()).toThrow(/not valid JSON/);
+  });
+
+  it("throws loudly on unknown user setting keys", () => {
+    writeUserSettingsFile(`{ "docsMap": "typo.jsonc" }`);
+    expect(() => getSettings()).toThrow(/failed validation/);
+  });
+
+  it("throws loudly when a settings path cannot be read", () => {
+    mkdirSync(join(homeDir, ".evil-jelly", "settings.jsonc"), { recursive: true });
+    expect(() => getSettings()).toThrow(/could not be read/);
   });
 
   it("caches per workspace root and re-resolves after initSettings", () => {
@@ -99,7 +168,7 @@ describe("settings resolution", () => {
       ledgerGcDays: undefined,
       disableLedgerGc: false,
     });
-    writeSettingsFile(`{ "audit": { "concurrency": 8 } }`);
+    writeWorkspaceSettingsFile(`{ "audit": { "concurrency": 8 } }`);
     // Cached: the file written after first resolution is not picked up...
     expect(getSettings().audit).toEqual({
       concurrency: undefined,

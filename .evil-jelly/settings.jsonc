@@ -1,7 +1,0 @@
-// evil-jelly workspace settings (repo facts only — shared via git).
-// Precedence: CLI flag > this file > built-in default. Secrets/machine config stay in .env.
-// Document-domain config lives in .evil-jelly/doc-map.jsonc (fixed path; --doc-map for one-off override).
-// All fields are optional; this repo follows the conventions, so nothing needs overriding.
-{
-  // "audit": { "concurrency": 12 }
-}

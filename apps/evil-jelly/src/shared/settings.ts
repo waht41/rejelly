@@ -1,22 +1,31 @@
 /**
- * Unified runtime settings: the single resolution point for repo-fact configuration.
+ * Unified runtime settings: the single resolution point for non-secret configuration.
  * Document-domain repo facts (sync glob pairs + per-doc mappings) live in doc-map.jsonc
  * at its fixed default path; only the CLI `--doc-map` flag relocates it per run.
  *
- * Precedence: CLI flag > workspace `.evil-jelly/settings.jsonc` > built-in default.
+ * Precedence: CLI flag > workspace `.evil-jelly/settings.jsonc` > user
+ * `~/.evil-jelly/settings.jsonc` > built-in default. Fields are resolved explicitly rather
+ * than through a generic deep merge so a feature can define safer composition rules when needed.
  * Env vars are deliberately NOT a layer here — secrets and machine facts (API keys,
- * proxies, endpoints) stay in `.env` (see config.ts), repo facts live in the settings
- * file so they are shared via git, and per-run intent comes from CLI flags.
+ * proxies, endpoints) stay in `.env` (see config.ts), non-secret preferences live in settings
+ * files, repository facts live in domain files, and per-run intent comes from CLI flags.
  */
 
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { getWorkspaceFsPolicy } from "./fs-policy/workspace-fs-policy";
+import { resolveGlobalJellyDir } from "./globalPath";
+import { getErrnoCode } from "./lib/errors";
 import { parseAndValidateJsonc } from "./lib/jsonc";
 
 export const SETTINGS_FILE_REL_PATH = ".evil-jelly/settings.jsonc";
 export const DOC_MAP_DEFAULT_PATH = ".evil-jelly/doc-map.jsonc";
+
+/** User-level, non-secret settings shared by all workspaces. */
+export function resolveUserSettingsPath(): string {
+  return path.join(resolveGlobalJellyDir(), "settings.jsonc");
+}
 
 const SettingsFileSchema = z
   .object({
@@ -75,33 +84,42 @@ export function initSettings(overrides: SettingsCliOverrides): void {
   cache = undefined;
 }
 
-function readSettingsFile(root: string): EvilJellySettingsFile {
-  const filePath = path.join(root, SETTINGS_FILE_REL_PATH);
+function readSettingsFile(filePath: string): EvilJellySettingsFile {
   let raw: string;
   try {
     raw = fs.readFileSync(filePath, "utf-8");
-  } catch {
-    return {};
+  } catch (error: unknown) {
+    if (getErrnoCode(error) === "ENOENT") {
+      return {};
+    }
+    throw new Error(
+      `Settings ${filePath} could not be read: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
   return parseAndValidateJsonc(raw, "Settings", filePath, SettingsFileSchema);
 }
 
 /**
- * Resolve settings for the current workspace root (cached per root; a missing file
- * yields defaults, a malformed file throws loudly — fix it, don't skip it).
+ * Resolve settings for the current user and workspace (cached per workspace root; missing files
+ * yield defaults, malformed files throw loudly — fix them, don't skip them).
  */
 export function getSettings(): ResolvedSettings {
   const root = getWorkspaceFsPolicy().getRoot();
   if (cache?.root === root) {
     return cache.resolved;
   }
-  const file = readSettingsFile(root);
+  const userFile = readSettingsFile(resolveUserSettingsPath());
+  const workspaceFile = readSettingsFile(path.join(root, SETTINGS_FILE_REL_PATH));
   const resolved: ResolvedSettings = {
     docMap: cliOverrides.docMap ?? DOC_MAP_DEFAULT_PATH,
     audit: {
-      concurrency: file.audit?.concurrency,
-      maxSeeds: cliOverrides.auditMaxSeeds ?? file.audit?.maxSeeds,
-      ledgerGcDays: cliOverrides.auditLedgerGcDays ?? file.audit?.ledgerGcDays,
+      concurrency: workspaceFile.audit?.concurrency ?? userFile.audit?.concurrency,
+      maxSeeds:
+        cliOverrides.auditMaxSeeds ?? workspaceFile.audit?.maxSeeds ?? userFile.audit?.maxSeeds,
+      ledgerGcDays:
+        cliOverrides.auditLedgerGcDays ??
+        workspaceFile.audit?.ledgerGcDays ??
+        userFile.audit?.ledgerGcDays,
       disableLedgerGc: cliOverrides.auditDisableLedgerGc ?? false,
     },
     devtoolMcp: cliOverrides.devtoolMcp ?? false,
