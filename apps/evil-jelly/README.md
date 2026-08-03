@@ -87,7 +87,7 @@ pnpm --filter @rejelly/evil-jelly start -- audit --family clone --workspace ../.
 
 `OPENAI_API_KEY` is the only required setting. The recommended setup is `evil init`; you can also provide it through the shell or `.evil-jelly/.env`. Defaults use the OpenAI-compatible endpoint and `gpt-5.6-luna`.
 
-Configuration is resolved in this order: **CLI arguments > `--env <profile>` > shell environment > workspace `.evil-jelly/.env` > `~/.evil-jelly/.env`**. Repository-safe settings live in `.evil-jelly/settings.jsonc`; documentation mappings live in `.evil-jelly/doc-map.jsonc`; secrets belong in `.evil-jelly/.env`.
+Environment configuration is resolved in this order: **CLI arguments > `--env <profile>` > shell environment > workspace `.evil-jelly/.env` > `~/.evil-jelly/.env`**. Non-secret settings use a separate cascade: **CLI arguments > workspace `.evil-jelly/settings.jsonc` > user `~/.evil-jelly/settings.jsonc` > built-in defaults**. Documentation mappings live in `.evil-jelly/doc-map.jsonc`; secrets belong in `.evil-jelly/.env`.
 
 <details>
 <summary><strong>Complete environment variables</strong></summary>
@@ -223,16 +223,18 @@ The MCP endpoint is derived from the origin of `REJELLY_REVIEW_ENDPOINT` and def
 
 ### Configuration boundaries
 
-All Evil Jelly configuration lives under `.evil-jelly/`:
+All Evil Jelly configuration lives under an `.evil-jelly/` directory:
 
-- `.evil-jelly/settings.jsonc` contains repository-safe application controls and may be committed.
+- `~/.evil-jelly/settings.jsonc` contains personal, non-secret defaults across workspaces.
+- `.evil-jelly/settings.jsonc` contains local workspace overrides and is ignored by Git.
+- `.evil-jelly/settings.example.jsonc` documents workspace settings and may be committed.
 - `.evil-jelly/doc-map.jsonc` registers documentation sync pairs and doc-to-code mappings and may be committed.
 - `.evil-jelly/.env` contains secrets and machine-specific endpoints and should be gitignored.
 - CLI arguments apply one-off overrides.
 
-### Workspace settings
+### User and workspace settings
 
-`.evil-jelly/settings.jsonc` lives at the Agent workspace root. Every field is optional, so the file may be absent. A malformed file fails loudly. `getSettings()` in `src/shared/settings.ts` is the unified parser; `initSettings` injects CLI overrides at the composition root.
+`~/.evil-jelly/settings.jsonc` supplies user defaults; the ignored `.evil-jelly/settings.jsonc` at the Agent workspace root overrides individual fields for that local checkout. Both files use the same strict schema. Every field is optional, so either file may be absent; a malformed file fails loudly. Copy `.evil-jelly/settings.example.jsonc` when a workspace-local override is needed. `getSettings()` in `src/shared/settings.ts` resolves each field explicitly, and `initSettings` injects CLI overrides at the composition root.
 
 ```jsonc
 {
