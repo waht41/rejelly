@@ -1,11 +1,34 @@
-import {
-  type ContributionProvenance,
-  qualifiedContributionName,
-} from "../../services/plugin/contracts";
-import { EXTENSION_LIMITS } from "../../shared/extensionLimits";
+import { SKILL_LIMITS } from "./limits";
 
-/** The manifest contribution kind this consumer claims. Registered with the plugin catalog. */
-export const SKILL_CONTRIBUTION_KIND = "skills" as const;
+export type SkillScope = "user" | "project";
+
+/** Model-safe identity of the fixed loose source that supplied a Skill. */
+export interface SkillOrigin {
+  readonly scope: SkillScope;
+}
+
+export type SkillLoadDiagnosticCode =
+  | "skill.source.invalid"
+  | "skill.source.duplicate"
+  | "skill.source.limit-exceeded"
+  | "skill.directory.invalid"
+  | "skill.file.invalid"
+  | "skill.file.too-large"
+  | "skill.frontmatter.invalid"
+  | "skill.name.duplicate"
+  | "skill.load.failed"
+  | "skill.resource.escape"
+  | "skill.resource.invalid"
+  | "skill.resource.limit-exceeded";
+
+/** Host-facing, non-fatal loading problem. `source` may contain a local path. */
+export interface SkillLoadDiagnostic {
+  readonly severity: "warning";
+  readonly code: SkillLoadDiagnosticCode;
+  readonly message: string;
+  readonly source?: string;
+  readonly origin?: SkillOrigin;
+}
 
 export type IdentifierValidationResult =
   | { readonly ok: true; readonly value: string }
@@ -19,11 +42,11 @@ export function validateSkillName(input: string): IdentifierValidationResult {
   if (value.length === 0) {
     return { ok: false, value, reason: "Skill name must not be empty." };
   }
-  if (value.length > EXTENSION_LIMITS.skillNameChars) {
+  if (value.length > SKILL_LIMITS.skillNameChars) {
     return {
       ok: false,
       value,
-      reason: `Skill name must be at most ${EXTENSION_LIMITS.skillNameChars} characters.`,
+      reason: `Skill name must be at most ${SKILL_LIMITS.skillNameChars} characters.`,
     };
   }
   if (!SKILL_NAME_PATTERN.test(value)) {
@@ -49,25 +72,20 @@ export interface SkillResourceEntry {
 /**
  * Immutable model-facing skill data.
  *
- * qualifiedName is derived from provenance and name. Filesystem locations belong to the resource
+ * qualifiedName is derived from origin and name. Filesystem locations belong to the resource
  * repository, not this record.
  */
 export interface SkillRecord {
   readonly name: string;
   readonly description: string;
   readonly shortDescription?: string;
-  readonly provenance: ContributionProvenance;
+  readonly origin: SkillOrigin;
   readonly instruction: string;
   readonly resources: readonly SkillResourceEntry[];
 }
 
-export function qualifiedSkillName(skill: Pick<SkillRecord, "name" | "provenance">): string {
-  // Loading enforces provenance.contributionId === skill.name. Keeping name explicit makes the
-  // frontmatter-derived local identity visible while one canonical helper owns qualification.
-  return qualifiedContributionName({
-    ...skill.provenance,
-    contributionId: skill.name,
-  });
+export function qualifiedSkillName(skill: Pick<SkillRecord, "name" | "origin">): string {
+  return `${skill.origin.scope}:${skill.name}`;
 }
 
 export type SkillResolveResult =
@@ -83,7 +101,7 @@ export interface SkillListItem {
   readonly qualifiedName: string;
   readonly description: string;
   readonly shortDescription?: string;
-  readonly provenance: ContributionProvenance;
+  readonly origin: SkillOrigin;
 }
 
 export interface SkillListPage {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { EXTENSION_LIMITS } from "../../shared/extensionLimits";
 import { parseSkillMarkdown } from "./frontmatter";
+import { SKILL_LIMITS } from "./limits";
 
 describe("skill frontmatter", () => {
   it("parses the v1 fields, defaults the name, and preserves bounded extras", () => {
@@ -50,14 +50,14 @@ Follow the review workflow exactly.
   });
 
   it("enforces frontmatter byte and node-depth limits", () => {
-    const oversized = `---\ndescription: ${"x".repeat(EXTENSION_LIMITS.frontmatterBytes)}\n---\nbody`;
+    const oversized = `---\ndescription: ${"x".repeat(SKILL_LIMITS.frontmatterBytes)}\n---\nbody`;
     expect(parseSkillMarkdown(oversized, "fallback").ok).toBe(false);
 
     const lines = ["---", "description: review", "deep:"];
-    for (let depth = 0; depth < EXTENSION_LIMITS.frontmatterDepth + 2; depth++) {
+    for (let depth = 0; depth < SKILL_LIMITS.frontmatterDepth + 2; depth++) {
       lines.push(`${"  ".repeat(depth + 1)}level:`);
     }
-    lines.push(`${"  ".repeat(EXTENSION_LIMITS.frontmatterDepth + 3)}value`, "---", "body");
+    lines.push(`${"  ".repeat(SKILL_LIMITS.frontmatterDepth + 3)}value`, "---", "body");
     expect(parseSkillMarkdown(lines.join("\n"), "fallback").ok).toBe(false);
   });
 });

@@ -1,19 +1,19 @@
 import type { Pair, Node as YamlNode } from "yaml";
 import { isAlias, isMap, isPair, isScalar, isSeq, parseDocument } from "yaml";
 import { z } from "zod";
-import { EXTENSION_LIMITS } from "../../shared/extensionLimits";
 import { validateSkillName } from "./contracts";
+import { SKILL_LIMITS } from "./limits";
 
 const metadataSchema = z
   .object({
-    "short-description": z.string().trim().min(1).max(EXTENSION_LIMITS.descriptionChars).optional(),
+    "short-description": z.string().trim().min(1).max(SKILL_LIMITS.descriptionChars).optional(),
   })
   .passthrough();
 
 const frontmatterSchema = z
   .object({
     name: z.string().optional(),
-    description: z.string().trim().min(1).max(EXTENSION_LIMITS.descriptionChars),
+    description: z.string().trim().min(1).max(SKILL_LIMITS.descriptionChars),
     metadata: metadataSchema.optional(),
   })
   .passthrough();
@@ -55,10 +55,10 @@ function splitFrontmatter(
     const line = text.slice(lineStart, lineEnd).replace(/\r$/, "");
     const blockEnd = newline < 0 ? lineEnd : newline + 1;
     consumedBytes += Buffer.byteLength(text.slice(lineStart, blockEnd), "utf8");
-    if (consumedBytes > EXTENSION_LIMITS.frontmatterBytes) {
+    if (consumedBytes > SKILL_LIMITS.frontmatterBytes) {
       return {
         ok: false,
-        reason: `Frontmatter exceeds ${EXTENSION_LIMITS.frontmatterBytes} bytes.`,
+        reason: `Frontmatter exceeds ${SKILL_LIMITS.frontmatterBytes} bytes.`,
       };
     }
     if (line === "---") {
@@ -80,8 +80,8 @@ function inspectYamlNode(node: YamlNode | Pair | null, depth: number): string | 
   if (!node) {
     return undefined;
   }
-  if (depth > EXTENSION_LIMITS.frontmatterDepth) {
-    return `Frontmatter node depth exceeds ${EXTENSION_LIMITS.frontmatterDepth}.`;
+  if (depth > SKILL_LIMITS.frontmatterDepth) {
+    return `Frontmatter node depth exceeds ${SKILL_LIMITS.frontmatterDepth}.`;
   }
   if (isAlias(node)) {
     return "YAML aliases are disabled.";
