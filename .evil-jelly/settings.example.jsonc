@@ -8,4 +8,11 @@
   //   "maxSeeds": 24,
   //   "ledgerGcDays": 30,
   // },
+  // "skills": {
+  //   "enabled": true,
+  //   "overrides": {
+  //     "user:review": { "enabled": false },
+  //     "project:release": { "enabled": true },
+  //   },
+  // },
 }

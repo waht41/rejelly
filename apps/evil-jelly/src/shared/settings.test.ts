@@ -51,6 +51,7 @@ describe("settings resolution", () => {
       ledgerGcDays: undefined,
       disableLedgerGc: false,
     });
+    expect(s.skills).toEqual({ enabled: true, overrides: {} });
     expect(s.devtoolMcp).toBe(false);
   });
 
@@ -99,6 +100,36 @@ describe("settings resolution", () => {
       maxSeeds: 48,
       ledgerGcDays: 14,
       disableLedgerGc: false,
+    });
+  });
+
+  it("resolves Skill defaults and per-name overrides field by field", () => {
+    writeUserSettingsFile(`{
+      "skills": {
+        "enabled": false,
+        "overrides": {
+          "user:review": { "enabled": false },
+          "project:shared": { "enabled": false }
+        }
+      }
+    }`);
+    writeWorkspaceSettingsFile(`{
+      "skills": {
+        "enabled": true,
+        "overrides": {
+          "user:review": { "enabled": true },
+          "project:local": { "enabled": false }
+        }
+      }
+    }`);
+
+    expect(getSettings().skills).toEqual({
+      enabled: true,
+      overrides: {
+        "user:review": { enabled: true },
+        "project:shared": { enabled: false },
+        "project:local": { enabled: false },
+      },
     });
   });
 
@@ -153,6 +184,22 @@ describe("settings resolution", () => {
 
   it("throws loudly on unknown user setting keys", () => {
     writeUserSettingsFile(`{ "docsMap": "typo.jsonc" }`);
+    expect(() => getSettings()).toThrow(/failed validation/);
+  });
+
+  it("rejects plain or malformed Skill override names", () => {
+    writeUserSettingsFile(`{
+      "skills": { "overrides": { "review": { "enabled": false } } }
+    }`);
+    expect(() => getSettings()).toThrow(/qualified Skill name/);
+  });
+
+  it("rejects unknown Skill override fields", () => {
+    writeUserSettingsFile(`{
+      "skills": {
+        "overrides": { "user:review": { "enabled": false, "future": true } }
+      }
+    }`);
     expect(() => getSettings()).toThrow(/failed validation/);
   });
 

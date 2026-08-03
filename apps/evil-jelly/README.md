@@ -245,9 +245,25 @@ All Evil Jelly configuration lives under an `.evil-jelly/` directory:
     "maxSeeds": 24,
     // Prune same-family ledger entries not seen for this many days (default: 30)
     "ledgerGcDays": 30,
+  },
+  // Local Skills are enabled by default
+  "skills": {
+    "enabled": true,
+    // Keys must be qualified as user:<name> or project:<name>
+    "overrides": {
+      "user:review": { "enabled": false },
+      "project:release": { "enabled": true },
+    },
   }
 }
 ```
+
+Workspace Skill settings replace matching user defaults. The master switch disables every Skill;
+an individual `true` cannot bypass it. Disabled Skills do not enter the model catalog or resource
+repository. Settings are read into the process-lifetime snapshot, so changes take effect after the
+next Evil Jelly start. A `project:<name>` override in user settings applies to every workspace with
+that qualified name; put it in workspace settings to affect only the current checkout. This
+configuration controls availability only and grants no tool permission.
 
 Documentation-domain configuration does not belong in settings. It uses the fixed `.evil-jelly/doc-map.jsonc` path unless a one-off `--doc-map` override is supplied.
 

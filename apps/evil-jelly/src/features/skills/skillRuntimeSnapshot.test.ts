@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   buildSkillRuntimeSnapshot,
   formatSkillRuntimeStartupSummary,
+  isSkillEnabled,
 } from "./skillRuntimeSnapshot";
 import { createSkillTools } from "./skillTools";
 
@@ -87,5 +88,54 @@ describe("SkillRuntimeSnapshot", () => {
     expect(summary).toContain("skill.source.invalid: 1");
     expect(summary).not.toContain(source);
     expect(summary?.length).toBeLessThanOrEqual(1_000);
+  });
+
+  it("applies the master switch and qualified-name overrides", () => {
+    const projectReview = { name: "review", origin: { scope: "project" as const } };
+
+    expect(isSkillEnabled({ enabled: true, overrides: {} }, projectReview)).toBe(true);
+    expect(
+      isSkillEnabled(
+        {
+          enabled: true,
+          overrides: { "project:review": { enabled: false } },
+        },
+        projectReview,
+      ),
+    ).toBe(false);
+    expect(
+      isSkillEnabled(
+        {
+          enabled: false,
+          overrides: { "project:review": { enabled: true } },
+        },
+        projectReview,
+      ),
+    ).toBe(false);
+  });
+
+  it("filters disabled Skills before building the catalog", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "evil-skill-filter-"));
+    fixtures.push(root);
+    for (const name of ["enabled", "disabled"]) {
+      const directory = path.join(root, name);
+      await fs.mkdir(directory, { recursive: true });
+      await fs.writeFile(
+        path.join(directory, "SKILL.md"),
+        `---\ndescription: ${name}\n---\n${name}`,
+      );
+    }
+
+    const built = await buildSkillRuntimeSnapshot(
+      [{ scope: "project", rootPath: root }],
+      (skill) => skill.name !== "disabled",
+    );
+
+    expect(built.snapshot.catalog.size).toBe(1);
+    expect(built.snapshot.catalog.resolve("enabled").ok).toBe(true);
+    expect(built.snapshot.catalog.resolve("disabled")).toMatchObject({
+      ok: false,
+      reason: "not-found",
+    });
   });
 });

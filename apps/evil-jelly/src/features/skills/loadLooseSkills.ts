@@ -16,6 +16,8 @@ export interface LoadedSkillSources {
   readonly diagnostics: readonly SkillLoadDiagnostic[];
 }
 
+export type SkillRecordPredicate = (skill: SkillRecord) => boolean;
+
 function compareSources(left: SkillSource, right: SkillSource): number {
   if (left.scope !== right.scope) {
     return left.scope === "user" ? -1 : 1;
@@ -125,6 +127,7 @@ function rejectDuplicateSkills(
 /** Load the two fixed loose Skill sources into immutable records and a path-owning repository. */
 export async function loadLooseSkills(
   sources: readonly SkillSource[],
+  includeSkill: SkillRecordPredicate = () => true,
 ): Promise<LoadedSkillSources> {
   const diagnostics: SkillLoadDiagnostic[] = [];
   const candidates: SkillLoadCandidate[] = [];
@@ -166,7 +169,10 @@ export async function loadLooseSkills(
     }
   }
 
-  const accepted = rejectDuplicateSkills(loadedSkills, diagnostics).sort((left, right) =>
+  const accepted = rejectDuplicateSkills(
+    loadedSkills.filter((skill) => includeSkill(skill.record)),
+    diagnostics,
+  ).sort((left, right) =>
     compareStringsByCodeUnit(qualifiedSkillName(left.record), qualifiedSkillName(right.record)),
   );
   const records = Object.freeze(accepted.map((skill) => skill.record));

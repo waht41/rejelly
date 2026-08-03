@@ -1,5 +1,15 @@
-import type { SkillLoadDiagnostic, SkillRuntimeSnapshot } from "./contracts";
-import { type LoadedSkillSources, loadLooseSkills } from "./loadLooseSkills";
+import { getSettings, type ResolvedSettings } from "../../shared/settings";
+import {
+  qualifiedSkillName,
+  type SkillLoadDiagnostic,
+  type SkillRecord,
+  type SkillRuntimeSnapshot,
+} from "./contracts";
+import {
+  type LoadedSkillSources,
+  loadLooseSkills,
+  type SkillRecordPredicate,
+} from "./loadLooseSkills";
 import { createSkillCatalog } from "./skillCatalog";
 import {
   discoverSkillSources,
@@ -14,6 +24,14 @@ export interface SkillRuntimeSnapshotBuildResult {
   readonly diagnostics: readonly SkillLoadDiagnostic[];
 }
 
+/** Apply the already-resolved master switch and qualified-name override to one loaded Skill. */
+export function isSkillEnabled(
+  settings: ResolvedSettings["skills"],
+  skill: Pick<SkillRecord, "name" | "origin">,
+): boolean {
+  return settings.enabled && (settings.overrides[qualifiedSkillName(skill)]?.enabled ?? true);
+}
+
 /** Join path-free catalog state with the separate path-owning resource repository. */
 export function createSkillRuntimeSnapshot(loaded: LoadedSkillSources): SkillRuntimeSnapshot {
   return Object.freeze({
@@ -25,8 +43,9 @@ export function createSkillRuntimeSnapshot(loaded: LoadedSkillSources): SkillRun
 /** Load fixed loose sources once and freeze the complete process-lifetime Skill snapshot. */
 export async function buildSkillRuntimeSnapshot(
   sources: readonly SkillSource[],
+  includeSkill?: SkillRecordPredicate,
 ): Promise<SkillRuntimeSnapshotBuildResult> {
-  const loaded = await loadLooseSkills(sources);
+  const loaded = await loadLooseSkills(sources, includeSkill);
   return Object.freeze({
     snapshot: createSkillRuntimeSnapshot(loaded),
     diagnostics: loaded.diagnostics,
@@ -35,8 +54,14 @@ export async function buildSkillRuntimeSnapshot(
 
 /** Discover both configured loose roots and build one process-lifetime runtime snapshot. */
 export async function buildConfiguredSkillRuntimeSnapshot(): Promise<SkillRuntimeSnapshotBuildResult> {
+  const skillSettings = getSettings().skills;
+  if (!skillSettings.enabled) {
+    return buildSkillRuntimeSnapshot([]);
+  }
   const discovery = await discoverSkillSources(resolveConfiguredSkillRoots());
-  const built = await buildSkillRuntimeSnapshot(discovery.sources);
+  const built = await buildSkillRuntimeSnapshot(discovery.sources, (skill) =>
+    isSkillEnabled(skillSettings, skill),
+  );
   return Object.freeze({
     snapshot: built.snapshot,
     diagnostics: Object.freeze([...discovery.diagnostics, ...built.diagnostics]),
