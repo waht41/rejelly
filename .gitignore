@@ -47,8 +47,8 @@ AGENTS.override.md
 
 .mcp.json
 
-# evil-jelly local state; repo-fact settings/doc-map stay shared via git
+# evil-jelly local state; only examples and repo-fact domain files stay shared via git
 **/.evil-jelly/*
-!**/.evil-jelly/settings.jsonc
+!**/.evil-jelly/settings.example.jsonc
 !**/.evil-jelly/doc-map.jsonc
 .rejelly/
