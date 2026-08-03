@@ -7,6 +7,7 @@ export const SKILL_LIMITS = Object.freeze({
   descriptionChars: 1_000,
   listingDescriptionChars: 250,
   skillsPerSource: 128,
+  explicitSkillsPerTurn: 8,
   resourcesPerSkill: 256,
   resourceDirectoryDepth: 8,
   listPageEntries: 50,

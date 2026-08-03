@@ -22,9 +22,25 @@ export type UserImageAttachment = {
 
 export type UserAttachment = UserFileAttachment | UserImageAttachment;
 
+/** A Skill explicitly selected by the user for one input turn. */
+export type UserSkillReference = {
+  qualifiedName: string;
+};
+
+/** Path-free Skill metadata a host may expose in an explicit-selection UI. */
+export type UserSkillListItem = {
+  qualifiedName: string;
+  name: string;
+  scope: "user" | "project";
+  description: string;
+  shortDescription?: string;
+};
+
 export type LineInputValue = {
   text: string;
   attachments?: UserAttachment[];
+  /** Structured picker selections; ordinary `$text` in the prompt is never inferred as a Skill. */
+  skills?: UserSkillReference[];
 };
 
 export interface ConversationAgentProps {
@@ -32,6 +48,8 @@ export interface ConversationAgentProps {
   userInput: string;
   /** Files explicitly attached to the current user turn. */
   attachments?: UserAttachment[];
+  /** Skills explicitly selected for the current user turn. */
+  skills?: UserSkillReference[];
   /** Prior conversation as model messages. */
   history?: Message[];
   /** Session image store used to materialize durable locators only at the model policy boundary. */

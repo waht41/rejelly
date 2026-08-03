@@ -12,6 +12,9 @@
  * @-trigger: typing @ opens a fuzzy file picker; selecting a file inserts an
  * `@path` ref at the caret and attaches it to this turn (single-select).
  *
+ * $-trigger: typing $ opens the enabled Skill picker; selecting one inserts a
+ * visible qualified ref and stores a structured, turn-scoped Skill selection.
+ *
  * Clipboard image: Alt+V (or Ctrl+V, which arrives as garbage bytes and is
  * detected) attaches an image from the OS clipboard. It drops an `[Image #N]`
  * token into the line at the caret — editable/deletable like any other text;
@@ -40,16 +43,22 @@ import {
   pastedTextToken,
   pastedTextTokenBefore,
 } from "../../prompt-editor/lineText";
+import {
+  extractSkillQuery,
+  replaceSkillToken,
+  skillReferencesPresentInText,
+} from "../../prompt-editor/skillTrigger";
 import { extractSlashQuery, filterSlashCommands } from "../../prompt-editor/slashCommands";
 import { caretCell, wrapRows } from "../../prompt-editor/softWrap";
 import { useTextBuffer } from "../../prompt-editor/textBuffer";
 import { useLineKeybindings } from "../../prompt-editor/useLineKeybindings";
 import { applyModeCommand, MODE_META } from "../../store/useModeStore";
 import { isRuntimeActive, useOutputStore } from "../../store/useOutputStore";
-import { usePromptStore } from "../../store/usePromptStore";
+import { MAX_SELECTED_SKILLS, usePromptStore } from "../../store/usePromptStore";
 import { useViewStore } from "../../store/useViewStore";
 import { FilePickerOverlay } from "../pickers/FilePickerOverlay";
 import type { PickerKeyHandler } from "../pickers/ListPicker";
+import { filterSkillPickerItems, SkillPickerOverlay } from "../pickers/SkillPickerOverlay";
 import { SlashCommandOverlay } from "../pickers/SlashCommandOverlay";
 
 const MIN_FILE_PICKER_ROWS = 5;
@@ -178,13 +187,17 @@ export function SmartLinePrompt({ label }: { label: string }) {
   const submitLine = usePromptStore((s) => s.submitLine);
   const selectedFiles = usePromptStore((s) => s.selectedFiles);
   const selectedImages = usePromptStore((s) => s.selectedImages);
+  const selectedSkills = usePromptStore((s) => s.selectedSkills);
+  const availableSkills = usePromptStore((s) => s.availableSkills);
   const draftSeed = usePromptStore((s) => s.draftSeed);
   const setSelectedFiles = usePromptStore((s) => s.setSelectedFiles);
   const setSelectedImages = usePromptStore((s) => s.setSelectedImages);
+  const setSelectedSkills = usePromptStore((s) => s.setSelectedSkills);
   const removeSelectedFile = usePromptStore((s) => s.removeSelectedFile);
   const clearSelectedFiles = usePromptStore((s) => s.clearSelectedFiles);
   const addSelectedImage = usePromptStore((s) => s.addSelectedImage);
   const clearSelectedImages = usePromptStore((s) => s.clearSelectedImages);
+  const clearSelectedSkills = usePromptStore((s) => s.clearSelectedSkills);
   const clearDraftSeed = usePromptStore((s) => s.clearDraftSeed);
   const phase = useOutputStore((s) => s.runtime.phase);
   const streamBuffer = useOutputStore((s) => s.streamBuffer);
@@ -193,6 +206,7 @@ export function SmartLinePrompt({ label }: { label: string }) {
   const [textArea, setTextArea] = useState<TextArea | null>(null);
   const [atQuery, setAtQuery] = useState<string | null>(null);
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
+  const [skillQuery, setSkillQuery] = useState<string | null>(null);
   const [terminalRows, setTerminalRows] = useState(stdout.rows || 24);
   const [pasteStatus, setPasteStatus] = useState<string | null>(null);
   const [pastedTexts, setPastedTexts] = useState<PastedText[]>([]);
@@ -272,13 +286,28 @@ export function SmartLinePrompt({ label }: { label: string }) {
     setSlashQuery(isMultiline ? null : extractSlashQuery(buf.text, buf.cursor));
   }, [buf.text, buf.cursor, isMultiline]);
 
+  // `$` is only an autocomplete trigger. A Skill becomes active after picker selection stores a
+  // structured reference; arbitrary `$text` remains ordinary prompt text.
+  useEffect(() => {
+    setSkillQuery(isMultiline ? null : extractSkillQuery(buf.text, buf.cursor));
+  }, [buf.text, buf.cursor, isMultiline]);
+
+  useEffect(() => {
+    const present = skillReferencesPresentInText(buf.text, selectedSkills);
+    if (present.length !== selectedSkills.length) {
+      setSelectedSkills(present);
+    }
+  }, [buf.text, selectedSkills, setSelectedSkills]);
+
   // Reset for a fresh prompt (new label) and on unmount.
   useEffect(() => {
     buf.reset();
     setAtQuery(null);
     setSlashQuery(null);
+    setSkillQuery(null);
     clearSelectedFiles();
     clearSelectedImages();
+    clearSelectedSkills();
     setPasteStatus(null);
     setPastedTexts([]);
     pastedTextsRef.current = [];
@@ -288,8 +317,9 @@ export function SmartLinePrompt({ label }: { label: string }) {
     return () => {
       clearSelectedFiles();
       clearSelectedImages();
+      clearSelectedSkills();
     };
-  }, [label, buf.reset, clearSelectedFiles, clearSelectedImages]);
+  }, [label, buf.reset, clearSelectedFiles, clearSelectedImages, clearSelectedSkills]);
 
   useEffect(() => {
     if (!draftSeed) {
@@ -309,14 +339,17 @@ export function SmartLinePrompt({ label }: { label: string }) {
     buf.setText(combinedText);
     setSelectedFiles([...seedFiles, ...selectedFiles]);
     setSelectedImages([...seedImages, ...selectedImages]);
+    setSelectedSkills([...(draftSeed.value.skills ?? []), ...selectedSkills]);
     clearDraftSeed(draftSeed.id);
   }, [
     draftSeed,
     buf,
     selectedFiles,
     selectedImages,
+    selectedSkills,
     setSelectedFiles,
     setSelectedImages,
+    setSelectedSkills,
     clearDraftSeed,
   ]);
 
@@ -324,8 +357,10 @@ export function SmartLinePrompt({ label }: { label: string }) {
     buf.reset();
     setAtQuery(null);
     setSlashQuery(null);
+    setSkillQuery(null);
     clearSelectedFiles();
     clearSelectedImages();
+    clearSelectedSkills();
     setPasteStatus(null);
     setPastedTexts([]);
     pastedTextsRef.current = [];
@@ -373,14 +408,18 @@ export function SmartLinePrompt({ label }: { label: string }) {
     }
     // Only images whose `[Image #N]` token still survives in the text are sent —
     // deleting the token drops the image.
-    submitLine(expandedText, [
-      ...selectedFiles.map((path) => ({ type: "file" as const, path })),
-      ...attachedImages(expandedText, selectedImages).map((path) => ({
-        type: "image" as const,
-        path,
-        mimeType: "image/png" as const,
-      })),
-    ]);
+    submitLine(
+      expandedText,
+      [
+        ...selectedFiles.map((path) => ({ type: "file" as const, path })),
+        ...attachedImages(expandedText, selectedImages).map((path) => ({
+          type: "image" as const,
+          path,
+          mimeType: "image/png" as const,
+        })),
+      ],
+      skillReferencesPresentInText(expandedText, selectedSkills),
+    );
     clearDraft();
   };
 
@@ -408,6 +447,28 @@ export function SmartLinePrompt({ label }: { label: string }) {
   const dismissPicker = () => {
     buf.apply((s) => replaceAtToken(s, []));
     setAtQuery(null);
+  };
+
+  const handleSkillSelect = (skill: { qualifiedName: string }) => {
+    if (
+      selectedSkills.length >= MAX_SELECTED_SKILLS &&
+      !selectedSkills.some((selected) => selected.qualifiedName === skill.qualifiedName)
+    ) {
+      useOutputStore
+        .getState()
+        .logSystem(`At most ${MAX_SELECTED_SKILLS} Skills can be selected for one input.`);
+      buf.apply((state) => replaceSkillToken(state, []));
+      setSkillQuery(null);
+      return;
+    }
+    setSelectedSkills([...selectedSkills, { qualifiedName: skill.qualifiedName }]);
+    buf.apply((state) => replaceSkillToken(state, [skill.qualifiedName]));
+    setSkillQuery(null);
+  };
+
+  const dismissSkillPicker = () => {
+    buf.apply((state) => replaceSkillToken(state, []));
+    setSkillQuery(null);
   };
 
   const attachClipboardImage = () => {
@@ -503,7 +564,10 @@ export function SmartLinePrompt({ label }: { label: string }) {
   // active @token anyway. With no matching command the palette stays closed and Enter submits.
   const slashMatches = slashQuery !== null ? filterSlashCommands(slashQuery) : [];
   const slashOpen = slashMatches.length > 0;
-  const filePickerOpen = atQuery !== null && !slashOpen;
+  const skillMatches =
+    skillQuery === null ? [] : filterSkillPickerItems(availableSkills, skillQuery);
+  const skillPickerOpen = skillQuery !== null && skillMatches.length > 0 && !slashOpen;
+  const filePickerOpen = atQuery !== null && !slashOpen && !skillPickerOpen;
 
   useLineKeybindings({
     buf,
@@ -533,13 +597,28 @@ export function SmartLinePrompt({ label }: { label: string }) {
       </Box>
     ) : null;
 
+  const selectedSkillList =
+    selectedSkills.length > 0 ? (
+      <Box flexDirection="column" marginBottom={1}>
+        {selectedSkills.map((skill) => (
+          <Box key={skill.qualifiedName} flexDirection="row">
+            <Text color="magenta">$ </Text>
+            <Text>{skill.qualifiedName}</Text>
+          </Box>
+        ))}
+      </Box>
+    ) : null;
+
   const promptChromeRows = 4;
   const hasCollapsedPaste = pastedTexts.some((entry) =>
     buf.text.includes(pastedTextToken(entry.id, entry.text)),
   );
   // Rough budget for how tall the picker may grow — the rows the prompt itself
   // eats. Sizing only; the caret no longer depends on this estimate.
-  const promptRows = (selectedFiles.length > 0 ? selectedFiles.length + 1 : 0) + wrappedRows.length;
+  const promptRows =
+    (selectedFiles.length > 0 ? selectedFiles.length + 1 : 0) +
+    (selectedSkills.length > 0 ? selectedSkills.length + 1 : 0) +
+    wrappedRows.length;
   const filePickerVisibleRows = Math.min(
     MAX_FILE_PICKER_ROWS,
     Math.max(MIN_FILE_PICKER_ROWS, terminalRows - promptRows - promptChromeRows),
@@ -548,6 +627,7 @@ export function SmartLinePrompt({ label }: { label: string }) {
   return (
     <Box flexDirection="column">
       {selectedAttachmentList}
+      {selectedSkillList}
       <BufferView
         rowRef={rowRef}
         label={label}
@@ -575,6 +655,14 @@ export function SmartLinePrompt({ label }: { label: string }) {
           commands={slashMatches}
           onSelect={handleSlashSelect}
           onCancel={() => setSlashQuery(null)}
+          keySink={overlayKeysRef}
+        />
+      ) : skillPickerOpen ? (
+        <SkillPickerOverlay
+          items={skillMatches}
+          maxVisibleRows={filePickerVisibleRows}
+          onSelect={handleSkillSelect}
+          onCancel={dismissSkillPicker}
           keySink={overlayKeysRef}
         />
       ) : filePickerOpen ? (

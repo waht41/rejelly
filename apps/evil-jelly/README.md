@@ -265,6 +265,11 @@ next Evil Jelly start. A `project:<name>` override in user settings applies to e
 that qualified name; put it in workspace settings to affect only the current checkout. This
 configuration controls availability only and grants no tool permission.
 
+At the interactive prompt, type `$` to open the enabled Skill picker. Selecting an entry inserts a
+visible qualified reference such as `$project:review` and applies that Skill to the current input
+only. The host carries the selection as structured input and injects its instructions; ordinary
+dollar-prefixed text such as `$HOME` or an unselected `$unknown` remains plain text.
+
 Documentation-domain configuration does not belong in settings. It uses the fixed `.evil-jelly/doc-map.jsonc` path unless a one-off `--doc-map` override is supplied.
 
 ### doc-map format

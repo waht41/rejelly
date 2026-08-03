@@ -10,6 +10,7 @@ import {
   equipMemory,
   equipSystem,
   equipTool,
+  expectResource,
   isAbortError,
   isToolLoopExceededError,
 } from "@rejelly/core";
@@ -21,10 +22,7 @@ import { shouldUseTerminalUserReplyRule } from "../../services/prompt/output-sur
 import { buildWorkspaceRuleInstructionBlock } from "../../services/prompt/workspace-rule";
 import { drainSteers } from "../../services/steer/steerControl";
 import type { ConversationAgentProps, ConversationAgentResult } from "../../shared/AgentShared";
-import {
-  buildAttachmentActionSummary,
-  buildConversationMessages,
-} from "../../shared/attachments/messageContent";
+import { buildAttachmentActionSummary } from "../../shared/attachments/messageContent";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import {
   equipReadOnlyWorkspaceKit,
@@ -38,7 +36,9 @@ import {
   createDeleteFileTool,
   createEditFileTool,
 } from "../../tools/WriteTools";
+import { SKILL_RUNTIME_PROVIDER_KEY, type SkillRuntimeSnapshot } from "../skills/contracts";
 import { equipSkillKit } from "../skills/equipSkillKit";
+import { buildSkillAwareUserMessage } from "../skills/explicitSkillReferences";
 import { buildAutoCompactionConfig } from "./contextControl";
 import { UNIFIED_TOOL_ARTIFACTS_KEY } from "./unifiedMemoryKeys";
 import {
@@ -125,9 +125,10 @@ async function runManualCompression(
   }
 }
 
-async function drainAndLogSteers() {
+async function drainAndBuildSteerMessages(skillSnapshot: SkillRuntimeSnapshot | undefined) {
   const host = getBinding();
   const inputs = drainSteers();
+  const messages = [];
   for (const input of inputs) {
     const attachmentActions = await buildAttachmentActionSummary(input.attachments);
     const display =
@@ -135,8 +136,9 @@ async function drainAndLogSteers() {
         ? `${input.text}\n${attachmentActions.map((action) => `  -> ${action}`).join("\n")}`
         : input.text;
     host.logUserMessage(display);
+    messages.push(await buildSkillAwareUserMessage(input, skillSnapshot));
   }
-  return inputs;
+  return messages;
 }
 
 export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgentResult>({
@@ -145,6 +147,9 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
   handler: async (props) => {
     await useUnifiedTools();
     useUnifiedPrompts(props);
+    const skillSnapshot = expectResource<SkillRuntimeSnapshot>(SKILL_RUNTIME_PROVIDER_KEY, {
+      optional: true,
+    });
     equipSkillKit();
     useStandardStreaming({ textMode: "plain" });
 
@@ -154,8 +159,14 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
 
     try {
       const result = await promptChatResilient({
-        message: await buildConversationMessages(props),
-        pendingUserInputs: drainAndLogSteers,
+        message: [
+          ...(props.history ?? []),
+          await buildSkillAwareUserMessage(
+            { text: props.userInput, attachments: props.attachments, skills: props.skills },
+            skillSnapshot,
+          ),
+        ],
+        pendingUserMessages: () => drainAndBuildSteerMessages(skillSnapshot),
         compaction: buildAutoCompactionConfig(),
         sessionRecorder: props.sessionRecorder,
         turnId: props.turnId,

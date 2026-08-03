@@ -1,4 +1,5 @@
 import type { AgentSnapshot, Message, ModelAdapter } from "@rejelly/core";
+import { qualifiedSkillName } from "../../features/skills/contracts";
 import {
   buildConfiguredSkillRuntimeSnapshot,
   formatSkillRuntimeStartupSummary,
@@ -172,6 +173,15 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
   const { providers: mcpProviders, dispose: disposeMcp } = await connectMcpProviders();
   try {
     const skillRuntime = await buildConfiguredSkillRuntimeSnapshot();
+    bindings.setAvailableSkills?.(
+      (skillRuntime.snapshot.catalog.entries ?? []).map((skill) => ({
+        name: skill.name,
+        qualifiedName: qualifiedSkillName(skill),
+        scope: skill.origin.scope,
+        description: skill.description,
+        ...(skill.shortDescription ? { shortDescription: skill.shortDescription } : {}),
+      })),
+    );
     const skillSummary = formatSkillRuntimeStartupSummary(skillRuntime);
     if (skillSummary) {
       bindings.logSystemEvent(`${skillSummary}\n`);

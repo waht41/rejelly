@@ -7,11 +7,17 @@ import {
   createAgent,
   equipBudget,
   equipMemory,
+  expectResource,
   getUsageStats,
   isAbortError,
   type Message,
   reborn,
 } from "@rejelly/core";
+import {
+  SKILL_RUNTIME_PROVIDER_KEY,
+  type SkillRuntimeSnapshot,
+} from "../features/skills/contracts";
+import { buildSkillAwareUserMessage } from "../features/skills/explicitSkillReferences";
 import { UnifiedAgent } from "../features/unified/UnifiedAgent";
 import { getBinding, setBinding } from "../services/binding/hostBindings";
 import {
@@ -24,10 +30,7 @@ import type { SessionRecorder } from "../services/session/sessionRecorder";
 import { listSessions, loadSession, type SessionBudget } from "../services/session/sessionStore";
 import { withAbort } from "../services/stop/withAbort";
 import type { LineInputValue } from "../shared/AgentShared";
-import {
-  buildAttachmentActionSummary,
-  buildUserMessage,
-} from "../shared/attachments/messageContent";
+import { buildAttachmentActionSummary } from "../shared/attachments/messageContent";
 import { env } from "../shared/config";
 import { getWorkspaceFsPolicy } from "../shared/fs-policy/workspace-fs-policy";
 import { countConversationTurns } from "../shared/lib/compactionMessages";
@@ -120,6 +123,7 @@ interface RouterRuntime {
   setHistory: (messages: Message[]) => void;
   currentBudget: () => SessionBudget;
   appendTurn: (userMessage: Message, reply: string, delta?: Message[]) => void;
+  skillSnapshot?: SkillRuntimeSnapshot;
 }
 
 /** Short, session-local correlation ID with 96 bits of entropy and URL-safe characters. */
@@ -274,10 +278,7 @@ async function runConversationTurn(
         ? `${userInput}\n${attachmentActions.map((action) => `  -> ${action}`).join("\n")}`
         : userInput;
     runtime.host.logUserMessage(displayUserInput);
-    submittedUserMessage = await buildUserMessage({
-      userInput,
-      attachments: lineInput.attachments,
-    });
+    submittedUserMessage = await buildSkillAwareUserMessage(lineInput, runtime.skillSnapshot);
     activeTurnId = createTurnId();
     // The session layer marks the turn start here (inputKind: "initial"); the status line's
     // timer must anchor at exactly this point so steers and maintenance commands never
@@ -292,6 +293,7 @@ async function runConversationTurn(
     const result = await UnifiedAgentWithAbort({
       userInput,
       attachments: lineInput.attachments,
+      skills: lineInput.skills,
       history: runtime.history,
       sessionBlobRoot: runtime.props.sessionBlobRoot,
       sessionRecorder: runtime.props.sessionRecorder,
@@ -410,6 +412,9 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
       setHistory,
       currentBudget,
       appendTurn,
+      skillSnapshot: expectResource<SkillRuntimeSnapshot>(SKILL_RUNTIME_PROVIDER_KEY, {
+        optional: true,
+      }),
     };
 
     try {

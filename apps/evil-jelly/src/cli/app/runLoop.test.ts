@@ -66,6 +66,50 @@ describe("runInteractiveLoop mock session isolation", () => {
     runtimeMocks.formatSkillSummary.mockReturnValue(undefined);
   });
 
+  it("publishes the path-free enabled Skill catalog through the host boundary", async () => {
+    const { bindings } = createBindings();
+    const setAvailableSkills = vi.fn();
+    bindings.setAvailableSkills = setAvailableSkills;
+    runtimeMocks.buildSkillRuntime.mockResolvedValueOnce({
+      snapshot: {
+        catalog: {
+          size: 1,
+          fingerprint: "12345678",
+          entries: [
+            {
+              name: "review",
+              description: "Review changes",
+              shortDescription: "Review",
+              origin: { scope: "project" },
+              instruction: "Review carefully.",
+              resources: [],
+            },
+          ],
+        },
+      },
+      diagnostics: [],
+    });
+    runHostMock.mockResolvedValueOnce(undefined);
+
+    await runInteractiveLoop({
+      bindings,
+      model: {} as ModelAdapter,
+      enableReview: false,
+      snapshot: undefined,
+      isolateSessionState: true,
+    });
+
+    expect(setAvailableSkills).toHaveBeenCalledWith([
+      {
+        name: "review",
+        qualifiedName: "project:review",
+        scope: "project",
+        description: "Review changes",
+        shortDescription: "Review",
+      },
+    ]);
+  });
+
   it("does not pass a durable session id in isolated mock replay segments", async () => {
     const { bindings, systemEvents } = createBindings();
     runtimeMocks.formatSkillSummary.mockReturnValueOnce("Loaded 1 local Skill.");

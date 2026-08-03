@@ -70,12 +70,15 @@ describe("runResilientToolCallLoopPolicy session recorder", () => {
       span: { setAttribute: vi.fn() },
     } as unknown as PromptContext;
     let pendingRound = 0;
+    const pendingUserMessage: Message = {
+      role: "user",
+      content: "prepared: also inspect tests",
+    };
 
     const result = await runResilientToolCallLoopPolicy(ctx, {
       turnId: "turn-1",
       sessionRecorder: recorder,
-      pendingUserInputs: async () =>
-        pendingRound++ === 0 ? [{ text: "also inspect tests", attachments: [] }] : [],
+      pendingUserMessages: async () => (pendingRound++ === 0 ? [pendingUserMessage] : []),
     });
 
     expect(result).toMatchObject({ aborted: false, data: "done" });
