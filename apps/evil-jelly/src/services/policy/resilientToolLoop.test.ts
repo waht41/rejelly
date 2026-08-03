@@ -48,10 +48,11 @@ describe("runResilientToolCallLoopPolicy session recorder", () => {
     policyMocks.executeTools.mockResolvedValueOnce([toolResult]);
 
     const recorded: string[] = [];
+    const recordMessage = vi.fn(async (_turnId, source, message) => {
+      recorded.push(`${source.kind}:${message.role}`);
+    });
     const recorder = {
-      recordMessage: vi.fn(async (_turnId, source, message) => {
-        recorded.push(`${source.kind}:${message.role}`);
-      }),
+      recordMessage,
       recordMessages: vi.fn(
         async (_turnId, entries: readonly { source: MessageSource; message: Message }[]) => {
           recorded.push(
@@ -82,6 +83,10 @@ describe("runResilientToolCallLoopPolicy session recorder", () => {
     });
 
     expect(result).toMatchObject({ aborted: false, data: "done" });
+    expect(recordMessage.mock.calls[0]?.[2]).toBe(pendingUserMessage);
+    expect(policyMocks.executeValidatedLoopTurn.mock.calls[0]?.[0].runtime.messages[0]).toBe(
+      pendingUserMessage,
+    );
     expect(recorded).toEqual([
       "user_input:user",
       "model:assistant",

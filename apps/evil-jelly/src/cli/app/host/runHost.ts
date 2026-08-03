@@ -14,6 +14,7 @@ import {
   SKILL_RUNTIME_PROVIDER_KEY,
   type SkillRuntimeSnapshot,
 } from "../../../features/skills/contracts";
+import { buildSkillAwareUserMessage } from "../../../features/skills/explicitSkillReferences";
 import {
   buildConfiguredSkillRuntimeSnapshot,
   formatSkillRuntimeStartupSummary,
@@ -287,8 +288,12 @@ export async function runDirectUnified(
       enableReview: options.enableReview,
       run: async () => {
         await setBinding(bindings);
+        const message = await buildSkillAwareUserMessage(
+          { text: userInput },
+          skillRuntime.snapshot,
+        );
         bindings.logUserMessage(userInput);
-        const result = await UnifiedAgentWithAbort({ userInput, history });
+        const result = await UnifiedAgentWithAbort({ message, history });
         bindings.logAssistantMessage(result.reply);
       },
       runWithOptions: {
