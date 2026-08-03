@@ -120,12 +120,23 @@ export interface SkillListPage {
   readonly total: number;
 }
 
+export type SkillListResult =
+  | { readonly ok: true; readonly page: SkillListPage }
+  | { readonly ok: false; readonly reason: "invalid-cursor" };
+
 /** Immutable query surface built once at the composition root. */
 export interface SkillCatalogSnapshot {
   readonly size: number;
   readonly entries: readonly SkillRecord[];
   resolve(name: string): SkillResolveResult;
-  list(cursor?: string): SkillListPage;
+  list(cursor?: string): SkillListResult;
+}
+
+export interface RenderedSkillCatalog {
+  readonly text: string;
+  readonly mode: "full" | "truncated-description" | "names-only" | "partial";
+  readonly estimatedTokens: number;
+  readonly omittedCount: number;
 }
 
 export type SkillResourceReadResult =
