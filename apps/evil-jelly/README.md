@@ -32,6 +32,84 @@ evil audit --family clone
 
 Run `evil` to chat, inspect and search code, edit files with diff confirmation, execute commands, and verify changes in one unified session.
 
+### Local Skills
+
+Evil Jelly loads local, instruction-only Skills from exactly two directories:
+
+```text
+~/.evil-jelly/skills/<skill-name>/SKILL.md
+<workspace>/.evil-jelly/skills/<skill-name>/SKILL.md
+```
+
+The first location supplies personal Skills across workspaces; the second supplies Skills for the
+current workspace. Only direct child directories containing `SKILL.md` are discovered. Both roots
+are optional, and placing a valid Skill in either root enables it by default. Skills are loaded once
+when Evil Jelly starts, so restart the process after adding, removing, editing, enabling, or disabling
+one.
+
+Create a minimal project Skill at `.evil-jelly/skills/review/SKILL.md`:
+
+```md
+---
+name: review
+description: Review a change for correctness, regressions, and missing tests.
+metadata:
+  short-description: Review a change
+---
+
+Inspect the relevant diff and surrounding code before reaching conclusions.
+Prioritize correctness defects and regressions. Cite concrete files and explain impact.
+Mention missing tests after the findings. Do not modify files unless the user asks.
+```
+
+`description` is required. `name` is optional and defaults to the directory name;
+`metadata.short-description` is optional. Names use lowercase ASCII letters, digits, dots,
+underscores, and hyphens, must start with a letter or digit, and are qualified by source as
+`user:<name>` or `project:<name>`. If both sources contain `review`, use the qualified name to avoid
+ambiguity.
+
+At the interactive prompt, type `$` to open the enabled Skill picker. Selecting an entry inserts a
+visible qualified reference such as `$project:review` and applies the full Skill instructions to
+that input. Ordinary text such as `$HOME`, `${HOME}`, `$env:PATH`, and an unselected `$unknown`
+stays ordinary text. The model can also inspect the bounded catalog with `list_skills`, load one
+Skill with `read_skill`, and read an inventoried text resource with `read_skill_resource`.
+
+#### Optional Skill resources
+
+A Skill may place supporting files under `references/` and `assets/`. These directories are
+inventoried recursively with bounded count, depth, and size metadata. Paths exposed to the model
+are Skill-relative POSIX paths, never host absolute paths. `read_skill_resource` reads only bounded
+UTF-8 text that was present in that inventory; binary assets may be listed but are not returned as
+text. Directory symlinks/junctions, file links that escape the Skill, files outside those two
+directories, and resources added after startup are not readable through the Skill resource tool.
+
+Skills do not have a plugin manifest, installer, marketplace, configurable extra roots, file
+watcher, or hot reload. They cannot declare or execute scripts/hooks, dependencies, models, effort,
+or allowed tools. A Skill is model instruction content—not a capability or permission grant. Any
+tool or MCP call it recommends still follows the existing host registration, approval, and policy
+path.
+
+#### Skill loading diagnostics
+
+Loading problems are isolated: one invalid Skill does not prevent healthy siblings or MCP tools
+from working. Startup reports bounded diagnostic-code counts without exposing local Skill paths to
+the model. Use the code to apply the corresponding repair:
+
+| Diagnostic | Repair |
+|------------|--------|
+| `skill.source.invalid` | Make the fixed `skills/` root a readable directory, or remove the invalid root. A missing root is valid and stays silent. |
+| `skill.source.duplicate` | Stop the user and project roots from resolving to the same canonical directory. |
+| `skill.source.limit-exceeded` | Reduce direct Skill children in that source to 128; excess entries are deterministically omitted. |
+| `skill.directory.invalid` | Replace the direct child with a real, readable directory; Skill-directory symlinks and junctions are rejected. |
+| `skill.file.invalid` | Add a readable, regular, UTF-8 `SKILL.md` file to the Skill directory. |
+| `skill.file.too-large` | Reduce `SKILL.md` to at most 128 KiB. |
+| `skill.frontmatter.invalid` | Start and close YAML frontmatter with `---`, provide `description`, use a valid lowercase name, and remove custom tags, anchors, aliases, merge keys, or unsupported control characters. |
+| `skill.name.duplicate` | Give colliding Skills within the same source distinct directory/frontmatter names; no ordering-based winner is selected. |
+| `skill.load.failed` | Check file permissions and filesystem health, then restart Evil Jelly. |
+| `skill.resource.escape` | Remove resource-directory links and file links whose real target leaves the Skill directory. |
+| `skill.resource.invalid` | Make the resource resolve to a readable regular file under `references/` or `assets/`. |
+| `skill.resource.limit-exceeded` | Keep at most 256 resources per Skill and nesting at no more than 8 directory levels; excess inventory is omitted. |
+
 ### Durable sessions
 
 Interactive conversations are saved locally and can be continued with `evil --resume` or the in-session `/resume` command. Sessions are scoped to the active workspace, and the picker shows the most recently updated sessions for that workspace.

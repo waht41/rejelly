@@ -8,6 +8,7 @@
   //   "maxSeeds": 24,
   //   "ledgerGcDays": 30,
   // },
+  // Skill availability only; this grants no tool permission. Restart after changing it.
   // "skills": {
   //   "enabled": true,
   //   "overrides": {

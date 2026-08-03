@@ -48,7 +48,7 @@ export type IdentifierValidationResult =
 
 const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
 
-/** Trim and validate a model-facing, contribution-local skill name without rewriting its case. */
+/** Trim and validate a model-facing Skill name without rewriting its case. */
 export function validateSkillName(input: string): IdentifierValidationResult {
   const value = input.trim();
   if (value.length === 0) {

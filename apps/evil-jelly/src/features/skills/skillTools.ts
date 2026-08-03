@@ -102,7 +102,7 @@ export interface SkillTools {
   readonly readSkillResource: ReturnType<typeof createReadSkillResourceTool>;
 }
 
-/** Create the three borrowed-snapshot Skill tools; registration remains a Phase 3 concern. */
+/** Create the three Skill tools over a borrowed, process-lifetime snapshot. */
 export function createSkillTools(snapshot: SkillRuntimeSnapshot): SkillTools {
   return Object.freeze({
     readSkill: createReadSkillTool(snapshot),

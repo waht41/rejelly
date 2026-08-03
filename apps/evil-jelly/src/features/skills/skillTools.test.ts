@@ -35,7 +35,7 @@ function snapshot(
 }
 
 describe("Skill tools", () => {
-  it("creates exactly the three Phase 2 tools", () => {
+  it("creates exactly the three Skill tools", () => {
     const built = snapshot([]);
     const tools = createSkillTools(built.snapshot);
 
