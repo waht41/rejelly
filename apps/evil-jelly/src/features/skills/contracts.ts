@@ -7,6 +7,15 @@ export interface SkillOrigin {
   readonly scope: SkillScope;
 }
 
+const SKILL_ORIGINS: Readonly<Record<SkillScope, SkillOrigin>> = Object.freeze({
+  user: Object.freeze({ scope: "user" }),
+  project: Object.freeze({ scope: "project" }),
+});
+
+export function skillOrigin(scope: SkillScope): SkillOrigin {
+  return SKILL_ORIGINS[scope];
+}
+
 export type SkillLoadDiagnosticCode =
   | "skill.source.invalid"
   | "skill.source.duplicate"

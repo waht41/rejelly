@@ -9,6 +9,11 @@ export function toPosixPath(p: string): string {
   return p.replace(/\\/g, "/");
 }
 
+/** Convert an already-validated POSIX-shaped relative path for native filesystem APIs. */
+export function fromPosixPath(posixPath: string): string {
+  return path.sep === "/" ? posixPath : posixPath.replaceAll("/", path.sep);
+}
+
 export function toRepoRelativePath(gitRoot: string, absolutePath: string): string {
   const rel = path.relative(gitRoot, path.resolve(absolutePath));
   return toPosixPath(rel);
