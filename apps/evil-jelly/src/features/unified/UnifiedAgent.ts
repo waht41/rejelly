@@ -38,6 +38,7 @@ import {
   createDeleteFileTool,
   createEditFileTool,
 } from "../../tools/WriteTools";
+import { equipSkillKit } from "../skills/equipSkillKit";
 import { buildAutoCompactionConfig } from "./contextControl";
 import { UNIFIED_TOOL_ARTIFACTS_KEY } from "./unifiedMemoryKeys";
 import {
@@ -144,6 +145,7 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
   handler: async (props) => {
     await useUnifiedTools();
     useUnifiedPrompts(props);
+    equipSkillKit();
     useStandardStreaming({ textMode: "plain" });
 
     if (props.operation === "compress") {

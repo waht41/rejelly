@@ -10,6 +10,14 @@ import {
   type ModelAdapter,
 } from "@rejelly/core";
 import type { ReviewOptions } from "@rejelly/core/debugger";
+import {
+  SKILL_RUNTIME_PROVIDER_KEY,
+  type SkillRuntimeSnapshot,
+} from "../../../features/skills/contracts";
+import {
+  buildConfiguredSkillRuntimeSnapshot,
+  formatSkillRuntimeStartupSummary,
+} from "../../../features/skills/skillRuntimeSnapshot";
 import { UnifiedAgent } from "../../../features/unified/UnifiedAgent";
 import { setBinding } from "../../../services/binding/hostBindings";
 import { LazySessionRecorder } from "../../../services/session/lazySessionRecorder";
@@ -58,6 +66,8 @@ export interface RunEvilJellyHostOptions {
    * them (never closes), so disposal stays with the caller.
    */
   mcpProviders?: Record<string, unknown>;
+  /** Borrowed process-lifetime loose Skill snapshot, reused across run segments. */
+  skillSnapshot?: SkillRuntimeSnapshot;
   /**
    * Source trace id when this run replays a mock model (--mock). Tagged onto trace
    * attributes so devtool can tell mock replays (no real LLM calls, zero tokens) apart.
@@ -177,6 +187,10 @@ export async function runEvilJellyHost(
     seedBudget,
   } = options;
   const enableSnapshot = enableSnapshotOpt ?? (snapshot != null ? true : undefined);
+  const providers = {
+    ...(options.mcpProviders ?? {}),
+    ...(options.skillSnapshot ? { [SKILL_RUNTIME_PROVIDER_KEY]: options.skillSnapshot } : {}),
+  };
   // One traceId per run segment. A logical session may span several of these across resumes;
   // session.id (below) is what groups them in devtool.
   const traceId = generateTraceId();
@@ -211,7 +225,7 @@ export async function runEvilJellyHost(
         snapshot,
         enableSnapshot,
         signal: runAbortController.signal,
-        providers: options.mcpProviders,
+        providers: Object.keys(providers).length > 0 ? providers : undefined,
         trace: {
           traceId,
           attributes: {
@@ -219,6 +233,13 @@ export async function runEvilJellyHost(
             ...(sessionId ? { "session.id": sessionId } : {}),
             ...(options.mockSourceTraceId
               ? { "mock.source_trace_id": options.mockSourceTraceId }
+              : {}),
+            ...(options.skillSnapshot
+              ? {
+                  "evil_jelly.skills.count": options.skillSnapshot.catalog.size,
+                  "evil_jelly.skills.catalog_fingerprint":
+                    options.skillSnapshot.catalog.fingerprint,
+                }
               : {}),
           },
         },
@@ -255,6 +276,11 @@ export async function runDirectUnified(
   const { model, userInput, history } = options;
   const traceId = generateTraceId();
   try {
+    const skillRuntime = await buildConfiguredSkillRuntimeSnapshot();
+    const skillSummary = formatSkillRuntimeStartupSummary(skillRuntime);
+    if (skillSummary) {
+      bindings.logSystemEvent(`${skillSummary}\n`);
+    }
     const UnifiedAgentWithAbort = augmentAgent(UnifiedAgent, [withAbort()]);
     await runWithReview({
       model,
@@ -266,11 +292,14 @@ export async function runDirectUnified(
         bindings.logAssistantMessage(result.reply);
       },
       runWithOptions: {
+        providers: { [SKILL_RUNTIME_PROVIDER_KEY]: skillRuntime.snapshot },
         trace: {
           traceId,
           attributes: {
             "devtool.display_name": "evil-jelly unified (headless)",
             "evil_jelly.headless": true,
+            "evil_jelly.skills.count": skillRuntime.snapshot.catalog.size,
+            "evil_jelly.skills.catalog_fingerprint": skillRuntime.snapshot.catalog.fingerprint,
           },
         },
       },

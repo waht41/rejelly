@@ -2,7 +2,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildSkillRuntimeSnapshot } from "./skillRuntimeSnapshot";
+import {
+  buildSkillRuntimeSnapshot,
+  formatSkillRuntimeStartupSummary,
+} from "./skillRuntimeSnapshot";
 import { createSkillTools } from "./skillTools";
 
 const fixtures: string[] = [];
@@ -27,6 +30,7 @@ describe("SkillRuntimeSnapshot", () => {
     const tools = createSkillTools(built.snapshot);
 
     expect(built.diagnostics).toEqual([]);
+    expect(formatSkillRuntimeStartupSummary(built)).toBe("Loaded 1 local Skill.");
     expect(built.snapshot.catalog.size).toBe(1);
     const resolved = built.snapshot.catalog.resolve("review");
     expect(resolved.ok).toBe(true);
@@ -62,5 +66,26 @@ describe("SkillRuntimeSnapshot", () => {
       tools.readSkillResource.handler({ skill: "review", path: "references/unlisted.md" }),
     ).resolves.toContain('code="resource_not_listed"');
     expect(Object.isFrozen(built.snapshot)).toBe(true);
+  });
+
+  it("keeps the normal empty state silent and warning summaries path-free", async () => {
+    const empty = await buildSkillRuntimeSnapshot([]);
+    expect(formatSkillRuntimeStartupSummary(empty)).toBeUndefined();
+
+    const source = "C:\\private\\skills\\broken";
+    const summary = formatSkillRuntimeStartupSummary({
+      snapshot: empty.snapshot,
+      diagnostics: [
+        {
+          severity: "warning",
+          code: "skill.source.invalid",
+          message: "broken",
+          source,
+        },
+      ],
+    });
+    expect(summary).toContain("skill.source.invalid: 1");
+    expect(summary).not.toContain(source);
+    expect(summary?.length).toBeLessThanOrEqual(1_000);
   });
 });

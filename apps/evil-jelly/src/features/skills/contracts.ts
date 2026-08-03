@@ -1,5 +1,8 @@
 import { SKILL_LIMITS } from "./limits";
 
+/** Versioned runWith provider key for the borrowed process-lifetime Skill snapshot. */
+export const SKILL_RUNTIME_PROVIDER_KEY = "evil-jelly:skill-runtime:v1";
+
 export type SkillScope = "user" | "project";
 
 /** Model-safe identity of the fixed loose source that supplied a Skill. */
@@ -127,6 +130,7 @@ export type SkillListResult =
 /** Immutable query surface built once at the composition root. */
 export interface SkillCatalogSnapshot {
   readonly size: number;
+  readonly fingerprint: string;
   readonly entries: readonly SkillRecord[];
   resolve(name: string): SkillResolveResult;
   list(cursor?: string): SkillListResult;

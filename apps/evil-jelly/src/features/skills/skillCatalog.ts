@@ -142,7 +142,7 @@ export function createSkillCatalog(records: readonly SkillRecord[]): SkillCatalo
     byPlainName.set(record.name, group);
   }
   const listItems = Object.freeze(entries.map(toListItem));
-  const cursorKey = fnv1a32Hex(
+  const catalogFingerprint = fnv1a32Hex(
     JSON.stringify(
       listItems.map((item) => [item.qualifiedName, item.description, item.shortDescription ?? ""]),
     ),
@@ -150,6 +150,7 @@ export function createSkillCatalog(records: readonly SkillRecord[]): SkillCatalo
 
   return Object.freeze({
     size: entries.length,
+    fingerprint: catalogFingerprint,
     entries,
     resolve(input: string): SkillResolveResult {
       const name = input.trim();
@@ -175,7 +176,8 @@ export function createSkillCatalog(records: readonly SkillRecord[]): SkillCatalo
       });
     },
     list(cursor?: string): SkillListResult {
-      const offset = cursor === undefined ? 0 : parseCursor(cursor, cursorKey, listItems.length);
+      const offset =
+        cursor === undefined ? 0 : parseCursor(cursor, catalogFingerprint, listItems.length);
       if (offset === undefined) {
         return Object.freeze({ ok: false, reason: "invalid-cursor" });
       }
@@ -189,7 +191,7 @@ export function createSkillCatalog(records: readonly SkillRecord[]): SkillCatalo
         const tentative = [...items, listItems[index]!];
         const nextOffset = offset + tentative.length;
         const nextCursor =
-          nextOffset < listItems.length ? cursorFor(cursorKey, nextOffset) : undefined;
+          nextOffset < listItems.length ? cursorFor(catalogFingerprint, nextOffset) : undefined;
         const candidate = pageResult(tentative, nextCursor, listItems.length);
         if (JSON.stringify(candidate.page).length > SKILL_LIMITS.listPageOutputChars) {
           break;
@@ -199,7 +201,7 @@ export function createSkillCatalog(records: readonly SkillRecord[]): SkillCatalo
 
       const nextOffset = offset + items.length;
       const nextCursor =
-        nextOffset < listItems.length ? cursorFor(cursorKey, nextOffset) : undefined;
+        nextOffset < listItems.length ? cursorFor(catalogFingerprint, nextOffset) : undefined;
       return pageResult(items, nextCursor, listItems.length);
     },
   });

@@ -26,6 +26,8 @@ describe("SkillCatalog", () => {
     expect(catalog.entries.map(qualifiedSkillName)).toEqual(["project:review", "user:explain"]);
     expect(catalog.resolve("project:review")).toEqual({ ok: true, skill: project });
     expect(catalog.resolve(" explain ")).toEqual({ ok: true, skill: user });
+    expect(catalog.fingerprint).toMatch(/^[0-9a-f]{8}$/);
+    expect(createSkillCatalog([project, user]).fingerprint).toBe(catalog.fingerprint);
     expect(Object.isFrozen(catalog)).toBe(true);
     expect(Object.isFrozen(catalog.entries)).toBe(true);
   });

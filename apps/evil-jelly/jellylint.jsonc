@@ -49,6 +49,17 @@
   },
   "rules": [
     {
+      "name": "allow-unified-skill-dependency",
+      "description": "Temporary exception for UnifiedAgent Skill assembly; revisit the feature graph boundary",
+      "scope": "fallback",
+      "match": {
+        "from": "@feature:unified",
+        "to": "@feature:skills"
+      },
+      "severity": "warn",
+      "message": "UnifiedAgent currently assembles Skills directly; revisit the feature graph boundary"
+    },
+    {
       "name": "restrict-fs-access",
       "description": "Agent tools must access filesystem via src/shared/fs-policy",
       "match": {

@@ -1,5 +1,9 @@
 import type { AgentSnapshot, Message, ModelAdapter } from "@rejelly/core";
 import {
+  buildConfiguredSkillRuntimeSnapshot,
+  formatSkillRuntimeStartupSummary,
+} from "../../features/skills/skillRuntimeSnapshot";
+import {
   takePendingExit,
   takePendingNewSession,
   takePendingResume,
@@ -167,6 +171,11 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
   // The framework borrows these via runWith({ providers }); disposal stays here (finally).
   const { providers: mcpProviders, dispose: disposeMcp } = await connectMcpProviders();
   try {
+    const skillRuntime = await buildConfiguredSkillRuntimeSnapshot();
+    const skillSummary = formatSkillRuntimeStartupSummary(skillRuntime);
+    if (skillSummary) {
+      bindings.logSystemEvent(`${skillSummary}\n`);
+    }
     // Outer loop: each iteration is one runWith segment (own traceId). A mid-session /resume ends
     // the current run, queues a target via resumeControl, and we restart with the loaded history.
     while (true) {
@@ -179,6 +188,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
         seedContext: state.resumeSeed?.activeContext,
         seedBudget: state.resumeSeed?.budget,
         mcpProviders,
+        skillSnapshot: skillRuntime.snapshot,
         mockSourceTraceId,
         isolateSessionState,
         sessionV2,

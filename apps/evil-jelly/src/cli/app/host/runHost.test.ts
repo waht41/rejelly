@@ -1,13 +1,17 @@
 import type { ModelAdapter } from "@rejelly/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { type SkillRuntimeSnapshot, skillOrigin } from "../../../features/skills/contracts";
+import { createSkillCatalog } from "../../../features/skills/skillCatalog";
 import { requestRunAbort } from "../../../services/stop/runControl";
 import type { EvilJellyHostBindings } from "../../../shared/types";
-import { runEvilJellyHost } from "./runHost";
+import { runDirectUnified, runEvilJellyHost } from "./runHost";
 
 const mocks = vi.hoisted(() => ({
   mainCliAgent: vi.fn(),
   openSessionRecorder: vi.fn(),
   runWithReview: vi.fn(),
+  buildSkillRuntime: vi.fn(),
+  formatSkillSummary: vi.fn(),
 }));
 
 vi.mock("../../../shell/MainCliAgent", () => ({
@@ -27,13 +31,44 @@ vi.mock("../../../shared/lib/traceId", () => ({
   generateTraceId: () => "trace-id",
 }));
 
+vi.mock("../../../features/skills/skillRuntimeSnapshot", () => ({
+  buildConfiguredSkillRuntimeSnapshot: mocks.buildSkillRuntime,
+  formatSkillRuntimeStartupSummary: mocks.formatSkillSummary,
+}));
+
 vi.mock("./runWithReview", () => ({
   runWithReview: mocks.runWithReview,
 }));
 
 describe("runEvilJellyHost session teardown", () => {
+  function skillSnapshot(): SkillRuntimeSnapshot {
+    return Object.freeze({
+      catalog: createSkillCatalog([
+        Object.freeze({
+          name: "review",
+          description: "Review",
+          instruction: "Review carefully.",
+          origin: skillOrigin("project"),
+          resources: Object.freeze([]),
+        }),
+      ]),
+      resources: Object.freeze({
+        readText: async () => ({
+          ok: false as const,
+          reason: "resource-not-listed" as const,
+          message: "not listed",
+        }),
+      }),
+    });
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.buildSkillRuntime.mockResolvedValue({
+      snapshot: skillSnapshot(),
+      diagnostics: [],
+    });
+    mocks.formatSkillSummary.mockReturnValue("Loaded 1 local Skill.");
   });
 
   it("ends an idle Ctrl+C run as interrupted before closing the writer", async () => {
@@ -113,5 +148,47 @@ describe("runEvilJellyHost session teardown", () => {
 
     expect(mocks.openSessionRecorder).not.toHaveBeenCalled();
     expect(logSystemEvent).toHaveBeenCalledWith("\nRun interrupted by user.\n");
+  });
+
+  it("seeds the borrowed Skill provider and trace identity beside MCP providers", async () => {
+    const snapshot = skillSnapshot();
+    mocks.runWithReview.mockResolvedValue(undefined);
+
+    await runEvilJellyHost({ logSystemEvent: vi.fn() } as unknown as EvilJellyHostBindings, {
+      model: { id: "test-model" } as ModelAdapter,
+      mcpProviders: { "mcp:devtool": { id: "client" } },
+      skillSnapshot: snapshot,
+    });
+
+    const runWithOptions = mocks.runWithReview.mock.calls[0]?.[0].runWithOptions;
+    expect(runWithOptions.providers).toMatchObject({
+      "mcp:devtool": { id: "client" },
+      "evil-jelly:skill-runtime:v1": snapshot,
+    });
+    expect(runWithOptions.trace.attributes).toMatchObject({
+      "evil_jelly.skills.count": 1,
+      "evil_jelly.skills.catalog_fingerprint": snapshot.catalog.fingerprint,
+    });
+  });
+
+  it("uses the same configured snapshot builder for direct headless UnifiedAgent runs", async () => {
+    mocks.runWithReview.mockResolvedValue(undefined);
+    const prepared = { snapshot: skillSnapshot(), diagnostics: [] };
+    mocks.buildSkillRuntime.mockResolvedValue(prepared);
+    const logSystemEvent = vi.fn();
+
+    await runDirectUnified({ logSystemEvent } as unknown as EvilJellyHostBindings, {
+      model: { id: "test-model" } as ModelAdapter,
+      userInput: "hello",
+    });
+
+    expect(mocks.buildSkillRuntime).toHaveBeenCalledOnce();
+    expect(logSystemEvent).toHaveBeenCalledWith("Loaded 1 local Skill.\n");
+    const runWithOptions = mocks.runWithReview.mock.calls[0]?.[0].runWithOptions;
+    expect(runWithOptions.providers["evil-jelly:skill-runtime:v1"]).toBe(prepared.snapshot);
+    expect(runWithOptions.trace.attributes).toMatchObject({
+      "evil_jelly.headless": true,
+      "evil_jelly.skills.count": 1,
+    });
   });
 });
