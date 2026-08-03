@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildSkillRuntimeSnapshot } from "./skillRuntimeSnapshot";
+import { createSkillTools } from "./skillTools";
 
 const fixtures: string[] = [];
 
@@ -23,6 +24,7 @@ describe("SkillRuntimeSnapshot", () => {
     await fs.writeFile(path.join(skill, "references", "guide.md"), "guide");
 
     const built = await buildSkillRuntimeSnapshot([{ scope: "project", rootPath: root }]);
+    const tools = createSkillTools(built.snapshot);
 
     expect(built.diagnostics).toEqual([]);
     expect(built.snapshot.catalog.size).toBe(1);
@@ -32,8 +34,33 @@ describe("SkillRuntimeSnapshot", () => {
       expect(JSON.stringify(resolved.skill)).not.toContain(root);
       await expect(
         built.snapshot.resources.readText(resolved.skill, "references/guide.md"),
-      ).resolves.toEqual({ ok: true, content: "guide" });
+      ).resolves.toEqual({
+        ok: true,
+        content: "guide",
+        resource: { path: "references/guide.md", kind: "reference", sizeBytes: 5 },
+      });
     }
+    await fs.writeFile(
+      path.join(skill, "SKILL.md"),
+      "---\ndescription: Changed after startup\n---\nChanged instruction.",
+    );
+    const skillOutput = await tools.readSkill.handler({ skill: "review" });
+    expect(skillOutput).toContain("Use the guide.");
+    expect(skillOutput).not.toContain("Changed instruction.");
+    expect(skillOutput).not.toContain(root);
+
+    const resourceOutput = await tools.readSkillResource.handler({
+      skill: "review",
+      path: "references/guide.md",
+    });
+    expect(resourceOutput).toContain("guide");
+    expect(resourceOutput).not.toContain(root);
+    await expect(
+      tools.readSkillResource.handler({ skill: "review", path: "../outside.md" }),
+    ).resolves.toContain('code="resource_escape"');
+    await expect(
+      tools.readSkillResource.handler({ skill: "review", path: "references/unlisted.md" }),
+    ).resolves.toContain('code="resource_not_listed"');
     expect(Object.isFrozen(built.snapshot)).toBe(true);
   });
 });

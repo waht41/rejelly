@@ -7,7 +7,7 @@ import { SKILL_LIMITS } from "./limits";
 
 const CATALOG_BUDGET_RATIO = 0.02;
 const HEADER = "## Skills\n\nAvailable local Skills:";
-const FOOTER = "Use the `skill` tool to load a Skill when it applies.";
+const FOOTER = "Use the `read_skill` tool to load a Skill when it applies.";
 
 type CatalogMode = RenderedSkillCatalog["mode"];
 

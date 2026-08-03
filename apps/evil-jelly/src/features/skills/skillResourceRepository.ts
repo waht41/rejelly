@@ -75,7 +75,7 @@ export function createSkillResourceRepository(
       if (file.content.includes("\0")) {
         return result("unsupported-binary-resource", "Resource contains binary NUL bytes.");
       }
-      return Object.freeze({ ok: true, content: file.content });
+      return Object.freeze({ ok: true, content: file.content, resource: inventoryEntry });
     },
   });
 }

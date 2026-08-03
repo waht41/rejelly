@@ -12,4 +12,8 @@ export const SKILL_LIMITS = Object.freeze({
   listPageEntries: 50,
   listPageOutputChars: 16_000,
   resourceReadBytes: 100 * 1024,
+  skillToolOutputChars: 160 * 1024,
+  listToolOutputChars: 32 * 1024,
+  resourceToolOutputChars: 160 * 1024,
+  toolErrorMessageChars: 1_000,
 } as const);

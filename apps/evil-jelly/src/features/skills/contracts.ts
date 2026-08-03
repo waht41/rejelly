@@ -140,7 +140,11 @@ export interface RenderedSkillCatalog {
 }
 
 export type SkillResourceReadResult =
-  | { readonly ok: true; readonly content: string }
+  | {
+      readonly ok: true;
+      readonly content: string;
+      readonly resource: SkillResourceEntry;
+    }
   | {
       readonly ok: false;
       readonly reason:

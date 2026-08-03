@@ -123,6 +123,7 @@ describe("skill loader and resource repository", () => {
     await expect(repository.readText(loaded.skill.record, "references/guide.md")).resolves.toEqual({
       ok: true,
       content: "guide",
+      resource: { path: "references/guide.md", kind: "reference", sizeBytes: 5 },
     });
     await expect(repository.readText(loaded.skill.record, "../outside.md")).resolves.toMatchObject({
       ok: false,
