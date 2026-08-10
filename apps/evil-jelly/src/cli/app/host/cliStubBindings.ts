@@ -2,8 +2,8 @@
  * Host binding stubs for non-router entry points.
  */
 
-import { classifyShellCommand } from "../../shared/shellCommandPolicy";
-import type { EvilJellyHostBindings } from "../../shared/types";
+import { classifyShellCommand } from "../../../shared/shellCommandPolicy";
+import type { EvilJellyHostBindings } from "../../../shared/types";
 
 export interface StubHostBindingsOptions {
   /** Return accept for every confirmWrite request (used by test/batch flows). */

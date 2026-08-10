@@ -9,7 +9,7 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { ToolCallHandle, ToolTranscriptDetail } from "../../shared/types";
+import type { ToolCallHandle, ToolTranscriptDetail } from "../types";
 
 type ToolCallSlot = {
   call?: ToolCallHandle;

@@ -4,7 +4,7 @@
  */
 
 import { equipResource, expectResource } from "@rejelly/core";
-import type { EvilJellyHostBindings } from "../../shared/types";
+import type { EvilJellyHostBindings } from "../types";
 
 const HOST_BINDINGS_KEY = "evil_jelly:host_bindings";
 

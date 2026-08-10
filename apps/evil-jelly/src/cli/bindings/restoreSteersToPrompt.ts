@@ -1,5 +1,5 @@
-import { drainSteers } from "../../services/steer/steerControl";
 import type { LineInputValue, UserAttachment } from "../../shared/AgentShared";
+import { drainSteers } from "../../shared/runtime/steerControl";
 import { usePromptStore } from "../store/usePromptStore";
 
 function mergeAttachments(inputs: LineInputValue[]): UserAttachment[] {

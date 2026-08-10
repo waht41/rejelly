@@ -13,8 +13,8 @@
  */
 
 import { createAgent } from "@rejelly/core";
-import { getBinding } from "../../services/binding/hostBindings";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
+import { getBinding } from "../../shared/host/hostBindings";
 import { mapWithConcurrency } from "../../shared/lib/mapWithConcurrency";
 import { getSettings } from "../../shared/settings";
 import { cloneFamily } from "./families/clone";

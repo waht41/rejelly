@@ -22,8 +22,8 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { equipMCP } from "@rejelly/adapter-mcp";
 import { expectResource } from "@rejelly/core";
 import { getReviewEndpointFromEnv } from "../shared/config";
+import { evilJellyToolLoggerMiddleware } from "../shared/host/withToolLogger";
 import { getSettings } from "../shared/settings";
-import { evilJellyToolLoggerMiddleware } from "./middlewares/withToolLogger";
 
 interface McpServerDescriptor {
   /** Provider key suffix (`mcp:<id>`) + equipMCP clientId. */

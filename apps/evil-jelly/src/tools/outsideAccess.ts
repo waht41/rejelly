@@ -1,9 +1,9 @@
-import { getBinding } from "../services/binding/hostBindings";
 import {
   type FsIntent,
   getWorkspaceFsPolicy,
   type ResolvedFsPath,
 } from "../shared/fs-policy/workspace-fs-policy";
+import { getBinding } from "../shared/host/hostBindings";
 import type { EvilJellyHostBindings } from "../shared/types";
 
 type ToolFsIntent = Exclude<FsIntent, "inside">;

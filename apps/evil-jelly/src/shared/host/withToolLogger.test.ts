@@ -3,21 +3,18 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { EvilJellyHostBindings } from "../../shared/types";
+import type { EvilJellyHostBindings } from "../types";
 
 // Hoisted: mockGetBinding is available during vi.mock factory hoisting.
 const { mockGetBinding } = vi.hoisted(() => ({
   mockGetBinding: vi.fn<() => EvilJellyHostBindings>(),
 }));
 
-vi.mock("../../services/binding/hostBindings", () => ({
+vi.mock("./hostBindings", () => ({
   getBinding: () => mockGetBinding(),
 }));
 
-import {
-  getActiveToolCall,
-  recordActiveToolDetail,
-} from "../../services/binding/toolTranscriptDetail";
+import { getActiveToolCall, recordActiveToolDetail } from "./toolTranscriptDetail";
 import { withToolLogger } from "./withToolLogger";
 
 describe("withToolLogger", () => {

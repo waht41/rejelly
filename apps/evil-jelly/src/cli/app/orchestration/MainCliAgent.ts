@@ -1,5 +1,5 @@
 /**
- * Session agent: runs the selected top-level mode and owns the interactive loop for chat modes.
+ * CLI application orchestrator: routes interactive commands and coordinates agent/session turns.
  */
 
 import { randomBytes } from "node:crypto";
@@ -16,26 +16,33 @@ import {
 import {
   SKILL_RUNTIME_PROVIDER_KEY,
   type SkillRuntimeSnapshot,
-} from "../features/skills/contracts";
-import { buildSkillAwareUserMessage } from "../features/skills/explicitSkillReferences";
-import { UnifiedAgent } from "../features/unified/UnifiedAgent";
-import { getBinding, setBinding } from "../services/binding/hostBindings";
+} from "../../../features/skills/contracts";
+import { buildSkillAwareUserMessage } from "../../../features/skills/explicitSkillReferences";
+import { UnifiedAgent } from "../../../features/unified/UnifiedAgent";
 import {
   combineSessionBudget,
   formatSessionStatus,
   formatTokenUsageLine,
-} from "../services/session/budgetStatus";
-import { requestNewSession, requestResume } from "../services/session/resumeControl";
-import type { SessionRecorder } from "../services/session/sessionRecorder";
-import { listSessions, loadSession, type SessionBudget } from "../services/session/sessionStore";
-import { drainSteers } from "../services/steer/steerControl";
-import { withAbort } from "../services/stop/withAbort";
-import type { LineInputValue } from "../shared/AgentShared";
-import { formatUserInputDisplay, getUserInputDisplay } from "../shared/attachments/messageContent";
-import { env } from "../shared/config";
-import { getWorkspaceFsPolicy } from "../shared/fs-policy/workspace-fs-policy";
-import { countConversationTurns } from "../shared/lib/compactionMessages";
-import type { EvilJellyHostBindings } from "../shared/types";
+} from "../../../services/session/budgetStatus";
+import { requestNewSession, requestResume } from "../../../services/session/resumeControl";
+import type { SessionRecorder } from "../../../services/session/sessionRecorder";
+import {
+  listSessions,
+  loadSession,
+  type SessionBudget,
+} from "../../../services/session/sessionStore";
+import type { LineInputValue } from "../../../shared/AgentShared";
+import {
+  formatUserInputDisplay,
+  getUserInputDisplay,
+} from "../../../shared/attachments/messageContent";
+import { env } from "../../../shared/config";
+import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
+import { getBinding, setBinding } from "../../../shared/host/hostBindings";
+import { countConversationTurns } from "../../../shared/lib/compactionMessages";
+import { drainSteers } from "../../../shared/runtime/steerControl";
+import { withAbort } from "../../../shared/runtime/withAbort";
+import type { EvilJellyHostBindings } from "../../../shared/types";
 
 const UnifiedAgentWithAbort = UnifiedAgent.fork({ middlewares: [withAbort()] });
 

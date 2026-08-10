@@ -20,19 +20,19 @@ import {
   formatSkillRuntimeStartupSummary,
 } from "../../../features/skills/skillRuntimeSnapshot";
 import { UnifiedAgent } from "../../../features/unified/UnifiedAgent";
-import { setBinding } from "../../../services/binding/hostBindings";
 import { LazySessionRecorder } from "../../../services/session/lazySessionRecorder";
 import {
   openSessionRecorder,
   type SessionRecorder,
 } from "../../../services/session/sessionRecorder";
 import type { SessionBudget } from "../../../services/session/sessionStore";
-import { registerRunAbort } from "../../../services/stop/runControl";
-import { withAbort } from "../../../services/stop/withAbort";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
+import { setBinding } from "../../../shared/host/hostBindings";
 import { generateTraceId } from "../../../shared/lib/traceId";
+import { registerRunAbort } from "../../../shared/runtime/runControl";
+import { withAbort } from "../../../shared/runtime/withAbort";
 import type { EvilJellyHostBindings } from "../../../shared/types";
-import { MainCliAgent } from "../../../shell/MainCliAgent";
+import { MainCliAgent } from "../orchestration/MainCliAgent";
 import { runWithReview } from "./runWithReview";
 
 export interface RunEvilJellyHostOptions {

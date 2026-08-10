@@ -5,14 +5,14 @@
 import type { ToolDefinition } from "@rejelly/core";
 import { getContextSignal } from "@rejelly/core";
 import { z } from "zod";
-import { getBinding } from "../services/binding/hostBindings";
-import { getActiveToolCall } from "../services/binding/toolTranscriptDetail";
 import {
   executeShellCommand,
   getShellEnvironmentSummary,
 } from "../services/cmd/executeShellCommand";
-import { pushRuntimeTask } from "../services/stop/runtimeControl";
 import { getWorkspaceFsPolicy, resolveWorkspaceCwd } from "../shared/fs-policy/workspace-fs-policy";
+import { getBinding } from "../shared/host/hostBindings";
+import { getActiveToolCall } from "../shared/host/toolTranscriptDetail";
+import { pushRuntimeTask } from "../shared/runtime/runtimeControl";
 
 const runCommandParameters = z.object({
   command: z

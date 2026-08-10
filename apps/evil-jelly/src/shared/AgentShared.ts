@@ -1,5 +1,5 @@
 /**
- * Shared agent-level types for child-agent props (host I/O via ../hostBindings getBinding).
+ * Shared agent-level types for child-agent props (host I/O via host/hostBindings getBinding).
  */
 
 import type { Message } from "@rejelly/core";

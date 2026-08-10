@@ -13,21 +13,21 @@ import {
   isAbortError,
   isToolLoopExceededError,
 } from "@rejelly/core";
-import { getBinding } from "../../services/binding/hostBindings";
-import { useStandardStreaming } from "../../services/binding/standardStreaming";
 import { promptChatResilient } from "../../services/policy/promptChatResilient";
 import { promptCompactHistory } from "../../services/policy/promptCompactHistory";
-import { shouldUseTerminalUserReplyRule } from "../../services/prompt/output-surface";
 import { buildWorkspaceRuleInstructionBlock } from "../../services/prompt/workspace-rule";
 import type { ConversationAgentProps, ConversationAgentResult } from "../../shared/AgentShared";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
+import { getBinding } from "../../shared/host/hostBindings";
+import { shouldUseTerminalUserReplyRule } from "../../shared/host/output-surface";
+import { useStandardStreaming } from "../../shared/host/standardStreaming";
+import { evilJellyToolLoggerMiddleware } from "../../shared/host/withToolLogger";
 import {
   equipReadOnlyWorkspaceKit,
   equipRunCommandKit,
   equipWebResearchKit,
 } from "../../tools/kits";
 import { equipMcpServerKit } from "../../tools/mcpServerKit";
-import { evilJellyToolLoggerMiddleware } from "../../tools/middlewares/withToolLogger";
 import {
   createCreateFileTool,
   createDeleteFileTool,

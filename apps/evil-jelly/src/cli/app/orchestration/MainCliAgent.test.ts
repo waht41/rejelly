@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { takePendingResume } from "../services/session/resumeControl";
-import type { SessionMeta } from "../services/session/sessionStore";
-import type { EvilJellyHostBindings, HostChoiceOption } from "../shared/types";
+import { takePendingResume } from "../../../services/session/resumeControl";
+import type { SessionMeta } from "../../../services/session/sessionStore";
+import type { EvilJellyHostBindings, HostChoiceOption } from "../../../shared/types";
 import { tryRequestResume } from "./MainCliAgent";
 
 const mocks = vi.hoisted(() => ({
@@ -9,14 +9,14 @@ const mocks = vi.hoisted(() => ({
   loadSession: vi.fn(),
 }));
 
-vi.mock("../services/session/sessionStore", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../services/session/sessionStore")>()),
+vi.mock("../../../services/session/sessionStore", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../services/session/sessionStore")>()),
   listSessions: mocks.listSessions,
   loadSession: mocks.loadSession,
 }));
 
-vi.mock("../shared/fs-policy/workspace-fs-policy", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../shared/fs-policy/workspace-fs-policy")>()),
+vi.mock("../../../shared/fs-policy/workspace-fs-policy", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../shared/fs-policy/workspace-fs-policy")>()),
   getWorkspaceFsPolicy: () => ({ getRoot: () => "/workspace" }),
 }));
 

@@ -1,5 +1,5 @@
-import { clearSteers } from "../../services/steer/steerControl";
 import type { LineInputValue } from "../../shared/AgentShared";
+import { clearSteers } from "../../shared/runtime/steerControl";
 
 let promptQueue: Promise<void> = Promise.resolve();
 let queuedLineInputs: LineInputValue[] = [];

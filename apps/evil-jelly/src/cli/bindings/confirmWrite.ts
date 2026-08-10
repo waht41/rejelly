@@ -1,4 +1,3 @@
-import { recordActiveToolDetail } from "../../services/binding/toolTranscriptDetail";
 import type {
   AgentMode,
   FsOutsideAccessPayload,
@@ -8,6 +7,7 @@ import type {
   ToolConfirmationResult,
   WriteActionType,
 } from "../../shared/AgentShared";
+import { recordActiveToolDetail } from "../../shared/host/toolTranscriptDetail";
 import { classifyShellCommand, isSimpleCommand } from "../../shared/shellCommandPolicy";
 import { useOutputStore } from "../store/useOutputStore";
 import type { ActionMenuOption } from "../store/usePromptStore";

@@ -2,9 +2,9 @@
  * Wires Ink Dashboard UI to {@link EvilJellyHostBindings}.
  */
 
-import { resetRuntimeTaskStack } from "../../services/stop/runtimeControl";
 import { env, getReviewEndpointFromEnv } from "../../shared/config";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
+import { resetRuntimeTaskStack } from "../../shared/runtime/runtimeControl";
 import type { EvilJellyHostBindings, HostChoiceView } from "../../shared/types";
 import { resetModeSession, useModeStore } from "../store/useModeStore";
 import { resetOutputSession, TOOL_FULL_CAP, useOutputStore } from "../store/useOutputStore";

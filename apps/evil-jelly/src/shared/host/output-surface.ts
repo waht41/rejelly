@@ -1,4 +1,4 @@
-import type { UserReplySurface } from "../../shared/AgentShared";
+import type { UserReplySurface } from "../AgentShared";
 
 export const TERMINAL_USER_REPLY_RULE_TITLE = "Terminal user reply format";
 

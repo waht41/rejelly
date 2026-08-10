@@ -5,6 +5,7 @@
 
 import { augmentTool, equipTool, type ToolDefinition } from "@rejelly/core";
 import { isWebSearchConfigured } from "../services/web/webConfig";
+import { evilJellyToolLoggerMiddleware } from "../shared/host/withToolLogger";
 import { ListDirTool, ReadFileTool } from "./FileSystemTools";
 import { FuzzySearchTool } from "./FuzzySearchTool";
 import { GrepSearchTool } from "./GrepSearchTool";
@@ -17,7 +18,6 @@ import {
 } from "./heuristicAstTools/document-symbol";
 import { AstGetFunctionDependenciesTool } from "./heuristicAstTools/function-dependencies";
 import { equipReadFileDedupMiddleware } from "./hooks/readFileDedup";
-import { evilJellyToolLoggerMiddleware } from "./middlewares/withToolLogger";
 import { ReadWebpageTool } from "./readWebpageTool";
 import { RunCommandTool } from "./runCommandTool";
 import { ViewImageTool } from "./ViewImageTool";
@@ -91,20 +91,13 @@ export function equipRunCommandKit(): void {
 
 export interface WebResearchKitOptions {
   /**
-   * Equip without the host print/log middleware, for concurrent/background fan-out (e.g. a future
-   * batch of research sub-agents) whose tool chatter must not interleave on the shared terminal.
-   * Mirrors {@link ReadOnlyWorkspaceKitOptions.quiet}.
+   * Equip without the host print/log middleware, for concurrent/background fan-out whose tool
+   * chatter must not interleave on the shared terminal.
    */
   quiet?: boolean;
 }
 
-/**
- * Web research substrate: server-side web_search + read_webpage (fetch → clean markdown).
- *
- * read_webpage is always available for user-provided URLs. web_search is added only when
- * WEB_SEARCH_PROVIDER=llm explicitly enables server-side search. Like the other kits, this equips
- * tools only — no intake budget. See {@link equipReadOnlyWorkspaceKit}.
- */
+/** Equip server-side web_search and read_webpage. */
 export function equipWebResearchKit(options: WebResearchKitOptions = {}): void {
   const quiet = options.quiet ?? false;
   const tools = isWebSearchConfigured() ? [WebSearchTool, ReadWebpageTool] : [ReadWebpageTool];

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { takePendingExit } from "../../services/session/resumeControl";
 import {
   runWithToolDetailSlot,
   takeActiveToolDetail,
-} from "../../services/binding/toolTranscriptDetail";
-import { takePendingExit } from "../../services/session/resumeControl";
-import { enqueueSteer } from "../../services/steer/steerControl";
-import { registerRunAbort } from "../../services/stop/runControl";
+} from "../../shared/host/toolTranscriptDetail";
+import { registerRunAbort } from "../../shared/runtime/runControl";
+import { enqueueSteer } from "../../shared/runtime/steerControl";
 import { resetOutputSession, useOutputStore } from "../store/useOutputStore";
 import { resetPromptSession, usePromptStore } from "../store/usePromptStore";
 import { createInkConfirmWrite } from "./confirmWrite";

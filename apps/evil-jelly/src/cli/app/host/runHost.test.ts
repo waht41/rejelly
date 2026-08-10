@@ -2,7 +2,7 @@ import type { ModelAdapter } from "@rejelly/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type SkillRuntimeSnapshot, skillOrigin } from "../../../features/skills/contracts";
 import { createSkillCatalog } from "../../../features/skills/skillCatalog";
-import { requestRunAbort } from "../../../services/stop/runControl";
+import { requestRunAbort } from "../../../shared/runtime/runControl";
 import type { EvilJellyHostBindings } from "../../../shared/types";
 import { runDirectUnified, runEvilJellyHost } from "./runHost";
 
@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   formatSkillSummary: vi.fn(),
 }));
 
-vi.mock("../../../shell/MainCliAgent", () => ({
+vi.mock("../orchestration/MainCliAgent", () => ({
   MainCliAgent: mocks.mainCliAgent,
 }));
 

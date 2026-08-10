@@ -1,9 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import { AuditAgent } from "../../features/audit/AuditAgent";
-import { createBackgroundHostBindings } from "../../services/binding/cliStubBindings";
-import { setBinding } from "../../services/binding/hostBindings";
 import { docMapPath, loadDocMap } from "../../services/doc-drift";
-import { withAbort } from "../../services/stop/withAbort";
 import {
   createOpenAIModelFromEnv,
   env,
@@ -12,8 +9,11 @@ import {
   resolveGlobalEnvPath,
   saveEnvValues,
 } from "../../shared/config";
+import { setBinding } from "../../shared/host/hostBindings";
 import { generateTraceId } from "../../shared/lib/traceId";
+import { withAbort } from "../../shared/runtime/withAbort";
 import type { ParsedAuditArgs, ParsedRunArgs } from "./args";
+import { createBackgroundHostBindings } from "./host/cliStubBindings";
 import { runDirectUnified } from "./host/runHost";
 import { runWithReview } from "./host/runWithReview";
 import { collectInitConfig } from "./initConfig";

@@ -12,7 +12,7 @@ const hostBindingMock = vi.hoisted(() => ({
   current: null as EvilJellyHostBindings | null,
 }));
 
-vi.mock("../services/binding/hostBindings", () => ({
+vi.mock("../shared/host/hostBindings", () => ({
   getBinding: () => {
     if (!hostBindingMock.current) {
       throw new Error("No test host binding registered.");

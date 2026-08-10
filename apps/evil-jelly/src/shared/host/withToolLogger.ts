@@ -3,12 +3,12 @@
  */
 
 import type { ToolContext, ToolMiddleware } from "@rejelly/core";
-import { getBinding } from "../../services/binding/hostBindings";
+import { getBinding } from "./hostBindings";
 import {
   runWithToolDetailSlot,
   setActiveToolCall,
   takeActiveToolDetail,
-} from "../../services/binding/toolTranscriptDetail";
+} from "./toolTranscriptDetail";
 
 function formatPathList(paths: string[], maxShow = 4): string {
   if (paths.length === 0) {
