@@ -13,6 +13,7 @@
     "@cli:store": ["src/cli/store/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@shell": ["src/shell/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@feature:[feat]": ["src/features/[feat]/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@domain:[dom]": ["src/domains/[dom]/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@tools": ["src/tools/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@service:[svc]": ["src/services/[svc]/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@shared": ["src/shared/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
@@ -33,6 +34,18 @@
       ],
       "connect": {
         "@spec:tests": ["@ext:ui"],
+        "@cli:**": ["@domain:[dom]"],
+        "@feature:unified": [
+          "@domain:workspace",
+          "@domain:web",
+          "@domain:skills",
+          "@domain:policy",
+          "@domain:capabilities"
+        ],
+        "@feature:audit": ["@domain:workspace", "@domain:policy"],
+        "@domain:[dom]": ["@shared"],
+        "@domain:skills": ["@ext:fs"],
+        "@domain:session": ["@ext:fs"],
         "@cli:bindings": ["@ext:ui"],
         "@cli:ui": ["@ext:ui"],
         "@cli:prompt-editor": ["@ext:ui"],
