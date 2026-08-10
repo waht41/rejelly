@@ -7,8 +7,6 @@ import {
   type OutputParser,
   type PromptContext,
 } from "@rejelly/core/policy";
-import type { LineInputValue } from "../../shared/AgentShared";
-import { buildUserMessage } from "../../shared/attachments/messageContent";
 import { appendMessageContentSuffix } from "../../shared/lib/message";
 import { estimateMessagesTokens } from "../../shared/lib/tokens";
 import type { SessionMessageSink } from "../../shared/session/recorderPort";
@@ -29,7 +27,7 @@ import type {
 export interface ToolCallLoopPolicySnapshot {
   jsonSchema?: JsonSchema;
   parser?: OutputParser;
-  pendingUserInputs?: () => LineInputValue[] | Promise<LineInputValue[]>;
+  pendingUserMessages?: () => Message[] | Promise<Message[]>;
   compaction?: PromptChatCompactionConfig;
   sessionRecorder?: SessionMessageSink;
   turnId?: string;
@@ -172,12 +170,8 @@ export async function runResilientToolCallLoopPolicy<T = unknown>(
 
   try {
     while (step < maxTurnSteps) {
-      const pendingInputs = (await snapshot.pendingUserInputs?.()) ?? [];
-      for (const input of pendingInputs) {
-        const message = await buildUserMessage({
-          userInput: input.text,
-          attachments: input.attachments,
-        });
+      const pendingMessages = (await snapshot.pendingUserMessages?.()) ?? [];
+      for (const message of pendingMessages) {
         deltaMessages.push(message);
         if (snapshot.sessionRecorder && snapshot.turnId) {
           await snapshot.sessionRecorder.recordMessage(

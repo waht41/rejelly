@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { ContentPart, Message } from "@rejelly/core";
 import { z } from "zod";
-import type { ConversationAgentProps, UserAttachment, UserImageAttachment } from "../AgentShared";
+import type { UserAttachment, UserImageAttachment } from "../AgentShared";
 import {
   fileLocatorAttributes,
   fileLocatorFromResolved,
@@ -131,12 +131,6 @@ async function buildAttachmentDisplays(
 
 function formatAttachmentDisplay(display: UserInputAttachmentDisplay): string {
   return `${display.action} ${display.label}${display.status === "error" ? " failed" : ""}`;
-}
-
-export async function buildAttachmentActionSummary(
-  attachments: UserAttachment[] = [],
-): Promise<string[]> {
-  return (await buildAttachmentDisplays(attachments)).map(formatAttachmentDisplay);
 }
 
 export function formatUserInputDisplay(display: UserInputDisplay): string {
@@ -318,13 +312,6 @@ async function buildUserMessagePayload(props: {
   };
 }
 
-export async function buildUserMessageContent(props: {
-  userInput: string;
-  attachments?: UserAttachment[];
-}): Promise<Message["content"]> {
-  return (await buildUserMessagePayload(props)).content;
-}
-
 export async function buildUserMessage(props: {
   userInput: string;
   attachments?: UserAttachment[];
@@ -347,8 +334,4 @@ export async function buildUserMessage(props: {
       },
     },
   };
-}
-
-export async function buildConversationMessages(props: ConversationAgentProps): Promise<Message[]> {
-  return [...(props.history ?? []), await buildUserMessage(props)];
 }

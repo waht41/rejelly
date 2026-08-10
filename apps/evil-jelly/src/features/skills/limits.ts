@@ -1,0 +1,20 @@
+/** Central v1 safety and context limits for loose Skill loading. */
+export const SKILL_LIMITS = Object.freeze({
+  skillFileBytes: 128 * 1024,
+  frontmatterBytes: 16 * 1024,
+  frontmatterDepth: 16,
+  skillNameChars: 64,
+  descriptionChars: 1_000,
+  listingDescriptionChars: 250,
+  skillsPerSource: 128,
+  explicitSkillsPerTurn: 8,
+  resourcesPerSkill: 256,
+  resourceDirectoryDepth: 8,
+  listPageEntries: 50,
+  listPageOutputChars: 16_000,
+  resourceReadBytes: 100 * 1024,
+  skillToolOutputChars: 160 * 1024,
+  listToolOutputChars: 32 * 1024,
+  resourceToolOutputChars: 160 * 1024,
+  toolErrorMessageChars: 1_000,
+} as const);

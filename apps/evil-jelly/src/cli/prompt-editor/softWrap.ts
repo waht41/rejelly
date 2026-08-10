@@ -24,6 +24,21 @@ export interface WrappedRow {
   start: number;
 }
 
+/** Which visual side owns a caret whose offset is shared by two soft-wrapped rows. */
+export type CaretAffinity = "forward" | "backward";
+
+export interface CaretCell {
+  readonly row: number;
+  readonly col: number;
+}
+
+export interface VerticalCaretTarget {
+  readonly cursor: number;
+  readonly affinity: CaretAffinity;
+  /** Sticky terminal-cell column retained across a consecutive ↑/↓ sequence. */
+  readonly preferredColumn: number;
+}
+
 /**
  * Split `text` into the rows a `width`-wide box renders it as. Logical lines
  * (`\n`) always start a row; longer ones are soft-wrapped on top of that.
@@ -58,13 +73,80 @@ export function wrapRows(text: string, width: number): WrappedRow[] {
  * that offset is where the next typed character lands, and after the re-wrap it
  * shows up as that row's first character.
  */
-export function caretCell(rows: WrappedRow[], cursor: number): { row: number; col: number } {
-  for (let i = rows.length - 1; i >= 0; i--) {
+export function caretCell(
+  rows: WrappedRow[],
+  cursor: number,
+  affinity: CaretAffinity = "forward",
+): CaretCell {
+  for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     if (!row || cursor < row.start) {
-      continue;
+      break;
     }
-    return { row: i, col: stringWidth(row.text.slice(0, cursor - row.start)) };
+    const end = row.start + row.text.length;
+    if (cursor < end) {
+      return { row: i, col: stringWidth(row.text.slice(0, cursor - row.start)) };
+    }
+    if (cursor === end) {
+      const next = rows[i + 1];
+      const sharedSoftWrapBoundary = next?.start === end;
+      if (!sharedSoftWrapBoundary || affinity === "backward") {
+        return { row: i, col: stringWidth(row.text) };
+      }
+    }
   }
-  return { row: 0, col: 0 };
+  const lastIndex = Math.max(0, rows.length - 1);
+  const last = rows[lastIndex];
+  return last ? { row: lastIndex, col: stringWidth(last.text) } : { row: 0, col: 0 };
+}
+
+function caretAtColumn(
+  row: WrappedRow,
+  column: number,
+): Omit<VerticalCaretTarget, "preferredColumn"> {
+  const targetColumn = Math.max(0, column);
+  let offset = 0;
+  let cells = 0;
+
+  for (const character of row.text) {
+    const characterCells = stringWidth(character);
+    const nextCells = cells + characterCells;
+    if (targetColumn < nextCells) {
+      const useRightEdge = targetColumn - cells > nextCells - targetColumn;
+      return {
+        cursor: row.start + offset + (useRightEdge ? character.length : 0),
+        affinity: useRightEdge ? "backward" : "forward",
+      };
+    }
+    offset += character.length;
+    cells = nextCells;
+    if (targetColumn === cells) {
+      return { cursor: row.start + offset, affinity: "backward" };
+    }
+  }
+
+  return { cursor: row.start + row.text.length, affinity: "backward" };
+}
+
+/**
+ * Move between the physical rows actually painted by the prompt. The returned preferred column
+ * remains sticky when a short row clamps the caret, matching IDE vertical-caret behavior.
+ */
+export function verticalCaretTarget(
+  rows: WrappedRow[],
+  cursor: number,
+  direction: -1 | 1,
+  preferredColumn: number | null,
+  affinity: CaretAffinity = "forward",
+): VerticalCaretTarget | null {
+  if (rows.length === 0) {
+    return null;
+  }
+  const current = caretCell(rows, cursor, affinity);
+  const targetRow = rows[current.row + direction];
+  if (!targetRow) {
+    return null;
+  }
+  const stickyColumn = preferredColumn ?? current.col;
+  return { ...caretAtColumn(targetRow, stickyColumn), preferredColumn: stickyColumn };
 }

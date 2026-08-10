@@ -10,8 +10,8 @@
  *
  * The fix is one invariant — *the caret is never strictly inside a token* —
  * upheld by snapping every motion out to the nearer edge, plus deletions that
- * swallow a whole token rather than nibbling its tail. `textBuffer` stays a
- * plain string buffer; this module composes the placeholder policy on top.
+ * swallow a whole token rather than nibbling its tail. This module remains the
+ * compatibility policy for legacy placeholders in the rich buffer's text projection.
  */
 
 import { alignDeletionStart, tokenSpanAt, tokenSpanBefore } from "./lineText";
@@ -28,9 +28,9 @@ import {
 } from "./textBuffer";
 
 /** Which edge to bounce to when a motion lands the caret inside a token. */
-type SnapDirection = "left" | "right" | "nearest";
+export type SnapDirection = "left" | "right" | "nearest";
 
-function snapOut(s: BufferState, dir: SnapDirection): BufferState {
+export function snapCaretOutOfPlaceholder(s: BufferState, dir: SnapDirection): BufferState {
   const span = tokenSpanAt(s.text, s.cursor);
   if (!span) {
     return s;
@@ -45,15 +45,21 @@ function snapOut(s: BufferState, dir: SnapDirection): BufferState {
 // A caret leaving a token keeps travelling in the direction it was headed, so a
 // single arrow press steps over the whole placeholder. Line start/end need no
 // guard: a token never contains a newline, so those offsets are always outside.
-export const caretLeft = (s: BufferState): BufferState => snapOut(moveLeft(s), "left");
-export const caretRight = (s: BufferState): BufferState => snapOut(moveRight(s), "right");
-export const caretWordLeft = (s: BufferState): BufferState => snapOut(moveWordLeft(s), "left");
-export const caretWordRight = (s: BufferState): BufferState => snapOut(moveWordRight(s), "right");
+export const caretLeft = (s: BufferState): BufferState =>
+  snapCaretOutOfPlaceholder(moveLeft(s), "left");
+export const caretRight = (s: BufferState): BufferState =>
+  snapCaretOutOfPlaceholder(moveRight(s), "right");
+export const caretWordLeft = (s: BufferState): BufferState =>
+  snapCaretOutOfPlaceholder(moveWordLeft(s), "left");
+export const caretWordRight = (s: BufferState): BufferState =>
+  snapCaretOutOfPlaceholder(moveWordRight(s), "right");
 
 // Vertical motion has no horizontal intent, so it settles on whichever edge of
 // the token the preserved column landed closer to.
-export const caretUp = (s: BufferState): BufferState => snapOut(moveUp(s), "nearest");
-export const caretDown = (s: BufferState): BufferState => snapOut(moveDown(s), "nearest");
+export const caretUp = (s: BufferState): BufferState =>
+  snapCaretOutOfPlaceholder(moveUp(s), "nearest");
+export const caretDown = (s: BufferState): BufferState =>
+  snapCaretOutOfPlaceholder(moveDown(s), "nearest");
 
 function cut(s: BufferState, start: number, end: number): BufferState {
   return { text: s.text.slice(0, start) + s.text.slice(end), cursor: start };

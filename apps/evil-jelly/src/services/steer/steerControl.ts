@@ -7,6 +7,7 @@ function snapshot(): LineInputValue[] {
   return queuedSteers.map((value) => ({
     text: value.text,
     attachments: value.attachments ? [...value.attachments] : undefined,
+    ...(value.skills?.length ? { skills: [...value.skills] } : {}),
   }));
 }
 
@@ -22,7 +23,11 @@ export function enqueueSteer(value: LineInputValue): void {
   if (!text && (!value.attachments || value.attachments.length === 0)) {
     return;
   }
-  queuedSteers.push({ text, attachments: value.attachments });
+  queuedSteers.push({
+    text,
+    attachments: value.attachments,
+    ...(value.skills?.length ? { skills: value.skills } : {}),
+  });
   notifySubscribers();
 }
 

@@ -33,7 +33,7 @@ export class PromptBuilder {
   }
 
   /**
-   * Inserts reusable build logic (plugin-style); action always runs, unlike when.
+   * Inserts reusable build logic; action always runs, unlike when.
    */
   addAction(action: (builder: this) => void): this {
     action(this);

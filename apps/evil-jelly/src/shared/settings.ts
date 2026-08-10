@@ -27,6 +27,28 @@ export function resolveUserSettingsPath(): string {
   return path.join(resolveGlobalJellyDir(), "settings.jsonc");
 }
 
+const QualifiedSkillNameSchema = z
+  .string()
+  .regex(
+    /^(user|project):[a-z0-9][a-z0-9._-]{0,63}$/,
+    "Expected a qualified Skill name such as user:review or project:review.",
+  );
+
+const SkillOverrideSchema = z
+  .object({
+    enabled: z.boolean(),
+  })
+  .strict();
+
+const SkillsSettingsSchema = z
+  .object({
+    /** Master switch for all local Skills. */
+    enabled: z.boolean().optional(),
+    /** Per-qualified-name enablement; workspace entries replace matching user defaults. */
+    overrides: z.record(QualifiedSkillNameSchema, SkillOverrideSchema).optional(),
+  })
+  .strict();
+
 const SettingsFileSchema = z
   .object({
     audit: z
@@ -40,6 +62,7 @@ const SettingsFileSchema = z
       })
       .strict()
       .optional(),
+    skills: SkillsSettingsSchema.optional(),
   })
   .strict();
 
@@ -67,6 +90,11 @@ export interface ResolvedSettings {
     maxSeeds: number | undefined;
     ledgerGcDays: number | undefined;
     disableLedgerGc: boolean;
+  };
+  /** Local Skill availability after user/workspace settings precedence is applied. */
+  skills: {
+    enabled: boolean;
+    overrides: Readonly<Record<string, { readonly enabled: boolean }>>;
   };
   /** Whether to connect the devtool MCP toolset this run. */
   devtoolMcp: boolean;
@@ -121,6 +149,13 @@ export function getSettings(): ResolvedSettings {
         workspaceFile.audit?.ledgerGcDays ??
         userFile.audit?.ledgerGcDays,
       disableLedgerGc: cliOverrides.auditDisableLedgerGc ?? false,
+    },
+    skills: {
+      enabled: workspaceFile.skills?.enabled ?? userFile.skills?.enabled ?? true,
+      overrides: Object.freeze({
+        ...userFile.skills?.overrides,
+        ...workspaceFile.skills?.overrides,
+      }),
     },
     devtoolMcp: cliOverrides.devtoolMcp ?? false,
   };

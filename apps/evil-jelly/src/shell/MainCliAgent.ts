@@ -7,11 +7,17 @@ import {
   createAgent,
   equipBudget,
   equipMemory,
+  expectResource,
   getUsageStats,
   isAbortError,
   type Message,
   reborn,
 } from "@rejelly/core";
+import {
+  SKILL_RUNTIME_PROVIDER_KEY,
+  type SkillRuntimeSnapshot,
+} from "../features/skills/contracts";
+import { buildSkillAwareUserMessage } from "../features/skills/explicitSkillReferences";
 import { UnifiedAgent } from "../features/unified/UnifiedAgent";
 import { getBinding, setBinding } from "../services/binding/hostBindings";
 import {
@@ -22,12 +28,10 @@ import {
 import { requestNewSession, requestResume } from "../services/session/resumeControl";
 import type { SessionRecorder } from "../services/session/sessionRecorder";
 import { listSessions, loadSession, type SessionBudget } from "../services/session/sessionStore";
+import { drainSteers } from "../services/steer/steerControl";
 import { withAbort } from "../services/stop/withAbort";
 import type { LineInputValue } from "../shared/AgentShared";
-import {
-  buildAttachmentActionSummary,
-  buildUserMessage,
-} from "../shared/attachments/messageContent";
+import { formatUserInputDisplay, getUserInputDisplay } from "../shared/attachments/messageContent";
 import { env } from "../shared/config";
 import { getWorkspaceFsPolicy } from "../shared/fs-policy/workspace-fs-policy";
 import { countConversationTurns } from "../shared/lib/compactionMessages";
@@ -120,6 +124,7 @@ interface RouterRuntime {
   setHistory: (messages: Message[]) => void;
   currentBudget: () => SessionBudget;
   appendTurn: (userMessage: Message, reply: string, delta?: Message[]) => void;
+  skillSnapshot?: SkillRuntimeSnapshot;
 }
 
 /** Short, session-local correlation ID with 96 bits of entropy and URL-safe characters. */
@@ -199,7 +204,6 @@ async function handleCompress(runtime: RouterRuntime): Promise<void> {
   }
   runtime.host.logSystemEvent("Compressing session history…\n");
   const result = await UnifiedAgentWithAbort({
-    userInput: "Compress the current session history.",
     history: runtime.history,
     operation: "compress",
     sessionBlobRoot: runtime.props.sessionBlobRoot,
@@ -220,6 +224,21 @@ async function handleCompress(runtime: RouterRuntime): Promise<void> {
   runtime.host.logSystemEvent(
     `Session compressed: ${runtime.history.length} messages → ${result.compactHistory.length} messages.\n`,
   );
+}
+
+function displayPreparedUserMessage(message: Message, fallback: string): string {
+  const display = getUserInputDisplay(message);
+  return display ? formatUserInputDisplay(display) : fallback;
+}
+
+async function drainAndPrepareSteerMessages(runtime: RouterRuntime): Promise<Message[]> {
+  const messages: Message[] = [];
+  for (const input of drainSteers()) {
+    const message = await buildSkillAwareUserMessage(input, runtime.skillSnapshot);
+    runtime.host.logUserMessage(displayPreparedUserMessage(message, input.text));
+    messages.push(message);
+  }
+  return messages;
 }
 
 async function handleResume(runtime: RouterRuntime, rawInput: string): Promise<boolean> {
@@ -268,16 +287,8 @@ async function runConversationTurn(
   let turnClosureAttempted = false;
 
   try {
-    const attachmentActions = await buildAttachmentActionSummary(lineInput.attachments);
-    const displayUserInput =
-      attachmentActions.length > 0
-        ? `${userInput}\n${attachmentActions.map((action) => `  -> ${action}`).join("\n")}`
-        : userInput;
-    runtime.host.logUserMessage(displayUserInput);
-    submittedUserMessage = await buildUserMessage({
-      userInput,
-      attachments: lineInput.attachments,
-    });
+    submittedUserMessage = await buildSkillAwareUserMessage(lineInput, runtime.skillSnapshot);
+    runtime.host.logUserMessage(displayPreparedUserMessage(submittedUserMessage, userInput));
     activeTurnId = createTurnId();
     // The session layer marks the turn start here (inputKind: "initial"); the status line's
     // timer must anchor at exactly this point so steers and maintenance commands never
@@ -290,9 +301,9 @@ async function runConversationTurn(
     );
 
     const result = await UnifiedAgentWithAbort({
-      userInput,
-      attachments: lineInput.attachments,
+      message: submittedUserMessage,
       history: runtime.history,
+      pendingUserMessages: () => drainAndPrepareSteerMessages(runtime),
       sessionBlobRoot: runtime.props.sessionBlobRoot,
       sessionRecorder: runtime.props.sessionRecorder,
       turnId: activeTurnId,
@@ -410,6 +421,9 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
       setHistory,
       currentBudget,
       appendTurn,
+      skillSnapshot: expectResource<SkillRuntimeSnapshot>(SKILL_RUNTIME_PROVIDER_KEY, {
+        optional: true,
+      }),
     };
 
     try {

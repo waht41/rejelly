@@ -61,3 +61,27 @@ describe("usePromptStore file attachments", () => {
     ]);
   });
 });
+
+describe("usePromptStore Skill references", () => {
+  it("submits de-duplicated structured picker selections", () => {
+    resetPromptSession();
+    const received: unknown[] = [];
+    usePromptStore.getState().setBackgroundLineHandler((value) => received.push(value));
+    usePromptStore
+      .getState()
+      .setSelectedSkills([
+        { qualifiedName: "project:review" },
+        { qualifiedName: "project:review" },
+      ]);
+
+    usePromptStore.getState().submitLine("$project:review inspect");
+
+    expect(received).toEqual([
+      {
+        text: "$project:review inspect",
+        attachments: [],
+        skills: [{ qualifiedName: "project:review" }],
+      },
+    ]);
+  });
+});

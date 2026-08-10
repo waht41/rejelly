@@ -46,7 +46,11 @@ export function createInkGetInput(options?: InkGetInputOptions): () => Promise<L
       return;
     }
     if (isAwaitingMainInput()) {
-      enqueueLineInput({ text: value, attachments: rawValue.attachments });
+      enqueueLineInput({
+        text: value,
+        attachments: rawValue.attachments,
+        ...(rawValue.skills?.length ? { skills: rawValue.skills } : {}),
+      });
       return;
     }
     if (isExitCommand(value)) {
@@ -63,7 +67,11 @@ export function createInkGetInput(options?: InkGetInputOptions): () => Promise<L
       useOutputStore.getState().logSystem(`${value} is not available while the agent is running.`);
       return;
     }
-    enqueueSteer({ text: value, attachments: rawValue.attachments });
+    enqueueSteer({
+      text: value,
+      attachments: rawValue.attachments,
+      ...(rawValue.skills?.length ? { skills: rawValue.skills } : {}),
+    });
   });
   return async () => {
     if (pendingSeed) {

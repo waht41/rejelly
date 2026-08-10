@@ -62,6 +62,7 @@ function createOutputBindings(): Pick<
   | "onDetailUpdate"
   | "onPhaseUpdate"
   | "onTurnStart"
+  | "setAvailableSkills"
   | "logToolRound"
   | "logToolStart"
   | "appendToolOutput"
@@ -111,6 +112,9 @@ function createOutputBindings(): Pick<
     },
     onTurnStart: () => {
       out().beginTurn();
+    },
+    setAvailableSkills: (skills) => {
+      usePromptStore.getState().setAvailableSkills(skills);
     },
   };
 }

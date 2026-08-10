@@ -11,6 +11,12 @@ import type { EvilJellyHostBindings } from "../../shared/types";
 import { runEvilJellyHost } from "./host/runHost";
 import { runInteractiveLoop } from "./runLoop";
 
+const runtimeMocks = vi.hoisted(() => ({
+  buildSkillRuntime: vi.fn(),
+  formatSkillSummary: vi.fn(),
+  disposeMcp: vi.fn(async () => undefined),
+}));
+
 vi.mock("./host/runHost", () => ({
   runEvilJellyHost: vi.fn(),
 }));
@@ -18,8 +24,13 @@ vi.mock("./host/runHost", () => ({
 vi.mock("../../tools/mcpServerKit", () => ({
   connectMcpProviders: vi.fn(async () => ({
     providers: {},
-    dispose: vi.fn(async () => undefined),
+    dispose: runtimeMocks.disposeMcp,
   })),
+}));
+
+vi.mock("../../features/skills/skillRuntimeSnapshot", () => ({
+  buildConfiguredSkillRuntimeSnapshot: runtimeMocks.buildSkillRuntime,
+  formatSkillRuntimeStartupSummary: runtimeMocks.formatSkillSummary,
 }));
 
 const runHostMock = vi.mocked(runEvilJellyHost);
@@ -48,10 +59,60 @@ describe("runInteractiveLoop mock session isolation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     drainSessionSwitches();
+    runtimeMocks.buildSkillRuntime.mockResolvedValue({
+      snapshot: { catalog: { size: 0, hash: "00000000" } },
+      diagnostics: [],
+    });
+    runtimeMocks.formatSkillSummary.mockReturnValue(undefined);
+  });
+
+  it("publishes the path-free enabled Skill catalog through the host boundary", async () => {
+    const { bindings } = createBindings();
+    const setAvailableSkills = vi.fn();
+    bindings.setAvailableSkills = setAvailableSkills;
+    runtimeMocks.buildSkillRuntime.mockResolvedValueOnce({
+      snapshot: {
+        catalog: {
+          size: 1,
+          fingerprint: "12345678",
+          entries: [
+            {
+              name: "review",
+              description: "Review changes",
+              shortDescription: "Review",
+              origin: { scope: "project" },
+              instruction: "Review carefully.",
+              resources: [],
+            },
+          ],
+        },
+      },
+      diagnostics: [],
+    });
+    runHostMock.mockResolvedValueOnce(undefined);
+
+    await runInteractiveLoop({
+      bindings,
+      model: {} as ModelAdapter,
+      enableReview: false,
+      snapshot: undefined,
+      isolateSessionState: true,
+    });
+
+    expect(setAvailableSkills).toHaveBeenCalledWith([
+      {
+        name: "review",
+        qualifiedName: "project:review",
+        scope: "project",
+        description: "Review changes",
+        shortDescription: "Review",
+      },
+    ]);
   });
 
   it("does not pass a durable session id in isolated mock replay segments", async () => {
     const { bindings, systemEvents } = createBindings();
+    runtimeMocks.formatSkillSummary.mockReturnValueOnce("Loaded 1 local Skill.");
     runHostMock
       .mockImplementationOnce(async () => {
         requestNewSession();
@@ -83,7 +144,12 @@ describe("runInteractiveLoop mock session isolation", () => {
       mockSourceTraceId: "trace_mock",
       isolateSessionState: true,
     });
+    expect(runtimeMocks.buildSkillRuntime).toHaveBeenCalledOnce();
+    expect(runHostMock.mock.calls[0]?.[1].skillSnapshot).toBe(
+      runHostMock.mock.calls[1]?.[1].skillSnapshot,
+    );
     expect(systemEvents).toContain("Started new isolated mock session.\n");
+    expect(systemEvents.filter((event) => event === "Loaded 1 local Skill.\n")).toHaveLength(1);
   });
 
   it("does not load durable sessions when a resume request leaks into isolated mock replay", async () => {
@@ -216,5 +282,22 @@ describe("runInteractiveLoop mock session isolation", () => {
     });
     expect(hydrated).toHaveLength(1);
     expect(hydrated[0]?.map((item) => item.type)).toEqual(["user", "assistant"]);
+  });
+
+  it("disposes connected MCP clients when configured Skill startup unexpectedly fails", async () => {
+    const { bindings } = createBindings();
+    runtimeMocks.buildSkillRuntime.mockRejectedValueOnce(new Error("skill startup failed"));
+
+    await expect(
+      runInteractiveLoop({
+        bindings,
+        model: {} as ModelAdapter,
+        enableReview: false,
+        snapshot: undefined,
+      }),
+    ).rejects.toThrow("skill startup failed");
+
+    expect(runHostMock).not.toHaveBeenCalled();
+    expect(runtimeMocks.disposeMcp).toHaveBeenCalledOnce();
   });
 });

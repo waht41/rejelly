@@ -50,6 +50,7 @@
     "undici": "catalog:",
     "unified": "^11.0.5",
     "wrap-ansi": "10.0.0",
+    "yaml": "^2.8.2",
     "zod": "catalog:",
     "zustand": "catalog:"
   },

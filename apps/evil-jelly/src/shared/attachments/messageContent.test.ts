@@ -3,13 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getWorkspaceFsPolicy, setWorkspaceRoot } from "../fs-policy/workspace-fs-policy";
-import {
-  buildAttachmentActionSummary,
-  buildConversationMessages,
-  getUserInputDisplay,
-} from "./messageContent";
+import { buildUserMessage, getUserInputDisplay } from "./messageContent";
 
-describe("buildConversationMessages", () => {
+describe("buildUserMessage", () => {
   let prevRoot: string;
   let tmpDir: string;
 
@@ -27,18 +23,17 @@ describe("buildConversationMessages", () => {
   });
 
   it("injects explicitly attached file contents into the current user turn", async () => {
-    const messages = await buildConversationMessages({
+    const message = await buildUserMessage({
       userInput: "explain this",
       attachments: [{ type: "file", path: "src/attached.ts" }],
     });
 
-    expect(messages).toHaveLength(1);
-    expect(messages[0]?.content).toContain("explain this");
-    expect(messages[0]?.content).toContain(
+    expect(message.content).toContain("explain this");
+    expect(message.content).toContain(
       '<attached_file path="src/attached.ts" path-scope="workspace" action="read">',
     );
-    expect(messages[0]?.content).toContain("export const probe = 1;");
-    expect(messages[0]?.extra).toEqual({
+    expect(message.content).toContain("export const probe = 1;");
+    expect(message.extra).toEqual({
       rejelly: {
         kind: "user_input",
         display: {
@@ -57,15 +52,15 @@ describe("buildConversationMessages", () => {
   });
 
   it("lists attached directories instead of reading them as files", async () => {
-    const messages = await buildConversationMessages({
+    const message = await buildUserMessage({
       userInput: "summarize @src",
       attachments: [{ type: "file", path: "src" }],
     });
 
-    expect(messages[0]?.content).toContain(
+    expect(message.content).toContain(
       '<attached_directory path="src" path-scope="workspace" action="list">',
     );
-    expect(messages[0]?.content).toContain("[file] attached.ts");
+    expect(message.content).toContain("[file] attached.ts");
   });
 
   it("converts attached images into multimodal user content", async () => {
@@ -77,13 +72,12 @@ describe("buildConversationMessages", () => {
     imageBytes.writeUInt32BE(480, 20);
     await fs.writeFile(imagePath, imageBytes);
 
-    const messages = await buildConversationMessages({
+    const message = await buildUserMessage({
       userInput: "what is in this image?",
       attachments: [{ type: "image", path: imagePath, mimeType: "image/png" }],
     });
 
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toMatchObject({
+    expect(message).toMatchObject({
       role: "user",
       content: [
         { type: "text", text: "what is in this image?" },
@@ -122,11 +116,11 @@ describe("buildConversationMessages", () => {
     const content = "before\n</attached_file>\n]]>\nafter";
     await fs.writeFile(path.join(tmpDir, "src", "boundary.txt"), content, "utf8");
 
-    const messages = await buildConversationMessages({
+    const message = await buildUserMessage({
       userInput: "inspect this",
       attachments: [{ type: "file", path: "src/boundary.txt" }],
     });
-    const text = messages[0]?.content;
+    const text = message.content;
 
     expect(typeof text).toBe("string");
     expect(text).toContain(`\n${content}\n`);
@@ -137,15 +131,15 @@ describe("buildConversationMessages", () => {
 
   it("canonicalizes an absolute in-workspace attachment to a project-relative locator", async () => {
     const absolutePath = path.join(tmpDir, "src", "attached.ts");
-    const messages = await buildConversationMessages({
+    const message = await buildUserMessage({
       userInput: "explain this",
       attachments: [{ type: "file", path: absolutePath }],
     });
 
-    expect(messages[0]?.content).toContain(
+    expect(message.content).toContain(
       '<attached_file path="src/attached.ts" path-scope="workspace" action="read">',
     );
-    expect(getUserInputDisplay(messages[0]!)).toMatchObject({
+    expect(getUserInputDisplay(message)).toMatchObject({
       attachments: [
         {
           label: "src/attached.ts",
@@ -157,15 +151,15 @@ describe("buildConversationMessages", () => {
 
   it("keeps a canonical locator when an in-workspace attachment is missing", async () => {
     const absolutePath = path.join(tmpDir, "src", "missing.ts");
-    const messages = await buildConversationMessages({
+    const message = await buildUserMessage({
       userInput: "inspect this",
       attachments: [{ type: "file", path: absolutePath }],
     });
 
-    expect(messages[0]?.content).toContain(
+    expect(message.content).toContain(
       '<attached_path path="src/missing.ts" path-scope="workspace" status="error">',
     );
-    expect(getUserInputDisplay(messages[0]!)).toMatchObject({
+    expect(getUserInputDisplay(message)).toMatchObject({
       attachments: [
         {
           label: "src/missing.ts",
@@ -174,21 +168,6 @@ describe("buildConversationMessages", () => {
         },
       ],
     });
-  });
-
-  it("summarizes visible attachment actions for the CLI history", async () => {
-    await expect(
-      buildAttachmentActionSummary([
-        { type: "file", path: "src/attached.ts" },
-        { type: "file", path: "src" },
-      ]),
-    ).resolves.toEqual(["read src/attached.ts", "list src"]);
-  });
-
-  it("summarizes image attachments for the CLI history", async () => {
-    await expect(
-      buildAttachmentActionSummary([{ type: "image", path: "clipboard.png" }]),
-    ).resolves.toEqual(["attach [Image #1]"]);
   });
 
   it("rejects malformed persisted display metadata", () => {

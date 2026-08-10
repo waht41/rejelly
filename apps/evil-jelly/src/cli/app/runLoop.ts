@@ -1,4 +1,9 @@
 import type { AgentSnapshot, Message, ModelAdapter } from "@rejelly/core";
+import { qualifiedSkillName } from "../../features/skills/contracts";
+import {
+  buildConfiguredSkillRuntimeSnapshot,
+  formatSkillRuntimeStartupSummary,
+} from "../../features/skills/skillRuntimeSnapshot";
 import {
   takePendingExit,
   takePendingNewSession,
@@ -167,6 +172,20 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
   // The framework borrows these via runWith({ providers }); disposal stays here (finally).
   const { providers: mcpProviders, dispose: disposeMcp } = await connectMcpProviders();
   try {
+    const skillRuntime = await buildConfiguredSkillRuntimeSnapshot();
+    bindings.setAvailableSkills?.(
+      (skillRuntime.snapshot.catalog.entries ?? []).map((skill) => ({
+        name: skill.name,
+        qualifiedName: qualifiedSkillName(skill),
+        scope: skill.origin.scope,
+        description: skill.description,
+        ...(skill.shortDescription ? { shortDescription: skill.shortDescription } : {}),
+      })),
+    );
+    const skillSummary = formatSkillRuntimeStartupSummary(skillRuntime);
+    if (skillSummary) {
+      bindings.logSystemEvent(`${skillSummary}\n`);
+    }
     // Outer loop: each iteration is one runWith segment (own traceId). A mid-session /resume ends
     // the current run, queues a target via resumeControl, and we restart with the loaded history.
     while (true) {
@@ -179,6 +198,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
         seedContext: state.resumeSeed?.activeContext,
         seedBudget: state.resumeSeed?.budget,
         mcpProviders,
+        skillSnapshot: skillRuntime.snapshot,
         mockSourceTraceId,
         isolateSessionState,
         sessionV2,

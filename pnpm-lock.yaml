@@ -399,6 +399,9 @@ importers:
       wrap-ansi:
         specifier: 10.0.0
         version: 10.0.0(patch_hash=364f4aea4223f1c6dbfe340fdfed7dd4338d2e2974378884844c4a774c5dfba1)
+      yaml:
+        specifier: ^2.8.2
+        version: 2.8.2
       zod:
         specifier: 'catalog:'
         version: 3.25.76

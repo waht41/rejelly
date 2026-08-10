@@ -12,20 +12,21 @@
  */
 
 import { type Key, useInput } from "ink";
+import { useRef } from "react";
 import { hasRuntimeTask } from "../../services/stop/runtimeControl";
 import { normalizeNewlines } from "../../shared/lib/string";
 import { useModeStore } from "../store/useModeStore";
 import { looksBinary, stripControlChars } from "./lineText";
 import {
-  caretDown,
   caretLeft,
   caretRight,
-  caretUp,
   caretWordLeft,
   caretWordRight,
   deletePlaceholderOrChar,
   deleteWordLeftAtomic,
+  snapCaretOutOfPlaceholder,
 } from "./placeholderMotion";
+import { verticalCaretTarget, type WrappedRow } from "./softWrap";
 import { cursorRowCol, type TextBuffer } from "./textBuffer";
 
 // Tab inserts spaces up to the next multiple of this; see the key.tab handler.
@@ -42,14 +43,12 @@ interface MotionBinding {
 const MOTIONS: MotionBinding[] = [
   {
     when: (_i, k) => k.leftArrow,
-    run: (b, k) => b.apply(k.ctrl || k.meta ? caretWordLeft : caretLeft),
+    run: (b, k) => b.apply(k.ctrl || k.meta ? caretWordLeft : caretLeft, "left"),
   },
   {
     when: (_i, k) => k.rightArrow,
-    run: (b, k) => b.apply(k.ctrl || k.meta ? caretWordRight : caretRight),
+    run: (b, k) => b.apply(k.ctrl || k.meta ? caretWordRight : caretRight, "right"),
   },
-  { when: (_i, k) => k.upArrow, run: (b) => b.apply(caretUp) },
-  { when: (_i, k) => k.downArrow, run: (b) => b.apply(caretDown) },
   { when: (_i, k) => k.home, run: (b) => b.moveLineStart() },
   { when: (_i, k) => k.end, run: (b) => b.moveLineEnd() },
   { when: (i, k) => k.ctrl && (i === "a" || i === "A"), run: (b) => b.moveLineStart() },
@@ -60,6 +59,8 @@ const MOTIONS: MotionBinding[] = [
 
 export interface LineKeybindingDeps {
   buf: TextBuffer;
+  /** Exact physical rows used by rendering and caret placement. */
+  wrappedRows: WrappedRow[];
   /**
    * Slot holding the key handler of the currently open picker overlay (slash
    * palette / @-file picker), or null when none is open. The overlay gets first
@@ -83,6 +84,7 @@ export interface LineKeybindingDeps {
 export function useLineKeybindings(deps: LineKeybindingDeps): void {
   const {
     buf,
+    wrappedRows,
     overlayKeys,
     isAgentRunning,
     selectedFiles,
@@ -94,13 +96,43 @@ export function useLineKeybindings(deps: LineKeybindingDeps): void {
     attachClipboardImage,
     handleTextPaste,
   } = deps;
+  const preferredColumnRef = useRef<number | null>(null);
 
   useInput((input, key) => {
     // An open picker overlay claims its keys first (nav/commit/cancel, plus
     // whatever its config adds); the editor handles everything it declines.
     if (overlayKeys?.current?.(input, key)) {
+      preferredColumnRef.current = null;
       return;
     }
+
+    if (key.upArrow || key.downArrow) {
+      const target = verticalCaretTarget(
+        wrappedRows,
+        buf.cursor,
+        key.upArrow ? -1 : 1,
+        preferredColumnRef.current,
+        buf.caretAffinity,
+      );
+      if (target) {
+        preferredColumnRef.current = target.preferredColumn;
+        const snapped = snapCaretOutOfPlaceholder(
+          { text: buf.text, cursor: target.cursor },
+          "nearest",
+        );
+        const snappedAffinity =
+          snapped.cursor < target.cursor
+            ? "forward"
+            : snapped.cursor > target.cursor
+              ? "backward"
+              : target.affinity;
+        buf.setDisplayCursor(snapped.cursor, "nearest", snappedAffinity);
+      }
+      return;
+    }
+
+    // Only a consecutive vertical-motion sequence keeps its desired visual column.
+    preferredColumnRef.current = null;
     if (key.escape && (isAgentRunning || hasRuntimeTask())) {
       submitLine("/stop");
       return;

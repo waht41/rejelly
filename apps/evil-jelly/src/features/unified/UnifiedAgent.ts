@@ -19,12 +19,7 @@ import { promptChatResilient } from "../../services/policy/promptChatResilient";
 import { promptCompactHistory } from "../../services/policy/promptCompactHistory";
 import { shouldUseTerminalUserReplyRule } from "../../services/prompt/output-surface";
 import { buildWorkspaceRuleInstructionBlock } from "../../services/prompt/workspace-rule";
-import { drainSteers } from "../../services/steer/steerControl";
 import type { ConversationAgentProps, ConversationAgentResult } from "../../shared/AgentShared";
-import {
-  buildAttachmentActionSummary,
-  buildConversationMessages,
-} from "../../shared/attachments/messageContent";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import {
   equipReadOnlyWorkspaceKit,
@@ -38,6 +33,7 @@ import {
   createDeleteFileTool,
   createEditFileTool,
 } from "../../tools/WriteTools";
+import { equipSkillKit } from "../skills/equipSkillKit";
 import { buildAutoCompactionConfig } from "./contextControl";
 import { UNIFIED_TOOL_ARTIFACTS_KEY } from "./unifiedMemoryKeys";
 import {
@@ -124,26 +120,13 @@ async function runManualCompression(
   }
 }
 
-async function drainAndLogSteers() {
-  const host = getBinding();
-  const inputs = drainSteers();
-  for (const input of inputs) {
-    const attachmentActions = await buildAttachmentActionSummary(input.attachments);
-    const display =
-      attachmentActions.length > 0
-        ? `${input.text}\n${attachmentActions.map((action) => `  -> ${action}`).join("\n")}`
-        : input.text;
-    host.logUserMessage(display);
-  }
-  return inputs;
-}
-
 export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgentResult>({
   id: "evil_jelly_unified_agent",
   maxTurnSteps: UNIFIED_MAX_TURN_STEPS,
   handler: async (props) => {
     await useUnifiedTools();
     useUnifiedPrompts(props);
+    equipSkillKit();
     useStandardStreaming({ textMode: "plain" });
 
     if (props.operation === "compress") {
@@ -152,8 +135,8 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
 
     try {
       const result = await promptChatResilient({
-        message: await buildConversationMessages(props),
-        pendingUserInputs: drainAndLogSteers,
+        message: [...(props.history ?? []), props.message],
+        pendingUserMessages: props.pendingUserMessages,
         compaction: buildAutoCompactionConfig(),
         sessionRecorder: props.sessionRecorder,
         turnId: props.turnId,

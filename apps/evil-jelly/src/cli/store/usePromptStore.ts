@@ -3,7 +3,16 @@
  */
 
 import { create } from "zustand";
-import type { LineInputValue, UserAttachment } from "../../shared/AgentShared";
+import { SKILL_LIMITS } from "../../features/skills/limits";
+import type {
+  LineInputValue,
+  UserAttachment,
+  UserSkillListItem,
+  UserSkillReference,
+} from "../../shared/AgentShared";
+
+export type SkillPickerItem = UserSkillListItem;
+export const MAX_SELECTED_SKILLS = SKILL_LIMITS.explicitSkillsPerTurn;
 
 export type TransientView =
   | { type: "none" }
@@ -52,6 +61,8 @@ interface PromptSessionState {
   _inner: Inner;
   selectedFiles: string[];
   selectedImages: string[];
+  selectedSkills: UserSkillReference[];
+  availableSkills: SkillPickerItem[];
   draftSeed: DraftSeed | null;
   backgroundLineHandler: ((value: LineInputValue) => void) | null;
 
@@ -60,7 +71,11 @@ interface PromptSessionState {
 
   /** One line of text; clears transient view; resolves on submit. */
   requestLine: (label: string) => Promise<string>;
-  submitLine: (value: string, attachments?: UserAttachment[]) => void;
+  submitLine: (
+    value: string,
+    attachments?: UserAttachment[],
+    skills?: UserSkillReference[],
+  ) => void;
   setSelectedFiles: (paths: string[]) => void;
   setSelectedImages: (paths: string[]) => void;
   toggleSelectedFile: (path: string) => void;
@@ -69,6 +84,9 @@ interface PromptSessionState {
   addSelectedImage: (path: string) => void;
   removeSelectedImage: (path: string) => void;
   clearSelectedImages: () => void;
+  setSelectedSkills: (skills: UserSkillReference[]) => void;
+  clearSelectedSkills: () => void;
+  setAvailableSkills: (skills: SkillPickerItem[]) => void;
   seedDraft: (value: LineInputValue) => void;
   clearDraftSeed: (id: number) => void;
   setBackgroundLineHandler: (handler: ((value: LineInputValue) => void) | null) => void;
@@ -95,6 +113,8 @@ export const usePromptStore = create<PromptSessionState>((set, get) => ({
   _inner: idleInner,
   selectedFiles: [],
   selectedImages: [],
+  selectedSkills: [],
+  availableSkills: [],
   draftSeed: null,
   backgroundLineHandler: null,
 
@@ -109,7 +129,7 @@ export const usePromptStore = create<PromptSessionState>((set, get) => ({
       });
     }),
 
-  submitLine: (value, attachments) => {
+  submitLine: (value, attachments, skills) => {
     const inner = get()._inner;
     const selectedAttachments = attachments ?? [
       ...get().selectedFiles.map((path) => ({
@@ -122,7 +142,12 @@ export const usePromptStore = create<PromptSessionState>((set, get) => ({
         mimeType: "image/png" as const,
       })),
     ];
-    const input: LineInputValue = { text: value.trim(), attachments: selectedAttachments };
+    const selectedSkills = skills ?? get().selectedSkills;
+    const input: LineInputValue = {
+      text: value.trim(),
+      attachments: selectedAttachments,
+      ...(selectedSkills.length > 0 ? { skills: selectedSkills } : {}),
+    };
     if (inner.type !== "line") {
       get().backgroundLineHandler?.(input);
       return;
@@ -133,6 +158,7 @@ export const usePromptStore = create<PromptSessionState>((set, get) => ({
       prompt: toPublic(idleInner),
       selectedFiles: [],
       selectedImages: [],
+      selectedSkills: [],
     });
     resolve(input.text);
   },
@@ -190,6 +216,28 @@ export const usePromptStore = create<PromptSessionState>((set, get) => ({
   removeSelectedImage: (path) =>
     set({ selectedImages: get().selectedImages.filter((selected) => selected !== path) }),
   clearSelectedImages: () => set({ selectedImages: [] }),
+  setSelectedSkills: (skills) => {
+    const seen = new Set<string>();
+    const selectedSkills = skills
+      .filter(({ qualifiedName }) => {
+        const normalized = qualifiedName.trim();
+        if (!normalized || seen.has(normalized)) {
+          return false;
+        }
+        seen.add(normalized);
+        return true;
+      })
+      .slice(0, MAX_SELECTED_SKILLS)
+      .map(({ qualifiedName }) => ({ qualifiedName: qualifiedName.trim() }));
+    set({ selectedSkills });
+  },
+  clearSelectedSkills: () => set({ selectedSkills: [] }),
+  setAvailableSkills: (skills) =>
+    set({
+      availableSkills: [...skills].sort((left, right) =>
+        left.qualifiedName.localeCompare(right.qualifiedName, "en"),
+      ),
+    }),
   seedDraft: (value) =>
     set({
       draftSeed: {
@@ -197,6 +245,7 @@ export const usePromptStore = create<PromptSessionState>((set, get) => ({
         value: {
           text: value.text,
           attachments: value.attachments ? [...value.attachments] : undefined,
+          ...(value.skills?.length ? { skills: [...value.skills] } : {}),
         },
       },
     }),
@@ -263,6 +312,8 @@ export function resetPromptSession(): void {
     _inner: idleInner,
     selectedFiles: [],
     selectedImages: [],
+    selectedSkills: [],
+    availableSkills: [],
     draftSeed: null,
     backgroundLineHandler: null,
   });

@@ -2,7 +2,12 @@
  * Host protocol: bindings between the terminal/UI and the agent loop (Electron, tests, etc.).
  */
 
-import type { AgentMode, LineInputValue, ToolConfirmationHandler } from "./AgentShared";
+import type {
+  AgentMode,
+  LineInputValue,
+  ToolConfirmationHandler,
+  UserSkillListItem,
+} from "./AgentShared";
 import type { TranscriptItem } from "./transcript";
 
 /** One row in a host-driven action menu (hotkey + arbitrary domain `value`). */
@@ -55,6 +60,8 @@ export type RuntimePhase =
 export interface EvilJellyHostBindings {
   /** One line of user input per call; host may prefix with a prompt inside getInput. */
   getInput: () => Promise<LineInputValue>;
+  /** Replace the path-free Skill catalog exposed by the host's explicit-selection UI. */
+  setAvailableSkills?: (skills: UserSkillListItem[]) => void;
   /**
    * Stream the assistant's text for the **current turn** into the transient surface.
    * Finalized lines use {@link logUserMessage} / {@link logAssistantMessage} / {@link logSystemEvent}, not accumulation here as history.

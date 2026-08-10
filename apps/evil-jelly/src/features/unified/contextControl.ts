@@ -1,10 +1,11 @@
 import { getBinding } from "../../services/binding/hostBindings";
 import type { PromptChatCompactionConfig } from "../../services/policy/promptChatResilient";
 import { env } from "../../shared/config";
-import { LOW_OPENAI_CONTEXT_WINDOW_TOKENS } from "../../shared/configDefaults";
+import {
+  DEFAULT_OPENAI_CONTEXT_WINDOW_TOKENS,
+  LOW_OPENAI_CONTEXT_WINDOW_TOKENS,
+} from "../../shared/configDefaults";
 
-/** Default real model context window (tokens) when OPENAI_CONTEXT_WINDOW is unset. */
-const DEFAULT_CONTEXT_WINDOW_TOKENS = 200_000;
 /** Trigger mid-loop auto-compaction once estimated live context reaches this fraction of the window. */
 const AUTO_COMPACT_THRESHOLD_RATIO = 0.75;
 /**
@@ -55,7 +56,7 @@ const AUTO_COMPACT_WARN_HINT =
  */
 export function buildAutoCompactionConfig(): PromptChatCompactionConfig {
   // Real model window: the hard ceiling the summarization request is proactively trimmed to fit.
-  const contextWindow = env.OPENAI_CONTEXT_WINDOW ?? DEFAULT_CONTEXT_WINDOW_TOKENS;
+  const contextWindow = env.OPENAI_CONTEXT_WINDOW ?? DEFAULT_OPENAI_CONTEXT_WINDOW_TOKENS;
   const isLowContextWindow = contextWindow < LOW_OPENAI_CONTEXT_WINDOW_TOKENS;
   if (isLowContextWindow && !warnedLowContextWindow) {
     warnedLowContextWindow = true;
