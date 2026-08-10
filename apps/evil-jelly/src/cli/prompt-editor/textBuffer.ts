@@ -1,16 +1,31 @@
 /**
- * A flat-string text buffer with a single caret offset. Newlines live in the
- * string, so the same model serves single- and multi-line editing; callers
- * derive rows/cols for rendering. All ops are pure and clamp the caret, so the
- * state can never point outside the text.
+ * Pure flat-string editing operations plus a rich document-backed React buffer.
+ * The hook projects semantic tokens to display text for legacy transforms while
+ * keeping its canonical caret in logical coordinates, where a token has length 1.
  */
 
 import { useMemo, useState } from "react";
+import {
+  documentLogicalLength,
+  type ProjectedTokenSpan,
+  type ProjectionBias,
+  type PromptDocument,
+  type PromptNode,
+  projectPromptDocument,
+  replacePromptRange,
+  textPromptDocument,
+} from "./promptDocument";
 
 export interface BufferState {
   text: string;
   /** Caret offset into `text`, always in [0, text.length]. */
   cursor: number;
+}
+
+export interface RichBufferState {
+  readonly document: PromptDocument;
+  /** Logical offset: a text code unit and an entire semantic token both occupy one position. */
+  readonly cursor: number;
 }
 
 const clamp = (n: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, n));
@@ -127,6 +142,71 @@ export function cursorRowCol(text: string, cursor: number): { row: number; col: 
   return { row, col: before.length - (lastNl + 1) };
 }
 
+function commonPrefixLength(left: string, right: string): number {
+  const limit = Math.min(left.length, right.length);
+  let length = 0;
+  while (length < limit && left[length] === right[length]) {
+    length += 1;
+  }
+  return length;
+}
+
+function commonSuffixLength(left: string, right: string, prefixLength: number): number {
+  const limit = Math.min(left.length, right.length) - prefixLength;
+  let length = 0;
+  while (length < limit && left[left.length - length - 1] === right[right.length - length - 1]) {
+    length += 1;
+  }
+  return length;
+}
+
+/**
+ * Compatibility bridge for existing plain-text transforms. The transform sees the display
+ * projection; edits touching any part of a semantic token expand to that token's logical range.
+ */
+export function applyProjectedTransform(
+  state: RichBufferState,
+  transform: (state: BufferState) => BufferState,
+  cursorBias: ProjectionBias = "nearest",
+): RichBufferState {
+  const projection = projectPromptDocument(state.document);
+  const displayCursor = projection.logicalToDisplay(state.cursor);
+  const transformed = transform({ text: projection.text, cursor: displayCursor });
+
+  if (transformed.text === projection.text) {
+    return {
+      document: state.document,
+      cursor: projection.displayToLogical(transformed.cursor, cursorBias),
+    };
+  }
+
+  const prefixLength = commonPrefixLength(projection.text, transformed.text);
+  const suffixLength = commonSuffixLength(projection.text, transformed.text, prefixLength);
+  const oldEndDisplay = projection.text.length - suffixLength;
+  const newEndDisplay = transformed.text.length - suffixLength;
+  const startLogical = projection.displayToLogical(prefixLength, "left");
+  const endLogical = projection.displayToLogical(oldEndDisplay, "right");
+  const insertedText = transformed.text.slice(prefixLength, newEndDisplay);
+  const insertedNodes: PromptNode[] = insertedText ? [{ type: "text", text: insertedText }] : [];
+  const document = replacePromptRange(state.document, startLogical, endLogical, insertedNodes);
+
+  let cursor: number;
+  if (transformed.cursor <= prefixLength) {
+    cursor =
+      transformed.cursor === prefixLength
+        ? startLogical
+        : projection.displayToLogical(transformed.cursor, "left");
+  } else if (transformed.cursor <= newEndDisplay) {
+    cursor = startLogical + transformed.cursor - prefixLength;
+  } else {
+    const oldDisplayCursor = oldEndDisplay + transformed.cursor - newEndDisplay;
+    const oldLogicalCursor = projection.displayToLogical(oldDisplayCursor, "right");
+    cursor = startLogical + insertedText.length + Math.max(0, oldLogicalCursor - endLogical);
+  }
+
+  return { document, cursor: clamp(cursor, 0, documentLogicalLength(document)) };
+}
+
 /**
  * Only the ops that are safe to fire blind are bound as actions. The char- and
  * word-wise motions and deletes above are deliberately absent: the prompt wraps
@@ -140,34 +220,84 @@ export interface TextBufferActions {
   deleteToLineStart: () => void;
   moveLineStart: () => void;
   moveLineEnd: () => void;
-  /** Run an arbitrary pure transform against the current state. */
-  apply: (fn: (s: BufferState) => BufferState) => void;
+  /** Run a legacy display-text transform through the rich-document compatibility projection. */
+  apply: (fn: (s: BufferState) => BufferState, cursorBias?: ProjectionBias) => void;
+  /** Replace a display-text range with rich nodes and put the caret after the insertion. */
+  replaceDisplayRange: (start: number, end: number, nodes: readonly PromptNode[]) => void;
   /** Replace the whole text; caret defaults to end. */
   setText: (text: string, cursor?: number) => void;
+  setDocument: (document: PromptDocument, cursor?: number) => void;
   reset: () => void;
 }
 
-export type TextBuffer = BufferState & TextBufferActions;
+export interface TextBuffer extends BufferState, TextBufferActions {
+  readonly document: PromptDocument;
+  readonly logicalCursor: number;
+  readonly tokenSpans: readonly ProjectedTokenSpan[];
+}
 
 export function useTextBuffer(initial = ""): TextBuffer {
-  const [state, setState] = useState<BufferState>({ text: initial, cursor: initial.length });
+  const [state, setState] = useState<RichBufferState>({
+    document: textPromptDocument(initial),
+    cursor: initial.length,
+  });
 
   // Actions are stable (functional updates only), so they are safe to list in
   // effect/callback deps without retriggering on every keystroke.
   const actions = useMemo<TextBufferActions>(
     () => ({
-      insert: (str) => setState((s) => insert(s, str)),
-      deleteForward: () => setState(deleteForward),
-      deleteToLineStart: () => setState(deleteToLineStart),
-      moveLineStart: () => setState(moveLineStart),
-      moveLineEnd: () => setState(moveLineEnd),
-      apply: (fn) => setState(fn),
+      insert: (str) =>
+        setState((current) => ({
+          document: replacePromptRange(current.document, current.cursor, current.cursor, [
+            { type: "text", text: str },
+          ]),
+          cursor: current.cursor + str.length,
+        })),
+      deleteForward: () => setState((current) => applyProjectedTransform(current, deleteForward)),
+      deleteToLineStart: () =>
+        setState((current) => applyProjectedTransform(current, deleteToLineStart)),
+      moveLineStart: () => setState((current) => applyProjectedTransform(current, moveLineStart)),
+      moveLineEnd: () => setState((current) => applyProjectedTransform(current, moveLineEnd)),
+      apply: (fn, cursorBias) =>
+        setState((current) => applyProjectedTransform(current, fn, cursorBias)),
+      replaceDisplayRange: (start, end, nodes) =>
+        setState((current) => {
+          const projection = projectPromptDocument(current.document);
+          const logicalStart = projection.displayToLogical(start, "left");
+          const logicalEnd = projection.displayToLogical(end, "right");
+          const document = replacePromptRange(current.document, logicalStart, logicalEnd, nodes);
+          const insertedLength = nodes.reduce(
+            (length, node) => length + (node.type === "text" ? node.text.length : 1),
+            0,
+          );
+          return { document, cursor: logicalStart + insertedLength };
+        }),
       setText: (text, cursor) =>
-        setState({ text, cursor: clamp(cursor ?? text.length, 0, text.length) }),
-      reset: () => setState({ text: "", cursor: 0 }),
+        setState({
+          document: textPromptDocument(text),
+          cursor: clamp(cursor ?? text.length, 0, text.length),
+        }),
+      setDocument: (document, cursor) =>
+        setState({
+          document,
+          cursor: clamp(
+            cursor ?? documentLogicalLength(document),
+            0,
+            documentLogicalLength(document),
+          ),
+        }),
+      reset: () => setState({ document: [], cursor: 0 }),
     }),
     [],
   );
 
-  return { text: state.text, cursor: state.cursor, ...actions };
+  const projection = projectPromptDocument(state.document);
+  return {
+    document: state.document,
+    logicalCursor: state.cursor,
+    tokenSpans: projection.tokenSpans,
+    text: projection.text,
+    cursor: projection.logicalToDisplay(state.cursor),
+    ...actions,
+  };
 }

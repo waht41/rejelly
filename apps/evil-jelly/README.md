@@ -68,10 +68,11 @@ underscores, and hyphens, must start with a letter or digit, and are qualified b
 `user:<name>` or `project:<name>`. If both sources contain `review`, use the qualified name to avoid
 ambiguity.
 
-At the interactive prompt, type `$` to open the enabled Skill picker. Selecting an entry inserts a
-visible qualified reference such as `$project:review` and applies the full Skill instructions to
-that input. Ordinary text such as `$HOME`, `${HOME}`, `$env:PATH`, and an unselected `$unknown`
-stays ordinary text. The model can also inspect the bounded catalog with `list_skills`, load one
+At the interactive prompt, type `$` to open the enabled Skill picker. Selecting an entry inserts an
+atomic Skill token such as `$review`; the source qualifier is shown only when names collide. It
+applies the full Skill instructions to that input. Ordinary text such as `$HOME`, `${HOME}`,
+`$env:PATH`, and an unselected `$unknown` stays ordinary text. The model can also inspect the
+bounded catalog with `list_skills`, load one
 Skill with `read_skill`, and read an inventoried text resource with `read_skill_resource`.
 
 #### Optional Skill resources
@@ -343,10 +344,11 @@ next Evil Jelly start. A `project:<name>` override in user settings applies to e
 that qualified name; put it in workspace settings to affect only the current checkout. This
 configuration controls availability only and grants no tool permission.
 
-At the interactive prompt, type `$` to open the enabled Skill picker. Selecting an entry inserts a
-visible qualified reference such as `$project:review` and applies that Skill to the current input
-only. The host carries the selection as structured input and injects its instructions; ordinary
-dollar-prefixed text such as `$HOME` or an unselected `$unknown` remains plain text.
+At the interactive prompt, type `$` to open the enabled Skill picker. Selecting an entry inserts an
+atomic Skill token such as `$review`; the source qualifier is shown only when names collide. It
+applies that Skill to the current input only. The host carries the selection as structured input
+and injects its instructions; ordinary dollar-prefixed text such as `$HOME` or an unselected
+`$unknown` remains plain text.
 
 Documentation-domain configuration does not belong in settings. It uses the fixed `.evil-jelly/doc-map.jsonc` path unless a one-off `--doc-map` override is supplied.
 

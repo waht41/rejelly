@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { replaceAtToken } from "./atTrigger";
+import { deletePlaceholderOrChar } from "./placeholderMotion";
+import { projectPromptDocument, replacePromptRange, textPromptDocument } from "./promptDocument";
 import {
+  applyProjectedTransform,
   type BufferState,
   backspace,
   cursorRowCol,
@@ -7,8 +11,10 @@ import {
   deleteWordLeft,
   insert,
   moveDown,
+  moveLeft,
   moveLineEnd,
   moveLineStart,
+  moveRight,
   moveUp,
   moveWordLeft,
   moveWordRight,
@@ -61,5 +67,54 @@ describe("cursorRowCol", () => {
     expect(cursorRowCol("hello", 3)).toEqual({ row: 0, col: 3 });
     expect(cursorRowCol("ab\ncde", 5)).toEqual({ row: 1, col: 2 });
     expect(cursorRowCol("ab\n", 3)).toEqual({ row: 1, col: 0 });
+  });
+});
+
+describe("rich document compatibility transforms", () => {
+  const skill = {
+    type: "token" as const,
+    kind: "skill" as const,
+    id: "skill-1",
+    qualifiedName: "project:review",
+    displayText: "$review",
+  };
+  const document = replacePromptRange(textPromptDocument("ab"), 1, 1, [skill]);
+
+  it("moves across a rich token as one logical position", () => {
+    const movedLeft = applyProjectedTransform({ document, cursor: 2 }, moveLeft, "left");
+    const movedRight = applyProjectedTransform({ document, cursor: 1 }, moveRight, "right");
+
+    expect(movedLeft.cursor).toBe(1);
+    expect(movedRight.cursor).toBe(2);
+  });
+
+  it("expands a character deletion inside a token to the whole token", () => {
+    const deleted = applyProjectedTransform({ document, cursor: 2 }, backspace);
+
+    expect(projectPromptDocument(deleted.document).text).toBe("ab");
+    expect(deleted.cursor).toBe(1);
+  });
+
+  it("preserves semantic tokens while legacy Image placeholders keep their atomic deletion", () => {
+    const withPlaceholder = replacePromptRange(document, 3, 3, [
+      { type: "text", text: "[Image #1]" },
+    ]);
+    const deleted = applyProjectedTransform(
+      { document: withPlaceholder, cursor: 13 },
+      deletePlaceholderOrChar,
+    );
+
+    expect(projectPromptDocument(deleted.document).text).toBe("a$reviewb");
+    expect(deleted.cursor).toBe(3);
+  });
+
+  it("preserves semantic tokens when a legacy text trigger edits a later range", () => {
+    const withAtQuery = replacePromptRange(document, 3, 3, [{ type: "text", text: " @sr" }]);
+    const replaced = applyProjectedTransform({ document: withAtQuery, cursor: 7 }, (state) =>
+      replaceAtToken(state, ["src"]),
+    );
+
+    expect(projectPromptDocument(replaced.document).text).toBe("a$reviewb @src ");
+    expect(replaced.cursor).toBe(9);
   });
 });

@@ -42,11 +42,11 @@ interface MotionBinding {
 const MOTIONS: MotionBinding[] = [
   {
     when: (_i, k) => k.leftArrow,
-    run: (b, k) => b.apply(k.ctrl || k.meta ? caretWordLeft : caretLeft),
+    run: (b, k) => b.apply(k.ctrl || k.meta ? caretWordLeft : caretLeft, "left"),
   },
   {
     when: (_i, k) => k.rightArrow,
-    run: (b, k) => b.apply(k.ctrl || k.meta ? caretWordRight : caretRight),
+    run: (b, k) => b.apply(k.ctrl || k.meta ? caretWordRight : caretRight, "right"),
   },
   { when: (_i, k) => k.upArrow, run: (b) => b.apply(caretUp) },
   { when: (_i, k) => k.downArrow, run: (b) => b.apply(caretDown) },

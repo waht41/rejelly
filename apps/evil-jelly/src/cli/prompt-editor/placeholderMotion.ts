@@ -10,8 +10,8 @@
  *
  * The fix is one invariant — *the caret is never strictly inside a token* —
  * upheld by snapping every motion out to the nearer edge, plus deletions that
- * swallow a whole token rather than nibbling its tail. `textBuffer` stays a
- * plain string buffer; this module composes the placeholder policy on top.
+ * swallow a whole token rather than nibbling its tail. This module remains the
+ * compatibility policy for legacy placeholders in the rich buffer's text projection.
  */
 
 import { alignDeletionStart, tokenSpanAt, tokenSpanBefore } from "./lineText";

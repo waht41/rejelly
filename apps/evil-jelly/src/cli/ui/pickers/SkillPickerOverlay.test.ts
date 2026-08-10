@@ -26,6 +26,7 @@ describe("SkillPickerOverlay", () => {
       renderToString(
         createElement(SkillPickerOverlay, {
           items,
+          getReferenceName: (skill) => skill.name,
           onSelect: vi.fn(),
           onCancel: vi.fn(),
         }),
@@ -47,6 +48,7 @@ describe("SkillPickerOverlay", () => {
       renderToString(
         createElement(SkillPickerOverlay, {
           items,
+          getReferenceName: (skill) => skill.name,
           onSelect: vi.fn(),
           onCancel: vi.fn(),
         }),
@@ -79,6 +81,7 @@ describe("SkillPickerOverlay", () => {
       renderToString(
         createElement(SkillPickerOverlay, {
           items: duplicateItems,
+          getReferenceName: (skill) => skill.qualifiedName,
           onSelect: vi.fn(),
           onCancel: vi.fn(),
         }),

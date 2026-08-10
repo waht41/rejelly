@@ -6,6 +6,7 @@ import { ListPicker } from "./ListPicker";
 
 interface SkillPickerOverlayProps {
   items: SkillPickerItem[];
+  getReferenceName: (skill: SkillPickerItem) => string;
   onSelect: (skill: SkillPickerItem) => void;
   onCancel: () => void;
   maxVisibleRows?: number;
@@ -15,14 +16,6 @@ interface SkillPickerOverlayProps {
 function pickerDescription(item: SkillPickerItem): string {
   const text = (item.shortDescription ?? item.description).replace(/\s+/g, " ").trim();
   return text.length <= 100 ? text : `${text.slice(0, 99)}…`;
-}
-
-function duplicateSkillNames(items: readonly SkillPickerItem[]): ReadonlySet<string> {
-  const counts = new Map<string, number>();
-  for (const item of items) {
-    counts.set(item.name, (counts.get(item.name) ?? 0) + 1);
-  }
-  return new Set([...counts].filter(([, count]) => count > 1).map(([name]) => name));
 }
 
 export function filterSkillPickerItems(
@@ -42,14 +35,13 @@ export function filterSkillPickerItems(
 
 export function SkillPickerOverlay({
   items,
+  getReferenceName,
   onSelect,
   onCancel,
   maxVisibleRows,
   keySink,
 }: SkillPickerOverlayProps) {
-  const duplicateNames = duplicateSkillNames(items);
-  const displayTitle = (item: SkillPickerItem) =>
-    `$${duplicateNames.has(item.name) ? item.qualifiedName : item.name}`;
+  const displayTitle = (item: SkillPickerItem) => `$${getReferenceName(item)}`;
   const titleColumnWidth = items.reduce(
     (width, item) => Math.max(width, stringWidth(displayTitle(item))),
     0,

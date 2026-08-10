@@ -1,5 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { extractSkillQuery, replaceSkillToken, skillReferencesPresentInText } from "./skillTrigger";
+import type { UserSkillListItem } from "../../shared/AgentShared";
+import { projectPromptDocument } from "./promptDocument";
+import {
+  activeSkillTrigger,
+  extractSkillQuery,
+  hydrateSkillTokens,
+  replaceSkillToken,
+  skillReferenceName,
+  skillReferencesFromDocument,
+  skillReferencesPresentInText,
+} from "./skillTrigger";
+
+const catalog: UserSkillListItem[] = [
+  {
+    qualifiedName: "project:review",
+    name: "review",
+    scope: "project",
+    description: "Project review",
+  },
+  {
+    qualifiedName: "user:test",
+    name: "test",
+    scope: "user",
+    description: "Personal test",
+  },
+];
 
 describe("Skill $ trigger", () => {
   it("extracts a lowercase query at a token boundary", () => {
@@ -12,6 +37,22 @@ describe("Skill $ trigger", () => {
     expect(extractSkillQuery("echo $HOME", 10)).toBeNull();
     expect(extractSkillQuery("echo $" + "{HOME}", 12)).toBeNull();
     expect(extractSkillQuery("echo $env:PATH", 14)).toBeNull();
+  });
+
+  it("returns the active trigger display range", () => {
+    expect(activeSkillTrigger("use $rev", 8)).toEqual({ start: 4, end: 8, query: "rev" });
+  });
+
+  it("qualifies a reference only when the complete catalog contains the same name", () => {
+    expect(skillReferenceName(catalog[0]!, catalog)).toBe("review");
+    const duplicate: UserSkillListItem = {
+      ...catalog[0]!,
+      qualifiedName: "user:review",
+      scope: "user",
+    };
+
+    expect(skillReferenceName(catalog[0]!, [...catalog, duplicate])).toBe("project:review");
+    expect(skillReferenceName(duplicate, [...catalog, duplicate])).toBe("user:review");
   });
 
   it("replaces the active token with a visible qualified marker", () => {
@@ -27,5 +68,18 @@ describe("Skill $ trigger", () => {
       skillReferencesPresentInText("$project:review inspect $HOME and $unknown", selected),
     ).toEqual([{ qualifiedName: "project:review" }]);
     expect(skillReferencesPresentInText("$project:reviewer", selected)).toEqual([]);
+  });
+
+  it("hydrates semantic tokens from a restored draft and canonical references", () => {
+    let id = 0;
+    const document = hydrateSkillTokens(
+      "use $project:review now",
+      [{ qualifiedName: "project:review" }],
+      () => "review",
+      () => `skill-${++id}`,
+    );
+
+    expect(projectPromptDocument(document).text).toBe("use $review now");
+    expect(skillReferencesFromDocument(document)).toEqual([{ qualifiedName: "project:review" }]);
   });
 });
