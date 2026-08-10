@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { caretCell, wrapRows } from "./softWrap";
+import { caretCell, verticalCaretTarget, wrapRows } from "./softWrap";
 
 const texts = (text: string, width: number) => wrapRows(text, width).map((row) => row.text);
 const cell = (text: string, width: number, cursor: number) =>
@@ -48,6 +48,13 @@ describe("caretCell", () => {
     expect(cell("hello world foo", 10, 6)).toEqual({ row: 1, col: 0 });
   });
 
+  it("can retain the preceding row at an ambiguous soft-wrap boundary", () => {
+    const rows = wrapRows("abcdef", 3);
+
+    expect(caretCell(rows, 3, "forward")).toEqual({ row: 1, col: 0 });
+    expect(caretCell(rows, 3, "backward")).toEqual({ row: 0, col: 3 });
+  });
+
   it("counts CJK as two cells", () => {
     expect(cell("中文ab", 10, 3)).toEqual({ row: 0, col: 5 });
   });
@@ -63,5 +70,43 @@ describe("caretCell", () => {
 
   it("is at the origin for an empty buffer", () => {
     expect(cell("", 10, 0)).toEqual({ row: 0, col: 0 });
+  });
+});
+
+describe("verticalCaretTarget", () => {
+  it("moves to the adjacent painted row instead of skipping a soft wrap", () => {
+    const text = "abcdefgh\nxy";
+    const rows = wrapRows(text, 4);
+
+    const target = verticalCaretTarget(rows, text.length, -1, null);
+
+    expect(target).toMatchObject({ cursor: 6, preferredColumn: 2 });
+    expect(caretCell(rows, target!.cursor, target!.affinity)).toEqual({ row: 1, col: 2 });
+  });
+
+  it("restores the preferred column after crossing a shorter row", () => {
+    const text = "abcdef\nx\nabcdef";
+    const rows = wrapRows(text, 10);
+    const shortRow = verticalCaretTarget(rows, 6, 1, null)!;
+    const longRow = verticalCaretTarget(
+      rows,
+      shortRow.cursor,
+      1,
+      shortRow.preferredColumn,
+      shortRow.affinity,
+    )!;
+
+    expect(caretCell(rows, shortRow.cursor, shortRow.affinity)).toEqual({ row: 1, col: 1 });
+    expect(shortRow.preferredColumn).toBe(6);
+    expect(caretCell(rows, longRow.cursor, longRow.affinity)).toEqual({ row: 2, col: 6 });
+  });
+
+  it("projects terminal cells without landing halfway through a wide character", () => {
+    const text = "中文\nabcd";
+    const rows = wrapRows(text, 10);
+    const target = verticalCaretTarget(rows, text.length, -1, null)!;
+
+    expect(target.cursor).toBe(2);
+    expect(caretCell(rows, target.cursor, target.affinity)).toEqual({ row: 0, col: 4 });
   });
 });

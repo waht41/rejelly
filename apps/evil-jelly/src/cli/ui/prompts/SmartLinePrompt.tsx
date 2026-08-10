@@ -254,7 +254,7 @@ export function SmartLinePrompt({ label }: { label: string }) {
   // One wrap, used twice: BufferView paints these rows and the caret is placed
   // against them, so the two can't drift apart.
   const wrappedRows = wrapRows(buf.text, textArea?.width ?? 0);
-  const caret = caretCell(wrappedRows, buf.cursor);
+  const caret = caretCell(wrappedRows, buf.cursor, buf.caretAffinity);
   setCursorPosition(
     textArea
       ? { x: textArea.x + caret.col, y: textArea.y + caret.row }
@@ -633,6 +633,7 @@ export function SmartLinePrompt({ label }: { label: string }) {
 
   useLineKeybindings({
     buf,
+    wrappedRows,
     overlayKeys: overlayKeysRef,
     isAgentRunning: isRuntimeActive(phase, streamBuffer),
     selectedFiles,

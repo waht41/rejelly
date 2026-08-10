@@ -15,6 +15,7 @@ import {
   replacePromptRange,
   textPromptDocument,
 } from "./promptDocument";
+import type { CaretAffinity } from "./softWrap";
 
 export interface BufferState {
   text: string;
@@ -26,6 +27,8 @@ export interface RichBufferState {
   readonly document: PromptDocument;
   /** Logical offset: a text code unit and an entire semantic token both occupy one position. */
   readonly cursor: number;
+  /** Visual ownership when this logical position sits exactly on a soft-wrap boundary. */
+  readonly caretAffinity: CaretAffinity;
 }
 
 const clamp = (n: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, n));
@@ -177,6 +180,8 @@ export function applyProjectedTransform(
     return {
       document: state.document,
       cursor: projection.displayToLogical(transformed.cursor, cursorBias),
+      caretAffinity:
+        transformed.cursor === displayCursor ? state.caretAffinity : ("forward" as const),
     };
   }
 
@@ -204,7 +209,31 @@ export function applyProjectedTransform(
     cursor = startLogical + insertedText.length + Math.max(0, oldLogicalCursor - endLogical);
   }
 
-  return { document, cursor: clamp(cursor, 0, documentLogicalLength(document)) };
+  return {
+    document,
+    cursor: clamp(cursor, 0, documentLogicalLength(document)),
+    caretAffinity: "forward",
+  };
+}
+
+/** Move a display caret into logical space and preserve the visual side it snapped toward. */
+export function setProjectedCursor(
+  state: RichBufferState,
+  rawDisplayCursor: number,
+  bias: ProjectionBias = "nearest",
+  affinity: CaretAffinity = "forward",
+): RichBufferState {
+  const projection = projectPromptDocument(state.document);
+  const displayCursor = clamp(rawDisplayCursor, 0, projection.text.length);
+  const cursor = projection.displayToLogical(displayCursor, bias);
+  const snappedDisplayCursor = projection.logicalToDisplay(cursor);
+  const resolvedAffinity =
+    snappedDisplayCursor < displayCursor
+      ? "forward"
+      : snappedDisplayCursor > displayCursor
+        ? "backward"
+        : affinity;
+  return { document: state.document, cursor, caretAffinity: resolvedAffinity };
 }
 
 /**
@@ -224,6 +253,8 @@ export interface TextBufferActions {
   apply: (fn: (s: BufferState) => BufferState, cursorBias?: ProjectionBias) => void;
   /** Replace a display-text range with rich nodes and put the caret after the insertion. */
   replaceDisplayRange: (start: number, end: number, nodes: readonly PromptNode[]) => void;
+  /** Project a display offset back to the canonical logical caret. */
+  setDisplayCursor: (cursor: number, bias?: ProjectionBias, affinity?: CaretAffinity) => void;
   /** Replace the whole text; caret defaults to end. */
   setText: (text: string, cursor?: number) => void;
   setDocument: (document: PromptDocument, cursor?: number) => void;
@@ -234,12 +265,14 @@ export interface TextBuffer extends BufferState, TextBufferActions {
   readonly document: PromptDocument;
   readonly logicalCursor: number;
   readonly tokenSpans: readonly ProjectedTokenSpan[];
+  readonly caretAffinity: CaretAffinity;
 }
 
 export function useTextBuffer(initial = ""): TextBuffer {
   const [state, setState] = useState<RichBufferState>({
     document: textPromptDocument(initial),
     cursor: initial.length,
+    caretAffinity: "forward",
   });
 
   // Actions are stable (functional updates only), so they are safe to list in
@@ -252,6 +285,7 @@ export function useTextBuffer(initial = ""): TextBuffer {
             { type: "text", text: str },
           ]),
           cursor: current.cursor + str.length,
+          caretAffinity: "forward",
         })),
       deleteForward: () => setState((current) => applyProjectedTransform(current, deleteForward)),
       deleteToLineStart: () =>
@@ -270,12 +304,15 @@ export function useTextBuffer(initial = ""): TextBuffer {
             (length, node) => length + (node.type === "text" ? node.text.length : 1),
             0,
           );
-          return { document, cursor: logicalStart + insertedLength };
+          return { document, cursor: logicalStart + insertedLength, caretAffinity: "forward" };
         }),
+      setDisplayCursor: (cursor, bias = "nearest", affinity = "forward") =>
+        setState((current) => setProjectedCursor(current, cursor, bias, affinity)),
       setText: (text, cursor) =>
         setState({
           document: textPromptDocument(text),
           cursor: clamp(cursor ?? text.length, 0, text.length),
+          caretAffinity: "forward",
         }),
       setDocument: (document, cursor) =>
         setState({
@@ -285,8 +322,9 @@ export function useTextBuffer(initial = ""): TextBuffer {
             0,
             documentLogicalLength(document),
           ),
+          caretAffinity: "forward",
         }),
-      reset: () => setState({ document: [], cursor: 0 }),
+      reset: () => setState({ document: [], cursor: 0, caretAffinity: "forward" }),
     }),
     [],
   );
@@ -296,6 +334,7 @@ export function useTextBuffer(initial = ""): TextBuffer {
     document: state.document,
     logicalCursor: state.cursor,
     tokenSpans: projection.tokenSpans,
+    caretAffinity: state.caretAffinity,
     text: projection.text,
     cursor: projection.logicalToDisplay(state.cursor),
     ...actions,

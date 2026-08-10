@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { replaceAtToken } from "./atTrigger";
 import { deletePlaceholderOrChar } from "./placeholderMotion";
-import { projectPromptDocument, replacePromptRange, textPromptDocument } from "./promptDocument";
+import {
+  documentLogicalLength,
+  projectPromptDocument,
+  replacePromptRange,
+  textPromptDocument,
+} from "./promptDocument";
+import { caretCell, verticalCaretTarget, wrapRows } from "./softWrap";
 import {
   applyProjectedTransform,
   type BufferState,
@@ -18,6 +24,7 @@ import {
   moveUp,
   moveWordLeft,
   moveWordRight,
+  setProjectedCursor,
 } from "./textBuffer";
 
 const at = (text: string, cursor: number): BufferState => ({ text, cursor });
@@ -81,15 +88,26 @@ describe("rich document compatibility transforms", () => {
   const document = replacePromptRange(textPromptDocument("ab"), 1, 1, [skill]);
 
   it("moves across a rich token as one logical position", () => {
-    const movedLeft = applyProjectedTransform({ document, cursor: 2 }, moveLeft, "left");
-    const movedRight = applyProjectedTransform({ document, cursor: 1 }, moveRight, "right");
+    const movedLeft = applyProjectedTransform(
+      { document, cursor: 2, caretAffinity: "forward" },
+      moveLeft,
+      "left",
+    );
+    const movedRight = applyProjectedTransform(
+      { document, cursor: 1, caretAffinity: "forward" },
+      moveRight,
+      "right",
+    );
 
     expect(movedLeft.cursor).toBe(1);
     expect(movedRight.cursor).toBe(2);
   });
 
   it("expands a character deletion inside a token to the whole token", () => {
-    const deleted = applyProjectedTransform({ document, cursor: 2 }, backspace);
+    const deleted = applyProjectedTransform(
+      { document, cursor: 2, caretAffinity: "forward" },
+      backspace,
+    );
 
     expect(projectPromptDocument(deleted.document).text).toBe("ab");
     expect(deleted.cursor).toBe(1);
@@ -100,7 +118,7 @@ describe("rich document compatibility transforms", () => {
       { type: "text", text: "[Image #1]" },
     ]);
     const deleted = applyProjectedTransform(
-      { document: withPlaceholder, cursor: 13 },
+      { document: withPlaceholder, cursor: 13, caretAffinity: "forward" },
       deletePlaceholderOrChar,
     );
 
@@ -110,11 +128,36 @@ describe("rich document compatibility transforms", () => {
 
   it("preserves semantic tokens when a legacy text trigger edits a later range", () => {
     const withAtQuery = replacePromptRange(document, 3, 3, [{ type: "text", text: " @sr" }]);
-    const replaced = applyProjectedTransform({ document: withAtQuery, cursor: 7 }, (state) =>
-      replaceAtToken(state, ["src"]),
+    const replaced = applyProjectedTransform(
+      { document: withAtQuery, cursor: 7, caretAffinity: "forward" },
+      (state) => replaceAtToken(state, ["src"]),
     );
 
     expect(projectPromptDocument(replaced.document).text).toBe("a$reviewb @src ");
     expect(replaced.cursor).toBe(9);
+  });
+
+  it("keeps a vertical token snap on the target side of a soft-wrap boundary", () => {
+    const tokenRowDocument = replacePromptRange(textPromptDocument("1111111111\nxx"), 10, 10, [
+      skill,
+    ]);
+    const projection = projectPromptDocument(tokenRowDocument);
+    const rows = wrapRows(projection.text, 10);
+    const target = verticalCaretTarget(rows, projection.text.length, -1, null)!;
+    const moved = setProjectedCursor(
+      {
+        document: tokenRowDocument,
+        cursor: documentLogicalLength(tokenRowDocument),
+        caretAffinity: "forward",
+      },
+      target.cursor,
+      "nearest",
+      target.affinity,
+    );
+    const displayCursor = projection.logicalToDisplay(moved.cursor);
+
+    expect(displayCursor).toBe(10);
+    expect(moved.caretAffinity).toBe("forward");
+    expect(caretCell(rows, displayCursor, moved.caretAffinity)).toEqual({ row: 1, col: 0 });
   });
 });
