@@ -1,0 +1,62 @@
+import { renderToString } from "ink";
+import { createElement } from "react";
+import stripAnsi from "strip-ansi";
+import { describe, expect, it, vi } from "vitest";
+import type { SkillPickerItem } from "../../store/usePromptStore";
+import { SkillPickerOverlay } from "./SkillPickerOverlay";
+
+const items: SkillPickerItem[] = [
+  {
+    qualifiedName: "user:short",
+    name: "short",
+    scope: "user",
+    description: "Short description",
+  },
+  {
+    qualifiedName: "project:much-longer-name",
+    name: "much-longer-name",
+    scope: "project",
+    description: "Longer description",
+  },
+];
+
+describe("SkillPickerOverlay", () => {
+  it("renders aligned title, type, and description columns", () => {
+    const output = stripAnsi(
+      renderToString(
+        createElement(SkillPickerOverlay, {
+          items,
+          onSelect: vi.fn(),
+          onCancel: vi.fn(),
+        }),
+        { columns: 120 },
+      ),
+    );
+    const lines = output.split("\n");
+
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain("▸ $user:short");
+    expect(lines[1]).toContain("  $project:much-longer-name");
+    expect(lines[0]).toContain("[Skill] Short description");
+    expect(lines[1]).toContain("[Skill] Longer description");
+    expect(lines[0]!.indexOf("[Skill]")).toBe(lines[1]!.indexOf("[Skill]"));
+  });
+
+  it("keeps each item on one row and truncates descriptions to the remaining width", () => {
+    const output = stripAnsi(
+      renderToString(
+        createElement(SkillPickerOverlay, {
+          items,
+          onSelect: vi.fn(),
+          onCancel: vi.fn(),
+        }),
+        { columns: 48 },
+      ),
+    );
+    const lines = output.split("\n");
+
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatch(/^▸ \$user:short\s+\[Skill\]/);
+    expect(lines[1]).toMatch(/^ {2}\$project:much-longer-name\s+\[Skill\]/);
+  });
+});

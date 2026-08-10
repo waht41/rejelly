@@ -1,4 +1,5 @@
-import { Text } from "ink";
+import { Box, Text } from "ink";
+import stringWidth from "string-width";
 import type { SkillPickerItem } from "../../store/usePromptStore";
 import type { PickerKeySink } from "./ListPicker";
 import { ListPicker } from "./ListPicker";
@@ -38,6 +39,11 @@ export function SkillPickerOverlay({
   maxVisibleRows,
   keySink,
 }: SkillPickerOverlayProps) {
+  const titleColumnWidth = items.reduce(
+    (width, item) => Math.max(width, stringWidth(`$${item.qualifiedName}`)),
+    0,
+  );
+
   return (
     <ListPicker
       items={items}
@@ -48,9 +54,18 @@ export function SkillPickerOverlay({
       emptyText="No matching Skills"
       maxVisibleRows={maxVisibleRows}
       renderItem={(item, { selected }) => (
-        <Text color={selected ? "cyan" : undefined}>
-          {selected ? "▸ " : "  "}${item.qualifiedName} · {pickerDescription(item)}
-        </Text>
+        <Box flexDirection="row">
+          <Box width={titleColumnWidth + 3} flexShrink={0}>
+            <Text color={selected ? "cyan" : undefined}>
+              {selected ? "▸ " : "  "}${item.qualifiedName}
+            </Text>
+          </Box>
+          <Box flexShrink={1}>
+            <Text color={selected ? "cyan" : undefined} dimColor={!selected} wrap="truncate-end">
+              [Skill] {pickerDescription(item)}
+            </Text>
+          </Box>
+        </Box>
       )}
     />
   );
