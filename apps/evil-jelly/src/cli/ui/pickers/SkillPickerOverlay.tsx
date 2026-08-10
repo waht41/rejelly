@@ -17,6 +17,14 @@ function pickerDescription(item: SkillPickerItem): string {
   return text.length <= 100 ? text : `${text.slice(0, 99)}…`;
 }
 
+function duplicateSkillNames(items: readonly SkillPickerItem[]): ReadonlySet<string> {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    counts.set(item.name, (counts.get(item.name) ?? 0) + 1);
+  }
+  return new Set([...counts].filter(([, count]) => count > 1).map(([name]) => name));
+}
+
 export function filterSkillPickerItems(
   items: readonly SkillPickerItem[],
   query: string,
@@ -39,8 +47,11 @@ export function SkillPickerOverlay({
   maxVisibleRows,
   keySink,
 }: SkillPickerOverlayProps) {
+  const duplicateNames = duplicateSkillNames(items);
+  const displayTitle = (item: SkillPickerItem) =>
+    `$${duplicateNames.has(item.name) ? item.qualifiedName : item.name}`;
   const titleColumnWidth = items.reduce(
-    (width, item) => Math.max(width, stringWidth(`$${item.qualifiedName}`)),
+    (width, item) => Math.max(width, stringWidth(displayTitle(item))),
     0,
   );
 
@@ -57,7 +68,8 @@ export function SkillPickerOverlay({
         <Box flexDirection="row">
           <Box width={titleColumnWidth + 3} flexShrink={0}>
             <Text color={selected ? "cyan" : undefined}>
-              {selected ? "▸ " : "  "}${item.qualifiedName}
+              {selected ? "▸ " : "  "}
+              {displayTitle(item)}
             </Text>
           </Box>
           <Box flexShrink={1}>

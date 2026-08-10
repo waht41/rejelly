@@ -35,8 +35,8 @@ describe("SkillPickerOverlay", () => {
     const lines = output.split("\n");
 
     expect(lines).toHaveLength(2);
-    expect(lines[0]).toContain("▸ $user:short");
-    expect(lines[1]).toContain("  $project:much-longer-name");
+    expect(lines[0]).toContain("▸ $short");
+    expect(lines[1]).toContain("  $much-longer-name");
     expect(lines[0]).toContain("[Skill] Short description");
     expect(lines[1]).toContain("[Skill] Longer description");
     expect(lines[0]!.indexOf("[Skill]")).toBe(lines[1]!.indexOf("[Skill]"));
@@ -56,7 +56,37 @@ describe("SkillPickerOverlay", () => {
     const lines = output.split("\n");
 
     expect(lines).toHaveLength(2);
-    expect(lines[0]).toMatch(/^▸ \$user:short\s+\[Skill\]/);
-    expect(lines[1]).toMatch(/^ {2}\$project:much-longer-name\s+\[Skill\]/);
+    expect(lines[0]).toMatch(/^▸ \$short\s+\[Skill\]/);
+    expect(lines[1]).toMatch(/^ {2}\$much-longer-name\s+\[Skill\]/);
+  });
+
+  it("shows qualified names only when multiple Skills share a name", () => {
+    const duplicateItems: SkillPickerItem[] = [
+      {
+        qualifiedName: "user:review",
+        name: "review",
+        scope: "user",
+        description: "Personal review",
+      },
+      {
+        qualifiedName: "project:review",
+        name: "review",
+        scope: "project",
+        description: "Project review",
+      },
+    ];
+    const output = stripAnsi(
+      renderToString(
+        createElement(SkillPickerOverlay, {
+          items: duplicateItems,
+          onSelect: vi.fn(),
+          onCancel: vi.fn(),
+        }),
+        { columns: 80 },
+      ),
+    );
+
+    expect(output).toContain("▸ $user:review");
+    expect(output).toContain("  $project:review");
   });
 });
