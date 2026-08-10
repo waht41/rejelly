@@ -73,6 +73,28 @@
       "message": "UnifiedAgent currently assembles Skills directly; revisit the feature graph boundary"
     },
     {
+      "name": "phase1-tools-workspace-bridge",
+      "description": "Temporary while remaining workspace tools move from src/tools into @domain:workspace",
+      "scope": "fallback",
+      "match": {
+        "from": "@tools",
+        "to": "@domain:workspace"
+      },
+      "severity": "warn",
+      "message": "Phase 1 bridge: remove after the workspace tool slice migrates"
+    },
+    {
+      "name": "phase1-workspace-fuzzy-bridge",
+      "description": "Temporary until FuzzySearchService moves into @domain:workspace",
+      "scope": "fallback",
+      "match": {
+        "from": "@domain:workspace",
+        "to": "@service:fuzzy"
+      },
+      "severity": "warn",
+      "message": "Phase 1 bridge: move fuzzy search into the workspace domain"
+    },
+    {
       "name": "restrict-fs-access",
       "description": "Agent tools must access filesystem via src/shared/fs-policy",
       "match": {

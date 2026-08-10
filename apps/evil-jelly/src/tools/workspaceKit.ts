@@ -4,7 +4,7 @@
  */
 
 import { augmentTool, equipTool, type ToolDefinition } from "@rejelly/core";
-import { isWebSearchConfigured } from "../services/web/webConfig";
+import { ViewImageTool } from "../domains/workspace/ViewImageTool";
 import { evilJellyToolLoggerMiddleware } from "../shared/host/withToolLogger";
 import { ListDirTool, ReadFileTool } from "./FileSystemTools";
 import { FuzzySearchTool } from "./FuzzySearchTool";
@@ -18,10 +18,7 @@ import {
 } from "./heuristicAstTools/document-symbol";
 import { AstGetFunctionDependenciesTool } from "./heuristicAstTools/function-dependencies";
 import { equipReadFileDedupMiddleware } from "./hooks/readFileDedup";
-import { ReadWebpageTool } from "./readWebpageTool";
 import { RunCommandTool } from "./runCommandTool";
-import { ViewImageTool } from "./ViewImageTool";
-import { WebSearchTool } from "./webSearchTool";
 
 function withHostPrint(tool: ToolDefinition<any>): ToolDefinition<any> {
   return augmentTool(tool, [evilJellyToolLoggerMiddleware]);
@@ -87,22 +84,4 @@ export async function equipReadOnlyWorkspaceKit(
 /** Run shell commands in workspace cwd (tests, typecheck, etc.). */
 export function equipRunCommandKit(): void {
   equipTool(augmentTool(RunCommandTool, [evilJellyToolLoggerMiddleware]));
-}
-
-export interface WebResearchKitOptions {
-  /**
-   * Equip without the host print/log middleware, for concurrent/background fan-out whose tool
-   * chatter must not interleave on the shared terminal.
-   */
-  quiet?: boolean;
-}
-
-/** Equip server-side web_search and read_webpage. */
-export function equipWebResearchKit(options: WebResearchKitOptions = {}): void {
-  const quiet = options.quiet ?? false;
-  const tools = isWebSearchConfigured() ? [WebSearchTool, ReadWebpageTool] : [ReadWebpageTool];
-
-  for (const tool of tools) {
-    equipTool(quiet ? tool : withHostPrint(tool));
-  }
 }

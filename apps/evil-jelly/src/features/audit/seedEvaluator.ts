@@ -13,7 +13,10 @@ import { createAgent, equipInstruction, equipSystem, promptAgent } from "@rejell
 import { z } from "zod";
 import { equipContextIntakeBudgetMiddleware } from "../../tools/hooks/contextIntakeBudget";
 import { equipToolLoopBudgetMiddleware } from "../../tools/hooks/toolLoopBudget";
-import { equipReadOnlyWorkspaceKit, READ_ONLY_WORKSPACE_TOOL_NAMES } from "../../tools/kits";
+import {
+  equipReadOnlyWorkspaceKit,
+  READ_ONLY_WORKSPACE_TOOL_NAMES,
+} from "../../tools/workspaceKit";
 import { AUDIT_DEFAULTS, type SeedVerdict } from "./types";
 
 /**

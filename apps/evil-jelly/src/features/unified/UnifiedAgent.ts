@@ -22,17 +22,14 @@ import { getBinding } from "../../shared/host/hostBindings";
 import { shouldUseTerminalUserReplyRule } from "../../shared/host/output-surface";
 import { useStandardStreaming } from "../../shared/host/standardStreaming";
 import { evilJellyToolLoggerMiddleware } from "../../shared/host/withToolLogger";
-import {
-  equipReadOnlyWorkspaceKit,
-  equipRunCommandKit,
-  equipWebResearchKit,
-} from "../../tools/kits";
 import { equipMcpServerKit } from "../../tools/mcpServerKit";
 import {
   createCreateFileTool,
   createDeleteFileTool,
   createEditFileTool,
 } from "../../tools/WriteTools";
+import { equipWebResearchKit } from "../../tools/webKit";
+import { equipReadOnlyWorkspaceKit, equipRunCommandKit } from "../../tools/workspaceKit";
 import { equipSkillKit } from "../skills/equipSkillKit";
 import { buildAutoCompactionConfig } from "./contextControl";
 import { UNIFIED_TOOL_ARTIFACTS_KEY } from "./unifiedMemoryKeys";

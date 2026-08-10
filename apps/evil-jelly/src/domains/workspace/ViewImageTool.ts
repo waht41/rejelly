@@ -11,8 +11,8 @@
 import path from "node:path";
 import { type ToolDefinition, toolContent } from "@rejelly/core";
 import { z } from "zod";
-import { fuzzySearchFiles } from "../services/fuzzy/FuzzySearchService";
-import { getWorkspaceFsPolicy } from "../shared/fs-policy/workspace-fs-policy";
+import { fuzzySearchFiles } from "../../services/fuzzy/FuzzySearchService";
+import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import { resolveToolFsPath } from "./outsideAccess";
 
 /** Cap on decoded image bytes; base64 grows ~33%, so this stays well under typical vision limits. */
