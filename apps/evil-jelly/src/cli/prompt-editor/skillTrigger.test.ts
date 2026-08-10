@@ -43,6 +43,16 @@ describe("Skill $ trigger", () => {
     expect(activeSkillTrigger("use $rev", 8)).toEqual({ start: 4, end: 8, query: "rev" });
   });
 
+  it("finds an active trigger on a later multiline row", () => {
+    const text = "first\nsecond\n$rev";
+
+    expect(activeSkillTrigger(text, text.length)).toEqual({
+      start: text.lastIndexOf("$"),
+      end: text.length,
+      query: "rev",
+    });
+  });
+
   it("qualifies a reference only when the complete catalog contains the same name", () => {
     expect(skillReferenceName(catalog[0]!, catalog)).toBe("review");
     const duplicate: UserSkillListItem = {

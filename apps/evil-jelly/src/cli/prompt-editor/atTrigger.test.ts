@@ -13,6 +13,12 @@ describe("extractAtQuery", () => {
     expect(extractAtQuery("a\n@bar", 6)).toBe("bar");
   });
 
+  it("finds an active token on a later multiline row", () => {
+    const text = "first\nsecond\n@src";
+
+    expect(extractAtQuery(text, text.length)).toBe("src");
+  });
+
   it("treats a finalized (whitespace-followed) ref as inactive", () => {
     // caret after the trailing space → token closed
     expect(extractAtQuery("@src/foo.ts ", 12)).toBeNull();

@@ -304,10 +304,10 @@ export function SmartLinePrompt({ label }: { label: string }) {
     );
   });
 
-  // The @ picker is single-line only; otherwise track the token at the caret.
+  // Track the active token at the caret on any logical/soft-wrapped row.
   useEffect(() => {
-    setAtQuery(isMultiline ? null : extractAtQuery(buf.text, buf.cursor));
-  }, [buf.text, buf.cursor, isMultiline]);
+    setAtQuery(extractAtQuery(buf.text, buf.cursor));
+  }, [buf.text, buf.cursor]);
 
   // The slash palette opens on a leading `/` command token (single-line only).
   useEffect(() => {
@@ -320,10 +320,8 @@ export function SmartLinePrompt({ label }: { label: string }) {
     const followsSemanticToken = buf.tokenSpans.some(
       (span) => span.start < buf.cursor && buf.cursor <= span.end,
     );
-    setSkillQuery(
-      isMultiline || followsSemanticToken ? null : extractSkillQuery(buf.text, buf.cursor),
-    );
-  }, [buf.text, buf.cursor, buf.tokenSpans, isMultiline]);
+    setSkillQuery(followsSemanticToken ? null : extractSkillQuery(buf.text, buf.cursor));
+  }, [buf.text, buf.cursor, buf.tokenSpans]);
 
   useEffect(() => {
     const present = skillReferencesFromDocument(buf.document);
