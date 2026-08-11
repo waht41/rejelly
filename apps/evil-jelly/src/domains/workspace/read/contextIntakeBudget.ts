@@ -28,7 +28,7 @@ import {
   type ToolCallLoopMiddleware,
   type ToolOutput,
 } from "@rejelly/core";
-import { estimateMessagesTokens } from "../../../shared/lib/tokens";
+import { estimateMessagesTokens } from "../../../shared/model/budget/tokens";
 import { appendMessageContentSuffix } from "../../../shared/model/message/content";
 
 const DEFAULT_WARN_RATIO = 0.8;

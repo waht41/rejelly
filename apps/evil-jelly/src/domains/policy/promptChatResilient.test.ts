@@ -5,7 +5,7 @@ import {
   estimateMessagesTokens,
   estimateTokens,
   IMAGE_CONTENT_TOKEN_ESTIMATE,
-} from "../../shared/lib/tokens";
+} from "../../shared/model/budget/tokens";
 import {
   sanitizeInterruptedDelta,
   selectRecentUserMessages,

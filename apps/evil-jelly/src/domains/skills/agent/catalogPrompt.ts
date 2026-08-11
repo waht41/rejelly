@@ -1,4 +1,4 @@
-import { estimateTokens } from "../../../shared/lib/tokens";
+import { estimateTokens } from "../../../shared/model/budget/tokens";
 import { renderPseudoXmlElement } from "../../../shared/model/prompt/pseudoXml";
 import { normalizeSkillDisplayText, truncateSkillDisplayText } from "../catalog/displayText";
 import { SKILL_CATALOG_LIMITS } from "../catalog/limits";

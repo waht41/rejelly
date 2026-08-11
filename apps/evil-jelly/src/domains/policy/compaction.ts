@@ -18,7 +18,7 @@ import {
   estimateMessageContentTokens,
   estimateMessagesTokens,
   estimateTokens,
-} from "../../shared/lib/tokens";
+} from "../../shared/model/budget/tokens";
 import { messageContentToText } from "../../shared/model/message/content";
 import {
   renderPseudoXmlElement,
