@@ -28,7 +28,7 @@ vi.mock("../../tools/mcpServerKit", () => ({
   })),
 }));
 
-vi.mock("../../features/skills/skillRuntimeSnapshot", () => ({
+vi.mock("./host/skillRuntime", () => ({
   buildConfiguredSkillRuntimeSnapshot: runtimeMocks.buildSkillRuntime,
   formatSkillRuntimeStartupSummary: runtimeMocks.formatSkillSummary,
 }));

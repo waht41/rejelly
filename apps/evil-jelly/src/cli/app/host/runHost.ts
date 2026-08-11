@@ -19,12 +19,7 @@ import type { SessionBudget } from "../../../domains/session/repository/sessionS
 import {
   SKILL_RUNTIME_PROVIDER_KEY,
   type SkillRuntimeSnapshot,
-} from "../../../features/skills/contracts";
-import { buildSkillAwareUserMessage } from "../../../features/skills/explicitSkillReferences";
-import {
-  buildConfiguredSkillRuntimeSnapshot,
-  formatSkillRuntimeStartupSummary,
-} from "../../../features/skills/skillRuntimeSnapshot";
+} from "../../../domains/skills/agent/skillRuntime";
 import { UnifiedAgent } from "../../../features/unified/UnifiedAgent";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
 import { setBinding } from "../../../shared/host/hostBindings";
@@ -34,6 +29,11 @@ import { withAbort } from "../../../shared/runtime/withAbort";
 import type { EvilJellyHostBindings } from "../../../shared/types";
 import { MainCliAgent } from "../orchestration/MainCliAgent";
 import { runWithReview } from "./runWithReview";
+import { buildSkillAwareUserMessage } from "./skillAwareUserMessage";
+import {
+  buildConfiguredSkillRuntimeSnapshot,
+  formatSkillRuntimeStartupSummary,
+} from "./skillRuntime";
 
 export interface RunEvilJellyHostOptions {
   model: ModelAdapter;

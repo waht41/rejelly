@@ -4,11 +4,7 @@ import {
   resumeSession,
   type SessionBudget,
 } from "../../domains/session/repository/sessionStore";
-import { qualifiedSkillName } from "../../features/skills/contracts";
-import {
-  buildConfiguredSkillRuntimeSnapshot,
-  formatSkillRuntimeStartupSummary,
-} from "../../features/skills/skillRuntimeSnapshot";
+import { qualifiedSkillName } from "../../domains/skills/definition/skillDefinition";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import type { TranscriptItem } from "../../shared/transcript";
 import type { EvilJellyHostBindings } from "../../shared/types";
@@ -19,6 +15,10 @@ import {
   takePendingResume,
 } from "../runtime/sessionRunControl";
 import { type RunEvilJellyHostOptions, runEvilJellyHost } from "./host/runHost";
+import {
+  buildConfiguredSkillRuntimeSnapshot,
+  formatSkillRuntimeStartupSummary,
+} from "./host/skillRuntime";
 import {
   buildLegacyResumeSeed,
   buildSessionResumeSeed,

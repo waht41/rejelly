@@ -3,7 +3,7 @@
  */
 
 import { create } from "zustand";
-import { SKILL_LIMITS } from "../../features/skills/limits";
+import { SKILL_AGENT_LIMITS } from "../../domains/skills/agent/limits";
 import type {
   LineInputValue,
   UserAttachment,
@@ -12,7 +12,7 @@ import type {
 } from "../../shared/AgentShared";
 
 export type SkillPickerItem = UserSkillListItem;
-export const MAX_SELECTED_SKILLS = SKILL_LIMITS.explicitSkillsPerTurn;
+export const MAX_SELECTED_SKILLS = SKILL_AGENT_LIMITS.explicitSkillsPerTurn;
 
 export type TransientView =
   | { type: "none" }

@@ -1,7 +1,8 @@
 import type { ModelAdapter } from "@rejelly/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { type SkillRuntimeSnapshot, skillOrigin } from "../../../features/skills/contracts";
-import { createSkillCatalog } from "../../../features/skills/skillCatalog";
+import type { SkillRuntimeSnapshot } from "../../../domains/skills/agent/skillRuntime";
+import { createSkillCatalog } from "../../../domains/skills/catalog/skillCatalog";
+import { skillOrigin } from "../../../domains/skills/definition/skillDefinition";
 import { requestRunAbort } from "../../../shared/runtime/runControl";
 import type { EvilJellyHostBindings } from "../../../shared/types";
 import { runDirectUnified, runEvilJellyHost } from "./runHost";
@@ -31,7 +32,7 @@ vi.mock("../../../shared/lib/traceId", () => ({
   generateTraceId: () => "trace-id",
 }));
 
-vi.mock("../../../features/skills/skillRuntimeSnapshot", () => ({
+vi.mock("./skillRuntime", () => ({
   buildConfiguredSkillRuntimeSnapshot: mocks.buildSkillRuntime,
   formatSkillRuntimeStartupSummary: mocks.formatSkillSummary,
 }));

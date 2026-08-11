@@ -17,6 +17,27 @@
     "@domain:[dom]": [
       "src/domains/[dom]/**/*",
       "!src/domains/session/**/*",
+      "!src/domains/skills/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@domain:skills:definition": [
+      "src/domains/skills/definition/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@domain:skills:loader": [
+      "src/domains/skills/loader/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@domain:skills:catalog": [
+      "src/domains/skills/catalog/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@domain:skills:agent": [
+      "src/domains/skills/agent/**/*",
       "!src/**/__tests__/**/*",
       "!src/**/*.test.*"
     ],
@@ -64,30 +85,32 @@
         ["@ext:fs"]
       ],
       "connect": {
-        "@spec:tests": ["@domain:[dom]", "@domain:session:*", "@ext:ui"],
+        "@spec:tests": ["@domain:[dom]", "@domain:session:*", "@domain:skills:*", "@ext:ui"],
         "@cli:**": ["@domain:[dom]"],
         "@cli:app": [
           "@domain:session:repository",
           "@domain:session:recorder",
-          "@domain:session:projection"
+          "@domain:session:projection",
+          "@domain:skills:*"
         ],
         "@feature:unified": [
           "@domain:workspace",
           "@domain:web",
-          "@domain:skills",
+          "@domain:skills:agent",
           "@domain:policy",
           "@domain:capabilities"
         ],
         "@feature:audit": ["@domain:workspace", "@domain:policy"],
         "@domain:[dom]": ["@shared"],
         "@domain:session:*": ["@shared"],
-        "@domain:skills": ["@ext:fs"],
+        "@domain:skills:*": ["@shared"],
+        "@domain:skills:loader": ["@ext:fs"],
         "@domain:session:journal": ["@ext:fs"],
         "@domain:session:repository": ["@ext:fs"],
         "@cli:bindings": ["@ext:ui"],
         "@cli:ui": ["@ext:ui"],
         "@cli:prompt-editor": ["@ext:ui"],
-        "@cli:store": ["@ext:ui"]
+        "@cli:store": ["@domain:skills:agent", "@ext:ui"]
       }
     },
     "cli_arch": {
@@ -104,20 +127,16 @@
         ["@domain:session:journal", "@domain:session:projection"],
         ["@domain:session:model"]
       ]
+    },
+    "skills_arch": {
+      "connect": {
+        "@domain:skills:loader": ["@domain:skills:definition"],
+        "@domain:skills:catalog": ["@domain:skills:definition"],
+        "@domain:skills:agent": ["@domain:skills:catalog", "@domain:skills:definition"]
+      }
     }
   },
   "rules": [
-    {
-      "name": "allow-unified-skill-dependency",
-      "description": "Temporary exception for UnifiedAgent Skill assembly; revisit the feature graph boundary",
-      "scope": "fallback",
-      "match": {
-        "from": "@feature:unified",
-        "to": "@feature:skills"
-      },
-      "severity": "warn",
-      "message": "UnifiedAgent currently assembles Skills directly; revisit the feature graph boundary"
-    },
     {
       "name": "restrict-fs-access",
       "description": "Workspace domain code must access filesystem via src/shared/fs-policy",

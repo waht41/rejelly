@@ -22,8 +22,7 @@ import {
 import {
   SKILL_RUNTIME_PROVIDER_KEY,
   type SkillRuntimeSnapshot,
-} from "../../../features/skills/contracts";
-import { buildSkillAwareUserMessage } from "../../../features/skills/explicitSkillReferences";
+} from "../../../domains/skills/agent/skillRuntime";
 import { UnifiedAgent } from "../../../features/unified/UnifiedAgent";
 import type { LineInputValue } from "../../../shared/AgentShared";
 import {
@@ -38,6 +37,7 @@ import { drainSteers } from "../../../shared/runtime/steerControl";
 import { withAbort } from "../../../shared/runtime/withAbort";
 import type { EvilJellyHostBindings } from "../../../shared/types";
 import { requestNewSession, requestResume } from "../../runtime/sessionRunControl";
+import { buildSkillAwareUserMessage } from "../host/skillAwareUserMessage";
 import { combineSessionBudget, formatSessionStatus, formatTokenUsageLine } from "./sessionStatus";
 
 const UnifiedAgentWithAbort = UnifiedAgent.fork({ middlewares: [withAbort()] });

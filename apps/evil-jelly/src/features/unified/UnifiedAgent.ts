@@ -15,6 +15,7 @@ import {
 } from "@rejelly/core";
 import { promptChatResilient } from "../../domains/policy/promptChatResilient";
 import { promptCompactHistory } from "../../domains/policy/promptCompactHistory";
+import { equipSkillKit } from "../../domains/skills/agent/equipSkillKit";
 import { equipWebResearchKit } from "../../domains/web/kit";
 import { equipReadOnlyWorkspaceKit, equipRunCommandKit } from "../../domains/workspace/kit";
 import { buildWorkspaceRuleInstructionBlock } from "../../domains/workspace/workspaceRule";
@@ -29,7 +30,6 @@ import { shouldUseTerminalUserReplyRule } from "../../shared/host/output-surface
 import { useStandardStreaming } from "../../shared/host/standardStreaming";
 import { evilJellyToolLoggerMiddleware } from "../../shared/host/withToolLogger";
 import { equipMcpServerKit } from "../../tools/mcpServerKit";
-import { equipSkillKit } from "../skills/equipSkillKit";
 import { buildAutoCompactionConfig } from "./contextControl";
 import { UNIFIED_TOOL_ARTIFACTS_KEY } from "./unifiedMemoryKeys";
 import {
