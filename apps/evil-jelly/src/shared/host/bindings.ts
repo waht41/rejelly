@@ -1,6 +1,6 @@
-import type { ConversationPresentationBindings } from "../conversation/presentationBindings";
-import type { PromptInputBindings } from "../input/bindings";
-import type { ToolConfirmationBindings } from "../tool-confirmation/bindings";
+import type { PromptInputBindings } from "./inputBindings";
+import type { ConversationPresentationBindings } from "./presentationBindings";
+import type { ToolConfirmationBindings } from "./toolConfirmationBindings";
 
 /**
  * Complete flat binding object installed by a runtime adapter.

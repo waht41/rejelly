@@ -3,7 +3,7 @@
  */
 
 import { create } from "zustand";
-import type { RuntimePhase } from "../../shared/conversation/presentationBindings";
+import type { RuntimePhase } from "../../shared/host/presentationBindings";
 import type { TranscriptItem } from "../../shared/session/transcript";
 import type {
   ToolCallHandle,

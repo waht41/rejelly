@@ -19,7 +19,7 @@ export type { EvilJellyBindings } from "../shared/host/bindings";
 export type {
   PromptChoiceOption,
   PromptChoiceView,
-} from "../shared/input/bindings";
+} from "../shared/host/inputBindings";
 export { runEvilJellyHost } from "./app/host/runHost";
 
 async function main() {

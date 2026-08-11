@@ -3,12 +3,12 @@
  */
 
 import { env, getReviewEndpointFromEnv } from "../../shared/config";
-import type { ConversationPresentationBindings } from "../../shared/conversation/presentationBindings";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../shared/host/bindings";
-import type { PromptChoiceView, PromptInputBindings } from "../../shared/input/bindings";
+import type { PromptChoiceView, PromptInputBindings } from "../../shared/host/inputBindings";
+import type { ConversationPresentationBindings } from "../../shared/host/presentationBindings";
+import type { ToolConfirmationBindings } from "../../shared/host/toolConfirmationBindings";
 import { resetRuntimeTaskStack } from "../../shared/runtime/runtimeControl";
-import type { ToolConfirmationBindings } from "../../shared/tool-confirmation/bindings";
 import { resetModeSession, useModeStore } from "../store/useModeStore";
 import { resetOutputSession, TOOL_FULL_CAP, useOutputStore } from "../store/useOutputStore";
 import type { ActionMenuOption, TransientView } from "../store/usePromptStore";

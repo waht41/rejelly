@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionMeta } from "../../../domains/session/repository/sessionStore";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
-import type { PromptChoiceOption } from "../../../shared/input/bindings";
+import type { PromptChoiceOption } from "../../../shared/host/inputBindings";
 import { takePendingResume } from "../../runtime/sessionRunControl";
 import { tryRequestResume } from "./MainCliAgent";
 
