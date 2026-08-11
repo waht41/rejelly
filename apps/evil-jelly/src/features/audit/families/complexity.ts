@@ -9,7 +9,7 @@
  */
 
 import type { z } from "zod";
-import { PromptBuilder } from "../../../shared/lib/promptBuilder";
+import { PromptBuilder } from "../../../shared/model/prompt/builder";
 import type { ComplexityFinding } from "../detectors/complexity";
 import { detectComplexityCandidates } from "../detectors/complexity";
 import {

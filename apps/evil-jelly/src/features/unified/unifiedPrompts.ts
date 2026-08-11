@@ -4,7 +4,7 @@ import {
   AGENT_SCRATCH_DIR,
   getWorkspaceFsPolicy,
 } from "../../shared/fs-policy/workspace-fs-policy";
-import { PromptBuilder } from "../../shared/lib/promptBuilder";
+import { PromptBuilder } from "../../shared/model/prompt/builder";
 import { TERMINAL_USER_REPLY_RULE, TERMINAL_USER_REPLY_RULE_TITLE } from "./outputSurface";
 
 const INSTRUCTION_ARTIFACT_ITEM_MAX_CHARS = 1000;

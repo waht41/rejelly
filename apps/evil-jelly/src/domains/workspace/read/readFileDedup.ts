@@ -7,7 +7,7 @@ import {
 import {
   type PseudoXmlAttributes,
   renderPseudoXmlEmptyElement,
-} from "../../../shared/lib/pseudoXml";
+} from "../../../shared/model/prompt/pseudoXml";
 
 const READ_FILE_TOOL_NAME = "read_file";
 const FILE_OPENING = /(?:^|\n)<(file(?:-[a-f0-9]{8}(?:-\d+)?)?)((?: [^>\n]*)?)>\n/g;

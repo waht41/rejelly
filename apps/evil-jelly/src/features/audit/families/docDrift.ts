@@ -13,7 +13,7 @@
 import { z } from "zod";
 import { listScriptRelPathsUnder } from "../../../domains/workspace/source/workspacePaths";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
-import { PromptBuilder } from "../../../shared/lib/promptBuilder";
+import { PromptBuilder } from "../../../shared/model/prompt/builder";
 import type { DocMapEntry, MarkdownSection, MatchableSymbol } from "../detectors/docDrift";
 import {
   buildSymbolTable,

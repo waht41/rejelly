@@ -1,5 +1,5 @@
-import { renderPseudoXmlElement } from "../../../shared/lib/pseudoXml";
 import { estimateTokens } from "../../../shared/lib/tokens";
+import { renderPseudoXmlElement } from "../../../shared/model/prompt/pseudoXml";
 import { normalizeSkillDisplayText, truncateSkillDisplayText } from "../catalog/displayText";
 import { SKILL_CATALOG_LIMITS } from "../catalog/limits";
 import type { SkillCatalogSnapshot } from "../catalog/skillCatalog";

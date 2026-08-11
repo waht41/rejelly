@@ -10,7 +10,7 @@ import {
 } from "../fs-policy/file-locator";
 import { getWorkspaceFsPolicy } from "../fs-policy/workspace-fs-policy";
 import { readImageDimensions } from "../lib/imageDimensions";
-import { renderPseudoXmlElement } from "../lib/pseudoXml";
+import { renderPseudoXmlElement } from "../model/prompt/pseudoXml";
 
 const MAX_ATTACHMENT_BYTES_PER_FILE = 80 * 1024;
 const MAX_ATTACHMENT_BYTES_TOTAL = 100 * 1024;

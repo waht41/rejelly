@@ -15,7 +15,10 @@ import {
   type WorkspaceDirEntry,
   type WorkspaceFsPolicy,
 } from "../../../shared/fs-policy/workspace-fs-policy";
-import { type PseudoXmlAttributes, renderPseudoXmlElement } from "../../../shared/lib/pseudoXml";
+import {
+  type PseudoXmlAttributes,
+  renderPseudoXmlElement,
+} from "../../../shared/model/prompt/pseudoXml";
 import { resolveToolFsPath } from "./outsideAccess";
 
 /** Hard guards to keep tool output compact and predictable. */

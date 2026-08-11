@@ -14,13 +14,16 @@ import {
   PRIOR_USER_MESSAGE_TAG,
   unwrapPriorUserMessageText,
 } from "../../shared/lib/compactionMessages";
-import { renderPseudoXmlElement, renderPseudoXmlEmptyElement } from "../../shared/lib/pseudoXml";
 import {
   estimateMessageContentTokens,
   estimateMessagesTokens,
   estimateTokens,
   messageContentToText,
 } from "../../shared/lib/tokens";
+import {
+  renderPseudoXmlElement,
+  renderPseudoXmlEmptyElement,
+} from "../../shared/model/prompt/pseudoXml";
 import { COMPACTION_STREAM_CHANNEL } from "./compactionChannel";
 
 /**

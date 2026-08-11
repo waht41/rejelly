@@ -6,7 +6,7 @@ import {
   getWorkspaceFsPolicy,
   type WorkspaceFsPolicy,
 } from "../../shared/fs-policy/workspace-fs-policy";
-import { renderPseudoXmlElement } from "../../shared/lib/pseudoXml";
+import { renderPseudoXmlElement } from "../../shared/model/prompt/pseudoXml";
 
 const AGENTS_RULE_FILES = ["AGENTS.override.md", "AGENTS.md"] as const;
 

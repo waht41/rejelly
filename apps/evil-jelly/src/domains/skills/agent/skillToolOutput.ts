@@ -1,4 +1,7 @@
-import { renderPseudoXmlElement, renderPseudoXmlEmptyElement } from "../../../shared/lib/pseudoXml";
+import {
+  renderPseudoXmlElement,
+  renderPseudoXmlEmptyElement,
+} from "../../../shared/model/prompt/pseudoXml";
 import { truncateSkillDisplayText } from "../catalog/displayText";
 import type { SkillListPage } from "../catalog/skillCatalog";
 import type { SkillRecord, SkillResourceEntry } from "../definition/skillDefinition";

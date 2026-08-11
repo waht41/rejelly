@@ -16,7 +16,7 @@
 
 import { z } from "zod";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
-import { PromptBuilder } from "../../../shared/lib/promptBuilder";
+import { PromptBuilder } from "../../../shared/model/prompt/builder";
 import { loadDocMap, resolveSyncPairs } from "../detectors/docDrift";
 import { sha256 } from "../runtime/ledger";
 import { makeSeedEvaluatorAgent } from "../seedEvaluator";
