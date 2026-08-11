@@ -1,4 +1,4 @@
-import type { LineInputValue } from "../../shared/AgentShared";
+import type { LineInputValue } from "../../shared/host/inputBindings";
 import { clearSteers } from "../runtime/steerControl";
 
 let promptQueue: Promise<void> = Promise.resolve();

@@ -4,7 +4,7 @@ import type { SkillRuntimeSnapshot } from "../../../domains/skills/agent/skillRu
 import { renderSkillToolResult } from "../../../domains/skills/agent/skillToolOutput";
 import type { SkillRecord } from "../../../domains/skills/definition/skillDefinition";
 import { qualifiedSkillName } from "../../../domains/skills/definition/skillDefinition";
-import type { LineInputValue, UserSkillReference } from "../../../shared/AgentShared";
+import type { LineInputValue, UserSkillReference } from "../../../shared/host/inputBindings";
 import { appendMessageContentSuffix } from "../../../shared/model/message/content";
 import { renderPseudoXmlElement } from "../../../shared/model/prompt/pseudoXml";
 import { buildUserMessage } from "./userMessageBuilder";

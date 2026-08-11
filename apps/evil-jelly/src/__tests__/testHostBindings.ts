@@ -1,5 +1,5 @@
-import type { FsOutsideAccessPayload } from "../shared/AgentShared";
 import type { EvilJellyBindings } from "../shared/host/bindings";
+import type { FsOutsideAccessPayload } from "../shared/host/toolConfirmationBindings";
 
 export function createTestHostBindings(options: {
   mode?: "normal" | "auto";

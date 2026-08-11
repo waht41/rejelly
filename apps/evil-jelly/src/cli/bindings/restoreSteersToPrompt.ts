@@ -1,4 +1,4 @@
-import type { LineInputValue, UserAttachment } from "../../shared/AgentShared";
+import type { LineInputValue, UserAttachment } from "../../shared/host/inputBindings";
 import { drainSteers } from "../runtime/steerControl";
 import { usePromptStore } from "../store/usePromptStore";
 

@@ -1,4 +1,4 @@
-import type { UserSkillListItem, UserSkillReference } from "../../shared/AgentShared";
+import type { UserSkillListItem, UserSkillReference } from "../../shared/host/inputBindings";
 import {
   normalizePromptDocument,
   type PromptDocument,

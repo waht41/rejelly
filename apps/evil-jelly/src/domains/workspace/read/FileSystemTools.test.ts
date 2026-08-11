@@ -3,12 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestHostBindings } from "../../../__tests__/testHostBindings";
-import type { FsOutsideAccessPayload } from "../../../shared/AgentShared";
 import {
   getWorkspaceFsPolicy,
   setWorkspaceRoot,
 } from "../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
+import type { FsOutsideAccessPayload } from "../../../shared/host/toolConfirmationBindings";
 import { MAX_READ_BYTES_PER_CALL, MAX_READ_LINE_BYTES, ReadFileTool } from "./FileSystemTools";
 
 const hostBindingMock = vi.hoisted(() => ({

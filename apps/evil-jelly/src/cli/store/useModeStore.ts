@@ -12,8 +12,7 @@
  */
 
 import { create } from "zustand";
-
-export type AgentMode = "normal" | "auto";
+import type { AgentMode } from "../../shared/host/modeBindings";
 
 /** Cycle order for shift+tab. */
 export const MODE_ORDER: readonly AgentMode[] = ["normal", "auto"];

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { UserSkillListItem } from "../../shared/AgentShared";
+import type { UserSkillListItem } from "../../shared/host/inputBindings";
 import { projectPromptDocument } from "./promptDocument";
 import {
   activeSkillTrigger,

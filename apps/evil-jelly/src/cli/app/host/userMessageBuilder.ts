@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { ContentPart, Message } from "@rejelly/core";
-import type { UserAttachment, UserImageAttachment } from "../../../shared/AgentShared";
 import { readImageDimensions } from "../../../shared/foundation/media/imageDimensions";
 import {
   fileLocatorAttributes,
@@ -9,6 +8,7 @@ import {
   fileLocatorFromUserPath,
 } from "../../../shared/fs-policy/file-locator";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
+import type { UserAttachment, UserImageAttachment } from "../../../shared/host/inputBindings";
 import {
   createUserInputMetadata,
   type UserInputAttachmentDisplay,

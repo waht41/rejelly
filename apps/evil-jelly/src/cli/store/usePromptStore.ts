@@ -9,7 +9,7 @@ import type {
   UserAttachment,
   UserSkillListItem,
   UserSkillReference,
-} from "../../shared/AgentShared";
+} from "../../shared/host/inputBindings";
 
 export type SkillPickerItem = UserSkillListItem;
 export const MAX_SELECTED_SKILLS = SKILL_AGENT_LIMITS.explicitSkillsPerTurn;

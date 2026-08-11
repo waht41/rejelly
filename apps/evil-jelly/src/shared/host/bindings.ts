@@ -1,4 +1,5 @@
 import type { PromptInputBindings } from "./inputBindings";
+import type { AgentModeBindings } from "./modeBindings";
 import type { ConversationPresentationBindings } from "./presentationBindings";
 import type { ToolConfirmationBindings } from "./toolConfirmationBindings";
 
@@ -10,5 +11,6 @@ import type { ToolConfirmationBindings } from "./toolConfirmationBindings";
  */
 export interface EvilJellyBindings
   extends PromptInputBindings,
+    AgentModeBindings,
     ConversationPresentationBindings,
     ToolConfirmationBindings {}

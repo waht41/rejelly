@@ -26,10 +26,10 @@ import {
   createDeleteFileTool,
   createEditFileTool,
 } from "../../domains/workspace/write/WriteTools";
-import type { ConversationAgentProps, ConversationAgentResult } from "../../shared/AgentShared";
 import { getBinding } from "../../shared/host/context";
 import { evilJellyToolLoggerMiddleware } from "../../shared/tool-observation/middleware";
 import { buildAutoCompactionConfig } from "./contextControl";
+import type { ConversationAgentProps, ConversationAgentResult } from "./conversationRun";
 import { shouldUseTerminalUserReplyRule } from "./outputSurface";
 import { useStandardStreaming } from "./standardStreaming";
 import { UNIFIED_TOOL_ARTIFACTS_KEY } from "./unifiedMemoryKeys";

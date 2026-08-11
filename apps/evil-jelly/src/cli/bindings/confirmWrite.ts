@@ -1,12 +1,12 @@
+import type { AgentMode } from "../../shared/host/modeBindings";
 import type {
-  AgentMode,
   FsOutsideAccessPayload,
   FsWritePayload,
   ShellCommandPayload,
   ToolConfirmationHandler,
   ToolConfirmationResult,
   WriteActionType,
-} from "../../shared/AgentShared";
+} from "../../shared/host/toolConfirmationBindings";
 import { recordActiveToolDetail } from "../../shared/tool-observation/invocationContext";
 import { classifyShellCommand, isSimpleCommand } from "../runtime/shellCommandPolicy";
 import { useOutputStore } from "../store/useOutputStore";

@@ -24,12 +24,12 @@ import {
   type SkillRuntimeSnapshot,
 } from "../../../domains/skills/agent/skillRuntime";
 import { UnifiedAgent } from "../../../features/unified/UnifiedAgent";
-import type { LineInputValue } from "../../../shared/AgentShared";
 import { env } from "../../../shared/config";
 import { countConversationTurns } from "../../../shared/conversation/compactionMessages";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import { getBinding, setBinding } from "../../../shared/host/context";
+import type { LineInputValue } from "../../../shared/host/inputBindings";
 import { getUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
 import { requestNewSession, requestResume } from "../../runtime/sessionRunControl";
 import { drainSteers } from "../../runtime/steerControl";

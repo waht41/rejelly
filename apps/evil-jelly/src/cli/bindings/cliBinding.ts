@@ -6,6 +6,7 @@ import { env, getReviewEndpointFromEnv } from "../../shared/config";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../shared/host/bindings";
 import type { PromptChoiceView, PromptInputBindings } from "../../shared/host/inputBindings";
+import type { AgentModeBindings } from "../../shared/host/modeBindings";
 import type { ConversationPresentationBindings } from "../../shared/host/presentationBindings";
 import type { ToolConfirmationBindings } from "../../shared/host/toolConfirmationBindings";
 import { resetRuntimeTaskStack } from "../../shared/runtime/runtimeControl";
@@ -127,7 +128,7 @@ function logCliStartup(
 function createPromptBindings(options: {
   seedInput: string | undefined;
   suspendInkForExternalProcess: <T>(fn: () => Promise<T>) => Promise<T>;
-}): PromptInputBindings & ToolConfirmationBindings {
+}): PromptInputBindings & AgentModeBindings & ToolConfirmationBindings {
   const { seedInput, suspendInkForExternalProcess } = options;
   return {
     getInput: createInkGetInput(seedInput !== undefined ? { seedLine: seedInput } : undefined),

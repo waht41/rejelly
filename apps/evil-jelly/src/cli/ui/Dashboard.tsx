@@ -5,7 +5,7 @@
 import type { DOMElement } from "ink";
 import { Box, measureElement, Static, Text, useInput, useWindowSize } from "ink";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { LineInputValue } from "../../shared/AgentShared";
+import type { LineInputValue } from "../../shared/host/inputBindings";
 import type { RuntimePhase } from "../../shared/host/presentationBindings";
 import { getQueuedSteers, subscribeSteers } from "../runtime/steerControl";
 import { composeToolTailWindow } from "../store/toolTailWindow";

@@ -1,4 +1,4 @@
-import type { LineInputValue } from "../../shared/AgentShared";
+import type { LineInputValue } from "../../shared/host/inputBindings";
 import { requestRuntimeStop } from "../../shared/runtime/runtimeControl";
 import { requestRunAbort } from "../runtime/runControl";
 import { requestExit } from "../runtime/sessionRunControl";

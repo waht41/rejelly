@@ -5,13 +5,16 @@
 import path from "node:path";
 import type { ToolDefinition } from "@rejelly/core";
 import { z } from "zod";
-import type { ToolConfirmationHandler, WriteActionType } from "../../../shared/AgentShared";
 import {
   AGENT_SCRATCH_DIR,
   getWorkspaceFsPolicy,
   type ResolvedFsPath,
   type WorkspaceFsPolicy,
 } from "../../../shared/fs-policy/workspace-fs-policy";
+import type {
+  ToolConfirmationHandler,
+  WriteActionType,
+} from "../../../shared/host/toolConfirmationBindings";
 import { getErrnoCode } from "../../../shared/lib/errors";
 import { normalizeNewlines } from "../../../shared/lib/string";
 import { MAX_READ_BYTES_PER_CALL } from "../read/FileSystemTools";
