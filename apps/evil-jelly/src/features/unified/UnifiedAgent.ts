@@ -13,6 +13,7 @@ import {
   isAbortError,
   isToolLoopExceededError,
 } from "@rejelly/core";
+import { equipMcpServerKit } from "../../domains/mcp/mcpServerKit";
 import { promptChatResilient } from "../../domains/policy/promptChatResilient";
 import { promptCompactHistory } from "../../domains/policy/promptCompactHistory";
 import { equipSkillKit } from "../../domains/skills/agent/equipSkillKit";
@@ -29,7 +30,6 @@ import { getBinding } from "../../shared/host/hostBindings";
 import { shouldUseTerminalUserReplyRule } from "../../shared/host/output-surface";
 import { useStandardStreaming } from "../../shared/host/standardStreaming";
 import { evilJellyToolLoggerMiddleware } from "../../shared/host/withToolLogger";
-import { equipMcpServerKit } from "../../tools/mcpServerKit";
 import { buildAutoCompactionConfig } from "./contextControl";
 import { UNIFIED_TOOL_ARTIFACTS_KEY } from "./unifiedMemoryKeys";
 import {

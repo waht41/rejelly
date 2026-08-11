@@ -1,4 +1,5 @@
 import type { AgentSnapshot, Message, ModelAdapter } from "@rejelly/core";
+import { connectMcpProviders } from "../../domains/mcp/mcpServerKit";
 import {
   generateSessionId,
   resumeSession,
@@ -8,7 +9,6 @@ import { qualifiedSkillName } from "../../domains/skills/definition/skillDefinit
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import type { TranscriptItem } from "../../shared/transcript";
 import type { EvilJellyHostBindings } from "../../shared/types";
-import { connectMcpProviders } from "../../tools/mcpServerKit";
 import {
   takePendingExit,
   takePendingNewSession,

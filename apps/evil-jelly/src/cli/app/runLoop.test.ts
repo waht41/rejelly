@@ -21,7 +21,7 @@ vi.mock("./host/runHost", () => ({
   runEvilJellyHost: vi.fn(),
 }));
 
-vi.mock("../../tools/mcpServerKit", () => ({
+vi.mock("../../domains/mcp/mcpServerKit", () => ({
   connectMcpProviders: vi.fn(async () => ({
     providers: {},
     dispose: runtimeMocks.disposeMcp,

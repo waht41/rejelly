@@ -98,7 +98,7 @@
           "@domain:web",
           "@domain:skills:agent",
           "@domain:policy",
-          "@domain:capabilities"
+          "@domain:mcp"
         ],
         "@feature:audit": ["@domain:workspace", "@domain:policy"],
         "@domain:[dom]": ["@shared"],
