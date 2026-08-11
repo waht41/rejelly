@@ -12,7 +12,6 @@
     ],
     "@cli:store": ["src/cli/store/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:runtime": ["src/cli/runtime/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
-    "@shell": ["src/shell/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@feature:[feat]": ["src/features/[feat]/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@domain:[dom]": [
       "src/domains/[dom]/**/*",
@@ -66,24 +65,13 @@
       "!src/**/__tests__/**/*",
       "!src/**/*.test.*"
     ],
-    "@tools": ["src/tools/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
-    "@service:[svc]": ["src/services/[svc]/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@shared": ["src/shared/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@ext:fs": "node:fs",
     "@ext:ui": ["npm:ink", "npm:react", "npm:zustand"]
   },
   "graph": {
     "runtime_arch": {
-      "cascade": [
-        ["@spec:tests"],
-        ["@cli:**"],
-        ["@shell"],
-        ["@feature:[feat]"],
-        ["@tools"],
-        ["@service:[svc]"],
-        ["@shared"],
-        ["@ext:fs"]
-      ],
+      "cascade": [["@spec:tests"], ["@cli:**"], ["@feature:[feat]"], ["@shared"], ["@ext:fs"]],
       "connect": {
         "@spec:tests": ["@domain:[dom]", "@domain:session:*", "@domain:skills:*", "@ext:ui"],
         "@cli:**": ["@domain:[dom]"],
