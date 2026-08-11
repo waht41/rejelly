@@ -10,9 +10,9 @@
 import fg from "fast-glob";
 import micromatch from "micromatch";
 import { z } from "zod";
-import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
-import { parseAndValidateJsonc } from "../../shared/lib/jsonc";
-import { getSettings } from "../../shared/settings";
+import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
+import { parseAndValidateJsonc } from "../../../../shared/lib/jsonc";
+import { getSettings } from "../../../../shared/settings";
 
 const DocMapEntrySchema = z
   .object({

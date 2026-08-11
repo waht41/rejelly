@@ -9,9 +9,9 @@
  */
 
 import type { z } from "zod";
-import type { CloneCluster, CloneFragment } from "../../../services/clone";
-import { detectCloneCandidates } from "../../../services/clone";
 import { PromptBuilder } from "../../../services/prompt/PromptBuilder";
+import type { CloneCluster, CloneFragment } from "../detectors/clone";
+import { detectCloneCandidates } from "../detectors/clone";
 import {
   compareString,
   createAuditSourceSnapshotReader,

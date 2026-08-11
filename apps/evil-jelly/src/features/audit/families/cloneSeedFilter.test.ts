@@ -1,6 +1,6 @@
 import { Lang, parse } from "@ast-grep/napi";
 import { describe, expect, it } from "vitest";
-import type { CloneFragment } from "../../../services/clone";
+import type { CloneFragment } from "../detectors/clone";
 import { analyzeFileBehavior, classifyFragment } from "./cloneSeedFilter";
 
 /** Classify a whole snippet (fragment = its full line span). */

@@ -13,12 +13,12 @@
 import {
   getWorkspaceFsPolicy,
   type WorkspaceFsPolicy,
-} from "../../shared/fs-policy/workspace-fs-policy";
-import { listWorkspaceScriptRelPaths } from "../../shared/fs-policy/workspace-paths";
-import { tryParseRoot } from "../../shared/lib/ast-parse";
-import { fnv1a32Hex } from "../../shared/lib/hash";
-import { MAX_HEURISTIC_AST_BYTES } from "../../shared/lib/heuristicAstLimits";
-import { isTestOrGeneratedPath } from "../../shared/lib/path";
+} from "../../../../shared/fs-policy/workspace-fs-policy";
+import { listWorkspaceScriptRelPaths } from "../../../../shared/fs-policy/workspace-paths";
+import { tryParseRoot } from "../../../../shared/lib/ast-parse";
+import { fnv1a32Hex } from "../../../../shared/lib/hash";
+import { MAX_HEURISTIC_AST_BYTES } from "../../../../shared/lib/heuristicAstLimits";
+import { isTestOrGeneratedPath } from "../../../../shared/lib/path";
 import { fingerprintTokens } from "./fingerprint";
 import { tokenizeNormalized } from "./tokenize";
 import {

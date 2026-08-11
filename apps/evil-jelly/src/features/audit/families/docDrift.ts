@@ -11,17 +11,17 @@
  */
 
 import { z } from "zod";
-import type { DocMapEntry, MarkdownSection, MatchableSymbol } from "../../../services/doc-drift";
+import { PromptBuilder } from "../../../services/prompt/PromptBuilder";
+import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
+import { listScriptRelPathsUnder } from "../../../shared/fs-policy/workspace-paths";
+import type { DocMapEntry, MarkdownSection, MatchableSymbol } from "../detectors/docDrift";
 import {
   buildSymbolTable,
   loadDocMap,
   matchSectionSymbols,
   resolveDocMapEntries,
   splitMarkdownH2Sections,
-} from "../../../services/doc-drift";
-import { PromptBuilder } from "../../../services/prompt/PromptBuilder";
-import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
-import { listScriptRelPathsUnder } from "../../../shared/fs-policy/workspace-paths";
+} from "../detectors/docDrift";
 import { sha256 } from "../runtime/ledger";
 import { makeSeedEvaluatorAgent } from "../seedEvaluator";
 import type {

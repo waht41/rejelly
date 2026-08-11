@@ -14,7 +14,7 @@
 
 import type { SgNode } from "@ast-grep/napi";
 import { tryParseWorkspaceRel } from "../../../domains/workspace/ast/heuristicAstCore";
-import type { CloneCluster, CloneFragment } from "../../../services/clone";
+import type { CloneCluster, CloneFragment } from "../detectors/clone";
 
 /** Any of these intersecting a fragment range carries executable logic → force KEEP. */
 const CODE_CARRIER_KINDS = [

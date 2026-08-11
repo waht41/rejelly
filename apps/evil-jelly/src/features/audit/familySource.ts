@@ -5,10 +5,10 @@
  */
 
 import { parse, type SgNode } from "@ast-grep/napi";
-import type { NormalizedToken } from "../../services/clone";
-import { tokenizeNormalized } from "../../services/clone/tokenize";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import { langFromRelPath } from "../../shared/lib/path";
+import type { NormalizedToken } from "./detectors/clone";
+import { tokenizeNormalized } from "./detectors/clone/tokenize";
 
 const FENCE_LANG: Record<string, string> = {
   TypeScript: "ts",

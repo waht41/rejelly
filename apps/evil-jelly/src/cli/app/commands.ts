@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import { AuditAgent } from "../../features/audit/AuditAgent";
-import { docMapPath, loadDocMap } from "../../services/doc-drift";
+import { docMapPath, loadDocMap } from "../../features/audit/detectors/docDrift";
 import {
   createOpenAIModelFromEnv,
   env,
