@@ -5,9 +5,9 @@ import { renderSkillToolResult } from "../../../domains/skills/agent/skillToolOu
 import type { SkillRecord } from "../../../domains/skills/definition/skillDefinition";
 import { qualifiedSkillName } from "../../../domains/skills/definition/skillDefinition";
 import type { LineInputValue, UserSkillReference } from "../../../shared/AgentShared";
-import { buildUserMessage } from "../../../shared/attachments/messageContent";
 import { appendMessageContentSuffix } from "../../../shared/model/message/content";
 import { renderPseudoXmlElement } from "../../../shared/model/prompt/pseudoXml";
+import { buildUserMessage } from "./userMessageBuilder";
 
 /** Resolve only structured, qualified picker selections against the enabled process snapshot. */
 export function resolveExplicitSkills(

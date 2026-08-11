@@ -3,7 +3,7 @@ import type { SkillRuntimeSnapshot } from "../../../domains/skills/agent/skillRu
 import { createSkillCatalog } from "../../../domains/skills/catalog/skillCatalog";
 import type { SkillRecord } from "../../../domains/skills/definition/skillDefinition";
 import { skillOrigin } from "../../../domains/skills/definition/skillDefinition";
-import { getUserInputDisplay } from "../../../shared/attachments/messageContent";
+import { getUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
 import {
   buildSkillAwareUserMessage,
   renderExplicitSkillContext,

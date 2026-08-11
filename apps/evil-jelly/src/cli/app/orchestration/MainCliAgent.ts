@@ -25,13 +25,10 @@ import {
 } from "../../../domains/skills/agent/skillRuntime";
 import { UnifiedAgent } from "../../../features/unified/UnifiedAgent";
 import type { LineInputValue } from "../../../shared/AgentShared";
-import {
-  formatUserInputDisplay,
-  getUserInputDisplay,
-} from "../../../shared/attachments/messageContent";
 import { env } from "../../../shared/config";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
 import { getBinding, setBinding } from "../../../shared/host/hostBindings";
+import { getUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
 import { countConversationTurns } from "../../../shared/ports/conversation/compactionMessages";
 import type { EvilJellyHostBindings } from "../../../shared/types";
 import { requestNewSession, requestResume } from "../../runtime/sessionRunControl";
@@ -39,6 +36,7 @@ import { drainSteers } from "../../runtime/steerControl";
 import { withAbort } from "../../runtime/withAbort";
 import { buildSkillAwareUserMessage } from "../host/skillAwareUserMessage";
 import { combineSessionBudget, formatSessionStatus, formatTokenUsageLine } from "./sessionStatus";
+import { formatUserInputDisplay } from "./userInputDisplay";
 
 const UnifiedAgentWithAbort = UnifiedAgent.fork({ middlewares: [withAbort()] });
 

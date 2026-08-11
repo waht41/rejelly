@@ -1,57 +1,25 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { ContentPart, Message } from "@rejelly/core";
-import { z } from "zod";
-import type { UserAttachment, UserImageAttachment } from "../AgentShared";
-import { readImageDimensions } from "../foundation/media/imageDimensions";
+import type { UserAttachment, UserImageAttachment } from "../../../shared/AgentShared";
+import { readImageDimensions } from "../../../shared/foundation/media/imageDimensions";
 import {
   fileLocatorAttributes,
   fileLocatorFromResolved,
   fileLocatorFromUserPath,
-} from "../fs-policy/file-locator";
-import { getWorkspaceFsPolicy } from "../fs-policy/workspace-fs-policy";
-import { renderPseudoXmlElement } from "../model/prompt/pseudoXml";
+} from "../../../shared/fs-policy/file-locator";
+import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
+import {
+  createUserInputMetadata,
+  type UserInputAttachmentDisplay,
+  type UserInputDisplay,
+} from "../../../shared/model/message/userInputMetadata";
+import { renderPseudoXmlElement } from "../../../shared/model/prompt/pseudoXml";
 
 const MAX_ATTACHMENT_BYTES_PER_FILE = 80 * 1024;
 const MAX_ATTACHMENT_BYTES_TOTAL = 100 * 1024;
 const MAX_ATTACHMENT_DIR_ENTRIES = 80;
 const MAX_IMAGE_ATTACHMENT_BYTES = 10 * 1024 * 1024;
-
-export const USER_INPUT_MESSAGE_KIND = "user_input";
-
-const fileLocatorSchema = z.discriminatedUnion("scope", [
-  z.object({ scope: z.literal("workspace"), path: z.string() }),
-  z.object({ scope: z.literal("absolute"), path: z.string() }),
-]);
-
-const userInputAttachmentDisplaySchema = z.object({
-  type: z.enum(["file", "image"]),
-  label: z.string(),
-  action: z.enum(["read", "list", "attach"]),
-  status: z.literal("error").optional(),
-  // Optional so sessions written before canonical locators remain resumable.
-  locator: fileLocatorSchema.optional(),
-});
-
-const userInputDisplaySchema = z.object({
-  text: z.string(),
-  attachments: z.array(userInputAttachmentDisplaySchema),
-});
-
-const imageDimensionsSchema = z.object({
-  width: z.number().int().positive(),
-  height: z.number().int().positive(),
-});
-
-const userInputMetadataSchema = z.object({
-  kind: z.literal(USER_INPUT_MESSAGE_KIND),
-  display: userInputDisplaySchema,
-  /** Aligned by index with image content parts; null means the raster header was unreadable. */
-  imageDimensions: z.array(imageDimensionsSchema.nullable()).optional(),
-});
-
-export type UserInputAttachmentDisplay = z.infer<typeof userInputAttachmentDisplaySchema>;
-export type UserInputDisplay = z.infer<typeof userInputDisplaySchema>;
 
 function uniqueAttachments(attachments: UserAttachment[] = []): UserAttachment[] {
   const seen = new Set<string>();
@@ -127,33 +95,6 @@ async function buildAttachmentDisplays(
     }
   }
   return displays;
-}
-
-function formatAttachmentDisplay(display: UserInputAttachmentDisplay): string {
-  return `${display.action} ${display.label}${display.status === "error" ? " failed" : ""}`;
-}
-
-export function formatUserInputDisplay(display: UserInputDisplay): string {
-  if (display.attachments.length === 0) {
-    return display.text;
-  }
-  return `${display.text}\n${display.attachments
-    .map((attachment) => `  -> ${formatAttachmentDisplay(attachment)}`)
-    .join("\n")}`;
-}
-
-export function getUserInputDisplay(message: Message): UserInputDisplay | undefined {
-  const metadata = userInputMetadataSchema.safeParse(message.extra?.rejelly);
-  return metadata.success ? metadata.data.display : undefined;
-}
-
-export function getUserInputImageDimensions(
-  message: Message,
-): Array<{ width: number; height: number } | undefined> {
-  const metadata = userInputMetadataSchema.safeParse(message.extra?.rejelly);
-  return metadata.success
-    ? (metadata.data.imageDimensions?.map((dimensions) => dimensions ?? undefined) ?? [])
-    : [];
 }
 
 async function buildAttachmentContext(attachments: UserAttachment[] = []): Promise<string> {
@@ -320,18 +261,15 @@ export async function buildUserMessage(props: {
     buildUserMessagePayload(props),
     buildAttachmentDisplays(props.attachments),
   ]);
+  const display = {
+    text: props.userInput,
+    attachments,
+  } satisfies UserInputDisplay;
   return {
     role: "user",
     content: payload.content,
     extra: {
-      rejelly: {
-        kind: USER_INPUT_MESSAGE_KIND,
-        ...(payload.imageDimensions.length > 0 ? { imageDimensions: payload.imageDimensions } : {}),
-        display: {
-          text: props.userInput,
-          attachments,
-        } satisfies UserInputDisplay,
-      },
+      rejelly: createUserInputMetadata(display, payload.imageDimensions),
     },
   };
 }

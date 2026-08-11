@@ -2,8 +2,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getWorkspaceFsPolicy, setWorkspaceRoot } from "../fs-policy/workspace-fs-policy";
-import { buildUserMessage, getUserInputDisplay } from "./messageContent";
+import {
+  getWorkspaceFsPolicy,
+  setWorkspaceRoot,
+} from "../../../shared/fs-policy/workspace-fs-policy";
+import { getUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
+import { buildUserMessage } from "./userMessageBuilder";
 
 describe("buildUserMessage", () => {
   let prevRoot: string;
@@ -168,23 +172,5 @@ describe("buildUserMessage", () => {
         },
       ],
     });
-  });
-
-  it("rejects malformed persisted display metadata", () => {
-    expect(
-      getUserInputDisplay({
-        role: "user",
-        content: "raw fallback",
-        extra: {
-          rejelly: {
-            kind: "user_input",
-            display: {
-              text: "shown text",
-              attachments: [{ type: "file", label: "a.ts", action: "unknown" }],
-            },
-          },
-        },
-      }),
-    ).toBeUndefined();
   });
 });

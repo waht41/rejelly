@@ -1,10 +1,6 @@
 import type { ContentPart, Message } from "@rejelly/core";
 import { isAbortError, isModelCallError } from "@rejelly/core";
 import { executeTurn, isInstructionMessage, type PromptContext } from "@rejelly/core/policy";
-import {
-  getUserInputDisplay,
-  type UserInputAttachmentDisplay,
-} from "../../shared/attachments/messageContent";
 import { fileLocatorAttributes } from "../../shared/fs-policy/file-locator";
 import {
   estimateMessageContentTokens,
@@ -12,6 +8,10 @@ import {
   estimateTokens,
 } from "../../shared/model/budget/tokenEstimate";
 import { messageContentToText } from "../../shared/model/message/content";
+import {
+  getUserInputDisplay,
+  type UserInputAttachmentDisplay,
+} from "../../shared/model/message/userInputMetadata";
 import {
   renderPseudoXmlElement,
   renderPseudoXmlEmptyElement,

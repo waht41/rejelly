@@ -1,6 +1,6 @@
 import type { Message } from "@rejelly/core";
-import { getUserInputDisplay } from "../../../shared/attachments/messageContent";
 import { messageContentToText } from "../../../shared/model/message/content";
+import { getUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
 import {
   isCompactionBridgeMessage,
   unwrapPriorUserMessageText,
