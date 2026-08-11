@@ -3,7 +3,7 @@ import { mapWithConcurrency } from "./mapWithConcurrency";
 
 const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-describe("mapWithConcurrency", () => {
+describe("audit mapWithConcurrency", () => {
   it("returns results in input order despite out-of-order completion", async () => {
     const input = [30, 10, 20, 5];
     const results = await mapWithConcurrency(input, 4, async (ms) => {

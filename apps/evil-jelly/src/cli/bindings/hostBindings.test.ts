@@ -3,9 +3,9 @@ import {
   runWithToolDetailSlot,
   takeActiveToolDetail,
 } from "../../shared/host/toolTranscriptDetail";
-import { registerRunAbort } from "../../shared/runtime/runControl";
-import { enqueueSteer } from "../../shared/runtime/steerControl";
+import { registerRunAbort } from "../runtime/runControl";
 import { takePendingExit } from "../runtime/sessionRunControl";
+import { enqueueSteer } from "../runtime/steerControl";
 import { resetOutputSession, useOutputStore } from "../store/useOutputStore";
 import { resetPromptSession, usePromptStore } from "../store/usePromptStore";
 import { createInkConfirmWrite } from "./confirmWrite";

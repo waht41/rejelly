@@ -8,7 +8,7 @@ import type {
   WriteActionType,
 } from "../../shared/AgentShared";
 import { recordActiveToolDetail } from "../../shared/host/toolTranscriptDetail";
-import { classifyShellCommand, isSimpleCommand } from "../../shared/shellCommandPolicy";
+import { classifyShellCommand, isSimpleCommand } from "../runtime/shellCommandPolicy";
 import { useOutputStore } from "../store/useOutputStore";
 import type { ActionMenuOption } from "../store/usePromptStore";
 import { usePromptStore } from "../store/usePromptStore";

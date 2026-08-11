@@ -4,12 +4,9 @@
 
 import type { Lang, SgNode } from "@ast-grep/napi";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
-import {
-  listWorkspaceScriptRelPaths,
-  tryResolveRelativeImport,
-} from "../../../shared/fs-policy/workspace-paths";
 import { MAX_HEURISTIC_RESULTS } from "../../../shared/lib/heuristicAstLimits";
 import { langFromRelPath } from "../../../shared/lib/path";
+import { listWorkspaceScriptRelPaths, tryResolveRelativeImport } from "../source/workspacePaths";
 import {
   type ParseWorkspaceAstOptions,
   parseWorkspaceRelToAst,

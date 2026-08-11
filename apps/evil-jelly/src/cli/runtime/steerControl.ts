@@ -1,4 +1,4 @@
-import type { LineInputValue } from "../AgentShared";
+import type { LineInputValue } from "../../shared/AgentShared";
 
 let queuedSteers: LineInputValue[] = [];
 let subscribers: Array<(values: LineInputValue[]) => void> = [];

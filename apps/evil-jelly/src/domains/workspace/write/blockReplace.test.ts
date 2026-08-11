@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyBlockEdits, findBlockToReplace, replacementForBlockMatch } from "./blockReplace";
 
-describe("findBlockToReplace", () => {
+describe("workspace block replacement", () => {
   it("returns normalizedContent so CRLF inputs do not drift indices", () => {
     const raw = "line1\r\n  foo\r\nline3";
     const match = findBlockToReplace(raw, "  foo");

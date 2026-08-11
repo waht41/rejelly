@@ -33,10 +33,10 @@ import { env } from "../../../shared/config";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
 import { getBinding, setBinding } from "../../../shared/host/hostBindings";
 import { countConversationTurns } from "../../../shared/lib/compactionMessages";
-import { drainSteers } from "../../../shared/runtime/steerControl";
-import { withAbort } from "../../../shared/runtime/withAbort";
 import type { EvilJellyHostBindings } from "../../../shared/types";
 import { requestNewSession, requestResume } from "../../runtime/sessionRunControl";
+import { drainSteers } from "../../runtime/steerControl";
+import { withAbort } from "../../runtime/withAbort";
 import { buildSkillAwareUserMessage } from "../host/skillAwareUserMessage";
 import { combineSessionBudget, formatSessionStatus, formatTokenUsageLine } from "./sessionStatus";
 

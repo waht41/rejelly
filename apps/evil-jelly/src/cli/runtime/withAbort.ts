@@ -1,5 +1,5 @@
 import { type AgentMiddleware, getAbortHandle } from "@rejelly/core";
-import { pushRuntimeTask } from "./runtimeControl";
+import { pushRuntimeTask } from "../../shared/runtime/runtimeControl";
 
 export function withAbort<Props = unknown, Result = unknown>(): AgentMiddleware<Props, Result> {
   return {

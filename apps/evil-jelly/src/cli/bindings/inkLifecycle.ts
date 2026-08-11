@@ -1,6 +1,6 @@
 import { type Instance, render } from "ink";
 import React from "react";
-import { requestRunAbort } from "../../shared/runtime/runControl";
+import { requestRunAbort } from "../runtime/runControl";
 import { pruneClearedStaticTurns } from "../store/useOutputStore";
 import { Dashboard } from "../ui/Dashboard";
 import type { CtrlCAbortHandler } from "../ui/useCtrlCAbort";

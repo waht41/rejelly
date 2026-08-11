@@ -1,4 +1,4 @@
-/** Shared route-level contract for audit CLI options. */
+/** Audit vocabulary shared by the feature and its CLI route. */
 
 export type AuditFindingKind = "clone" | "complexity" | "fragmentation" | "doc-drift" | "doc-sync";
 

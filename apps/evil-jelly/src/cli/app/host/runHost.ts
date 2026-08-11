@@ -23,10 +23,10 @@ import {
 import { UnifiedAgent } from "../../../features/unified/UnifiedAgent";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
 import { setBinding } from "../../../shared/host/hostBindings";
-import { generateTraceId } from "../../../shared/lib/traceId";
-import { registerRunAbort } from "../../../shared/runtime/runControl";
-import { withAbort } from "../../../shared/runtime/withAbort";
 import type { EvilJellyHostBindings } from "../../../shared/types";
+import { registerRunAbort } from "../../runtime/runControl";
+import { generateTraceId } from "../../runtime/traceId";
+import { withAbort } from "../../runtime/withAbort";
 import { MainCliAgent } from "../orchestration/MainCliAgent";
 import { runWithReview } from "./runWithReview";
 import { buildSkillAwareUserMessage } from "./skillAwareUserMessage";

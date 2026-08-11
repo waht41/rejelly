@@ -9,9 +9,9 @@
  * decides whether a candidate is actionable and proposes a concrete refactor.
  */
 
-import type { AuditFindingKind } from "../../shared/contracts/audit";
+import type { AuditFindingKind } from "./contracts";
 
-export type { AuditFindingKind } from "../../shared/contracts/audit";
+export type { AuditFindingKind } from "./contracts";
 
 /** Detector/finding families. The ledger is shared; each family owns its identity + evaluator. */
 export type AuditLedgerStatus = "open" | "accepted" | "suppressed" | "resolved";

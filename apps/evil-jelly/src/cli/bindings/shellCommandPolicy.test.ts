@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyShellCommand, isSimpleCommand } from "../../shared/shellCommandPolicy";
+import { classifyShellCommand, isSimpleCommand } from "../runtime/shellCommandPolicy";
 
 describe("classifyShellCommand", () => {
   describe("auto (read-only)", () => {

@@ -1,5 +1,6 @@
 /**
- * Unordered bounded-concurrency map: run `task` over `items` with at most `concurrency` in flight,
+ * Audit-local unordered bounded-concurrency map: run `task` over `items` with at most
+ * `concurrency` in flight,
  * each worker pulling the next item as soon as it finishes. Results are returned in input order.
  *
  * Unlike a sliding-window pipeline (which awaits results strictly in array order so a slow early

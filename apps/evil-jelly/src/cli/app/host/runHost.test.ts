@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SkillRuntimeSnapshot } from "../../../domains/skills/agent/skillRuntime";
 import { createSkillCatalog } from "../../../domains/skills/catalog/skillCatalog";
 import { skillOrigin } from "../../../domains/skills/definition/skillDefinition";
-import { requestRunAbort } from "../../../shared/runtime/runControl";
 import type { EvilJellyHostBindings } from "../../../shared/types";
+import { requestRunAbort } from "../../runtime/runControl";
 import { runDirectUnified, runEvilJellyHost } from "./runHost";
 
 const mocks = vi.hoisted(() => ({
@@ -28,7 +28,7 @@ vi.mock("../../../shared/fs-policy/workspace-fs-policy", async (importOriginal) 
   getWorkspaceFsPolicy: () => ({ getRoot: () => "/workspace" }),
 }));
 
-vi.mock("../../../shared/lib/traceId", () => ({
+vi.mock("../../runtime/traceId", () => ({
   generateTraceId: () => "trace-id",
 }));
 

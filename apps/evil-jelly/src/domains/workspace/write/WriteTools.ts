@@ -12,12 +12,12 @@ import {
   type ResolvedFsPath,
   type WorkspaceFsPolicy,
 } from "../../../shared/fs-policy/workspace-fs-policy";
-import { applyBlockEdits } from "../../../shared/lib/blockReplace";
 import { getErrnoCode } from "../../../shared/lib/errors";
 import { normalizeNewlines } from "../../../shared/lib/string";
-import { createTwoFilesPatch } from "../../../shared/lib/unifiedDiff";
 import { MAX_READ_BYTES_PER_CALL } from "../read/FileSystemTools";
 import { resolveToolFsPath } from "../read/outsideAccess";
+import { applyBlockEdits } from "./blockReplace";
+import { createTwoFilesPatch } from "./unifiedDiff";
 
 const MAX_WRITE_BYTES = MAX_READ_BYTES_PER_CALL;
 

@@ -1,5 +1,5 @@
 import { parse, type SgNode } from "@ast-grep/napi";
-import { langFromRelPath } from "./path";
+import { langFromRelPath } from "../../../shared/lib/path";
 
 export function tryParseRoot(file: string, code: string): SgNode | null {
   try {

@@ -12,8 +12,8 @@ import {
   collectOutlineDeclarations,
   sliceDeclarationSignature,
 } from "../../../domains/workspace/ast/queries";
-import { tryParseRoot } from "../../../shared/lib/ast-parse";
 import { isTestOrGeneratedPath, langFromRelPath } from "../../../shared/lib/path";
+import { tryParseRoot } from "../detectors/astParse";
 
 export interface SurfaceSymbol {
   name: string;

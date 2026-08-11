@@ -1,6 +1,7 @@
 /**
- * Pure classifier deciding whether a shell command may auto-pass, needs a prompt, or must always
- * be confirmed (and can never be auto-allowed). No IO — keep it deterministic and unit-testable.
+ * CLI runtime classifier deciding whether a shell command may auto-pass, needs a prompt, or must
+ * always be confirmed (and can never be auto-allowed). No IO — keep it deterministic and
+ * unit-testable.
  *
  * Tiers (severity auto < confirm < block):
  *  - "auto"    read-only / inspection only → safe to run without asking.

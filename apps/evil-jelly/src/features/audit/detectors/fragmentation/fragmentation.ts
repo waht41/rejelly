@@ -13,8 +13,8 @@
  */
 
 import path from "node:path";
+import { listWorkspaceScriptRelPaths } from "../../../../domains/workspace/source/workspacePaths";
 import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
-import { listWorkspaceScriptRelPaths } from "../../../../shared/fs-policy/workspace-paths";
 import { fnv1a32Hex } from "../../../../shared/lib/hash";
 import { MAX_HEURISTIC_AST_BYTES } from "../../../../shared/lib/heuristicAstLimits";
 import { isTestOrGeneratedPath } from "../../../../shared/lib/path";

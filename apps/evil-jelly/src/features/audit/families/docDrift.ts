@@ -11,8 +11,8 @@
  */
 
 import { z } from "zod";
+import { listScriptRelPathsUnder } from "../../../domains/workspace/source/workspacePaths";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
-import { listScriptRelPathsUnder } from "../../../shared/fs-policy/workspace-paths";
 import { PromptBuilder } from "../../../shared/lib/promptBuilder";
 import type { DocMapEntry, MarkdownSection, MatchableSymbol } from "../detectors/docDrift";
 import {

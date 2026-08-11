@@ -7,7 +7,7 @@ import cac from "cac";
 import {
   SELECTABLE_AUDIT_FAMILIES,
   type SelectableAuditFamilyKind,
-} from "../../shared/contracts/audit";
+} from "../../features/audit/contracts";
 import type { SettingsCliOverrides } from "../../shared/settings";
 
 type CommonParsedArgs = {

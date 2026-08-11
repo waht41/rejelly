@@ -10,8 +10,8 @@ import {
   saveEnvValues,
 } from "../../shared/config";
 import { setBinding } from "../../shared/host/hostBindings";
-import { generateTraceId } from "../../shared/lib/traceId";
-import { withAbort } from "../../shared/runtime/withAbort";
+import { generateTraceId } from "../runtime/traceId";
+import { withAbort } from "../runtime/withAbort";
 import type { ParsedAuditArgs, ParsedRunArgs } from "./args";
 import { createBackgroundHostBindings } from "./host/cliStubBindings";
 import { runDirectUnified } from "./host/runHost";

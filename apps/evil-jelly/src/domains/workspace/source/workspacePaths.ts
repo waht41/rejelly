@@ -1,19 +1,14 @@
 import path from "node:path";
-import fg from "fast-glob";
-import { MAX_HEURISTIC_AST_FILES } from "../lib/heuristicAstLimits";
-import { getWorkspaceFsPolicy } from "./workspace-fs-policy";
+import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
+import { globWorkspaceFiles } from "../../../shared/fs-policy/workspace-glob";
+import { MAX_HEURISTIC_AST_FILES } from "../../../shared/lib/heuristicAstLimits";
 
 export async function listWorkspaceScriptRelPaths(): Promise<string[]> {
   const policy = getWorkspaceFsPolicy();
-  const rootAbs = policy.getRoot();
-  const entries = await fg(["**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"], {
-    cwd: rootAbs,
-    dot: false,
-    ignore: ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/build/**", "**/.next/**"],
-    absolute: false,
-    onlyFiles: true,
-  });
-  const norm = entries.map((p) => p.split(path.sep).join("/"));
+  const norm = await globWorkspaceFiles(
+    ["**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"],
+    ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/build/**", "**/.next/**"],
+  );
   const filtered: string[] = [];
   for (const rel of norm) {
     if (filtered.length >= MAX_HEURISTIC_AST_FILES) {
@@ -33,20 +28,10 @@ export async function listWorkspaceScriptRelPaths(): Promise<string[]> {
  */
 export async function listWorkspaceDocRelPaths(maxFiles = 400): Promise<string[]> {
   const policy = getWorkspaceFsPolicy();
-  const entries = await fg(["**/README*.md", "docs/**/*.md"], {
-    cwd: policy.getRoot(),
-    dot: false,
-    ignore: [
-      "**/node_modules/**",
-      "**/.git/**",
-      "**/dist/**",
-      "**/build/**",
-      "**/.next/**",
-      "**/draft/**",
-    ],
-    absolute: false,
-    onlyFiles: true,
-  });
+  const entries = await globWorkspaceFiles(
+    ["**/README*.md", "docs/**/*.md"],
+    ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/build/**", "**/.next/**", "**/draft/**"],
+  );
   const filtered: string[] = [];
   for (const rel of [...new Set(entries.map((p) => p.split(path.sep).join("/")))].sort()) {
     if (filtered.length >= maxFiles) {
@@ -70,20 +55,16 @@ export async function listScriptRelPathsUnder(
   maxFiles = MAX_HEURISTIC_AST_FILES,
 ): Promise<string[]> {
   const policy = getWorkspaceFsPolicy();
-  const rootAbs = policy.getRoot();
   const seen = new Set<string>();
   for (const prefix of prefixes) {
     const clean = prefix.replace(/\\/g, "/").replace(/\/+$/, "");
     if (!clean || clean.startsWith("..")) {
       continue;
     }
-    const entries = await fg([clean, `${clean}/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}`], {
-      cwd: rootAbs,
-      dot: false,
-      ignore: ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/build/**", "**/.next/**"],
-      absolute: false,
-      onlyFiles: true,
-    });
+    const entries = await globWorkspaceFiles(
+      [clean, `${clean}/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}`],
+      ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/build/**", "**/.next/**"],
+    );
     for (const entry of entries) {
       seen.add(entry.split(path.sep).join("/"));
     }

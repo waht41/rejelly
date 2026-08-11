@@ -7,7 +7,7 @@ import {
 } from "diff";
 
 /**
- * Unified diff for LLM review and human inspection.
+ * Workspace write unified diff for LLM review and human inspection.
  *
  * Uses Myers diff from `diff` so large Markdown files do not pay the quadratic
  * memory cost of the previous hand-written LCS implementation.

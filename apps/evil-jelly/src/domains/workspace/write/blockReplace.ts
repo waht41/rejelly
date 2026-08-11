@@ -1,8 +1,8 @@
 /**
- * Fuzzy block locate: exact substring first, then line-trim equality (indent-tolerant).
+ * Workspace block edit locator: exact substring first, then line-trim equality (indent-tolerant).
  */
 
-import { normalizeNewlines } from "./string";
+import { normalizeNewlines } from "../../../shared/lib/string";
 
 export type BlockMatch =
   | { ok: true; start: number; end: number; mode: "exact" | "line_trim"; normalizedContent: string }

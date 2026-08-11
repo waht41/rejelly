@@ -1,7 +1,7 @@
 /**
  * Run-scoped abort bridge for Ctrl+C.
  *
- * Distinct from {@link ./runtimeControl} (task-scoped, Esc / `/stop`, which aborts
+ * Distinct from shared `runtimeControl` (task-scoped, Esc / `/stop`, which aborts
  * only the active sub-agent and lets the run continue): this aborts the whole
  * `runWith` run. Aborting the run-level controller delivers the cancel signal to
  * the entire agent tree + teardown, so in-flight model/tool calls cancel and the
