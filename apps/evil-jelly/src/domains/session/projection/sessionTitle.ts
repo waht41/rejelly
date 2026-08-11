@@ -4,7 +4,7 @@ import {
   isCompactionBridgeMessage,
   unwrapPriorUserMessageText,
 } from "../../../shared/lib/compactionMessages";
-import { messageContentToText } from "../../../shared/lib/tokens";
+import { messageContentToText } from "../../../shared/model/message/content";
 
 const SESSION_TITLE_MAX_CHARS = 80;
 

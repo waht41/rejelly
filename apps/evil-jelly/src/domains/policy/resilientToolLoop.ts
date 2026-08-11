@@ -7,8 +7,8 @@ import {
   type OutputParser,
   type PromptContext,
 } from "@rejelly/core/policy";
-import { appendMessageContentSuffix } from "../../shared/lib/message";
 import { estimateMessagesTokens } from "../../shared/lib/tokens";
+import { appendMessageContentSuffix } from "../../shared/model/message/content";
 import type { SessionMessageSink } from "../../shared/session/recorderPort";
 import {
   DEFAULT_COMPACTION_MAX_ROUNDS,

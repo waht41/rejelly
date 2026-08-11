@@ -116,17 +116,6 @@ function dimensionsFromMessageExtra(message: Message): Array<ImageDimensions | u
   });
 }
 
-/** Flatten message content to its text; non-text parts (images) contribute no text. */
-export function messageContentToText(content: MessageContent | null): string {
-  if (content == null) {
-    return "";
-  }
-  if (typeof content === "string") {
-    return content;
-  }
-  return content.map((part) => (part.type === "text" ? part.text : "")).join("\n");
-}
-
 export function estimateMessageContentTokens(
   content: MessageContent | null,
   imageDimensions: readonly (ImageDimensions | undefined)[] = [],

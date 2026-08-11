@@ -13,7 +13,7 @@ import { openSessionRecorder } from "../../../domains/session/recorder/sessionRe
 import { resumeSession } from "../../../domains/session/repository/sessionStore";
 import { setWorkspaceRoot } from "../../../shared/fs-policy/workspace-fs-policy";
 import { isCompactionBridgeMessage } from "../../../shared/lib/compactionMessages";
-import { messageContentToText } from "../../../shared/lib/tokens";
+import { messageContentToText } from "../../../shared/model/message/content";
 import type { TranscriptItem } from "../../../shared/transcript";
 import type { EvilJellyHostBindings } from "../../../shared/types";
 import { runEvilJellyHost } from "./runHost";

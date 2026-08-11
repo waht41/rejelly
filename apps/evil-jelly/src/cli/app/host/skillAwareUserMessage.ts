@@ -6,7 +6,7 @@ import type { SkillRecord } from "../../../domains/skills/definition/skillDefini
 import { qualifiedSkillName } from "../../../domains/skills/definition/skillDefinition";
 import type { LineInputValue, UserSkillReference } from "../../../shared/AgentShared";
 import { buildUserMessage } from "../../../shared/attachments/messageContent";
-import { appendMessageContentSuffix } from "../../../shared/lib/message";
+import { appendMessageContentSuffix } from "../../../shared/model/message/content";
 import { renderPseudoXmlElement } from "../../../shared/model/prompt/pseudoXml";
 
 /** Resolve only structured, qualified picker selections against the enabled process snapshot. */

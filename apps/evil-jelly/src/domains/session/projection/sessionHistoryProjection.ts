@@ -4,7 +4,7 @@ import {
   isCompactionBridgeMessage,
   unwrapPriorUserMessageText,
 } from "../../../shared/lib/compactionMessages";
-import { messageContentToText } from "../../../shared/lib/tokens";
+import { messageContentToText } from "../../../shared/model/message/content";
 import { SESSION_BLOB_SCHEME, sessionBlobRefSchema } from "../../../shared/session/blobContract";
 import type { TranscriptImage, TranscriptItem } from "../../../shared/transcript";
 import type { SessionBudgetData } from "../model/sessionEvents";
