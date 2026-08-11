@@ -18,7 +18,7 @@ vi.mock("../orchestration/MainCliAgent", () => ({
   MainCliAgent: mocks.mainCliAgent,
 }));
 
-vi.mock("../../../services/session/sessionRecorder", () => ({
+vi.mock("../../../domains/session/recorder/sessionRecorder", () => ({
   openSessionRecorder: mocks.openSessionRecorder,
 }));
 

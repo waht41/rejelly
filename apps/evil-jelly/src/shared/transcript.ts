@@ -2,7 +2,7 @@
  * Host-facing transcript view model: the shape a host renders as scrollback.
  *
  * This is a display projection, not a storage record — the session service produces it
- * (`services/session/sessionHistoryProjection`), the CLI store and host bindings consume it.
+ * (`domains/session/projection/sessionHistoryProjection`), the CLI store and host bindings consume it.
  * It lives here so neither side has to reach across the other's layer to name it.
  */
 

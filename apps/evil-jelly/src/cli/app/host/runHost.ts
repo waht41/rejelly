@@ -10,6 +10,12 @@ import {
   type ModelAdapter,
 } from "@rejelly/core";
 import type { ReviewOptions } from "@rejelly/core/debugger";
+import { LazySessionRecorder } from "../../../domains/session/recorder/lazySessionRecorder";
+import {
+  openSessionRecorder,
+  type SessionRecorder,
+} from "../../../domains/session/recorder/sessionRecorder";
+import type { SessionBudget } from "../../../domains/session/repository/sessionStore";
 import {
   SKILL_RUNTIME_PROVIDER_KEY,
   type SkillRuntimeSnapshot,
@@ -20,12 +26,6 @@ import {
   formatSkillRuntimeStartupSummary,
 } from "../../../features/skills/skillRuntimeSnapshot";
 import { UnifiedAgent } from "../../../features/unified/UnifiedAgent";
-import { LazySessionRecorder } from "../../../services/session/lazySessionRecorder";
-import {
-  openSessionRecorder,
-  type SessionRecorder,
-} from "../../../services/session/sessionRecorder";
-import type { SessionBudget } from "../../../services/session/sessionStore";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
 import { setBinding } from "../../../shared/host/hostBindings";
 import { generateTraceId } from "../../../shared/lib/traceId";

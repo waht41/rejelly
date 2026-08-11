@@ -4,13 +4,13 @@ import path from "node:path";
 import type { Message } from "@rejelly/core";
 import { createMockModel } from "@rejelly/core/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { isKnownSessionEvent } from "../../../services/session/sessionEvents";
 import {
   readSessionEvents,
   resolveV2SessionPath,
-} from "../../../services/session/sessionJsonlStore";
-import { openSessionRecorder } from "../../../services/session/sessionRecorder";
-import { resumeSession } from "../../../services/session/sessionStore";
+} from "../../../domains/session/journal/sessionJsonlStore";
+import { isKnownSessionEvent } from "../../../domains/session/model/sessionEvents";
+import { openSessionRecorder } from "../../../domains/session/recorder/sessionRecorder";
+import { resumeSession } from "../../../domains/session/repository/sessionStore";
 import { setWorkspaceRoot } from "../../../shared/fs-policy/workspace-fs-policy";
 import { isCompactionBridgeMessage } from "../../../shared/lib/compactionMessages";
 import { messageContentToText } from "../../../shared/lib/tokens";

@@ -1,8 +1,8 @@
 import type { Message } from "@rejelly/core";
 import type { PromptContext } from "@rejelly/core/policy";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SessionRecorder } from "../../services/session/sessionRecorder";
 import type { MessageSource } from "../../shared/session/messageSource";
+import type { SessionRecorder } from "../session/recorder/sessionRecorder";
 
 const policyMocks = vi.hoisted(() => ({
   executeValidatedLoopTurn: vi.fn(),

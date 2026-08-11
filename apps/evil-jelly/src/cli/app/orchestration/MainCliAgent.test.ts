@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { takePendingResume } from "../../../services/session/resumeControl";
-import type { SessionMeta } from "../../../services/session/sessionStore";
+import type { SessionMeta } from "../../../domains/session/repository/sessionStore";
 import type { EvilJellyHostBindings, HostChoiceOption } from "../../../shared/types";
+import { takePendingResume } from "../../runtime/sessionRunControl";
 import { tryRequestResume } from "./MainCliAgent";
 
 const mocks = vi.hoisted(() => ({
@@ -9,8 +9,8 @@ const mocks = vi.hoisted(() => ({
   loadSession: vi.fn(),
 }));
 
-vi.mock("../../../services/session/sessionStore", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../services/session/sessionStore")>()),
+vi.mock("../../../domains/session/repository/sessionStore", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../domains/session/repository/sessionStore")>()),
   listSessions: mocks.listSessions,
   loadSession: mocks.loadSession,
 }));

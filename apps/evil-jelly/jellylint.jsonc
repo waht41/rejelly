@@ -11,9 +11,40 @@
       "!src/**/*.test.*"
     ],
     "@cli:store": ["src/cli/store/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@cli:runtime": ["src/cli/runtime/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@shell": ["src/shell/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@feature:[feat]": ["src/features/[feat]/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
-    "@domain:[dom]": ["src/domains/[dom]/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@domain:[dom]": [
+      "src/domains/[dom]/**/*",
+      "!src/domains/session/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@domain:session:model": [
+      "src/domains/session/model/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@domain:session:journal": [
+      "src/domains/session/journal/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@domain:session:projection": [
+      "src/domains/session/projection/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@domain:session:repository": [
+      "src/domains/session/repository/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@domain:session:recorder": [
+      "src/domains/session/recorder/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
     "@tools": ["src/tools/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@service:[svc]": ["src/services/[svc]/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@shared": ["src/shared/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
@@ -33,8 +64,13 @@
         ["@ext:fs"]
       ],
       "connect": {
-        "@spec:tests": ["@domain:[dom]", "@ext:ui"],
+        "@spec:tests": ["@domain:[dom]", "@domain:session:*", "@ext:ui"],
         "@cli:**": ["@domain:[dom]"],
+        "@cli:app": [
+          "@domain:session:repository",
+          "@domain:session:recorder",
+          "@domain:session:projection"
+        ],
         "@feature:unified": [
           "@domain:workspace",
           "@domain:web",
@@ -44,8 +80,10 @@
         ],
         "@feature:audit": ["@domain:workspace", "@domain:policy"],
         "@domain:[dom]": ["@shared"],
+        "@domain:session:*": ["@shared"],
         "@domain:skills": ["@ext:fs"],
-        "@domain:session": ["@ext:fs"],
+        "@domain:session:journal": ["@ext:fs"],
+        "@domain:session:repository": ["@ext:fs"],
         "@cli:bindings": ["@ext:ui"],
         "@cli:ui": ["@ext:ui"],
         "@cli:prompt-editor": ["@ext:ui"],
@@ -55,9 +93,17 @@
     "cli_arch": {
       "connect": {
         "@cli:entry": ["@cli:app", "@cli:bindings"],
-        "@cli:bindings": ["@cli:ui", "@cli:store"]
+        "@cli:app": ["@cli:runtime"],
+        "@cli:bindings": ["@cli:ui", "@cli:store", "@cli:runtime"]
       },
       "cascade": [["@cli:ui"], ["@cli:prompt-editor"], ["@cli:store"]]
+    },
+    "session_arch": {
+      "cascade": [
+        ["@domain:session:repository", "@domain:session:recorder"],
+        ["@domain:session:journal", "@domain:session:projection"],
+        ["@domain:session:model"]
+      ]
     }
   },
   "rules": [

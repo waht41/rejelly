@@ -13,24 +13,18 @@ import {
   type Message,
   reborn,
 } from "@rejelly/core";
+import type { SessionRecorder } from "../../../domains/session/recorder/sessionRecorder";
+import {
+  listSessions,
+  loadSession,
+  type SessionBudget,
+} from "../../../domains/session/repository/sessionStore";
 import {
   SKILL_RUNTIME_PROVIDER_KEY,
   type SkillRuntimeSnapshot,
 } from "../../../features/skills/contracts";
 import { buildSkillAwareUserMessage } from "../../../features/skills/explicitSkillReferences";
 import { UnifiedAgent } from "../../../features/unified/UnifiedAgent";
-import {
-  combineSessionBudget,
-  formatSessionStatus,
-  formatTokenUsageLine,
-} from "../../../services/session/budgetStatus";
-import { requestNewSession, requestResume } from "../../../services/session/resumeControl";
-import type { SessionRecorder } from "../../../services/session/sessionRecorder";
-import {
-  listSessions,
-  loadSession,
-  type SessionBudget,
-} from "../../../services/session/sessionStore";
 import type { LineInputValue } from "../../../shared/AgentShared";
 import {
   formatUserInputDisplay,
@@ -43,6 +37,8 @@ import { countConversationTurns } from "../../../shared/lib/compactionMessages";
 import { drainSteers } from "../../../shared/runtime/steerControl";
 import { withAbort } from "../../../shared/runtime/withAbort";
 import type { EvilJellyHostBindings } from "../../../shared/types";
+import { requestNewSession, requestResume } from "../../runtime/sessionRunControl";
+import { combineSessionBudget, formatSessionStatus, formatTokenUsageLine } from "./sessionStatus";
 
 const UnifiedAgentWithAbort = UnifiedAgent.fork({ middlewares: [withAbort()] });
 

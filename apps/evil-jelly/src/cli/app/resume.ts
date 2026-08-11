@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import type { Message } from "@rejelly/core";
-import { buildLegacyTranscript } from "../../services/session/sessionHistoryProjection";
+import { buildLegacyTranscript } from "../../domains/session/projection/sessionHistoryProjection";
 import {
   generateSessionId,
   type LegacyMigrationOptions,
@@ -8,7 +8,7 @@ import {
   resumeSession,
   type SessionBudget,
   type SessionRecord,
-} from "../../services/session/sessionStore";
+} from "../../domains/session/repository/sessionStore";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import { countConversationTurns } from "../../shared/lib/compactionMessages";
 import type { TranscriptItem } from "../../shared/transcript";

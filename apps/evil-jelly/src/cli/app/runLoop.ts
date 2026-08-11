@@ -1,23 +1,23 @@
 import type { AgentSnapshot, Message, ModelAdapter } from "@rejelly/core";
+import {
+  generateSessionId,
+  resumeSession,
+  type SessionBudget,
+} from "../../domains/session/repository/sessionStore";
 import { qualifiedSkillName } from "../../features/skills/contracts";
 import {
   buildConfiguredSkillRuntimeSnapshot,
   formatSkillRuntimeStartupSummary,
 } from "../../features/skills/skillRuntimeSnapshot";
-import {
-  takePendingExit,
-  takePendingNewSession,
-  takePendingResume,
-} from "../../services/session/resumeControl";
-import {
-  generateSessionId,
-  resumeSession,
-  type SessionBudget,
-} from "../../services/session/sessionStore";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import type { TranscriptItem } from "../../shared/transcript";
 import type { EvilJellyHostBindings } from "../../shared/types";
 import { connectMcpProviders } from "../../tools/mcpServerKit";
+import {
+  takePendingExit,
+  takePendingNewSession,
+  takePendingResume,
+} from "../runtime/sessionRunControl";
 import { type RunEvilJellyHostOptions, runEvilJellyHost } from "./host/runHost";
 import {
   buildLegacyResumeSeed,
@@ -187,7 +187,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
       bindings.logSystemEvent(`${skillSummary}\n`);
     }
     // Outer loop: each iteration is one runWith segment (own traceId). A mid-session /resume ends
-    // the current run, queues a target via resumeControl, and we restart with the loaded history.
+    // the current run, queues a target via sessionRunControl, and we restart with the loaded history.
     while (true) {
       await runEvilJellyHost(bindings, {
         model,

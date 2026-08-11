@@ -1,13 +1,13 @@
 import type { AgentSnapshot, Message, ModelAdapter } from "@rejelly/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as sessionStore from "../../domains/session/repository/sessionStore";
+import type { EvilJellyHostBindings } from "../../shared/types";
 import {
   requestNewSession,
   requestResume,
   takePendingNewSession,
   takePendingResume,
-} from "../../services/session/resumeControl";
-import * as sessionStore from "../../services/session/sessionStore";
-import type { EvilJellyHostBindings } from "../../shared/types";
+} from "../runtime/sessionRunControl";
 import { runEvilJellyHost } from "./host/runHost";
 import { runInteractiveLoop } from "./runLoop";
 

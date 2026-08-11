@@ -1,8 +1,8 @@
-import { requestExit } from "../../services/session/resumeControl";
 import type { LineInputValue } from "../../shared/AgentShared";
 import { requestRunAbort } from "../../shared/runtime/runControl";
 import { requestRuntimeStop } from "../../shared/runtime/runtimeControl";
 import { drainSteers, enqueueSteer } from "../../shared/runtime/steerControl";
+import { requestExit } from "../runtime/sessionRunControl";
 import { useOutputStore } from "../store/useOutputStore";
 import { usePromptStore } from "../store/usePromptStore";
 import {
