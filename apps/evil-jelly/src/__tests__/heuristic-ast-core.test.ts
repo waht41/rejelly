@@ -1,6 +1,6 @@
 import { Lang, parse } from "@ast-grep/napi";
 import { describe, expect, it } from "vitest";
-import { extractLeadingFileJsDoc } from "../services/ast/jsdoc";
+import { extractLeadingFileJsDoc } from "../domains/workspace/ast/jsdoc";
 import {
   collectDocumentSymbols,
   extractExternalCalleeSymbols,
@@ -9,7 +9,7 @@ import {
   findNamedDeclarationAstNodes,
   getCallableEnvelope,
   sliceDeclarationSignature,
-} from "../services/ast/queries";
+} from "../domains/workspace/ast/queries";
 import { escapeRegexLiteral } from "../shared/lib/string";
 
 describe("heuristicAstCore", () => {

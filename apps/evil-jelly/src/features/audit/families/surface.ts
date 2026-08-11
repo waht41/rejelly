@@ -5,12 +5,15 @@
  */
 
 import type { SgNode } from "@ast-grep/napi";
-import { tryParseRoot } from "../../shared/lib/ast-parse";
-import { isTestOrGeneratedPath, langFromRelPath } from "../../shared/lib/path";
-import { tryParseWorkspaceRel } from "./heuristicAstCore";
-import { extractJsDocAbove } from "./jsdoc";
-import type { HeuristicSymbolKind } from "./queries";
-import { collectOutlineDeclarations, sliceDeclarationSignature } from "./queries";
+import { tryParseWorkspaceRel } from "../../../domains/workspace/ast/heuristicAstCore";
+import { extractJsDocAbove } from "../../../domains/workspace/ast/jsdoc";
+import type { HeuristicSymbolKind } from "../../../domains/workspace/ast/queries";
+import {
+  collectOutlineDeclarations,
+  sliceDeclarationSignature,
+} from "../../../domains/workspace/ast/queries";
+import { tryParseRoot } from "../../../shared/lib/ast-parse";
+import { isTestOrGeneratedPath, langFromRelPath } from "../../../shared/lib/path";
 
 export interface SurfaceSymbol {
   name: string;

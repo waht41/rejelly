@@ -4,7 +4,7 @@
 
 import type { ToolDefinition } from "@rejelly/core";
 import { z } from "zod";
-import { fuzzySearchFiles } from "../services/fuzzy/FuzzySearchService";
+import { fuzzySearchFiles } from "./FuzzySearchService";
 
 const fuzzySearchPathsParameters = z.object({
   keyword: z

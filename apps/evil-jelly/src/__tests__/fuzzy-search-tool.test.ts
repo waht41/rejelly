@@ -6,8 +6,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { FuzzySearchTool } from "../domains/workspace/read/FuzzySearchTool";
 import { getWorkspaceFsPolicy, setWorkspaceRoot } from "../shared/fs-policy/workspace-fs-policy";
-import { FuzzySearchTool } from "../tools/FuzzySearchTool";
 
 describe("fuzzy_search_paths tool", () => {
   let prevRoot: string;

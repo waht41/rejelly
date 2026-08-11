@@ -2,8 +2,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { resetFuzzySearchCache } from "../services/fuzzy/FuzzySearchService";
-import { getWorkspaceFsPolicy, setWorkspaceRoot } from "../shared/fs-policy/workspace-fs-policy";
+import {
+  getWorkspaceFsPolicy,
+  setWorkspaceRoot,
+} from "../../../shared/fs-policy/workspace-fs-policy";
+import { resetFuzzySearchCache } from "./FuzzySearchService";
 import { FuzzySearchTool } from "./FuzzySearchTool";
 
 describe("FuzzySearchTool", () => {

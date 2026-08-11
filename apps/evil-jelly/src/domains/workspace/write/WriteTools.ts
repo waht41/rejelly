@@ -5,19 +5,19 @@
 import path from "node:path";
 import type { ToolDefinition } from "@rejelly/core";
 import { z } from "zod";
-import { resolveToolFsPath } from "../domains/workspace/outsideAccess";
-import type { ToolConfirmationHandler, WriteActionType } from "../shared/AgentShared";
+import type { ToolConfirmationHandler, WriteActionType } from "../../../shared/AgentShared";
 import {
   AGENT_SCRATCH_DIR,
   getWorkspaceFsPolicy,
   type ResolvedFsPath,
   type WorkspaceFsPolicy,
-} from "../shared/fs-policy/workspace-fs-policy";
-import { applyBlockEdits } from "../shared/lib/blockReplace";
-import { getErrnoCode } from "../shared/lib/errors";
-import { normalizeNewlines } from "../shared/lib/string";
-import { createTwoFilesPatch } from "../shared/lib/unifiedDiff";
-import { MAX_READ_BYTES_PER_CALL } from "./FileSystemTools";
+} from "../../../shared/fs-policy/workspace-fs-policy";
+import { applyBlockEdits } from "../../../shared/lib/blockReplace";
+import { getErrnoCode } from "../../../shared/lib/errors";
+import { normalizeNewlines } from "../../../shared/lib/string";
+import { createTwoFilesPatch } from "../../../shared/lib/unifiedDiff";
+import { MAX_READ_BYTES_PER_CALL } from "../read/FileSystemTools";
+import { resolveToolFsPath } from "../read/outsideAccess";
 
 const MAX_WRITE_BYTES = MAX_READ_BYTES_PER_CALL;
 

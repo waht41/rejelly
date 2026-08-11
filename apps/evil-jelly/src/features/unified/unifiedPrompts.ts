@@ -1,5 +1,5 @@
 import { arch, platform, release } from "node:os";
-import { getShellPath } from "../../services/cmd/executeShellCommand";
+import { getShellPath } from "../../domains/workspace/execute/executeShellCommand";
 import { PromptBuilder } from "../../services/prompt/PromptBuilder";
 import {
   AGENT_SCRATCH_DIR,

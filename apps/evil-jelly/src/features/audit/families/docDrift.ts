@@ -11,8 +11,6 @@
  */
 
 import { z } from "zod";
-import type { SurfaceExtraction } from "../../../services/ast/surface";
-import { extractExportedSurface } from "../../../services/ast/surface";
 import type { DocMapEntry, MarkdownSection, MatchableSymbol } from "../../../services/doc-drift";
 import {
   buildSymbolTable,
@@ -34,6 +32,8 @@ import type {
   PreparedSeed,
 } from "../types";
 import { AUDIT_DEFAULTS } from "../types";
+import type { SurfaceExtraction } from "./surface";
+import { extractExportedSurface } from "./surface";
 
 // ---------------------------------------------------------------------------
 // Candidate assembly — deterministic Phase 1

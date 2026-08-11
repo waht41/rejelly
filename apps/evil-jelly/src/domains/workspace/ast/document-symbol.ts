@@ -5,13 +5,13 @@
 import type { SgNode } from "@ast-grep/napi";
 import type { ToolDefinition } from "@rejelly/core";
 import { z } from "zod";
-import { extractJsDocAbove, extractLeadingFileJsDoc } from "../../services/ast/jsdoc";
+import { MAX_HEURISTIC_RESULTS } from "../../../shared/lib/heuristicAstLimits";
+import { extractJsDocAbove, extractLeadingFileJsDoc } from "./jsdoc";
 import {
   collectDocumentSymbols,
   findNamedDeclarationAstNodes,
   sliceDeclarationSignature,
-} from "../../services/ast/queries";
-import { MAX_HEURISTIC_RESULTS } from "../../shared/lib/heuristicAstLimits";
+} from "./queries";
 import { collectMatchingDeclarations, getParsedAst, MAX_JSDOC_CHARS, truncateJson } from "./shared";
 
 export const astDocumentSymbolsParameters = z.object({

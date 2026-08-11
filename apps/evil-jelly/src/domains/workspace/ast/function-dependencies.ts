@@ -4,8 +4,8 @@
 
 import type { ToolDefinition } from "@rejelly/core";
 import { z } from "zod";
-import { findCallableDeclarationForSymbol, getCallableEnvelope } from "../../services/ast/queries";
-import { MAX_FUNCTION_DEPENDENCY_DEPTH } from "../../shared/lib/heuristicAstLimits";
+import { MAX_FUNCTION_DEPENDENCY_DEPTH } from "../../../shared/lib/heuristicAstLimits";
+import { findCallableDeclarationForSymbol, getCallableEnvelope } from "./queries";
 import {
   type DependencyJsonRow,
   expandDependencyRow,

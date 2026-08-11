@@ -14,22 +14,21 @@ import {
   isToolLoopExceededError,
 } from "@rejelly/core";
 import { equipWebResearchKit } from "../../domains/web/kit";
+import { equipReadOnlyWorkspaceKit, equipRunCommandKit } from "../../domains/workspace/kit";
+import { buildWorkspaceRuleInstructionBlock } from "../../domains/workspace/workspaceRule";
+import {
+  createCreateFileTool,
+  createDeleteFileTool,
+  createEditFileTool,
+} from "../../domains/workspace/write/WriteTools";
 import { promptChatResilient } from "../../services/policy/promptChatResilient";
 import { promptCompactHistory } from "../../services/policy/promptCompactHistory";
-import { buildWorkspaceRuleInstructionBlock } from "../../services/prompt/workspace-rule";
 import type { ConversationAgentProps, ConversationAgentResult } from "../../shared/AgentShared";
-import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import { getBinding } from "../../shared/host/hostBindings";
 import { shouldUseTerminalUserReplyRule } from "../../shared/host/output-surface";
 import { useStandardStreaming } from "../../shared/host/standardStreaming";
 import { evilJellyToolLoggerMiddleware } from "../../shared/host/withToolLogger";
 import { equipMcpServerKit } from "../../tools/mcpServerKit";
-import {
-  createCreateFileTool,
-  createDeleteFileTool,
-  createEditFileTool,
-} from "../../tools/WriteTools";
-import { equipReadOnlyWorkspaceKit, equipRunCommandKit } from "../../tools/workspaceKit";
 import { equipSkillKit } from "../skills/equipSkillKit";
 import { buildAutoCompactionConfig } from "./contextControl";
 import { UNIFIED_TOOL_ARTIFACTS_KEY } from "./unifiedMemoryKeys";
@@ -75,10 +74,10 @@ async function useUnifiedTools(): Promise<void> {
   equipTool(deleteTool);
 }
 
-function useUnifiedPrompts(props: ConversationAgentProps): void {
+async function useUnifiedPrompts(props: ConversationAgentProps): Promise<void> {
   const [artifacts] = equipMemory<Record<string, string>>(UNIFIED_TOOL_ARTIFACTS_KEY, {});
   const artifactSummary = formatArtifactSummaryForInstruction(artifacts);
-  const workspaceRuleBlock = buildWorkspaceRuleInstructionBlock(getWorkspaceFsPolicy().getRoot());
+  const workspaceRuleBlock = await buildWorkspaceRuleInstructionBlock();
 
   equipSystem(
     buildUnifiedSystemPrompt({
@@ -122,7 +121,7 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
   maxTurnSteps: UNIFIED_MAX_TURN_STEPS,
   handler: async (props) => {
     await useUnifiedTools();
-    useUnifiedPrompts(props);
+    await useUnifiedPrompts(props);
     equipSkillKit();
     useStandardStreaming({ textMode: "plain" });
 

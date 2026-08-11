@@ -12,7 +12,7 @@ import {
   toGitignorePath,
   type WorkspaceDirEntry,
   type WorkspaceFsPolicy,
-} from "../../shared/fs-policy/workspace-fs-policy";
+} from "../../../shared/fs-policy/workspace-fs-policy";
 
 /** Hard cap on collected file paths to bound work on huge trees. */
 const MAX_COLLECT = 200_000;

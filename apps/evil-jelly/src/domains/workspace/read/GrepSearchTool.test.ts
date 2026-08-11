@@ -6,7 +6,7 @@ import {
   getWorkspaceFsPolicy,
   setWorkspaceRoot,
   TOOL_ALWAYS_IGNORED_DIR_NAMES,
-} from "../shared/fs-policy/workspace-fs-policy";
+} from "../../../shared/fs-policy/workspace-fs-policy";
 
 const { execFileSyncMock } = vi.hoisted(() => ({
   execFileSyncMock: vi.fn(),

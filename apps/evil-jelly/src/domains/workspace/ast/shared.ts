@@ -3,12 +3,19 @@
  */
 
 import type { Lang, SgNode } from "@ast-grep/napi";
+import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
+import {
+  listWorkspaceScriptRelPaths,
+  tryResolveRelativeImport,
+} from "../../../shared/fs-policy/workspace-paths";
+import { MAX_HEURISTIC_RESULTS } from "../../../shared/lib/heuristicAstLimits";
+import { langFromRelPath } from "../../../shared/lib/path";
 import {
   type ParseWorkspaceAstOptions,
   parseWorkspaceRelToAst,
   tryParseWorkspaceRel,
-} from "../../services/ast/heuristicAstCore";
-import { extractJsDocAbove } from "../../services/ast/jsdoc";
+} from "./heuristicAstCore";
+import { extractJsDocAbove } from "./jsdoc";
 import {
   collectDocumentSymbols,
   extractExternalCalleeSymbols,
@@ -20,14 +27,7 @@ import {
   type HeuristicSymbolRow,
   pickOutlineDeclaration,
   sliceDeclarationSignature,
-} from "../../services/ast/queries";
-import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
-import {
-  listWorkspaceScriptRelPaths,
-  tryResolveRelativeImport,
-} from "../../shared/fs-policy/workspace-paths";
-import { MAX_HEURISTIC_RESULTS } from "../../shared/lib/heuristicAstLimits";
-import { langFromRelPath } from "../../shared/lib/path";
+} from "./queries";
 
 export const MAX_OUTPUT_CHARS = 45_000;
 

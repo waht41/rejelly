@@ -1,6 +1,6 @@
 import { Lang, parse, type SgNode } from "@ast-grep/napi";
-import { MAX_NAMED_DECL_MATCHES } from "../../shared/lib/heuristicAstLimits";
-import { escapeRegexLiteral } from "../../shared/lib/string";
+import { MAX_NAMED_DECL_MATCHES } from "../../../shared/lib/heuristicAstLimits";
+import { escapeRegexLiteral } from "../../../shared/lib/string";
 
 /**
  * Node kinds that exist only in the TypeScript / TSX tree-sitter grammars. ast-grep

@@ -3,17 +3,17 @@ import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createTestHostBindings } from "../__tests__/testHostBindings";
-import type { FsOutsideAccessPayload, FsWritePayload } from "../shared/AgentShared";
-import { setWorkspaceRoot } from "../shared/fs-policy/workspace-fs-policy";
-import type { EvilJellyHostBindings } from "../shared/types";
+import { createTestHostBindings } from "../../../__tests__/testHostBindings";
+import type { FsOutsideAccessPayload, FsWritePayload } from "../../../shared/AgentShared";
+import { setWorkspaceRoot } from "../../../shared/fs-policy/workspace-fs-policy";
+import type { EvilJellyHostBindings } from "../../../shared/types";
 import { createCreateFileTool, createDeleteFileTool, createEditFileTool } from "./WriteTools";
 
 const hostBindingMock = vi.hoisted(() => ({
   current: null as EvilJellyHostBindings | null,
 }));
 
-vi.mock("../shared/host/hostBindings", () => ({
+vi.mock("../../../shared/host/hostBindings", () => ({
   getBinding: () => {
     if (!hostBindingMock.current) {
       throw new Error("No test host binding registered.");

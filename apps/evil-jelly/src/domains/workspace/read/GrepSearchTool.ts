@@ -13,7 +13,7 @@ import {
   TOOL_ALWAYS_IGNORED_DIR_NAMES,
   type WorkspaceDirEntry,
   type WorkspaceFsPolicy,
-} from "../shared/fs-policy/workspace-fs-policy";
+} from "../../../shared/fs-policy/workspace-fs-policy";
 
 const MAX_FALLBACK_FILE_BYTES = 200 * 1024;
 const MAX_FALLBACK_FILES = 8000;

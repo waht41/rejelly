@@ -4,9 +4,9 @@
  */
 
 import { type Lang, parse, type SgNode } from "@ast-grep/napi";
-import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
-import { MAX_HEURISTIC_AST_BYTES } from "../../shared/lib/heuristicAstLimits";
-import { AST_SCRIPT_EXTENSIONS, tryLangFromRelPath } from "../../shared/lib/path";
+import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
+import { MAX_HEURISTIC_AST_BYTES } from "../../../shared/lib/heuristicAstLimits";
+import { AST_SCRIPT_EXTENSIONS, tryLangFromRelPath } from "../../../shared/lib/path";
 
 /** Bounded read + ast-grep parse for one workspace-relative script path. */
 export type ParsedWorkspaceAst = {

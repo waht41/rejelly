@@ -7,7 +7,7 @@
 
 import type { MarkdownSection } from "./sections";
 
-/** Structurally mirrors services/ast SurfaceSymbol (services stay siblings; the feature composes). */
+/** Structurally mirrors the audit feature's SurfaceSymbol; the feature composes both shapes. */
 export interface MatchableSymbol {
   name: string;
   kind: string;

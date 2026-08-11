@@ -290,7 +290,7 @@ describe("createInkConfirmWrite", () => {
 
     const first = confirmTool({
       type: "shell_command",
-      command: "pnpm test src/tools/WriteTools.test.ts",
+      command: "pnpm test src/domains/workspace/write/WriteTools.test.ts",
       cwd: "apps/evil-jelly",
       supportedActions: ["accept", "reject"],
     });

@@ -6,13 +6,13 @@ import type { ToolDefinition } from "@rejelly/core";
 import { getContextSignal } from "@rejelly/core";
 import { z } from "zod";
 import {
-  executeShellCommand,
-  getShellEnvironmentSummary,
-} from "../services/cmd/executeShellCommand";
-import { getWorkspaceFsPolicy, resolveWorkspaceCwd } from "../shared/fs-policy/workspace-fs-policy";
-import { getBinding } from "../shared/host/hostBindings";
-import { getActiveToolCall } from "../shared/host/toolTranscriptDetail";
-import { pushRuntimeTask } from "../shared/runtime/runtimeControl";
+  getWorkspaceFsPolicy,
+  resolveWorkspaceCwd,
+} from "../../../shared/fs-policy/workspace-fs-policy";
+import { getBinding } from "../../../shared/host/hostBindings";
+import { getActiveToolCall } from "../../../shared/host/toolTranscriptDetail";
+import { pushRuntimeTask } from "../../../shared/runtime/runtimeControl";
+import { executeShellCommand, getShellEnvironmentSummary } from "./executeShellCommand";
 
 const runCommandParameters = z.object({
   command: z

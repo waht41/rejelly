@@ -4,21 +4,21 @@
  */
 
 import { augmentTool, equipTool, type ToolDefinition } from "@rejelly/core";
-import { ViewImageTool } from "../domains/workspace/ViewImageTool";
-import { evilJellyToolLoggerMiddleware } from "../shared/host/withToolLogger";
-import { ListDirTool, ReadFileTool } from "./FileSystemTools";
-import { FuzzySearchTool } from "./FuzzySearchTool";
-import { GrepSearchTool } from "./GrepSearchTool";
+import { evilJellyToolLoggerMiddleware } from "../../shared/host/withToolLogger";
 import {
   AstDocumentSymbolsTool,
   AstModuleExportsTool,
   AstReadSymbolCodeTool,
   AstReadSymbolTool,
   AstWorkspaceSymbolsTool,
-} from "./heuristicAstTools/document-symbol";
-import { AstGetFunctionDependenciesTool } from "./heuristicAstTools/function-dependencies";
-import { equipReadFileDedupMiddleware } from "./hooks/readFileDedup";
-import { RunCommandTool } from "./runCommandTool";
+} from "./ast/document-symbol";
+import { AstGetFunctionDependenciesTool } from "./ast/function-dependencies";
+import { RunCommandTool } from "./execute/runCommandTool";
+import { ListDirTool, ReadFileTool } from "./read/FileSystemTools";
+import { FuzzySearchTool } from "./read/FuzzySearchTool";
+import { GrepSearchTool } from "./read/GrepSearchTool";
+import { equipReadFileDedupMiddleware } from "./read/readFileDedup";
+import { ViewImageTool } from "./read/ViewImageTool";
 
 function withHostPrint(tool: ToolDefinition<any>): ToolDefinition<any> {
   return augmentTool(tool, [evilJellyToolLoggerMiddleware]);

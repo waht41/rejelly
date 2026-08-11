@@ -4,7 +4,10 @@ import {
   type ToolCallLoopMiddleware,
   type ToolOutput,
 } from "@rejelly/core";
-import { type PseudoXmlAttributes, renderPseudoXmlEmptyElement } from "../../shared/lib/pseudoXml";
+import {
+  type PseudoXmlAttributes,
+  renderPseudoXmlEmptyElement,
+} from "../../../shared/lib/pseudoXml";
 
 const READ_FILE_TOOL_NAME = "read_file";
 const FILE_OPENING = /(?:^|\n)<(file(?:-[a-f0-9]{8}(?:-\d+)?)?)((?: [^>\n]*)?)>\n/g;
