@@ -3,9 +3,9 @@
  */
 
 import { type AgentStreamEvent, onStream } from "@rejelly/core";
-import { COMPACTION_STREAM_CHANNEL } from "../contracts/streamChannels";
-import type { RuntimePhase } from "../types";
-import { getBinding } from "./hostBindings";
+import { COMPACTION_STREAM_CHANNEL } from "../../shared/contracts/streamChannels";
+import { getBinding } from "../../shared/host/hostBindings";
+import type { RuntimePhase } from "../../shared/types";
 
 type StandardStreamingTextMode = "none" | "tool-preamble" | "plain";
 

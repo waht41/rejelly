@@ -9,9 +9,9 @@ import {
 } from "@rejelly/core";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { COMPACTION_STREAM_CHANNEL } from "../contracts/streamChannels";
-import type { EvilJellyHostBindings, RuntimePhase } from "../types";
-import { setBinding } from "./hostBindings";
+import { COMPACTION_STREAM_CHANNEL } from "../../shared/contracts/streamChannels";
+import { setBinding } from "../../shared/host/hostBindings";
+import type { EvilJellyHostBindings, RuntimePhase } from "../../shared/types";
 import {
   phaseForStreamEvent,
   type StreamTurnProgress,

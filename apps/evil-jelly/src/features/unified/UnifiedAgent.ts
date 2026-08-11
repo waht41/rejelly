@@ -27,10 +27,10 @@ import {
 } from "../../domains/workspace/write/WriteTools";
 import type { ConversationAgentProps, ConversationAgentResult } from "../../shared/AgentShared";
 import { getBinding } from "../../shared/host/hostBindings";
-import { useStandardStreaming } from "../../shared/host/standardStreaming";
 import { evilJellyToolLoggerMiddleware } from "../../shared/host/withToolLogger";
 import { buildAutoCompactionConfig } from "./contextControl";
 import { shouldUseTerminalUserReplyRule } from "./outputSurface";
+import { useStandardStreaming } from "./standardStreaming";
 import { UNIFIED_TOOL_ARTIFACTS_KEY } from "./unifiedMemoryKeys";
 import {
   buildUnifiedInstruction,
