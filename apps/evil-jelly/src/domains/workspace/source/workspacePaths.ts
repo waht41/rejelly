@@ -1,25 +1,19 @@
 import path from "node:path";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
-import { globWorkspaceFiles } from "../../../shared/fs-policy/workspace-glob";
 import { MAX_HEURISTIC_AST_FILES } from "./heuristicAstLimits";
+
+const SCRIPT_PATH_PATTERN = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
+
+function isScriptPath(relPosix: string): boolean {
+  return SCRIPT_PATH_PATTERN.test(relPosix);
+}
 
 export async function listWorkspaceScriptRelPaths(): Promise<string[]> {
   const policy = getWorkspaceFsPolicy();
-  const norm = await globWorkspaceFiles(
-    ["**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"],
-    ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/build/**", "**/.next/**"],
-  );
-  const filtered: string[] = [];
-  for (const rel of norm) {
-    if (filtered.length >= MAX_HEURISTIC_AST_FILES) {
-      break;
-    }
-    if (policy.isIgnoredByGitignore(rel, false)) {
-      continue;
-    }
-    filtered.push(rel);
-  }
-  return filtered;
+  return policy.walkFiles({
+    maxFiles: MAX_HEURISTIC_AST_FILES,
+    includeFile: isScriptPath,
+  });
 }
 
 /**
@@ -28,21 +22,18 @@ export async function listWorkspaceScriptRelPaths(): Promise<string[]> {
  */
 export async function listWorkspaceDocRelPaths(maxFiles = 400): Promise<string[]> {
   const policy = getWorkspaceFsPolicy();
-  const entries = await globWorkspaceFiles(
-    ["**/README*.md", "docs/**/*.md"],
-    ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/build/**", "**/.next/**", "**/draft/**"],
-  );
-  const filtered: string[] = [];
-  for (const rel of [...new Set(entries.map((p) => p.split(path.sep).join("/")))].sort()) {
-    if (filtered.length >= maxFiles) {
-      break;
-    }
-    if (policy.isIgnoredByGitignore(rel, false)) {
-      continue;
-    }
-    filtered.push(rel);
-  }
-  return filtered;
+  const entries = await policy.walkFiles({
+    maxFiles,
+    includeFile: (rel) => {
+      const segments = rel.split("/");
+      if (segments.includes("draft")) {
+        return false;
+      }
+      const fileName = segments.at(-1) ?? "";
+      return /^README.*\.md$/.test(fileName) || (rel.startsWith("docs/") && rel.endsWith(".md"));
+    },
+  });
+  return entries.sort();
 }
 
 /**
@@ -55,34 +46,10 @@ export async function listScriptRelPathsUnder(
   maxFiles = MAX_HEURISTIC_AST_FILES,
 ): Promise<string[]> {
   const policy = getWorkspaceFsPolicy();
-  const seen = new Set<string>();
-  for (const prefix of prefixes) {
-    const clean = prefix.replace(/\\/g, "/").replace(/\/+$/, "");
-    if (!clean || clean.startsWith("..")) {
-      continue;
-    }
-    const entries = await globWorkspaceFiles(
-      [clean, `${clean}/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}`],
-      ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/build/**", "**/.next/**"],
-    );
-    for (const entry of entries) {
-      seen.add(entry.split(path.sep).join("/"));
-    }
-  }
-  const filtered: string[] = [];
-  for (const rel of [...seen].sort()) {
-    if (filtered.length >= maxFiles) {
-      break;
-    }
-    if (!/\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/.test(rel)) {
-      continue;
-    }
-    if (policy.isIgnoredByGitignore(rel, false)) {
-      continue;
-    }
-    filtered.push(rel);
-  }
-  return filtered;
+  const roots = prefixes
+    .map((prefix) => prefix.replace(/\\/g, "/").replace(/\/+$/, ""))
+    .filter((prefix) => prefix.length > 0 && !prefix.startsWith(".."));
+  return policy.walkFiles({ roots, maxFiles, includeFile: isScriptPath });
 }
 
 export async function tryResolveRelativeImport(
