@@ -6,7 +6,7 @@
 
 import type { ToolDefinition } from "@rejelly/core";
 import { z } from "zod";
-import { HttpError, readWebpage } from "../services/web";
+import { HttpError, readWebpage } from "./index";
 
 const readWebpageParameters = z.object({
   url: z.string().min(1).max(2000).describe("Absolute http(s) URL to fetch and read."),

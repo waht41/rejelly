@@ -96,7 +96,7 @@
         "apps/evil-jelly/src/**",
         "!apps/evil-jelly/src/**/*.test.*",
         "!apps/evil-jelly/src/shared/config.ts",
-        "!apps/evil-jelly/src/services/web/webConfig.ts",
+        "!apps/evil-jelly/src/domains/web/webConfig.ts",
         "!apps/evil-jelly/src/services/cmd/executeShellCommand.ts",
         "!apps/evil-jelly/src/cli/bindings/externalEditor.ts",
         "!apps/evil-jelly/src/cli/prompt-editor/clipboardImage.ts"

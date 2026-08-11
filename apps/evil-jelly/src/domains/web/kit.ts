@@ -1,9 +1,9 @@
 /** Web research tool assembly, kept separate from workspace tools. */
 
 import { augmentTool, equipTool, type ToolDefinition } from "@rejelly/core";
-import { isWebSearchConfigured } from "../services/web/webConfig";
-import { evilJellyToolLoggerMiddleware } from "../shared/host/withToolLogger";
+import { evilJellyToolLoggerMiddleware } from "../../shared/host/withToolLogger";
 import { ReadWebpageTool } from "./readWebpageTool";
+import { isWebSearchConfigured } from "./webConfig";
 import { WebSearchTool } from "./webSearchTool";
 
 function withHostPrint(tool: ToolDefinition<any>): ToolDefinition<any> {

@@ -132,7 +132,7 @@ function contextWindow(): EnvParser<number | undefined> {
  * is categorical, not per-var).
  *
  * Not listed here: vars with consumer-specific resolution chains (web substrate →
- * services/web/webConfig.ts) and OS conventions read at spawn time (SHELL/ComSpec,
+ * domains/web/webConfig.ts) and OS conventions read at spawn time (SHELL/ComSpec,
  * EDITOR/VISUAL) — those files are the fixed biome exemptions.
  */
 const ENV_VARS = {

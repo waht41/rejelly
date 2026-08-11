@@ -13,6 +13,7 @@ import {
   isAbortError,
   isToolLoopExceededError,
 } from "@rejelly/core";
+import { equipWebResearchKit } from "../../domains/web/kit";
 import { promptChatResilient } from "../../services/policy/promptChatResilient";
 import { promptCompactHistory } from "../../services/policy/promptCompactHistory";
 import { buildWorkspaceRuleInstructionBlock } from "../../services/prompt/workspace-rule";
@@ -28,7 +29,6 @@ import {
   createDeleteFileTool,
   createEditFileTool,
 } from "../../tools/WriteTools";
-import { equipWebResearchKit } from "../../tools/webKit";
 import { equipReadOnlyWorkspaceKit, equipRunCommandKit } from "../../tools/workspaceKit";
 import { equipSkillKit } from "../skills/equipSkillKit";
 import { buildAutoCompactionConfig } from "./contextControl";

@@ -33,7 +33,7 @@
         ["@ext:fs"]
       ],
       "connect": {
-        "@spec:tests": ["@ext:ui"],
+        "@spec:tests": ["@domain:[dom]", "@ext:ui"],
         "@cli:**": ["@domain:[dom]"],
         "@feature:unified": [
           "@domain:workspace",

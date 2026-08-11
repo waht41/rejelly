@@ -6,7 +6,7 @@
 
 import { equipTraceAttr, type ToolDefinition } from "@rejelly/core";
 import { z } from "zod";
-import { HttpError, type WebSearchDiagnostics, webSearch } from "../services/web";
+import { HttpError, type WebSearchDiagnostics, webSearch } from "./index";
 
 const webSearchParameters = z.object({
   query: z.string().min(1).max(400).describe("Search query (natural language or keywords)."),
