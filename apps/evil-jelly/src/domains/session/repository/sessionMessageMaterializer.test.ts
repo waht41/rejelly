@@ -3,13 +3,13 @@ import os from "node:os";
 import path from "node:path";
 import type { Message } from "@rejelly/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { SESSION_BLOB_SCHEME } from "../../../shared/session/blobContract";
 import {
-  materializeMessageImageBlobs,
   persistMessageImageBlobs,
   persistSessionBlob,
   readSessionBlob,
-  SESSION_BLOB_SCHEME,
-} from "./sessionBlobStore";
+} from "../journal/sessionBlobStore";
+import { materializeMessageImageBlobs } from "./sessionMessageMaterializer";
 
 function pngHeader(width: number, height: number): Buffer {
   const bytes = Buffer.alloc(24);

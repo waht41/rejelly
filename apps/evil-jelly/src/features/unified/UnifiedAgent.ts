@@ -16,6 +16,7 @@ import {
 import { equipMcpServerKit } from "../../domains/mcp/mcpServerKit";
 import { promptChatResilient } from "../../domains/policy/promptChatResilient";
 import { promptCompactHistory } from "../../domains/policy/promptCompactHistory";
+import { materializeMessageHistory } from "../../domains/session/repository/sessionMessageMaterializer";
 import { equipSkillKit } from "../../domains/skills/agent/equipSkillKit";
 import { equipWebResearchKit } from "../../domains/web/kit";
 import { equipReadOnlyWorkspaceKit, equipRunCommandKit } from "../../domains/workspace/kit";
@@ -100,10 +101,13 @@ async function runManualCompression(
   try {
     // Summarize the persisted history only: the synthetic "/compress" user turn must not be
     // picked up as a kept-verbatim recent user message.
+    const history = await materializeMessageHistory(
+      props.history ?? [],
+      props.sessionBlobRoot ? { blobRoot: props.sessionBlobRoot } : {},
+    );
     const compactHistory = await promptCompactHistory({
-      message: props.history ?? [],
+      message: history,
       compaction: buildAutoCompactionConfig(),
-      sessionBlobRoot: props.sessionBlobRoot,
     });
     return compactHistory
       ? { reply: "", compactHistory }
@@ -130,13 +134,16 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
     }
 
     try {
+      const messages = await materializeMessageHistory(
+        [...(props.history ?? []), props.message],
+        props.sessionBlobRoot ? { blobRoot: props.sessionBlobRoot } : {},
+      );
       const result = await promptChatResilient({
-        message: [...(props.history ?? []), props.message],
+        message: messages,
         pendingUserMessages: props.pendingUserMessages,
         compaction: buildAutoCompactionConfig(),
         sessionRecorder: props.sessionRecorder,
         turnId: props.turnId,
-        sessionBlobRoot: props.sessionBlobRoot,
       });
 
       if (result.aborted) {

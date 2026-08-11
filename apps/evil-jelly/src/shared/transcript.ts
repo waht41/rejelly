@@ -7,7 +7,7 @@
  */
 
 import type { UserInputAttachmentDisplay } from "./attachments/messageContent";
-import type { SessionBlobMetadata, SessionBlobRef } from "./blobs/sessionBlobStore";
+import type { SessionBlobMetadata, SessionBlobRef } from "./session/blobContract";
 
 export interface TranscriptImage {
   blobRef: SessionBlobRef;

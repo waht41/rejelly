@@ -1,12 +1,10 @@
 import type { Message } from "@rejelly/core";
 import {
-  materializeMessageHistory,
   SESSION_BLOB_SCHEME,
   type SessionBlobMetadata,
-  type SessionBlobStoreOptions,
   sessionBlobRefSchema,
   sessionImageBlobMetadataMapSchema,
-} from "../../../shared/blobs/sessionBlobStore";
+} from "../../../shared/session/blobContract";
 import { sessionMessageSchema } from "./sessionEvents";
 
 export type SessionImageBlobMap = Record<string, SessionBlobMetadata>;
@@ -34,6 +32,26 @@ export function getStoredSessionRejellyMetadata(
   return value as SessionRejellyMetadata;
 }
 
+export function getSessionImageBlobMetadata(message: Message): Record<string, SessionBlobMetadata> {
+  const value = getStoredSessionRejellyMetadata(message)?.imageBlobs;
+  if (value === undefined) {
+    return {};
+  }
+  const parsed = sessionImageBlobMetadataMapSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new Error("Invalid session image blob metadata");
+  }
+  for (const [blobRef, metadata] of Object.entries(parsed.data)) {
+    if (!metadata) {
+      throw new Error(`Missing session image blob metadata for ${blobRef}`);
+    }
+    if (blobRef !== metadata.blobRef) {
+      throw new Error(`Session image blob metadata key does not match ${metadata.blobRef}`);
+    }
+  }
+  return parsed.data;
+}
+
 /**
  * The sole narrowing boundary between a Core Message and its durable Session V2 form.
  * Provider-facing code must materialize the returned message before use.
@@ -44,19 +62,7 @@ export function parseStoredSessionMessage(message: Message): StoredSessionMessag
     throw new Error("Invalid stored session message", { cause: parsedMessage.error });
   }
 
-  const metadata = getStoredSessionRejellyMetadata(parsedMessage.data);
-  const parsedBlobs = sessionImageBlobMetadataMapSchema.safeParse(metadata?.imageBlobs ?? {});
-  if (!parsedBlobs.success) {
-    throw new Error("Invalid stored session image blob metadata", { cause: parsedBlobs.error });
-  }
-  for (const [key, blob] of Object.entries(parsedBlobs.data)) {
-    if (!blob) {
-      throw new Error(`Missing stored session image blob metadata for ${key}`);
-    }
-    if (key !== blob.blobRef) {
-      throw new Error(`Session image blob metadata key does not match ${blob.blobRef}`);
-    }
-  }
+  const imageBlobs = getSessionImageBlobMetadata(parsedMessage.data);
 
   if (Array.isArray(parsedMessage.data.content)) {
     for (const part of parsedMessage.data.content) {
@@ -70,18 +76,11 @@ export function parseStoredSessionMessage(message: Message): StoredSessionMessag
         continue;
       }
       const blobRef = sessionBlobRefSchema.safeParse(part.image.url);
-      if (!blobRef.success || !parsedBlobs.data[blobRef.data]) {
+      if (!blobRef.success || !imageBlobs[blobRef.data]) {
         throw new Error(`Missing metadata for stored session image ${part.image.url}`);
       }
     }
   }
 
   return parsedMessage.data as StoredSessionMessage;
-}
-
-export async function materializeActiveContext(
-  messages: StoredSessionMessage[],
-  options: SessionBlobStoreOptions = {},
-): Promise<Message[]> {
-  return materializeMessageHistory(messages, options);
 }

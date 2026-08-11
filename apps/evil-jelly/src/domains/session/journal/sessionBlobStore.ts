@@ -2,57 +2,18 @@ import crypto from "node:crypto";
 import { link, mkdir, open, readFile, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { ContentPart, Message } from "@rejelly/core";
-import { z } from "zod";
-import { resolveGlobalJellyDir } from "../globalPath";
-import { readImageDimensions } from "../lib/imageDimensions";
+import { resolveGlobalJellyDir } from "../../../shared/globalPath";
+import { readImageDimensions } from "../../../shared/lib/imageDimensions";
+import {
+  SESSION_BLOB_SCHEME,
+  type SessionBlobMetadata,
+  type SessionBlobRef,
+  sessionBlobDigest,
+} from "../../../shared/session/blobContract";
+import { getSessionImageBlobMetadata } from "../model/storedSessionMessage";
 
-export const SESSION_BLOB_SCHEME = "rejelly-blob://";
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const DATA_IMAGE_PATTERN = /^data:([^;,]+);base64,([A-Za-z0-9+/]*={0,2})$/;
-
-declare const sessionBlobRefBrand: unique symbol;
-export type SessionBlobRef = string & { readonly [sessionBlobRefBrand]: true };
-
-export const sessionBlobRefSchema = z
-  .string()
-  .refine(
-    (value) => {
-      if (!value.startsWith(SESSION_BLOB_SCHEME)) {
-        return false;
-      }
-      return SHA256_PATTERN.test(value.slice(SESSION_BLOB_SCHEME.length));
-    },
-    { message: "Invalid session blob reference" },
-  )
-  .transform((value) => value as SessionBlobRef);
-
-export const sessionBlobMetadataSchema = z
-  .object({
-    blobRef: sessionBlobRefSchema,
-    sha256: z.string().regex(SHA256_PATTERN),
-    mediaType: z
-      .string()
-      .min(1)
-      .refine((value) => !/[\r\n]/.test(value), "mediaType must not contain newlines"),
-    byteLength: z.number().int().nonnegative(),
-    width: z.number().int().positive().optional(),
-    height: z.number().int().positive().optional(),
-    sourcePath: z.string().optional(),
-  })
-  .passthrough()
-  .superRefine((metadata, context) => {
-    if (metadata.blobRef !== `${SESSION_BLOB_SCHEME}${metadata.sha256}`) {
-      context.addIssue({
-        code: "custom",
-        path: ["blobRef"],
-        message: "blobRef must contain the declared sha256",
-      });
-    }
-  });
-
-export type SessionBlobMetadata = z.infer<typeof sessionBlobMetadataSchema>;
-
-export const sessionImageBlobMetadataMapSchema = z.record(z.string(), sessionBlobMetadataSchema);
 
 export interface SessionBlobStoreOptions {
   blobRoot?: string;
@@ -84,14 +45,6 @@ async function syncBlobDirectory(directory: string): Promise<void> {
   } finally {
     await handle.close();
   }
-}
-
-function parseBlobRef(blobRef: string): string {
-  const parsed = sessionBlobRefSchema.safeParse(blobRef);
-  if (!parsed.success) {
-    throw new Error(`Invalid session blob reference: ${blobRef}`);
-  }
-  return parsed.data.slice(SESSION_BLOB_SCHEME.length);
 }
 
 async function verifyExistingBlob(
@@ -168,7 +121,7 @@ export async function readSessionBlob(
   blobRef: string,
   options: SessionBlobStoreOptions = {},
 ): Promise<Buffer> {
-  const sha256 = parseBlobRef(blobRef);
+  const sha256 = sessionBlobDigest(blobRef);
   const bytes = await readFile(blobPath(sha256, options));
   if (digestBytes(bytes) !== sha256) {
     throw new Error(`Session blob failed digest verification: ${sha256}`);
@@ -210,7 +163,7 @@ export async function persistMessageImageBlobs(
   if (!Array.isArray(message.content)) {
     return message;
   }
-  const existingImageBlobs = imageBlobMetadata(message);
+  const existingImageBlobs = getSessionImageBlobMetadata(message);
   const imageBlobs: Record<string, SessionBlobMetadata> = {};
   let changed = false;
   const content: ContentPart[] = [];
@@ -221,7 +174,7 @@ export async function persistMessageImageBlobs(
     }
     if (part.image.url.startsWith(SESSION_BLOB_SCHEME)) {
       const existing = existingImageBlobs[part.image.url];
-      parseBlobRef(part.image.url);
+      sessionBlobDigest(part.image.url);
       if (!existing) {
         throw new Error(`Missing metadata for session image blob ${part.image.url}`);
       }
@@ -260,68 +213,4 @@ export async function persistMessageImageBlobs(
       },
     },
   };
-}
-
-function imageBlobMetadata(message: Message): Record<string, SessionBlobMetadata> {
-  const value = rejellyMetadata(message.extra).imageBlobs;
-  if (value === undefined) {
-    return {};
-  }
-  const parsed = sessionImageBlobMetadataMapSchema.safeParse(value);
-  if (!parsed.success) {
-    throw new Error("Invalid session image blob metadata");
-  }
-  for (const [blobRef, metadata] of Object.entries(parsed.data)) {
-    if (!metadata) {
-      throw new Error(`Missing session image blob metadata for ${blobRef}`);
-    }
-    if (blobRef !== metadata.blobRef) {
-      throw new Error(`Session image blob metadata key does not match ${metadata.blobRef}`);
-    }
-  }
-  return parsed.data;
-}
-
-/** Resolve internal image locators immediately before building a provider request. */
-export async function materializeMessageImageBlobs(
-  message: Message,
-  options: SessionBlobStoreOptions = {},
-): Promise<Message> {
-  if (!Array.isArray(message.content)) {
-    return message;
-  }
-  const metadata = imageBlobMetadata(message);
-  let changed = false;
-  const content: ContentPart[] = [];
-  for (const part of message.content) {
-    if (part.type !== "image") {
-      content.push(part);
-      continue;
-    }
-    if (!part.image.url.startsWith(SESSION_BLOB_SCHEME)) {
-      content.push(part);
-      continue;
-    }
-    const entry = metadata[part.image.url];
-    if (!entry || !entry.mediaType.startsWith("image/")) {
-      throw new Error(`Missing image media type for session blob ${part.image.url}`);
-    }
-    const bytes = await readSessionBlob(part.image.url, options);
-    content.push({
-      ...part,
-      image: {
-        ...part.image,
-        url: `data:${entry.mediaType};base64,${bytes.toString("base64")}`,
-      },
-    });
-    changed = true;
-  }
-  return changed ? { ...message, content } : message;
-}
-
-export async function materializeMessageHistory(
-  messages: Message[],
-  options: SessionBlobStoreOptions = {},
-): Promise<Message[]> {
-  return Promise.all(messages.map((message) => materializeMessageImageBlobs(message, options)));
 }

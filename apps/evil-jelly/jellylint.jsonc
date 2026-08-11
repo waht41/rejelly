@@ -85,6 +85,7 @@
           "@domain:workspace",
           "@domain:web",
           "@domain:skills:agent",
+          "@domain:session:repository",
           "@domain:policy",
           "@domain:mcp"
         ],

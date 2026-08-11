@@ -3,9 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import type { Message } from "@rejelly/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { persistMessageImageBlobs } from "../../../shared/blobs/sessionBlobStore";
+import { persistMessageImageBlobs } from "../journal/sessionBlobStore";
 import type { MessageRecordedEvent, SessionEvent } from "../model/sessionEvents";
-import { materializeActiveContext, parseStoredSessionMessage } from "../model/storedSessionMessage";
+import { parseStoredSessionMessage } from "../model/storedSessionMessage";
+import { materializeActiveContext } from "../repository/sessionMessageMaterializer";
 import {
   buildLatestBudget,
   buildStoredActiveContext,

@@ -2,8 +2,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { persistMessageImageBlobs } from "../../../shared/blobs/sessionBlobStore";
-import { materializeActiveContext, parseStoredSessionMessage } from "./storedSessionMessage";
+import { persistMessageImageBlobs } from "../journal/sessionBlobStore";
+import { materializeActiveContext } from "../repository/sessionMessageMaterializer";
+import { parseStoredSessionMessage } from "./storedSessionMessage";
 
 describe("storedSessionMessage", () => {
   let tmpDir: string;

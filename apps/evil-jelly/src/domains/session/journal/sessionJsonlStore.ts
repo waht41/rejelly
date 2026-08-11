@@ -3,16 +3,13 @@ import type { FileHandle } from "node:fs/promises";
 import { open } from "node:fs/promises";
 import path from "node:path";
 import {
-  persistMessageImageBlobs,
-  type SessionBlobStoreOptions,
-} from "../../../shared/blobs/sessionBlobStore";
-import {
   type NewSessionEvent,
   parseNewSessionEvent,
   parseSessionEvent,
   parseSessionMetaLine,
   type SessionMetaLine,
 } from "../model/sessionEvents";
+import { persistMessageImageBlobs, type SessionBlobStoreOptions } from "./sessionBlobStore";
 import {
   inspectSessionForAppend,
   type LocatedSessionEvent,
