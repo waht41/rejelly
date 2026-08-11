@@ -2,7 +2,7 @@
  * CLI entry: parse args, dispatch headless commands, and start the interactive run loop.
  */
 
-import { loadMockReplayFromTraceId } from "../features/testing/mockFromTrace";
+import { loadMockReplayFromTraceId } from "../features/replay/mock/mockFromTrace";
 import {
   createOpenAIModelFromEnv,
   env,

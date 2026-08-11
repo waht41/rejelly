@@ -9,7 +9,7 @@ import {
   type TurnEndEvent,
 } from "@rejelly/core";
 import { restoreSnapshot } from "@rejelly/core/debugger";
-import { fetchTraceEvents } from "./traceClient";
+import { fetchTraceEvents } from "../traceClient";
 
 type TraceReplayStep =
   | {
