@@ -6,7 +6,6 @@
 export {
   detectCloneCandidates,
   detectCloneCandidatesFromSources,
-  isTestOrGeneratedPath,
 } from "./cloneCandidates";
 export { fingerprintTokens, hashToken, kgramHashes, winnow } from "./fingerprint";
 export { tokenizeNormalized } from "./tokenize";

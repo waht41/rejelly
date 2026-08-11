@@ -5,7 +5,7 @@
 import type { SgNode } from "@ast-grep/napi";
 import type { ToolDefinition } from "@rejelly/core";
 import { z } from "zod";
-import { MAX_HEURISTIC_RESULTS } from "../../../shared/lib/heuristicAstLimits";
+import { MAX_HEURISTIC_RESULTS } from "../source/heuristicAstLimits";
 import { extractJsDocAbove, extractLeadingFileJsDoc } from "./jsdoc";
 import {
   collectDocumentSymbols,

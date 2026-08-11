@@ -1,7 +1,7 @@
 import path from "node:path";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
 import { globWorkspaceFiles } from "../../../shared/fs-policy/workspace-glob";
-import { MAX_HEURISTIC_AST_FILES } from "../../../shared/lib/heuristicAstLimits";
+import { MAX_HEURISTIC_AST_FILES } from "./heuristicAstLimits";
 
 export async function listWorkspaceScriptRelPaths(): Promise<string[]> {
   const policy = getWorkspaceFsPolicy();

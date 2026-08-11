@@ -4,7 +4,7 @@
 
 import type { ToolDefinition } from "@rejelly/core";
 import { z } from "zod";
-import { MAX_FUNCTION_DEPENDENCY_DEPTH } from "../../../shared/lib/heuristicAstLimits";
+import { MAX_FUNCTION_DEPENDENCY_DEPTH } from "../source/heuristicAstLimits";
 import { findCallableDeclarationForSymbol, getCallableEnvelope } from "./queries";
 import {
   type DependencyJsonRow,

@@ -5,8 +5,8 @@
  */
 
 import { parse, type SgNode } from "@ast-grep/napi";
+import { langFromRelPath } from "../../domains/workspace/source/sourceLanguage";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
-import { langFromRelPath } from "../../shared/lib/path";
 import type { NormalizedToken } from "./detectors/clone";
 import { tokenizeNormalized } from "./detectors/clone/tokenize";
 

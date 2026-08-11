@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectCloneCandidatesFromSources, isTestOrGeneratedPath } from "./cloneCandidates";
+import { detectCloneCandidatesFromSources } from "./cloneCandidates";
 
 /** Same logic, renamed identifiers/literals — a textbook Type-2 clone. */
 const ORDERS = `
@@ -31,16 +31,6 @@ export function aggregateSales(records) {
   return { sum, num, mean };
 }
 `;
-
-describe("isTestOrGeneratedPath", () => {
-  it("flags test, fixture, declaration and generated paths", () => {
-    expect(isTestOrGeneratedPath("src/foo.test.ts")).toBe(true);
-    expect(isTestOrGeneratedPath("src/__fixtures__/bar.ts")).toBe(true);
-    expect(isTestOrGeneratedPath("src/types/api.d.ts")).toBe(true);
-    expect(isTestOrGeneratedPath("src/generated/client.ts")).toBe(true);
-    expect(isTestOrGeneratedPath("src/services/foo.ts")).toBe(false);
-  });
-});
 
 describe("detectCloneCandidatesFromSources", () => {
   it("clusters a renamed (Type-2) duplicate across two files", () => {

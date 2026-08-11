@@ -13,7 +13,7 @@
 
 import path from "node:path";
 import { parse } from "@ast-grep/napi";
-import { langFromRelPath } from "../../../../shared/lib/path";
+import { langFromRelPath } from "../../../../domains/workspace/source/sourceLanguage";
 
 export interface FragmentationSource {
   /** Workspace-relative posix path. */

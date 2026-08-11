@@ -11,11 +11,11 @@
  */
 
 import type { SgNode } from "@ast-grep/napi";
+import { MAX_HEURISTIC_AST_BYTES } from "../../../../domains/workspace/source/heuristicAstLimits";
 import { listWorkspaceScriptRelPaths } from "../../../../domains/workspace/source/workspacePaths";
 import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
 import { fnv1a32Hex } from "../../../../shared/lib/hash";
-import { MAX_HEURISTIC_AST_BYTES } from "../../../../shared/lib/heuristicAstLimits";
-import { isTestOrGeneratedPath } from "../../../../shared/lib/path";
+import { isTestOrGeneratedPath } from "../../sourcePath";
 import { tryParseRoot } from "../astParse";
 import { FUNCTION_KINDS, hasFunctionBody, lineSpanOf, metricsOf } from "./metrics";
 import {
