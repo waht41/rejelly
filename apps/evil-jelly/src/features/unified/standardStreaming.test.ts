@@ -9,7 +9,7 @@ import {
 } from "@rejelly/core";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { COMPACTION_STREAM_CHANNEL } from "../../shared/contracts/streamChannels";
+import { COMPACTION_STREAM_CHANNEL } from "../../domains/policy/compactionChannel";
 import { setBinding } from "../../shared/host/hostBindings";
 import type { EvilJellyHostBindings, RuntimePhase } from "../../shared/types";
 import {

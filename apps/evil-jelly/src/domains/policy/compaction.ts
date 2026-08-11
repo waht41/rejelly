@@ -5,7 +5,6 @@ import {
   getUserInputDisplay,
   type UserInputAttachmentDisplay,
 } from "../../shared/attachments/messageContent";
-import { COMPACTION_STREAM_CHANNEL } from "../../shared/contracts/streamChannels";
 import { fileLocatorAttributes } from "../../shared/fs-policy/file-locator";
 import {
   COMPACTION_BRIDGE_MESSAGE_KIND,
@@ -22,6 +21,7 @@ import {
   estimateTokens,
   messageContentToText,
 } from "../../shared/lib/tokens";
+import { COMPACTION_STREAM_CHANNEL } from "./compactionChannel";
 
 /**
  * Mid-loop context auto-compaction, adapted from openai/codex's mid-turn compaction

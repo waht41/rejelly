@@ -3,7 +3,7 @@
  */
 
 import { type AgentStreamEvent, onStream } from "@rejelly/core";
-import { COMPACTION_STREAM_CHANNEL } from "../../shared/contracts/streamChannels";
+import { COMPACTION_STREAM_CHANNEL } from "../../domains/policy/compactionChannel";
 import { getBinding } from "../../shared/host/hostBindings";
 import type { RuntimePhase } from "../../shared/types";
 
