@@ -10,7 +10,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { COMPACTION_STREAM_CHANNEL } from "../../domains/policy/compactionChannel";
-import type { RuntimePhase } from "../../shared/conversation/viewBindings";
+import type { RuntimePhase } from "../../shared/conversation/presentationBindings";
 import type { EvilJellyBindings } from "../../shared/host/bindings";
 import { setBinding } from "../../shared/host/context";
 import {

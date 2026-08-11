@@ -4,7 +4,7 @@
 
 import { type AgentStreamEvent, onStream } from "@rejelly/core";
 import { COMPACTION_STREAM_CHANNEL } from "../../domains/policy/compactionChannel";
-import type { RuntimePhase } from "../../shared/conversation/viewBindings";
+import type { RuntimePhase } from "../../shared/conversation/presentationBindings";
 import { getBinding } from "../../shared/host/context";
 
 type StandardStreamingTextMode = "none" | "tool-preamble" | "plain";

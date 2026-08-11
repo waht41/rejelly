@@ -3,13 +3,12 @@
  */
 
 import { env, getReviewEndpointFromEnv } from "../../shared/config";
-import type { ConversationViewBindings } from "../../shared/conversation/viewBindings";
+import type { ConversationPresentationBindings } from "../../shared/conversation/presentationBindings";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../shared/host/bindings";
 import type { PromptChoiceView, PromptInputBindings } from "../../shared/input/bindings";
 import { resetRuntimeTaskStack } from "../../shared/runtime/runtimeControl";
 import type { ToolConfirmationBindings } from "../../shared/tool-confirmation/bindings";
-import type { ToolObservationSink } from "../../shared/tool-observation/model";
 import { resetModeSession, useModeStore } from "../store/useModeStore";
 import { resetOutputSession, TOOL_FULL_CAP, useOutputStore } from "../store/useOutputStore";
 import type { ActionMenuOption, TransientView } from "../store/usePromptStore";
@@ -56,7 +55,7 @@ function createInkRequestChoice(): PromptInputBindings["requestChoice"] {
   };
 }
 
-function createOutputBindings(): ConversationViewBindings & ToolObservationSink {
+function createOutputBindings(): ConversationPresentationBindings {
   const out = () => useOutputStore.getState();
 
   return {
@@ -114,7 +113,7 @@ function showSessionBanner(version: string): void {
 }
 
 function logCliStartup(
-  logSystemEvent: ConversationViewBindings["logSystemEvent"],
+  logSystemEvent: ConversationPresentationBindings["logSystemEvent"],
   showBanner: () => void,
   reviewCliFlag: boolean | undefined,
 ): void {
