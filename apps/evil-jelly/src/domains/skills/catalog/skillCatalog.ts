@@ -1,5 +1,5 @@
-import { fnv1a32Hex } from "../../../shared/lib/hash";
-import { compareStringsByCodeUnit } from "../../../shared/lib/string";
+import { fnv1a32Hex } from "../../../shared/foundation/fnv1a";
+import { compareStringsByCodeUnit } from "../../../shared/foundation/string";
 import type { SkillOrigin, SkillRecord } from "../definition/skillDefinition";
 import { qualifiedSkillName } from "../definition/skillDefinition";
 import { truncateSkillDisplayText } from "./displayText";

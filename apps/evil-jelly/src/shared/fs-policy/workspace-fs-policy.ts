@@ -6,7 +6,7 @@ import fs from "node:fs";
 import fsPromises from "node:fs/promises";
 import path from "node:path";
 import ignore from "ignore";
-import { getErrnoCode } from "../lib/errors";
+import { getErrnoCode } from "../foundation/errno";
 import { isPathInside, OutsideAccessRegistry, suggestOutsideApproveDir } from "./outside-access";
 
 /**

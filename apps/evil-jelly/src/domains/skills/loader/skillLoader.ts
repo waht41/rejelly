@@ -1,8 +1,8 @@
 import type { Dirent, Stats } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { fromPosixPath } from "../../../shared/lib/path";
-import { compareStringsByCodeUnit } from "../../../shared/lib/string";
+import { fromPosixPath } from "../../../shared/foundation/path";
+import { compareStringsByCodeUnit } from "../../../shared/foundation/string";
 import type {
   SkillOrigin,
   SkillRecord,

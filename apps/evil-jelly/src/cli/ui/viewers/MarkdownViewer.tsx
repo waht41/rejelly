@@ -3,7 +3,7 @@ import { Box, Text } from "ink";
 import type { ReactNode } from "react";
 import stringWidth from "string-width";
 import wrapAnsi from "wrap-ansi";
-import { normalizeNewlines } from "../../../shared/lib/string";
+import { normalizeNewlines } from "../../../shared/foundation/string";
 import {
   type MarkdownBlock,
   type MarkdownListItem,

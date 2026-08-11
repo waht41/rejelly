@@ -1,5 +1,5 @@
 import path from "node:path";
-import { fromPosixPath } from "../../../shared/lib/path";
+import { fromPosixPath } from "../../../shared/foundation/path";
 import type {
   SkillRecord,
   SkillResourceReadResult,

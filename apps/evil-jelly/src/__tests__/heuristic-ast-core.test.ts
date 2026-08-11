@@ -10,7 +10,7 @@ import {
   getCallableEnvelope,
   sliceDeclarationSignature,
 } from "../domains/workspace/ast/queries";
-import { escapeRegexLiteral } from "../shared/lib/string";
+import { escapeRegexLiteral } from "../shared/foundation/string";
 
 describe("heuristicAstCore", () => {
   it("escapeRegexLiteral escapes metacharacters", () => {

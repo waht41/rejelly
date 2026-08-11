@@ -1,7 +1,7 @@
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
-import { normalizeNewlines } from "../../../shared/lib/string";
+import { normalizeNewlines } from "../../../shared/foundation/string";
 
 const markdownProcessor = unified().use(remarkParse).use(remarkGfm);
 

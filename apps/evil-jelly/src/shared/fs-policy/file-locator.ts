@@ -1,5 +1,5 @@
 import path from "node:path";
-import { toPosixPath } from "../lib/path";
+import { toPosixPath } from "../foundation/path";
 import { isPathInside } from "./outside-access";
 import type { ResolvedFsPath } from "./workspace-fs-policy";
 

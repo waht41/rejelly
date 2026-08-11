@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getErrnoCode } from "./errors";
+import { getErrnoCode } from "./errno";
 
 describe("getErrnoCode", () => {
   it("returns a Node errno code from object-shaped errors", () => {

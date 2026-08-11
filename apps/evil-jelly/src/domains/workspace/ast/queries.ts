@@ -1,5 +1,5 @@
 import { Lang, parse, type SgNode } from "@ast-grep/napi";
-import { escapeRegexLiteral } from "../../../shared/lib/string";
+import { escapeRegexLiteral } from "../../../shared/foundation/string";
 import { MAX_NAMED_DECL_MATCHES } from "../source/heuristicAstLimits";
 
 /**

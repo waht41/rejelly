@@ -1,5 +1,5 @@
 import wrapAnsi from "wrap-ansi";
-import { normalizeNewlines } from "../../shared/lib/string";
+import { normalizeNewlines } from "../../shared/foundation/string";
 import {
   markdownHeadingStyle,
   markdownListItemIndent,

@@ -1,7 +1,7 @@
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { compareStringsByCodeUnit } from "../../../shared/lib/string";
+import { compareStringsByCodeUnit } from "../../../shared/foundation/string";
 import type { SkillRecord, SkillResourceRepository } from "../definition/skillDefinition";
 import { qualifiedSkillName, skillOrigin } from "../definition/skillDefinition";
 import { type SkillLoadDiagnostic, skillDiagnostic } from "./diagnostics";

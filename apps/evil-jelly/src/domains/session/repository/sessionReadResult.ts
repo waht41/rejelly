@@ -1,4 +1,4 @@
-import { getErrnoCode } from "../../../shared/lib/errors";
+import { getErrnoCode } from "../../../shared/foundation/errno";
 
 export type SessionReadFailureKind = "missing" | "corrupt" | "unreadable";
 

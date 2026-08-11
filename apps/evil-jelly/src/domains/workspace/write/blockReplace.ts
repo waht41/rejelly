@@ -2,7 +2,7 @@
  * Workspace block edit locator: exact substring first, then line-trim equality (indent-tolerant).
  */
 
-import { normalizeNewlines } from "../../../shared/lib/string";
+import { normalizeNewlines } from "../../../shared/foundation/string";
 
 export type BlockMatch =
   | { ok: true; start: number; end: number; mode: "exact" | "line_trim"; normalizedContent: string }

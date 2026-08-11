@@ -12,11 +12,11 @@
 
 import { MAX_HEURISTIC_AST_BYTES } from "../../../../domains/workspace/source/heuristicAstLimits";
 import { listWorkspaceScriptRelPaths } from "../../../../domains/workspace/source/workspacePaths";
+import { fnv1a32Hex } from "../../../../shared/foundation/fnv1a";
 import {
   getWorkspaceFsPolicy,
   type WorkspaceFsPolicy,
 } from "../../../../shared/fs-policy/workspace-fs-policy";
-import { fnv1a32Hex } from "../../../../shared/lib/hash";
 import { isTestOrGeneratedPath } from "../../sourcePath";
 import { tryParseRoot } from "../astParse";
 import { fingerprintTokens } from "./fingerprint";

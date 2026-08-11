@@ -13,7 +13,7 @@
 
 import { type Key, useInput } from "ink";
 import { useRef } from "react";
-import { normalizeNewlines } from "../../shared/lib/string";
+import { normalizeNewlines } from "../../shared/foundation/string";
 import { hasRuntimeTask } from "../../shared/runtime/runtimeControl";
 import { useModeStore } from "../store/useModeStore";
 import { looksBinary, stripControlChars } from "./lineText";

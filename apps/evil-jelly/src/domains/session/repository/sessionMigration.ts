@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { getErrnoCode } from "../../../shared/lib/errors";
+import { getErrnoCode } from "../../../shared/foundation/errno";
 import {
   createSessionMetaLine,
   openSessionWriter,

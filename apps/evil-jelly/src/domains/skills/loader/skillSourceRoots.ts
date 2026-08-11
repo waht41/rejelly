@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { getErrnoCode } from "../../../shared/lib/errors";
+import { getErrnoCode } from "../../../shared/foundation/errno";
 import type { SkillScope } from "../definition/skillDefinition";
 import { type SkillLoadDiagnostic, skillDiagnostic } from "./diagnostics";
 

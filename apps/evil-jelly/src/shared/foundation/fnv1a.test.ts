@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fnv1a32Hex } from "./hash";
+import { fnv1a32Hex } from "./fnv1a";
 
 describe("fnv1a32Hex", () => {
   it("returns a stable 8-character unsigned hex digest", () => {

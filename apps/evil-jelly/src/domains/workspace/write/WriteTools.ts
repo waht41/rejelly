@@ -5,6 +5,8 @@
 import path from "node:path";
 import type { ToolDefinition } from "@rejelly/core";
 import { z } from "zod";
+import { getErrnoCode } from "../../../shared/foundation/errno";
+import { normalizeNewlines } from "../../../shared/foundation/string";
 import {
   AGENT_SCRATCH_DIR,
   getWorkspaceFsPolicy,
@@ -15,8 +17,6 @@ import type {
   ToolConfirmationHandler,
   WriteActionType,
 } from "../../../shared/host/toolConfirmationBindings";
-import { getErrnoCode } from "../../../shared/lib/errors";
-import { normalizeNewlines } from "../../../shared/lib/string";
 import { MAX_READ_BYTES_PER_CALL } from "../read/FileSystemTools";
 import { resolveToolFsPath } from "../read/outsideAccess";
 import { applyBlockEdits } from "./blockReplace";

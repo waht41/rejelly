@@ -15,8 +15,8 @@
 import path from "node:path";
 import { MAX_HEURISTIC_AST_BYTES } from "../../../../domains/workspace/source/heuristicAstLimits";
 import { listWorkspaceScriptRelPaths } from "../../../../domains/workspace/source/workspacePaths";
+import { fnv1a32Hex } from "../../../../shared/foundation/fnv1a";
 import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
-import { fnv1a32Hex } from "../../../../shared/lib/hash";
 import { isTestOrGeneratedPath } from "../../sourcePath";
 import { buildImportGraph, type FragmentationSource, type ImportGraph } from "./importGraph";
 import {
