@@ -7,7 +7,7 @@ import {
   type OutputParser,
   type PromptContext,
 } from "@rejelly/core/policy";
-import { estimateMessagesTokens } from "../../shared/model/budget/tokens";
+import { estimateMessagesTokens } from "../../shared/model/budget/tokenEstimate";
 import { appendMessageContentSuffix } from "../../shared/model/message/content";
 import type { SessionMessageSink } from "../../shared/session/recorderPort";
 import {

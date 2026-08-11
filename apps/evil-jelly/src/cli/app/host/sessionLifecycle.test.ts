@@ -12,8 +12,8 @@ import { isKnownSessionEvent } from "../../../domains/session/model/sessionEvent
 import { openSessionRecorder } from "../../../domains/session/recorder/sessionRecorder";
 import { resumeSession } from "../../../domains/session/repository/sessionStore";
 import { setWorkspaceRoot } from "../../../shared/fs-policy/workspace-fs-policy";
-import { isCompactionBridgeMessage } from "../../../shared/lib/compactionMessages";
 import { messageContentToText } from "../../../shared/model/message/content";
+import { isCompactionBridgeMessage } from "../../../shared/ports/conversation/compactionMessages";
 import type { TranscriptItem } from "../../../shared/transcript";
 import type { EvilJellyHostBindings } from "../../../shared/types";
 import { runEvilJellyHost } from "./runHost";

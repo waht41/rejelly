@@ -7,7 +7,7 @@
  */
 
 import type { ImageContent, Message, MessageContent } from "@rejelly/core";
-import { type ImageDimensions, readImageDimensions } from "../../lib/imageDimensions";
+import { type ImageDimensions, readImageDimensions } from "../../foundation/media/imageDimensions";
 
 /** Rough chars-per-token for non-CJK text (code/ASCII); on the cheap side so we under-charge slightly. */
 const NON_CJK_CHARS_PER_TOKEN = 4;

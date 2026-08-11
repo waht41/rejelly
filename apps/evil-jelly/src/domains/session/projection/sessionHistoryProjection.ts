@@ -1,10 +1,10 @@
 import type { Message } from "@rejelly/core";
 import { getUserInputDisplay } from "../../../shared/attachments/messageContent";
+import { messageContentToText } from "../../../shared/model/message/content";
 import {
   isCompactionBridgeMessage,
   unwrapPriorUserMessageText,
-} from "../../../shared/lib/compactionMessages";
-import { messageContentToText } from "../../../shared/model/message/content";
+} from "../../../shared/ports/conversation/compactionMessages";
 import { SESSION_BLOB_SCHEME, sessionBlobRefSchema } from "../../../shared/session/blobContract";
 import type { TranscriptImage, TranscriptItem } from "../../../shared/transcript";
 import type { SessionBudgetData } from "../model/sessionEvents";

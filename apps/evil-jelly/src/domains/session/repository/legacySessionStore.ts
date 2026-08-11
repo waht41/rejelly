@@ -4,7 +4,7 @@ import { z } from "zod";
 import {
   countConversationTurns,
   isCompactionBridgeMessage,
-} from "../../../shared/lib/compactionMessages";
+} from "../../../shared/ports/conversation/compactionMessages";
 import type { SessionStoragePaths } from "../journal/sessionJsonlReader";
 import { resolveWorkspaceDir } from "../journal/sessionPaths";
 import { legacySessionMetaSchema, sessionMessageSchema } from "../model/sessionEvents";

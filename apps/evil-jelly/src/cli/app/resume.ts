@@ -10,7 +10,7 @@ import {
   type SessionRecord,
 } from "../../domains/session/repository/sessionStore";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
-import { countConversationTurns } from "../../shared/lib/compactionMessages";
+import { countConversationTurns } from "../../shared/ports/conversation/compactionMessages";
 import type { TranscriptItem } from "../../shared/transcript";
 import type { EvilJellyHostBindings } from "../../shared/types";
 

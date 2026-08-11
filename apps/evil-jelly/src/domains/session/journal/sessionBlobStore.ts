@@ -2,8 +2,8 @@ import crypto from "node:crypto";
 import { link, mkdir, open, readFile, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { ContentPart, Message } from "@rejelly/core";
+import { readImageDimensions } from "../../../shared/foundation/media/imageDimensions";
 import { resolveGlobalJellyDir } from "../../../shared/globalPath";
-import { readImageDimensions } from "../../../shared/lib/imageDimensions";
 import {
   SESSION_BLOB_SCHEME,
   type SessionBlobMetadata,

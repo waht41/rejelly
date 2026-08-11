@@ -7,23 +7,23 @@ import {
 } from "../../shared/attachments/messageContent";
 import { fileLocatorAttributes } from "../../shared/fs-policy/file-locator";
 import {
+  estimateMessageContentTokens,
+  estimateMessagesTokens,
+  estimateTokens,
+} from "../../shared/model/budget/tokenEstimate";
+import { messageContentToText } from "../../shared/model/message/content";
+import {
+  renderPseudoXmlElement,
+  renderPseudoXmlEmptyElement,
+} from "../../shared/model/prompt/pseudoXml";
+import {
   COMPACTION_BRIDGE_MESSAGE_KIND,
   COMPACTION_NOTICE_PREFIX,
   COMPACTION_SUMMARY_TAG,
   isCompactionBridgeMessage,
   PRIOR_USER_MESSAGE_TAG,
   unwrapPriorUserMessageText,
-} from "../../shared/lib/compactionMessages";
-import {
-  estimateMessageContentTokens,
-  estimateMessagesTokens,
-  estimateTokens,
-} from "../../shared/model/budget/tokens";
-import { messageContentToText } from "../../shared/model/message/content";
-import {
-  renderPseudoXmlElement,
-  renderPseudoXmlEmptyElement,
-} from "../../shared/model/prompt/pseudoXml";
+} from "../../shared/ports/conversation/compactionMessages";
 import { COMPACTION_STREAM_CHANNEL } from "./compactionChannel";
 
 /**

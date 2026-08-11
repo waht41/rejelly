@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateTokens } from "../../../shared/model/budget/tokens";
+import { estimateTokens } from "../../../shared/model/budget/tokenEstimate";
 import { createSkillCatalog } from "../catalog/skillCatalog";
 import type { SkillRecord } from "../definition/skillDefinition";
 import { skillOrigin } from "../definition/skillDefinition";

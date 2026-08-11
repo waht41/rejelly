@@ -3,13 +3,13 @@ import path from "node:path";
 import type { ContentPart, Message } from "@rejelly/core";
 import { z } from "zod";
 import type { UserAttachment, UserImageAttachment } from "../AgentShared";
+import { readImageDimensions } from "../foundation/media/imageDimensions";
 import {
   fileLocatorAttributes,
   fileLocatorFromResolved,
   fileLocatorFromUserPath,
 } from "../fs-policy/file-locator";
 import { getWorkspaceFsPolicy } from "../fs-policy/workspace-fs-policy";
-import { readImageDimensions } from "../lib/imageDimensions";
 import { renderPseudoXmlElement } from "../model/prompt/pseudoXml";
 
 const MAX_ATTACHMENT_BYTES_PER_FILE = 80 * 1024;

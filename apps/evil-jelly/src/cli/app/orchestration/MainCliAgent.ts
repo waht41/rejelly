@@ -32,7 +32,7 @@ import {
 import { env } from "../../../shared/config";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
 import { getBinding, setBinding } from "../../../shared/host/hostBindings";
-import { countConversationTurns } from "../../../shared/lib/compactionMessages";
+import { countConversationTurns } from "../../../shared/ports/conversation/compactionMessages";
 import type { EvilJellyHostBindings } from "../../../shared/types";
 import { requestNewSession, requestResume } from "../../runtime/sessionRunControl";
 import { drainSteers } from "../../runtime/steerControl";
