@@ -1,10 +1,10 @@
 import type { Message } from "@rejelly/core";
-import { messageContentToText } from "../../../shared/model/message/content";
-import { getUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
 import {
   isCompactionBridgeMessage,
   unwrapPriorUserMessageText,
-} from "../../../shared/ports/conversation/compactionMessages";
+} from "../../../shared/conversation/compactionMessages";
+import { messageContentToText } from "../../../shared/model/message/content";
+import { getUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
 
 const SESSION_TITLE_MAX_CHARS = 80;
 

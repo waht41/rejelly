@@ -8,7 +8,12 @@ import type {
   ToolConfirmationHandler,
   UserSkillListItem,
 } from "./AgentShared";
-import type { TranscriptItem } from "./transcript";
+import type { TranscriptItem } from "./session/transcript";
+import type {
+  ToolCallHandle,
+  ToolObservationBlock,
+  ToolObservationStart,
+} from "./tool-observation/model";
 
 /** One row in a host-driven action menu (hotkey + arbitrary domain `value`). */
 export type HostChoiceOption = { key: string; label: string; value: string };
@@ -20,20 +25,6 @@ export type HostChoiceView =
   | { type: "none" }
   | { type: "diff"; text: string; caption?: string; captionTitle?: string }
   | { type: "markdown"; text: string };
-
-/** Identifies one in-flight tool call, from `logToolStart` until `logToolBlock`. */
-export type ToolCallHandle = {
-  id: string;
-  /** Display number, assigned in call order so parallel calls stay readable. */
-  ordinal: number;
-};
-
-export type ToolTranscriptDetail = {
-  type: "diff";
-  text: string;
-  caption?: string;
-  captionTitle?: string;
-};
 
 /**
  * What the runtime is doing right now.
@@ -118,7 +109,7 @@ export interface EvilJellyHostBindings {
    * running and number it in call order. Hosts that omit this get no live view
    * and fall back to numbering blocks as they complete.
    */
-  logToolStart?: (start: { toolName: string; summary: string }) => ToolCallHandle;
+  logToolStart?: (start: ToolObservationStart) => ToolCallHandle;
   /**
    * Stream a running tool's own output (shell stdout/stderr) for the transient
    * live view. Chunks arrive on arbitrary byte boundaries, so the host owns line
@@ -126,18 +117,7 @@ export interface EvilJellyHostBindings {
    */
   appendToolOutput?: (toolCallId: string, chunk: string) => void;
   /** Commit a finished tool call as a collapsed, persistent block (survives turn end). */
-  logToolBlock: (block: {
-    /** The handle from {@link logToolStart}, when the host issued one. */
-    id?: string;
-    ordinal?: number;
-    toolName: string;
-    summary: string;
-    args?: string;
-    detail?: ToolTranscriptDetail;
-    preview: string;
-    fullResult: string;
-    ok: boolean;
-  }) => void;
+  logToolBlock: (block: ToolObservationBlock) => void;
   /**
    * Approve disk writes from edit_file / create_file after reviewing the unified diff.
    * Host maps `supportedActions` on the confirmation request to UI (e.g. Ink hotkeys, native dialog).

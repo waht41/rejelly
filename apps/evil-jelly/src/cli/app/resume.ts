@@ -9,9 +9,9 @@ import {
   type SessionBudget,
   type SessionRecord,
 } from "../../domains/session/repository/sessionStore";
+import { countConversationTurns } from "../../shared/conversation/compactionMessages";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
-import { countConversationTurns } from "../../shared/ports/conversation/compactionMessages";
-import type { TranscriptItem } from "../../shared/transcript";
+import type { TranscriptItem } from "../../shared/session/transcript";
 import type { EvilJellyHostBindings } from "../../shared/types";
 
 export interface SessionResumeSeed {

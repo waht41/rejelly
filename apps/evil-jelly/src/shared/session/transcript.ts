@@ -6,8 +6,8 @@
  * It lives here so neither side has to reach across the other's layer to name it.
  */
 
-import type { UserInputAttachmentDisplay } from "./model/message/userInputMetadata";
-import type { SessionBlobMetadata, SessionBlobRef } from "./session/blobContract";
+import type { UserInputAttachmentDisplay } from "../model/message/userInputMetadata";
+import type { SessionBlobMetadata, SessionBlobRef } from "./blobContract";
 
 export interface TranscriptImage {
   blobRef: SessionBlobRef;

@@ -3,8 +3,13 @@
  */
 
 import { create } from "zustand";
-import type { TranscriptItem } from "../../shared/transcript";
-import type { RuntimePhase, ToolCallHandle, ToolTranscriptDetail } from "../../shared/types";
+import type { TranscriptItem } from "../../shared/session/transcript";
+import type {
+  ToolCallHandle,
+  ToolObservationDetail,
+  ToolObservationStart,
+} from "../../shared/tool-observation/model";
+import type { RuntimePhase } from "../../shared/types";
 import { StreamStableTailController } from "./streamStableTail";
 import { drainToolOutput } from "./toolTailWindow";
 
@@ -34,7 +39,7 @@ export type ToolBlock = {
   toolName: string;
   summary: string;
   args?: string;
-  detail?: ToolTranscriptDetail;
+  detail?: ToolObservationDetail;
   preview: string;
   fullResult: string;
   ok: boolean;
@@ -121,7 +126,7 @@ interface OutputState {
   clearedStaticTurns: Turn[];
 
   appendStream: (text: string) => void;
-  beginTool: (start: { toolName: string; summary: string }) => ToolCallHandle;
+  beginTool: (start: ToolObservationStart) => ToolCallHandle;
   appendToolOutput: (toolCallId: string, chunk: string) => void;
   setDetail: (detail: string) => void;
   /** Move to `phase`, optionally updating the detail in the same commit. */

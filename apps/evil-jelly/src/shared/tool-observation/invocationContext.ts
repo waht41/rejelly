@@ -4,16 +4,16 @@
  * their own slot without threading an argument through every handler.
  *
  * Two things travel through it: the handle identifying this call (so a handler
- * streaming live output can say which tool the bytes belong to) and a transcript
+ * streaming live output can say which tool the bytes belong to) and an observation
  * detail the handler produced along the way (currently a reviewed diff).
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { ToolCallHandle, ToolTranscriptDetail } from "../types";
+import type { ToolCallHandle, ToolObservationDetail } from "./model";
 
 type ToolCallSlot = {
   call?: ToolCallHandle;
-  detail?: ToolTranscriptDetail;
+  detail?: ToolObservationDetail;
 };
 
 const callStorage = new AsyncLocalStorage<ToolCallSlot>();
@@ -35,7 +35,7 @@ export function getActiveToolCall(): ToolCallHandle | undefined {
   return callStorage.getStore()?.call;
 }
 
-export function recordActiveToolDetail(detail: ToolTranscriptDetail): void {
+export function recordActiveToolDetail(detail: ToolObservationDetail): void {
   const slot = callStorage.getStore();
   if (!slot) {
     return;
@@ -43,7 +43,7 @@ export function recordActiveToolDetail(detail: ToolTranscriptDetail): void {
   slot.detail = detail;
 }
 
-export function takeActiveToolDetail(): ToolTranscriptDetail | undefined {
+export function takeActiveToolDetail(): ToolObservationDetail | undefined {
   const slot = callStorage.getStore();
   if (!slot) {
     return undefined;

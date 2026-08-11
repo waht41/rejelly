@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   runWithToolDetailSlot,
   takeActiveToolDetail,
-} from "../../shared/host/toolTranscriptDetail";
+} from "../../shared/tool-observation/invocationContext";
 import { registerRunAbort } from "../runtime/runControl";
 import { takePendingExit } from "../runtime/sessionRunControl";
 import { enqueueSteer } from "../runtime/steerControl";

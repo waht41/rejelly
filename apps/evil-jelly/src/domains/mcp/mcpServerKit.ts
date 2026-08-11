@@ -22,7 +22,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { equipMCP } from "@rejelly/adapter-mcp";
 import { expectResource } from "@rejelly/core";
 import { getReviewEndpointFromEnv } from "../../shared/config";
-import { evilJellyToolLoggerMiddleware } from "../../shared/host/withToolLogger";
+import { evilJellyToolLoggerMiddleware } from "../../shared/tool-observation/middleware";
 
 export interface McpProviderConnectionOptions {
   /** Per-run opt-in resolved by the CLI composition boundary. */

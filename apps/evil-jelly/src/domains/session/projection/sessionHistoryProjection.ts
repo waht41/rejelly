@@ -1,12 +1,12 @@
 import type { Message } from "@rejelly/core";
-import { messageContentToText } from "../../../shared/model/message/content";
-import { getUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
 import {
   isCompactionBridgeMessage,
   unwrapPriorUserMessageText,
-} from "../../../shared/ports/conversation/compactionMessages";
+} from "../../../shared/conversation/compactionMessages";
+import { messageContentToText } from "../../../shared/model/message/content";
+import { getUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
 import { SESSION_BLOB_SCHEME, sessionBlobRefSchema } from "../../../shared/session/blobContract";
-import type { TranscriptImage, TranscriptItem } from "../../../shared/transcript";
+import type { TranscriptImage, TranscriptItem } from "../../../shared/session/transcript";
 import type { SessionBudgetData } from "../model/sessionEvents";
 import {
   getStoredSessionRejellyMetadata,

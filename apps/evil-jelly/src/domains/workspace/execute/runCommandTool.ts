@@ -10,8 +10,8 @@ import {
   resolveWorkspaceCwd,
 } from "../../../shared/fs-policy/workspace-fs-policy";
 import { getBinding } from "../../../shared/host/hostBindings";
-import { getActiveToolCall } from "../../../shared/host/toolTranscriptDetail";
 import { pushRuntimeTask } from "../../../shared/runtime/runtimeControl";
+import { getActiveToolCall } from "../../../shared/tool-observation/invocationContext";
 import { executeShellCommand, getShellEnvironmentSummary } from "./executeShellCommand";
 
 const runCommandParameters = z.object({

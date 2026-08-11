@@ -28,7 +28,7 @@ import {
 } from "../../domains/workspace/write/WriteTools";
 import type { ConversationAgentProps, ConversationAgentResult } from "../../shared/AgentShared";
 import { getBinding } from "../../shared/host/hostBindings";
-import { evilJellyToolLoggerMiddleware } from "../../shared/host/withToolLogger";
+import { evilJellyToolLoggerMiddleware } from "../../shared/tool-observation/middleware";
 import { buildAutoCompactionConfig } from "./contextControl";
 import { shouldUseTerminalUserReplyRule } from "./outputSurface";
 import { useStandardStreaming } from "./standardStreaming";

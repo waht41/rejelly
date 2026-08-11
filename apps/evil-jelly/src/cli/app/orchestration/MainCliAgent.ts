@@ -26,10 +26,10 @@ import {
 import { UnifiedAgent } from "../../../features/unified/UnifiedAgent";
 import type { LineInputValue } from "../../../shared/AgentShared";
 import { env } from "../../../shared/config";
+import { countConversationTurns } from "../../../shared/conversation/compactionMessages";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
 import { getBinding, setBinding } from "../../../shared/host/hostBindings";
 import { getUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
-import { countConversationTurns } from "../../../shared/ports/conversation/compactionMessages";
 import type { EvilJellyHostBindings } from "../../../shared/types";
 import { requestNewSession, requestResume } from "../../runtime/sessionRunControl";
 import { drainSteers } from "../../runtime/steerControl";

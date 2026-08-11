@@ -1,6 +1,14 @@
 import type { ContentPart, Message } from "@rejelly/core";
 import { isAbortError, isModelCallError } from "@rejelly/core";
 import { executeTurn, isInstructionMessage, type PromptContext } from "@rejelly/core/policy";
+import {
+  COMPACTION_BRIDGE_MESSAGE_KIND,
+  COMPACTION_NOTICE_PREFIX,
+  COMPACTION_SUMMARY_TAG,
+  isCompactionBridgeMessage,
+  PRIOR_USER_MESSAGE_TAG,
+  unwrapPriorUserMessageText,
+} from "../../shared/conversation/compactionMessages";
 import { fileLocatorAttributes } from "../../shared/fs-policy/file-locator";
 import {
   estimateMessageContentTokens,
@@ -16,14 +24,6 @@ import {
   renderPseudoXmlElement,
   renderPseudoXmlEmptyElement,
 } from "../../shared/model/prompt/pseudoXml";
-import {
-  COMPACTION_BRIDGE_MESSAGE_KIND,
-  COMPACTION_NOTICE_PREFIX,
-  COMPACTION_SUMMARY_TAG,
-  isCompactionBridgeMessage,
-  PRIOR_USER_MESSAGE_TAG,
-  unwrapPriorUserMessageText,
-} from "../../shared/ports/conversation/compactionMessages";
 import { COMPACTION_STREAM_CHANNEL } from "./compactionChannel";
 
 /**

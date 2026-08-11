@@ -7,7 +7,7 @@ import type {
   ToolConfirmationResult,
   WriteActionType,
 } from "../../shared/AgentShared";
-import { recordActiveToolDetail } from "../../shared/host/toolTranscriptDetail";
+import { recordActiveToolDetail } from "../../shared/tool-observation/invocationContext";
 import { classifyShellCommand, isSimpleCommand } from "../runtime/shellCommandPolicy";
 import { useOutputStore } from "../store/useOutputStore";
 import type { ActionMenuOption } from "../store/usePromptStore";

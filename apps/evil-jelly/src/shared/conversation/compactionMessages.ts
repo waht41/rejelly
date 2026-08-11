@@ -1,6 +1,6 @@
 import type { Message } from "@rejelly/core";
-import { messageContentToText } from "../../model/message/content";
-import { unwrapPseudoXmlElement } from "../../model/prompt/pseudoXml";
+import { messageContentToText } from "../model/message/content";
+import { unwrapPseudoXmlElement } from "../model/prompt/pseudoXml";
 
 export const PRIOR_USER_MESSAGE_TAG = "prior_user_message";
 export const PRIOR_USER_MESSAGE_OPEN = `<${PRIOR_USER_MESSAGE_TAG}>`;

@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { isCompactionBridgeMessage } from "../../../shared/ports/conversation/compactionMessages";
+import { isCompactionBridgeMessage } from "../../../shared/conversation/compactionMessages";
 import {
   findLastEvent,
   findLatestSessionStateFromTail,

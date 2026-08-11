@@ -1,14 +1,6 @@
-/**
- * Static tool middleware: one line to the host before handler runs (normalized by tool name).
- */
+/** Pure projection of tool inputs and results into bounded observation text. */
 
-import type { ToolContext, ToolMiddleware } from "@rejelly/core";
-import { getBinding } from "./hostBindings";
-import {
-  runWithToolDetailSlot,
-  setActiveToolCall,
-  takeActiveToolDetail,
-} from "./toolTranscriptDetail";
+import type { ToolContext } from "@rejelly/core";
 
 function formatPathList(paths: string[], maxShow = 4): string {
   if (paths.length === 0) {
@@ -148,7 +140,7 @@ function toHeadline(text: string): string {
   return text.replace(/\s*\n\s*/g, " ").trim();
 }
 
-function stringifyToolResult(r: unknown): string {
+export function stringifyToolResult(r: unknown): string {
   if (typeof r === "string") return r;
   try {
     return JSON.stringify(r, null, 2);
@@ -206,65 +198,14 @@ function stringifyToolArgs(toolName: string, input: unknown): string {
   }
 }
 
-function previewOf(text: string, maxLines = 6, maxChars = 600): string {
+export function previewToolResult(text: string, maxLines = 6, maxChars = 600): string {
   const lines = text.split("\n").slice(0, maxLines).join("\n").slice(0, maxChars);
   return lines.length < text.length ? `${lines}\n…` : lines;
 }
 
-/** Host one-liner before any equipped tool handler (read-only, write, or shell). */
-export function withToolLogger(): ToolMiddleware {
+export function projectToolStart(ctx: ToolContext): { summary: string; args: string } {
   return {
-    name: "evil_jelly_tool_logger",
-    handler: async (ctx, next) => {
-      return runWithToolDetailSlot(async () => {
-        const { printOut, logToolStart, logToolBlock } = getBinding();
-        const summary = toHeadline(formatToolProgressLine(ctx).replace(/…?\n$/, ""));
-        const args = stringifyToolArgs(ctx.toolName, ctx.input);
-        // The handle both numbers this call in invocation order and lets a
-        // streaming handler attribute its output. Hosts without a live view get
-        // the old one-line announcement instead.
-        const call = logToolStart?.({ toolName: ctx.toolName, summary });
-        if (call) {
-          setActiveToolCall(call);
-        } else {
-          printOut(`${summary}\n`);
-        }
-        try {
-          const result = await next();
-          const fullResult = stringifyToolResult(result);
-          const detail = takeActiveToolDetail();
-          logToolBlock({
-            id: call?.id,
-            ordinal: call?.ordinal,
-            toolName: ctx.toolName,
-            summary,
-            args,
-            detail,
-            preview: previewOf(fullResult),
-            fullResult,
-            ok: true,
-          });
-          return result;
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          const detail = takeActiveToolDetail();
-          logToolBlock({
-            id: call?.id,
-            ordinal: call?.ordinal,
-            toolName: ctx.toolName,
-            summary,
-            args,
-            detail,
-            preview: msg.slice(0, 400),
-            fullResult: msg,
-            ok: false,
-          });
-          throw err;
-        }
-      });
-    },
+    summary: toHeadline(formatToolProgressLine(ctx).replace(/…?\n$/, "")),
+    args: stringifyToolArgs(ctx.toolName, ctx.input),
   };
 }
-
-/** Shared instance for augmentTool (same middleware object across wrapped tools). */
-export const evilJellyToolLoggerMiddleware = withToolLogger();

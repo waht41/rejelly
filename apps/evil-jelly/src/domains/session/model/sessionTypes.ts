@@ -1,5 +1,5 @@
 import type { Message } from "@rejelly/core";
-import type { TranscriptItem } from "../../../shared/transcript";
+import type { TranscriptItem } from "../../../shared/session/transcript";
 import type { LegacySessionMeta, SessionBudgetData } from "./sessionEvents";
 
 /**

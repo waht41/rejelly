@@ -4,7 +4,7 @@
  */
 
 import { augmentTool, equipTool, type ToolDefinition } from "@rejelly/core";
-import { evilJellyToolLoggerMiddleware } from "../../shared/host/withToolLogger";
+import { evilJellyToolLoggerMiddleware } from "../../shared/tool-observation/middleware";
 import {
   AstDocumentSymbolsTool,
   AstModuleExportsTool,

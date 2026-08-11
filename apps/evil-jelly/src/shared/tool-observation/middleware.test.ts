@@ -10,12 +10,12 @@ const { mockGetBinding } = vi.hoisted(() => ({
   mockGetBinding: vi.fn<() => EvilJellyHostBindings>(),
 }));
 
-vi.mock("./hostBindings", () => ({
+vi.mock("../host/hostBindings", () => ({
   getBinding: () => mockGetBinding(),
 }));
 
-import { getActiveToolCall, recordActiveToolDetail } from "./toolTranscriptDetail";
-import { withToolLogger } from "./withToolLogger";
+import { getActiveToolCall, recordActiveToolDetail } from "./invocationContext";
+import { withToolLogger } from "./middleware";
 
 describe("withToolLogger", () => {
   function createMockBindings(): EvilJellyHostBindings & {
