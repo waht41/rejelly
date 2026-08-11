@@ -23,7 +23,11 @@ import { equipMCP } from "@rejelly/adapter-mcp";
 import { expectResource } from "@rejelly/core";
 import { getReviewEndpointFromEnv } from "../../shared/config";
 import { evilJellyToolLoggerMiddleware } from "../../shared/host/withToolLogger";
-import { getSettings } from "../../shared/settings";
+
+export interface McpProviderConnectionOptions {
+  /** Per-run opt-in resolved by the CLI composition boundary. */
+  devtoolMcp: boolean;
+}
 
 interface McpServerDescriptor {
   /** Provider key suffix (`mcp:<id>`) + equipMCP clientId. */
@@ -31,7 +35,7 @@ interface McpServerDescriptor {
   /** Tool name prefix, e.g. `devtool_get_trace_profile`. Avoids collisions and groups the set. */
   namespace: string;
   /** Opt-in gate, checked at connect time only. Returning false skips the server entirely. */
-  enabled: () => boolean;
+  enabled: (options: McpProviderConnectionOptions) => boolean;
   /** Endpoint URL of the MCP server (resolved lazily, at connect time). */
   url: () => string;
 }
@@ -53,7 +57,7 @@ const MCP_SERVERS: McpServerDescriptor[] = [
     // Introspection only makes sense when the devtool server is up AND traces are
     // being exported to it, so this is opt-in via --devtool (separate from --review).
     // Best-effort connect means a wrong guess simply no-ops rather than breaking evil.
-    enabled: () => getSettings().devtoolMcp,
+    enabled: (options) => options.devtoolMcp,
     url: devtoolMcpUrl,
   },
 ];
@@ -99,11 +103,13 @@ export interface McpProviders {
  * absent — so the devtool server being down just means no introspection that session,
  * never a broken run.
  */
-export async function connectMcpProviders(): Promise<McpProviders> {
+export async function connectMcpProviders(
+  options: McpProviderConnectionOptions,
+): Promise<McpProviders> {
   const providers: Record<string, unknown> = {};
   const clients: Client[] = [];
   for (const server of MCP_SERVERS) {
-    if (!server.enabled()) continue;
+    if (!server.enabled(options)) continue;
     try {
       const client = await connectMcpClient(server.url());
       providers[resourceKey(server.id)] = client;

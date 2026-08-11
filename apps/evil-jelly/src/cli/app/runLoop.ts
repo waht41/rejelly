@@ -7,6 +7,7 @@ import {
 } from "../../domains/session/repository/sessionStore";
 import { qualifiedSkillName } from "../../domains/skills/definition/skillDefinition";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
+import { getSettings } from "../../shared/settings";
 import type { TranscriptItem } from "../../shared/transcript";
 import type { EvilJellyHostBindings } from "../../shared/types";
 import {
@@ -170,7 +171,9 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
   // Connect optional MCP servers (e.g. devtool introspection) once, above the run loop, so the
   // connection is reused across resume segments. Best-effort: empty when disabled/unreachable.
   // The framework borrows these via runWith({ providers }); disposal stays here (finally).
-  const { providers: mcpProviders, dispose: disposeMcp } = await connectMcpProviders();
+  const { providers: mcpProviders, dispose: disposeMcp } = await connectMcpProviders({
+    devtoolMcp: getSettings().devtoolMcp,
+  });
   try {
     const skillRuntime = await buildConfiguredSkillRuntimeSnapshot();
     bindings.setAvailableSkills?.(

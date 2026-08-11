@@ -1,5 +1,6 @@
 import type { AgentSnapshot, Message, ModelAdapter } from "@rejelly/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { connectMcpProviders } from "../../domains/mcp/mcpServerKit";
 import * as sessionStore from "../../domains/session/repository/sessionStore";
 import type { EvilJellyHostBindings } from "../../shared/types";
 import {
@@ -28,12 +29,17 @@ vi.mock("../../domains/mcp/mcpServerKit", () => ({
   })),
 }));
 
+vi.mock("../../shared/settings", () => ({
+  getSettings: () => ({ devtoolMcp: true }),
+}));
+
 vi.mock("./host/skillRuntime", () => ({
   buildConfiguredSkillRuntimeSnapshot: runtimeMocks.buildSkillRuntime,
   formatSkillRuntimeStartupSummary: runtimeMocks.formatSkillSummary,
 }));
 
 const runHostMock = vi.mocked(runEvilJellyHost);
+const connectMcpProvidersMock = vi.mocked(connectMcpProviders);
 
 function drainSessionSwitches(): void {
   takePendingNewSession();
@@ -64,6 +70,21 @@ describe("runInteractiveLoop mock session isolation", () => {
       diagnostics: [],
     });
     runtimeMocks.formatSkillSummary.mockReturnValue(undefined);
+  });
+
+  it("passes the resolved devtool opt-in to the MCP connection boundary", async () => {
+    const { bindings } = createBindings();
+    runHostMock.mockResolvedValueOnce(undefined);
+
+    await runInteractiveLoop({
+      bindings,
+      model: {} as ModelAdapter,
+      enableReview: false,
+      snapshot: undefined,
+      isolateSessionState: true,
+    });
+
+    expect(connectMcpProvidersMock).toHaveBeenCalledWith({ devtoolMcp: true });
   });
 
   it("publishes the path-free enabled Skill catalog through the host boundary", async () => {
