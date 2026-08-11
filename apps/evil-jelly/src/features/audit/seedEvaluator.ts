@@ -16,7 +16,7 @@ import {
   READ_ONLY_WORKSPACE_TOOL_NAMES,
 } from "../../domains/workspace/kit";
 import { equipContextIntakeBudgetMiddleware } from "../../domains/workspace/read/contextIntakeBudget";
-import { equipToolLoopBudgetMiddleware } from "../../tools/hooks/toolLoopBudget";
+import { equipToolLoopBudgetMiddleware } from "./runtime/toolLoopBudget";
 import { AUDIT_DEFAULTS, type SeedVerdict } from "./types";
 
 /**

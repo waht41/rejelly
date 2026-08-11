@@ -4,7 +4,7 @@
  */
 
 import { equipToolCallLoopMiddleware, type ToolCallLoopMiddleware } from "@rejelly/core";
-import { appendMessageContentSuffix } from "../../shared/lib/message";
+import { appendMessageContentSuffix } from "../../../shared/lib/message";
 
 /** Same default as createAgent context factory; keep in sync with agent maxTurnSteps for hints. */
 export const DEFAULT_TOOL_LOOP_MAX_TURN_STEPS = 10;

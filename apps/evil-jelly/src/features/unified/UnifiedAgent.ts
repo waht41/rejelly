@@ -13,6 +13,8 @@ import {
   isAbortError,
   isToolLoopExceededError,
 } from "@rejelly/core";
+import { promptChatResilient } from "../../domains/policy/promptChatResilient";
+import { promptCompactHistory } from "../../domains/policy/promptCompactHistory";
 import { equipWebResearchKit } from "../../domains/web/kit";
 import { equipReadOnlyWorkspaceKit, equipRunCommandKit } from "../../domains/workspace/kit";
 import { buildWorkspaceRuleInstructionBlock } from "../../domains/workspace/workspaceRule";
@@ -21,8 +23,6 @@ import {
   createDeleteFileTool,
   createEditFileTool,
 } from "../../domains/workspace/write/WriteTools";
-import { promptChatResilient } from "../../services/policy/promptChatResilient";
-import { promptCompactHistory } from "../../services/policy/promptCompactHistory";
 import type { ConversationAgentProps, ConversationAgentResult } from "../../shared/AgentShared";
 import { getBinding } from "../../shared/host/hostBindings";
 import { shouldUseTerminalUserReplyRule } from "../../shared/host/output-surface";

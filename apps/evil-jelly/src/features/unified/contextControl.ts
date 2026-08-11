@@ -1,4 +1,4 @@
-import type { PromptChatCompactionConfig } from "../../services/policy/promptChatResilient";
+import type { PromptChatCompactionConfig } from "../../domains/policy/promptChatResilient";
 import { env } from "../../shared/config";
 import {
   DEFAULT_OPENAI_CONTEXT_WINDOW_TOKENS,
