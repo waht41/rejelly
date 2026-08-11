@@ -4,7 +4,7 @@ import {
   DEFAULT_OPENAI_CONTEXT_WINDOW_TOKENS,
   LOW_OPENAI_CONTEXT_WINDOW_TOKENS,
 } from "../../shared/configDefaults";
-import { getBinding } from "../../shared/host/hostBindings";
+import { getBinding } from "../../shared/host/context";
 
 /** Trigger mid-loop auto-compaction once estimated live context reaches this fraction of the window. */
 const AUTO_COMPACT_THRESHOLD_RATIO = 0.75;

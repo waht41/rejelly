@@ -2,7 +2,7 @@ import type { AgentSnapshot, Message, ModelAdapter } from "@rejelly/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { connectMcpProviders } from "../../domains/mcp/mcpServerKit";
 import * as sessionStore from "../../domains/session/repository/sessionStore";
-import type { EvilJellyHostBindings } from "../../shared/types";
+import type { EvilJellyBindings } from "../../shared/host/bindings";
 import {
   requestNewSession,
   requestResume,
@@ -48,7 +48,7 @@ function drainSessionSwitches(): void {
 
 function createBindings() {
   const systemEvents: string[] = [];
-  const bindings: EvilJellyHostBindings = {
+  const bindings: EvilJellyBindings = {
     getInput: async () => ({ text: "", attachments: [] }),
     printOut: () => {},
     logUserMessage: () => {},
@@ -248,7 +248,7 @@ describe("runInteractiveLoop mock session isolation", () => {
 
   it("switches context, budget, snapshot, and transcript together on resume", async () => {
     const { bindings } = createBindings();
-    const hydrated: Parameters<NonNullable<EvilJellyHostBindings["hydrateHistory"]>>[0][] = [];
+    const hydrated: Parameters<NonNullable<EvilJellyBindings["hydrateHistory"]>>[0][] = [];
     bindings.hydrateHistory = (items) => hydrated.push(items);
     const messages: Message[] = [
       { role: "user", content: "resumed task" },

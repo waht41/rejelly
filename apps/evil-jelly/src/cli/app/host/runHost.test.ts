@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SkillRuntimeSnapshot } from "../../../domains/skills/agent/skillRuntime";
 import { createSkillCatalog } from "../../../domains/skills/catalog/skillCatalog";
 import { skillOrigin } from "../../../domains/skills/definition/skillDefinition";
-import type { EvilJellyHostBindings } from "../../../shared/types";
+import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import { requestRunAbort } from "../../runtime/runControl";
 import { runDirectUnified, runEvilJellyHost } from "./runHost";
 
@@ -101,7 +101,7 @@ describe("runEvilJellyHost session teardown", () => {
     );
 
     const logSystemEvent = vi.fn();
-    await runEvilJellyHost({ logSystemEvent } as unknown as EvilJellyHostBindings, {
+    await runEvilJellyHost({ logSystemEvent } as unknown as EvilJellyBindings, {
       model: { id: "test-model" } as ModelAdapter,
       sessionId: "idle-session",
       sessionStartMode: "resumed",
@@ -140,7 +140,7 @@ describe("runEvilJellyHost session teardown", () => {
     );
 
     const logSystemEvent = vi.fn();
-    await runEvilJellyHost({ logSystemEvent } as unknown as EvilJellyHostBindings, {
+    await runEvilJellyHost({ logSystemEvent } as unknown as EvilJellyBindings, {
       model: { id: "test-model" } as ModelAdapter,
       sessionId: "new-idle-session",
       sessionStartMode: "new",
@@ -155,7 +155,7 @@ describe("runEvilJellyHost session teardown", () => {
     const snapshot = skillSnapshot();
     mocks.runWithReview.mockResolvedValue(undefined);
 
-    await runEvilJellyHost({ logSystemEvent: vi.fn() } as unknown as EvilJellyHostBindings, {
+    await runEvilJellyHost({ logSystemEvent: vi.fn() } as unknown as EvilJellyBindings, {
       model: { id: "test-model" } as ModelAdapter,
       mcpProviders: { "mcp:devtool": { id: "client" } },
       skillSnapshot: snapshot,
@@ -178,7 +178,7 @@ describe("runEvilJellyHost session teardown", () => {
     mocks.buildSkillRuntime.mockResolvedValue(prepared);
     const logSystemEvent = vi.fn();
 
-    await runDirectUnified({ logSystemEvent } as unknown as EvilJellyHostBindings, {
+    await runDirectUnified({ logSystemEvent } as unknown as EvilJellyBindings, {
       model: { id: "test-model" } as ModelAdapter,
       userInput: "hello",
     });

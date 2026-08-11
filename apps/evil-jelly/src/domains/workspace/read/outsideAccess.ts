@@ -3,8 +3,8 @@ import {
   getWorkspaceFsPolicy,
   type ResolvedFsPath,
 } from "../../../shared/fs-policy/workspace-fs-policy";
-import { getBinding } from "../../../shared/host/hostBindings";
-import type { EvilJellyHostBindings } from "../../../shared/types";
+import type { EvilJellyBindings } from "../../../shared/host/bindings";
+import { getBinding } from "../../../shared/host/context";
 
 type ToolFsIntent = Exclude<FsIntent, "inside">;
 
@@ -12,7 +12,7 @@ export type ResolveToolFsPathResult =
   | ({ ok: true } & ResolvedFsPath)
   | { ok: false; error: string };
 
-function tryGetBinding(): EvilJellyHostBindings | null {
+function tryGetBinding(): EvilJellyBindings | null {
   try {
     return getBinding();
   } catch {

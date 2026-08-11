@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionMeta } from "../../../domains/session/repository/sessionStore";
-import type { EvilJellyHostBindings, HostChoiceOption } from "../../../shared/types";
+import type { EvilJellyBindings } from "../../../shared/host/bindings";
+import type { PromptChoiceOption } from "../../../shared/input/bindings";
 import { takePendingResume } from "../../runtime/sessionRunControl";
 import { tryRequestResume } from "./MainCliAgent";
 
@@ -33,14 +34,14 @@ function session(id: string, updatedAt: number): SessionMeta {
 }
 
 function createHost(choice = ""): {
-  host: EvilJellyHostBindings;
+  host: EvilJellyBindings;
   logSystemEvent: ReturnType<typeof vi.fn>;
   requestChoice: ReturnType<typeof vi.fn>;
 } {
   const logSystemEvent = vi.fn();
-  const requestChoice = vi.fn(async (_message: string, _options: HostChoiceOption[]) => choice);
+  const requestChoice = vi.fn(async (_message: string, _options: PromptChoiceOption[]) => choice);
   return {
-    host: { logSystemEvent, requestChoice } as unknown as EvilJellyHostBindings,
+    host: { logSystemEvent, requestChoice } as unknown as EvilJellyBindings,
     logSystemEvent,
     requestChoice,
   };
@@ -70,7 +71,7 @@ describe("runtime session resume", () => {
 
     await expect(tryRequestResume("/resume", "current", host)).resolves.toBe(true);
 
-    const options = requestChoice.mock.calls[0]?.[1] as HostChoiceOption[];
+    const options = requestChoice.mock.calls[0]?.[1] as PromptChoiceOption[];
     expect(options.map((option) => option.value)).toEqual(["other", ""]);
     expect(takePendingResume()).toBe("other");
   });

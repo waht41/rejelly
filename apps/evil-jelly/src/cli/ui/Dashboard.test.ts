@@ -3,7 +3,7 @@ import { createElement } from "react";
 import stringWidth from "string-width";
 import stripAnsi from "strip-ansi";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { RuntimePhase } from "../../shared/types";
+import type { RuntimePhase } from "../../shared/conversation/viewBindings";
 import { resetOutputSession, useOutputStore } from "../store/useOutputStore";
 import { RuntimeStatusLine } from "./Dashboard";
 

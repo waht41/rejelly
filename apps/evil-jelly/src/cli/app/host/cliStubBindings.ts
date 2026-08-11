@@ -2,7 +2,7 @@
  * Host binding stubs for non-router entry points.
  */
 
-import type { EvilJellyHostBindings } from "../../../shared/types";
+import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import { classifyShellCommand } from "../../runtime/shellCommandPolicy";
 
 export interface StubHostBindingsOptions {
@@ -17,7 +17,7 @@ export interface StubHostBindingsOptions {
 function createStubHostBindings(
   logPrefix: string,
   options: StubHostBindingsOptions = {},
-): EvilJellyHostBindings {
+): EvilJellyBindings {
   const {
     autoAcceptWrite = false,
     allowReadonlyShellCommands = false,
@@ -94,7 +94,7 @@ function createStubHostBindings(
  */
 export function createBackgroundHostBindings(
   options: StubHostBindingsOptions = {},
-): EvilJellyHostBindings {
+): EvilJellyBindings {
   return createStubHostBindings("cli", {
     allowReadonlyShellCommands: true,
     ...options,

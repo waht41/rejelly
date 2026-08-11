@@ -15,11 +15,11 @@ import { loadStartupSnapshot } from "./app/snapshot";
 import { createCliHostBindings } from "./bindings/cliBinding";
 import { enqueueLineInput } from "./bindings/promptQueue";
 
+export type { EvilJellyBindings } from "../shared/host/bindings";
 export type {
-  EvilJellyHostBindings,
-  HostChoiceOption,
-  HostChoiceView,
-} from "../shared/types";
+  PromptChoiceOption,
+  PromptChoiceView,
+} from "../shared/input/bindings";
 export { runEvilJellyHost } from "./app/host/runHost";
 
 async function main() {

@@ -11,8 +11,8 @@ import {
 } from "../../domains/session/repository/sessionStore";
 import { countConversationTurns } from "../../shared/conversation/compactionMessages";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
+import type { EvilJellyBindings } from "../../shared/host/bindings";
 import type { TranscriptItem } from "../../shared/session/transcript";
-import type { EvilJellyHostBindings } from "../../shared/types";
 
 export interface SessionResumeSeed {
   activeContext: Message[];
@@ -116,7 +116,7 @@ export function buildSessionResumeSeed(record: SessionRecord): SessionResumeSeed
  * already storage-version agnostic; V1/V2 conversion belongs in their respective seed builders.
  */
 export function hydrateResumeSeed(
-  bindings: EvilJellyHostBindings,
+  bindings: EvilJellyBindings,
   sessionId: string,
   seed: SessionResumeSeed,
 ): void {

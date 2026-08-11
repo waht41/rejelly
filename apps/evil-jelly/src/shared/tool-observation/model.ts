@@ -27,3 +27,11 @@ export interface ToolObservationBlock extends ToolObservationStart {
   fullResult: string;
   ok: boolean;
 }
+
+/** Sink implemented by a runtime adapter to present and retain observed tool calls. */
+export interface ToolObservationSink {
+  logToolRound?: (calls: number) => void;
+  logToolStart?: (start: ToolObservationStart) => ToolCallHandle;
+  appendToolOutput?: (toolCallId: string, chunk: string) => void;
+  logToolBlock: (block: ToolObservationBlock) => void;
+}

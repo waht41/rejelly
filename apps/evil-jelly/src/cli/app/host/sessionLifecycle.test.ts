@@ -13,9 +13,9 @@ import { openSessionRecorder } from "../../../domains/session/recorder/sessionRe
 import { resumeSession } from "../../../domains/session/repository/sessionStore";
 import { isCompactionBridgeMessage } from "../../../shared/conversation/compactionMessages";
 import { setWorkspaceRoot } from "../../../shared/fs-policy/workspace-fs-policy";
+import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import { messageContentToText } from "../../../shared/model/message/content";
 import type { TranscriptItem } from "../../../shared/session/transcript";
-import type { EvilJellyHostBindings } from "../../../shared/types";
 import { runEvilJellyHost } from "./runHost";
 
 const originalAutoCompactTokens = process.env.OPENAI_AUTO_COMPACT_TOKENS;
@@ -30,9 +30,9 @@ function restoreEnv(name: string, value: string | undefined): void {
   }
 }
 
-type MemoryInput = Awaited<ReturnType<EvilJellyHostBindings["getInput"]>>;
+type MemoryInput = Awaited<ReturnType<EvilJellyBindings["getInput"]>>;
 
-function createMemoryBindings(inputs: Array<string | MemoryInput>): EvilJellyHostBindings {
+function createMemoryBindings(inputs: Array<string | MemoryInput>): EvilJellyBindings {
   const queue = [...inputs];
   return {
     getInput: async () => {

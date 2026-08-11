@@ -1,10 +1,10 @@
 import type { FsOutsideAccessPayload } from "../shared/AgentShared";
-import type { EvilJellyHostBindings } from "../shared/types";
+import type { EvilJellyBindings } from "../shared/host/bindings";
 
 export function createTestHostBindings(options: {
   mode?: "normal" | "auto";
   outsideAccessRequests?: FsOutsideAccessPayload[];
-}): EvilJellyHostBindings {
+}): EvilJellyBindings {
   return {
     getInput: async () => ({ text: "" }),
     printOut: () => {},

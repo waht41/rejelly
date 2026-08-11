@@ -28,9 +28,9 @@ import type { LineInputValue } from "../../../shared/AgentShared";
 import { env } from "../../../shared/config";
 import { countConversationTurns } from "../../../shared/conversation/compactionMessages";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
-import { getBinding, setBinding } from "../../../shared/host/hostBindings";
+import type { EvilJellyBindings } from "../../../shared/host/bindings";
+import { getBinding, setBinding } from "../../../shared/host/context";
 import { getUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
-import type { EvilJellyHostBindings } from "../../../shared/types";
 import { requestNewSession, requestResume } from "../../runtime/sessionRunControl";
 import { drainSteers } from "../../runtime/steerControl";
 import { withAbort } from "../../runtime/withAbort";
@@ -48,7 +48,7 @@ const UnifiedAgentWithAbort = UnifiedAgent.fork({ middlewares: [withAbort()] });
 export async function tryRequestResume(
   rawInput: string,
   currentSessionId: string | undefined,
-  host: EvilJellyHostBindings,
+  host: EvilJellyBindings,
 ): Promise<boolean> {
   const arg = rawInput.slice("/resume".length).trim();
   const workspaceRoot = getWorkspaceFsPolicy().getRoot();
@@ -90,7 +90,7 @@ export async function tryRequestResume(
   return true;
 }
 
-export interface MainCliAgentProps extends EvilJellyHostBindings {
+export interface MainCliAgentProps extends EvilJellyBindings {
   /** Durable session id; when set, each completed turn is persisted locally for resume. */
   sessionId?: string;
   /** Current run segment traceId, recorded in the session's trace chain. */
@@ -120,7 +120,7 @@ type RouterIntent =
 
 interface RouterRuntime {
   props: MainCliAgentProps;
-  host: EvilJellyHostBindings;
+  host: EvilJellyBindings;
   history: Message[];
   setHistory: (messages: Message[]) => void;
   currentBudget: () => SessionBudget;

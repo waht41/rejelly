@@ -1,10 +1,10 @@
 import type { AgentSnapshot } from "@rejelly/core";
 import { loadSnapshotFromTraceId } from "../../features/replay/snapshot/restore";
-import type { EvilJellyHostBindings } from "../../shared/types";
+import type { EvilJellyBindings } from "../../shared/host/bindings";
 
 export async function loadStartupSnapshot(
   snapshotTraceId: string | undefined,
-  bindings: EvilJellyHostBindings,
+  bindings: EvilJellyBindings,
 ): Promise<AgentSnapshot | undefined> {
   if (!snapshotTraceId) {
     return undefined;

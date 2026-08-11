@@ -8,14 +8,14 @@ import {
   getWorkspaceFsPolicy,
   setWorkspaceRoot,
 } from "../../../shared/fs-policy/workspace-fs-policy";
-import type { EvilJellyHostBindings } from "../../../shared/types";
+import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import { MAX_READ_BYTES_PER_CALL, MAX_READ_LINE_BYTES, ReadFileTool } from "./FileSystemTools";
 
 const hostBindingMock = vi.hoisted(() => ({
-  current: null as EvilJellyHostBindings | null,
+  current: null as EvilJellyBindings | null,
 }));
 
-vi.mock("../../../shared/host/hostBindings", () => ({
+vi.mock("../../../shared/host/context", () => ({
   getBinding: () => {
     if (!hostBindingMock.current) {
       throw new Error("No test host binding registered.");

@@ -10,8 +10,9 @@ import {
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { COMPACTION_STREAM_CHANNEL } from "../../domains/policy/compactionChannel";
-import { setBinding } from "../../shared/host/hostBindings";
-import type { EvilJellyHostBindings, RuntimePhase } from "../../shared/types";
+import type { RuntimePhase } from "../../shared/conversation/viewBindings";
+import type { EvilJellyBindings } from "../../shared/host/bindings";
+import { setBinding } from "../../shared/host/context";
 import {
   phaseForStreamEvent,
   type StreamTurnProgress,
@@ -22,7 +23,7 @@ function createTestBindings(
   output: string[],
   phases: RuntimePhase[] = [],
   rounds: number[] = [],
-): EvilJellyHostBindings {
+): EvilJellyBindings {
   return {
     getInput: async () => ({ text: "" }),
     printOut: (message) => output.push(message),

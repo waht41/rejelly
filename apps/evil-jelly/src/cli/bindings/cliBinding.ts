@@ -1,11 +1,15 @@
 /**
- * Wires Ink Dashboard UI to {@link EvilJellyHostBindings}.
+ * Wires Ink Dashboard UI to {@link EvilJellyBindings}.
  */
 
 import { env, getReviewEndpointFromEnv } from "../../shared/config";
+import type { ConversationViewBindings } from "../../shared/conversation/viewBindings";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
+import type { EvilJellyBindings } from "../../shared/host/bindings";
+import type { PromptChoiceView, PromptInputBindings } from "../../shared/input/bindings";
 import { resetRuntimeTaskStack } from "../../shared/runtime/runtimeControl";
-import type { EvilJellyHostBindings, HostChoiceView } from "../../shared/types";
+import type { ToolConfirmationBindings } from "../../shared/tool-confirmation/bindings";
+import type { ToolObservationSink } from "../../shared/tool-observation/model";
 import { resetModeSession, useModeStore } from "../store/useModeStore";
 import { resetOutputSession, TOOL_FULL_CAP, useOutputStore } from "../store/useOutputStore";
 import type { ActionMenuOption, TransientView } from "../store/usePromptStore";
@@ -16,7 +20,7 @@ import { createInkGetInput } from "./getInput";
 import { createInkLifecycle } from "./inkLifecycle";
 import { resetPromptQueue, runPromptSession } from "./promptQueue";
 
-function toTransientView(view?: HostChoiceView): TransientView | undefined {
+function toTransientView(view?: PromptChoiceView): TransientView | undefined {
   if (view === undefined) {
     return undefined;
   }
@@ -35,11 +39,11 @@ function resetCliBindingSession(): void {
   resetRuntimeTaskStack();
 }
 
-function createInkRequestChoice(): EvilJellyHostBindings["requestChoice"] {
+function createInkRequestChoice(): PromptInputBindings["requestChoice"] {
   return async (
     message: string,
     options: ActionMenuOption[],
-    view?: HostChoiceView,
+    view?: PromptChoiceView,
   ): Promise<string> => {
     return runPromptSession(async () => {
       useOutputStore.getState().setPhase("awaiting_user", "Waiting for user choice…");
@@ -52,23 +56,7 @@ function createInkRequestChoice(): EvilJellyHostBindings["requestChoice"] {
   };
 }
 
-function createOutputBindings(): Pick<
-  EvilJellyHostBindings,
-  | "printOut"
-  | "logUserMessage"
-  | "logAssistantMessage"
-  | "logSystemEvent"
-  | "clearHistory"
-  | "onDetailUpdate"
-  | "onPhaseUpdate"
-  | "onTurnStart"
-  | "setAvailableSkills"
-  | "logToolRound"
-  | "logToolStart"
-  | "appendToolOutput"
-  | "logToolBlock"
-  | "hydrateHistory"
-> {
+function createOutputBindings(): ConversationViewBindings & ToolObservationSink {
   const out = () => useOutputStore.getState();
 
   return {
@@ -113,9 +101,6 @@ function createOutputBindings(): Pick<
     onTurnStart: () => {
       out().beginTurn();
     },
-    setAvailableSkills: (skills) => {
-      usePromptStore.getState().setAvailableSkills(skills);
-    },
   };
 }
 
@@ -129,7 +114,7 @@ function showSessionBanner(version: string): void {
 }
 
 function logCliStartup(
-  logSystemEvent: EvilJellyHostBindings["logSystemEvent"],
+  logSystemEvent: ConversationViewBindings["logSystemEvent"],
   showBanner: () => void,
   reviewCliFlag: boolean | undefined,
 ): void {
@@ -143,7 +128,7 @@ function logCliStartup(
 function createPromptBindings(options: {
   seedInput: string | undefined;
   suspendInkForExternalProcess: <T>(fn: () => Promise<T>) => Promise<T>;
-}): Pick<EvilJellyHostBindings, "getInput" | "confirmTool" | "requestChoice" | "getAgentMode"> {
+}): PromptInputBindings & ToolConfirmationBindings {
   const { seedInput, suspendInkForExternalProcess } = options;
   return {
     getInput: createInkGetInput(seedInput !== undefined ? { seedLine: seedInput } : undefined),
@@ -153,6 +138,9 @@ function createPromptBindings(options: {
     }),
     getAgentMode: () => useModeStore.getState().mode,
     requestChoice: createInkRequestChoice(),
+    setAvailableSkills: (skills) => {
+      usePromptStore.getState().setAvailableSkills(skills);
+    },
   };
 }
 
@@ -170,7 +158,7 @@ export interface CreateCliHostBindingsOptions {
  * Caller owns the run flow and must call dispose when finished.
  */
 export function createCliHostBindings(options: CreateCliHostBindingsOptions): {
-  bindings: EvilJellyHostBindings;
+  bindings: EvilJellyBindings;
   dispose: () => void;
 } {
   const { version, seedInput, reviewCliFlag } = options;

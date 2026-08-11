@@ -3,13 +3,13 @@
  */
 
 import { create } from "zustand";
+import type { RuntimePhase } from "../../shared/conversation/viewBindings";
 import type { TranscriptItem } from "../../shared/session/transcript";
 import type {
   ToolCallHandle,
   ToolObservationDetail,
   ToolObservationStart,
 } from "../../shared/tool-observation/model";
-import type { RuntimePhase } from "../../shared/types";
 import { StreamStableTailController } from "./streamStableTail";
 import { drainToolOutput } from "./toolTailWindow";
 

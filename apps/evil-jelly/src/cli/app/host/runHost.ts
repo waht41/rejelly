@@ -22,8 +22,8 @@ import {
 } from "../../../domains/skills/agent/skillRuntime";
 import { UnifiedAgent } from "../../../features/unified/UnifiedAgent";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
-import { setBinding } from "../../../shared/host/hostBindings";
-import type { EvilJellyHostBindings } from "../../../shared/types";
+import type { EvilJellyBindings } from "../../../shared/host/bindings";
+import { setBinding } from "../../../shared/host/context";
 import { registerRunAbort } from "../../runtime/runControl";
 import { generateTraceId } from "../../runtime/traceId";
 import { withAbort } from "../../runtime/withAbort";
@@ -150,7 +150,7 @@ async function endRunSegment(
 async function endRunSegmentBestEffort(
   recorder: SessionRecorder | undefined,
   input: Parameters<SessionRecorder["endSegment"]>[0],
-  bindings: EvilJellyHostBindings,
+  bindings: EvilJellyBindings,
 ): Promise<void> {
   try {
     await endRunSegment(recorder, input);
@@ -161,7 +161,7 @@ async function endRunSegmentBestEffort(
 
 async function closeRunSessionRecorder(
   recorder: SessionRecorder | undefined,
-  bindings: EvilJellyHostBindings,
+  bindings: EvilJellyBindings,
 ): Promise<void> {
   try {
     await recorder?.close();
@@ -175,7 +175,7 @@ async function closeRunSessionRecorder(
  * Does not call process.exit - close resources in the caller after this resolves.
  */
 export async function runEvilJellyHost(
-  bindings: EvilJellyHostBindings,
+  bindings: EvilJellyBindings,
   options: RunEvilJellyHostOptions,
 ): Promise<void> {
   const {
@@ -271,7 +271,7 @@ export async function runEvilJellyHost(
 
 /** Runs UnifiedAgent once in headless mode (no router / no Ink prompt loop). */
 export async function runDirectUnified(
-  bindings: EvilJellyHostBindings,
+  bindings: EvilJellyBindings,
   options: RunDirectUnifiedOptions,
 ): Promise<void> {
   const { model, userInput, history } = options;

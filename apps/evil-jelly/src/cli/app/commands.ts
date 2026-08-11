@@ -8,7 +8,7 @@ import {
   resolveGlobalEnvPath,
   saveEnvValues,
 } from "../../shared/config";
-import { setBinding } from "../../shared/host/hostBindings";
+import { setBinding } from "../../shared/host/context";
 import { generateTraceId } from "../runtime/traceId";
 import { withAbort } from "../runtime/withAbort";
 import type { ParsedAuditArgs, ParsedRunArgs } from "./args";

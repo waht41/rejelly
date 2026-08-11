@@ -1,7 +1,7 @@
 /** Observe equipped tool calls and project their lifecycle to the configured runtime bindings. */
 
 import type { ToolMiddleware } from "@rejelly/core";
-import { getBinding } from "../host/hostBindings";
+import { getBinding } from "../host/context";
 import {
   runWithToolDetailSlot,
   setActiveToolCall,

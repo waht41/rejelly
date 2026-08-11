@@ -1,6 +1,6 @@
 import type { Message } from "@rejelly/core";
 import { describe, expect, it } from "vitest";
-import type { EvilJellyHostBindings } from "../../shared/types";
+import type { EvilJellyBindings } from "../../shared/host/bindings";
 import { buildLegacyResumeSeed, hydrateResumeSeed } from "./resume";
 
 function createBindings() {
@@ -8,14 +8,14 @@ function createBindings() {
     users: string[];
     assistants: string[];
     systems: string[];
-    tools: Parameters<EvilJellyHostBindings["logToolBlock"]>[0][];
+    tools: Parameters<EvilJellyBindings["logToolBlock"]>[0][];
   } = {
     users: [],
     assistants: [],
     systems: [],
     tools: [],
   };
-  const bindings: EvilJellyHostBindings = {
+  const bindings: EvilJellyBindings = {
     getInput: async () => ({ text: "", attachments: [] }),
     printOut: () => {},
     logUserMessage: (message) => calls.users.push(message),
@@ -129,7 +129,7 @@ describe("hydrateResumeSeed", () => {
 
   it("hydrates a bounded transcript in one host call and reports omitted earlier turns", () => {
     const { bindings, calls } = createBindings();
-    const hydrated: Parameters<NonNullable<EvilJellyHostBindings["hydrateHistory"]>>[0][] = [];
+    const hydrated: Parameters<NonNullable<EvilJellyBindings["hydrateHistory"]>>[0][] = [];
     bindings.hydrateHistory = (items) => hydrated.push(items);
 
     hydrateResumeSeed(bindings, "session_tail", {

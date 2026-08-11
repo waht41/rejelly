@@ -7,9 +7,9 @@ import {
 } from "../../domains/session/repository/sessionStore";
 import { qualifiedSkillName } from "../../domains/skills/definition/skillDefinition";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
+import type { EvilJellyBindings } from "../../shared/host/bindings";
 import type { TranscriptItem } from "../../shared/session/transcript";
 import { getSettings } from "../../shared/settings";
-import type { EvilJellyHostBindings } from "../../shared/types";
 import {
   takePendingExit,
   takePendingNewSession,
@@ -28,7 +28,7 @@ import {
 } from "./resume";
 
 export interface RunInteractiveLoopParams {
-  bindings: EvilJellyHostBindings;
+  bindings: EvilJellyBindings;
   model: ModelAdapter;
   enableReview: boolean;
   snapshot: AgentSnapshot | undefined;

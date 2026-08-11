@@ -14,7 +14,7 @@
 
 import { createAgent } from "@rejelly/core";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
-import { getBinding } from "../../shared/host/hostBindings";
+import { getBinding } from "../../shared/host/context";
 import { getSettings } from "../../shared/settings";
 import { cloneFamily } from "./families/clone";
 import { complexityFamily } from "./families/complexity";

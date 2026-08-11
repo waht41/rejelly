@@ -6,14 +6,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestHostBindings } from "../../../__tests__/testHostBindings";
 import type { FsOutsideAccessPayload, FsWritePayload } from "../../../shared/AgentShared";
 import { setWorkspaceRoot } from "../../../shared/fs-policy/workspace-fs-policy";
-import type { EvilJellyHostBindings } from "../../../shared/types";
+import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import { createCreateFileTool, createDeleteFileTool, createEditFileTool } from "./WriteTools";
 
 const hostBindingMock = vi.hoisted(() => ({
-  current: null as EvilJellyHostBindings | null,
+  current: null as EvilJellyBindings | null,
 }));
 
-vi.mock("../../../shared/host/hostBindings", () => ({
+vi.mock("../../../shared/host/context", () => ({
   getBinding: () => {
     if (!hostBindingMock.current) {
       throw new Error("No test host binding registered.");

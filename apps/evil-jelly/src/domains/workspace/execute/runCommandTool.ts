@@ -9,7 +9,7 @@ import {
   getWorkspaceFsPolicy,
   resolveWorkspaceCwd,
 } from "../../../shared/fs-policy/workspace-fs-policy";
-import { getBinding } from "../../../shared/host/hostBindings";
+import { getBinding } from "../../../shared/host/context";
 import { pushRuntimeTask } from "../../../shared/runtime/runtimeControl";
 import { getActiveToolCall } from "../../../shared/tool-observation/invocationContext";
 import { executeShellCommand, getShellEnvironmentSummary } from "./executeShellCommand";
