@@ -2,7 +2,7 @@
  * Composes system-style prompts from blocks and lists; blocks are joined with \n\n only.
  */
 
-import { type PseudoXmlAttributes, renderPseudoXmlElement } from "../../shared/lib/pseudoXml";
+import { type PseudoXmlAttributes, renderPseudoXmlElement } from "./pseudoXml";
 
 export type AddListOptions = {
   /** Optional heading line placed above the list. */

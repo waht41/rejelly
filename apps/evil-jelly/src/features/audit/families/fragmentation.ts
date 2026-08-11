@@ -14,7 +14,7 @@
  */
 
 import type { z } from "zod";
-import { PromptBuilder } from "../../../services/prompt/PromptBuilder";
+import { PromptBuilder } from "../../../shared/lib/promptBuilder";
 import type { FragmentationCluster } from "../detectors/fragmentation";
 import { detectFragmentationCandidates } from "../detectors/fragmentation";
 import { compareString, fencedCodeBlock, readCappedLineSlice } from "../familySource";

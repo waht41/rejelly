@@ -9,7 +9,7 @@
  */
 
 import type { z } from "zod";
-import { PromptBuilder } from "../../../services/prompt/PromptBuilder";
+import { PromptBuilder } from "../../../shared/lib/promptBuilder";
 import type { CloneCluster, CloneFragment } from "../detectors/clone";
 import { detectCloneCandidates } from "../detectors/clone";
 import {
