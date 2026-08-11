@@ -2,7 +2,6 @@ import { createInterface } from "node:readline/promises";
 import { AuditAgent } from "../../features/audit/AuditAgent";
 import { docMapPath, loadDocMap } from "../../features/audit/detectors/docDrift";
 import {
-  createOpenAIModelFromEnv,
   env,
   readEnvValues,
   resolveEnvProfilePath,
@@ -17,6 +16,7 @@ import { createBackgroundHostBindings } from "./host/cliStubBindings";
 import { runDirectUnified } from "./host/runHost";
 import { runWithReview } from "./host/runWithReview";
 import { collectInitConfig } from "./initConfig";
+import { createOpenAIModelFromEnv } from "./model/createModelFromEnv";
 
 const AuditAgentWithAbort = AuditAgent.fork({ middlewares: [withAbort()] });
 

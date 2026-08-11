@@ -3,16 +3,12 @@
  */
 
 import { loadMockReplayFromTraceId } from "../features/replay/mock/mockFromTrace";
-import {
-  createOpenAIModelFromEnv,
-  env,
-  exitIfMissingOpenAIKey,
-  loadEvilJellyEnv,
-} from "../shared/config";
+import { env, exitIfMissingOpenAIKey, loadEvilJellyEnv } from "../shared/config";
 import { initSettings } from "../shared/settings";
 import { getCliVersion, parseCliArgs } from "./app/args";
 import { applyWorkspaceRootFromArgs } from "./app/bootstrap";
 import { runAuditCommand, runHeadlessUnifiedCommand, runInitCommand } from "./app/commands";
+import { createOpenAIModelFromEnv } from "./app/model/createModelFromEnv";
 import { resolveInitialSession } from "./app/resume";
 import { runInteractiveLoop } from "./app/runLoop";
 import { loadStartupSnapshot } from "./app/snapshot";

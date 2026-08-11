@@ -1,11 +1,9 @@
 /**
- * Env loading, OpenAI adapter factory, and Review exporter option resolution.
+ * Env loading and Review exporter option resolution.
  */
 
 import fs from "node:fs";
 import path from "node:path";
-import { type ChatCompletionParams, createOpenAIAdapter } from "@rejelly/adapter-openai";
-import { augmentModel, type ModelAdapter } from "@rejelly/core";
 import type { ReviewOptions } from "@rejelly/core/debugger";
 import { parse as parseEnv } from "dotenv";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
@@ -16,7 +14,6 @@ import {
 } from "./configDefaults";
 import { getWorkspaceFsPolicy } from "./fs-policy/workspace-fs-policy";
 import { resolveGlobalJellyDir } from "./globalPath";
-import { withRetry } from "./lib/withRetry";
 
 const FALLBACK_REVIEW_ENDPOINT = "http://localhost:5789/api/v1/traces";
 const PROXY_ONCE = Symbol.for("rejelly.env.proxyConfigured");
@@ -54,18 +51,6 @@ function normalizeReviewTracesEndpoint(raw: string): string {
 
 function hasEnvValue(value: string | undefined): value is string {
   return value !== undefined && value.trim().length > 0;
-}
-
-function isDeepSeekModelConfig(options: {
-  modelId: string;
-  provider: string;
-  baseURL: string;
-}): boolean {
-  const modelId = options.modelId.trim().toLowerCase();
-  const provider = options.provider.trim().toLowerCase();
-  const baseURL = options.baseURL.trim().toLowerCase();
-
-  return provider === "deepseek" || modelId.includes("deepseek") || baseURL.includes("deepseek");
 }
 
 function readEnvFile(filePath: string): Record<string, string> {
@@ -413,55 +398,6 @@ export function exitIfMissingOpenAIKey(): void {
     );
     process.exit(1);
   }
-}
-
-/**
- * Reasoning knobs, or undefined when the var is unset (provider default applies).
- *
- * The effort value is forwarded verbatim: vocabularies differ per provider (`max` is
- * DeepSeek's, `minimal` is OpenAI's) and the SDK's ReasoningEffort union covers neither
- * fully, so the value is validated server-side rather than here. DeepSeek also gates
- * thinking behind its own `thinking` switch, which is not an SDK field at all — the
- * adapter merges these params into the request body, so it rides along untyped.
- */
-function resolveReasoningParams(isDeepSeek: boolean): ChatCompletionParams | undefined {
-  const effort = env.OPENAI_REASONING_EFFORT.trim().toLowerCase();
-  if (!effort) {
-    return undefined;
-  }
-  const params: Record<string, unknown> = { reasoning_effort: effort };
-  if (isDeepSeek) {
-    params.thinking = { type: effort === "none" ? "disabled" : "enabled" };
-  }
-  return params as ChatCompletionParams;
-}
-
-/** Model adapter from current process.env (after loadEvilJellyEnv). */
-export function createOpenAIModelFromEnv(): ModelAdapter {
-  const apiKey = env.OPENAI_API_KEY;
-  const modelId = env.OPENAI_MODEL_ID;
-  const baseURL = env.OPENAI_BASE_URL;
-  const provider = env.OPENAI_PROVIDER;
-
-  // DeepSeek has a native JSON mode (response_format: json_object) but no strict
-  // json_schema; route it there.
-  const isDeepSeek = isDeepSeekModelConfig({ modelId, provider, baseURL });
-  const chatCompletionParams = resolveReasoningParams(isDeepSeek);
-
-  const adapter = createOpenAIAdapter({
-    modelId,
-    baseURL,
-    provider,
-    apiKey,
-    ...(isDeepSeek ? { schemaMode: "json_object" as const } : {}),
-    ...(chatCompletionParams ? { chatCompletionParams } : {}),
-  });
-
-  return augmentModel(adapter, [
-    withRetry({
-      maxAttempts: env.OPENAI_RETRY_MAX_ATTEMPTS,
-    }),
-  ]);
 }
 
 export function getReviewEndpointFromEnv(): string {
