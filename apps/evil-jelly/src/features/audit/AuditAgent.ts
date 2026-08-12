@@ -13,9 +13,9 @@
  */
 
 import { createAgent } from "@rejelly/core";
+import { getSettings } from "../../shared/configuration/settings";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import { getBinding } from "../../shared/host/context";
-import { getSettings } from "../../shared/settings";
 import { cloneFamily } from "./families/clone";
 import { complexityFamily } from "./families/complexity";
 import { docDriftFamily } from "./families/docDrift";

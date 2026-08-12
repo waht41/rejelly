@@ -15,9 +15,9 @@ import {
   resolveSkillRoots,
   type SkillSource,
 } from "../../../domains/skills/loader/skillSourceRoots";
+import { getSettings, type ResolvedSettings } from "../../../shared/configuration/settings";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
 import { resolveGlobalJellyDir } from "../../../shared/globalPath";
-import { getSettings, type ResolvedSettings } from "../../../shared/settings";
 
 const SKILL_STARTUP_SUMMARY_CHARS = 1_000;
 

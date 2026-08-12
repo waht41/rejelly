@@ -6,10 +6,10 @@ import {
   type SessionBudget,
 } from "../../domains/session/repository/sessionStore";
 import { qualifiedSkillName } from "../../domains/skills/definition/skillDefinition";
+import { getSettings } from "../../shared/configuration/settings";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../shared/host/bindings";
 import type { TranscriptItem } from "../../shared/session/transcript";
-import { getSettings } from "../../shared/settings";
 import {
   takePendingExit,
   takePendingNewSession,

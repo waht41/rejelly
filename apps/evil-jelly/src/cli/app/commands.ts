@@ -7,7 +7,7 @@ import {
   resolveEnvProfilePath,
   resolveGlobalEnvPath,
   saveEnvValues,
-} from "../../shared/config";
+} from "../../shared/configuration/env";
 import { setBinding } from "../../shared/host/context";
 import { generateTraceId } from "../runtime/traceId";
 import { withAbort } from "../runtime/withAbort";

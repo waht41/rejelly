@@ -21,7 +21,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { equipMCP } from "@rejelly/adapter-mcp";
 import { expectResource } from "@rejelly/core";
-import { getReviewEndpointFromEnv } from "../../shared/config";
+import { getReviewEndpointFromEnv } from "../../shared/configuration/env";
 import { evilJellyToolLoggerMiddleware } from "../../shared/tool-observation/middleware";
 
 export interface McpProviderConnectionOptions {

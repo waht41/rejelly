@@ -1,6 +1,6 @@
 import { type ModelAdapter, runWith } from "@rejelly/core";
 import { enableReview, type ReviewOptions } from "@rejelly/core/debugger";
-import { resolveReviewOptions } from "../../../shared/config";
+import { resolveReviewOptions } from "../../../shared/configuration/env";
 
 type RunWithOptions = NonNullable<Parameters<typeof runWith>[1]>;
 

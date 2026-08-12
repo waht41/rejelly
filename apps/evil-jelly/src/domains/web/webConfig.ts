@@ -5,7 +5,10 @@
  * never opens its own .env file.
  */
 
-import { DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL_ID } from "../../shared/configDefaults";
+import {
+  DEFAULT_OPENAI_BASE_URL,
+  DEFAULT_OPENAI_MODEL_ID,
+} from "../../shared/configuration/modelDefaults";
 
 const DEFAULT_USER_AGENT = "rejelly-web-reader/0.1 (+https://github.com/waht41/rejelly)";
 

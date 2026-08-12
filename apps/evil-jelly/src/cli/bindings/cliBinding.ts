@@ -2,7 +2,7 @@
  * Wires Ink Dashboard UI to {@link EvilJellyBindings}.
  */
 
-import { env, getReviewEndpointFromEnv } from "../../shared/config";
+import { env, getReviewEndpointFromEnv } from "../../shared/configuration/env";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../shared/host/bindings";
 import type { PromptChoiceView, PromptInputBindings } from "../../shared/host/inputBindings";

@@ -7,13 +7,13 @@ import path from "node:path";
 import type { ReviewOptions } from "@rejelly/core/debugger";
 import { parse as parseEnv } from "dotenv";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
+import { getWorkspaceFsPolicy } from "../fs-policy/workspace-fs-policy";
+import { resolveGlobalJellyDir } from "../globalPath";
 import {
   DEFAULT_OPENAI_BASE_URL,
   DEFAULT_OPENAI_MODEL_ID,
   MIN_OPENAI_CONTEXT_WINDOW_TOKENS,
-} from "./configDefaults";
-import { getWorkspaceFsPolicy } from "./fs-policy/workspace-fs-policy";
-import { resolveGlobalJellyDir } from "./globalPath";
+} from "./modelDefaults";
 
 const FALLBACK_REVIEW_ENDPOINT = "http://localhost:5789/api/v1/traces";
 const PROXY_ONCE = Symbol.for("rejelly.env.proxyConfigured");

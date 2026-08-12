@@ -2,11 +2,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { initSettings } from "../../../../shared/configuration/settings";
 import {
   getWorkspaceFsPolicy,
   setWorkspaceRoot,
 } from "../../../../shared/fs-policy/workspace-fs-policy";
-import { initSettings } from "../../../../shared/settings";
 import { parseDocMap, resolveDocMapEntries, resolveSyncPairs } from "./docmap";
 
 describe("parseDocMap", () => {

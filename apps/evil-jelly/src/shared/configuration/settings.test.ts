@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os, { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getWorkspaceFsPolicy, setWorkspaceRoot } from "./fs-policy/workspace-fs-policy";
+import { getWorkspaceFsPolicy, setWorkspaceRoot } from "../fs-policy/workspace-fs-policy";
 import {
   DOC_MAP_DEFAULT_PATH,
   getSettings,

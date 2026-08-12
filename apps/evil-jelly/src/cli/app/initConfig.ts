@@ -1,4 +1,7 @@
-import { DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL_ID } from "../../shared/configDefaults";
+import {
+  DEFAULT_OPENAI_BASE_URL,
+  DEFAULT_OPENAI_MODEL_ID,
+} from "../../shared/configuration/modelDefaults";
 
 export type InitConfigValues = {
   apiKey: string;

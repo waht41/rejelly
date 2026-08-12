@@ -2,7 +2,7 @@
 
 import { type ChatCompletionParams, createOpenAIAdapter } from "@rejelly/adapter-openai";
 import { augmentModel, type ModelAdapter } from "@rejelly/core";
-import { env } from "../../../shared/config";
+import { env } from "../../../shared/configuration/env";
 import { withRetry } from "./withRetry";
 
 function isDeepSeekModelConfig(options: {

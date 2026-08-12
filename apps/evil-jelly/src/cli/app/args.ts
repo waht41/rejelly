@@ -8,7 +8,7 @@ import {
   SELECTABLE_AUDIT_FAMILIES,
   type SelectableAuditFamilyKind,
 } from "../../features/audit/contracts";
-import type { SettingsCliOverrides } from "../../shared/settings";
+import type { SettingsCliOverrides } from "../../shared/configuration/settings";
 
 type CommonParsedArgs = {
   /** OPENAI_API_KEY override from CLI; highest priority. */

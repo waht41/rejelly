@@ -1,6 +1,6 @@
 import { augmentTool, equipInstruction, equipTool, expectResource } from "@rejelly/core";
-import { env } from "../../../shared/config";
-import { DEFAULT_OPENAI_CONTEXT_WINDOW_TOKENS } from "../../../shared/configDefaults";
+import { env } from "../../../shared/configuration/env";
+import { DEFAULT_OPENAI_CONTEXT_WINDOW_TOKENS } from "../../../shared/configuration/modelDefaults";
 import { evilJellyToolLoggerMiddleware } from "../../../shared/tool-observation/middleware";
 import { renderSkillCatalog } from "./catalogPrompt";
 import { SKILL_RUNTIME_PROVIDER_KEY, type SkillRuntimeSnapshot } from "./skillRuntime";

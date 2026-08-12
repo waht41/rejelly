@@ -29,7 +29,7 @@ vi.mock("../../domains/mcp/mcpServerKit", () => ({
   })),
 }));
 
-vi.mock("../../shared/settings", () => ({
+vi.mock("../../shared/configuration/settings", () => ({
   getSettings: () => ({ devtoolMcp: true }),
 }));
 

@@ -14,10 +14,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { getErrnoCode } from "./foundation/errno";
-import { parseAndValidateJsonc } from "./foundation/jsonc";
-import { getWorkspaceFsPolicy } from "./fs-policy/workspace-fs-policy";
-import { resolveGlobalJellyDir } from "./globalPath";
+import { getErrnoCode } from "../foundation/errno";
+import { parseAndValidateJsonc } from "../foundation/jsonc";
+import { getWorkspaceFsPolicy } from "../fs-policy/workspace-fs-policy";
+import { resolveGlobalJellyDir } from "../globalPath";
 
 export const SETTINGS_FILE_REL_PATH = ".evil-jelly/settings.jsonc";
 export const DOC_MAP_DEFAULT_PATH = ".evil-jelly/doc-map.jsonc";

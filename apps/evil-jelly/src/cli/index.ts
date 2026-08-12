@@ -3,8 +3,8 @@
  */
 
 import { loadMockReplayFromTraceId } from "../features/replay/mock/mockFromTrace";
-import { env, exitIfMissingOpenAIKey, loadEvilJellyEnv } from "../shared/config";
-import { initSettings } from "../shared/settings";
+import { env, exitIfMissingOpenAIKey, loadEvilJellyEnv } from "../shared/configuration/env";
+import { initSettings } from "../shared/configuration/settings";
 import { getCliVersion, parseCliArgs } from "./app/args";
 import { applyWorkspaceRootFromArgs } from "./app/bootstrap";
 import { runAuditCommand, runHeadlessUnifiedCommand, runInitCommand } from "./app/commands";

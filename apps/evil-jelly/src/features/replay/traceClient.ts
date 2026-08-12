@@ -1,5 +1,5 @@
 import type { TraceEvent } from "@rejelly/core";
-import { getReviewEndpointFromEnv } from "../../shared/config";
+import { getReviewEndpointFromEnv } from "../../shared/configuration/env";
 
 export async function fetchTraceEvents(traceId: string): Promise<TraceEvent[]> {
   const base = getReviewEndpointFromEnv().replace(/\/$/, "");

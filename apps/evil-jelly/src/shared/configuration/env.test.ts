@@ -10,9 +10,9 @@ const undiciMock = vi.hoisted(() => ({
 
 vi.mock("undici", () => undiciMock);
 
-import { env, loadEvilJellyEnv, resolveGlobalEnvPath, saveGlobalEnvValues } from "./config";
-import { getWorkspaceFsPolicy, setWorkspaceRoot } from "./fs-policy/workspace-fs-policy";
-import { resolveGlobalJellyDir } from "./globalPath";
+import { getWorkspaceFsPolicy, setWorkspaceRoot } from "../fs-policy/workspace-fs-policy";
+import { resolveGlobalJellyDir } from "../globalPath";
+import { env, loadEvilJellyEnv, resolveGlobalEnvPath, saveGlobalEnvValues } from "./env";
 
 const createdDirs: string[] = [];
 const trackedEnvKeys = [
