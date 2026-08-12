@@ -4,7 +4,7 @@ import { requestRunAbort } from "../runtime/runControl";
 import { pruneClearedStaticTurns } from "../store/useOutputStore";
 import { Dashboard } from "../ui/Dashboard";
 import type { CtrlCAbortHandler } from "../ui/useCtrlCAbort";
-import { failPendingLineInput } from "./promptQueue";
+import { failPendingLineInput } from "./lineInputQueue";
 import { restoreSteersToPrompt } from "./restoreSteersToPrompt";
 import { installWindowsVirtualTerminalInputPatch } from "./windowsVtInput";
 

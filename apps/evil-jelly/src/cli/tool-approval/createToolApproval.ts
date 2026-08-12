@@ -13,14 +13,17 @@ import type {
   WriteActionType,
 } from "../../shared/host/toolConfirmationBindings";
 import { recordActiveToolDetail } from "../../shared/tool-observation/invocationContext";
-import { runPromptSession } from "../bindings/promptQueue";
+import type {
+  DecisionOption,
+  OperatorDecision,
+  OperatorDecisionSession,
+} from "../operator-decision/model";
+import { createOperatorDecision } from "../operator-decision/operatorDecision";
 import { useOutputStore } from "../store/useOutputStore";
-import type { ActionMenuOption } from "../store/usePromptStore";
-import { usePromptStore } from "../store/usePromptStore";
 import { editContentInExternalEditor } from "./externalEditor";
 import { classifyShellCommand, isSimpleCommand } from "./shellCommandPolicy";
 
-const ACTION_UI_MAP: Record<WriteActionType, ActionMenuOption> = {
+const ACTION_UI_MAP: Record<WriteActionType, DecisionOption> = {
   accept: { key: "y", label: "Accept", value: "accept" },
   reject: { key: "n", label: "Reject", value: "reject" },
   edit: { key: "e", label: "Edit in editor", value: "edit" },
@@ -56,6 +59,8 @@ export type CreateToolApprovalOptions = {
    * shell commands are confirmed in every mode.
    */
   getMode?: () => AgentMode;
+  /** Operator-facing decision capability; defaults to the terminal decision surface. */
+  decision?: OperatorDecision;
 };
 
 type AutoAllowPolicy = {
@@ -131,20 +136,19 @@ function tryAutoAllowFsWrite(
 
 async function confirmOutsideAccess(
   params: FsOutsideAccessPayload,
+  decision: OperatorDecisionSession,
 ): Promise<ToolConfirmationResult> {
-  const menuOptions: ActionMenuOption[] = [
+  const menuOptions: DecisionOption[] = [
     { key: "y", label: "Allow", value: "accept" },
     { key: "n", label: "Reject", value: "reject" },
   ];
   useOutputStore
     .getState()
     .setPhase("awaiting_user", `outside ${params.mode} → ${params.targetPath}`);
-  const selected = await usePromptStore
-    .getState()
-    .requestActionMenu(
-      `Allow ${params.mode} outside workspace?\n${params.targetPath}\n\nApprove directory for this session:\n${params.approveDir}`,
-      menuOptions,
-    );
+  const selected = await decision.requestChoice(
+    `Allow ${params.mode} outside workspace?\n${params.targetPath}\n\nApprove directory for this session:\n${params.approveDir}`,
+    menuOptions,
+  );
   useOutputStore.getState().resumeWork("Running…");
   return selected === "accept" ? { action: "accept" } : { action: "reject" };
 }
@@ -197,11 +201,12 @@ async function confirmShellCommand(
   declaredReason: string,
   risk: ReturnType<typeof classifyShellCommand>,
   shellAutoAllowPrefixes: Set<string>,
+  decision: OperatorDecisionSession,
 ): Promise<ToolConfirmationResult> {
   const actions = uniqueWriteActions(
     params.supportedActions?.length ? params.supportedActions : ["accept", "reject"],
   );
-  const menuOptions: ActionMenuOption[] = actions.map((a) => ACTION_UI_MAP[a]);
+  const menuOptions: DecisionOption[] = actions.map((a) => ACTION_UI_MAP[a]);
   const blocked = risk === "block";
   const suggestedPrefix = deriveAutoAllowPrefix(params.command);
   if (actions.includes("accept") && !blocked && suggestedPrefix.length > 0) {
@@ -220,12 +225,10 @@ async function confirmShellCommand(
     );
   }
   const safetyNote = declaredReason ? `\n⚠ ${declaredReason}` : "";
-  const selected = await usePromptStore
-    .getState()
-    .requestActionMenu(
-      `Run shell command in ${cwd}?${safetyNote}\n> ${params.command}`,
-      menuOptions,
-    );
+  const selected = await decision.requestChoice(
+    `Run shell command in ${cwd}?${safetyNote}\n> ${params.command}`,
+    menuOptions,
+  );
   useOutputStore.getState().resumeWork("Running…");
 
   if (selected === "accept_shell_prefix") {
@@ -240,6 +243,7 @@ async function confirmFsWrite(
   params: FsWritePayload,
   policy: AutoAllowPolicy,
   suspendInkForExternalProcess: CreateToolApprovalOptions["suspendInkForExternalProcess"],
+  decision: OperatorDecisionSession,
 ): Promise<ToolConfirmationResult> {
   const {
     kind,
@@ -253,7 +257,7 @@ async function confirmFsWrite(
   const actions = uniqueWriteActions(
     supportedActions.length > 0 ? supportedActions : ["accept", "reject"],
   );
-  const menuOptions: ActionMenuOption[] = actions.map((a) => ACTION_UI_MAP[a]);
+  const menuOptions: DecisionOption[] = actions.map((a) => ACTION_UI_MAP[a]);
   if (actions.includes("accept") && !params.outsideWorkspace) {
     menuOptions.push({
       key: "A",
@@ -271,9 +275,10 @@ async function confirmFsWrite(
     text: unifiedDiff,
     ...(reviewCaption?.trim() ? { caption: reviewCaption.trim() } : {}),
   });
-  const selected = await usePromptStore
-    .getState()
-    .requestActionMenu(`Allow ${kind}${outsideLabel} ${filePath}?`, menuOptions);
+  const selected = await decision.requestChoice(
+    `Allow ${kind}${outsideLabel} ${filePath}?`,
+    menuOptions,
+  );
   useOutputStore.getState().resumeWork("Running…");
 
   if (selected === "accept_all_session") {
@@ -295,7 +300,7 @@ async function confirmFsWrite(
 
   if (selected === "retry") {
     useOutputStore.getState().setPhase("awaiting_user", "Waiting for review comments…");
-    const feedback = await usePromptStore.getState().requestLine("Review comments: ");
+    const feedback = await decision.requestText("Review comments: ");
     useOutputStore.getState().resumeWork("Running…");
     return { action: "retry", feedback };
   }
@@ -322,6 +327,7 @@ export function createToolApproval(
   );
 
   const getMode = options.getMode ?? (() => "normal" as AgentMode);
+  const decision = options.decision ?? createOperatorDecision();
 
   const confirmTool: ToolConfirmationHandler = async (params) => {
     if (params.type === "shell_command") {
@@ -329,17 +335,18 @@ export function createToolApproval(
       if (autoAllow.result) {
         return autoAllow.result;
       }
-      return runPromptSession(() =>
+      return decision.run((session) =>
         confirmShellCommand(
           params,
           autoAllow.declaredReason,
           autoAllow.risk,
           shellAutoAllowPrefixes,
+          session,
         ),
       );
     }
     if (params.type === "fs_outside_access") {
-      return runPromptSession(() => confirmOutsideAccess(params));
+      return decision.run((session) => confirmOutsideAccess(params, session));
     }
 
     recordActiveToolDetail({
@@ -351,8 +358,8 @@ export function createToolApproval(
     if (autoAllow) {
       return autoAllow;
     }
-    return runPromptSession(() =>
-      confirmFsWrite(params, policy, options.suspendInkForExternalProcess),
+    return decision.run((session) =>
+      confirmFsWrite(params, policy, options.suspendInkForExternalProcess, session),
     );
   };
   return confirmTool;

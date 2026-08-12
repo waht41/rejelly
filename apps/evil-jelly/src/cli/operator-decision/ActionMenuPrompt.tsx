@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
-import type { ActionMenuOption } from "../../store/usePromptStore";
-import { usePromptStore } from "../../store/usePromptStore";
-import { ListPicker } from "../pickers/ListPicker";
+import { useDecisionStore } from "./decisionStore";
+import { ListPicker } from "./ListPicker";
+import type { DecisionOption } from "./model";
 
 const LONG_MENU_VISIBLE_ROWS = 10;
 const LONG_MENU_PAGE_STEP = 9;
@@ -11,9 +11,9 @@ export function ActionMenuPrompt({
   options,
 }: {
   message: string;
-  options: ActionMenuOption[];
+  options: DecisionOption[];
 }) {
-  const submitActionChoice = usePromptStore((s) => s.submitActionChoice);
+  const submitChoice = useDecisionStore((state) => state.submitChoice);
   const cancelOption =
     options.find((o) => o.value === "reject") ??
     options.find((o) => o.value === "skip") ??
@@ -32,10 +32,10 @@ export function ActionMenuPrompt({
           navigation="wrap"
           maxVisibleRows={isLongMenu ? LONG_MENU_VISIBLE_ROWS : undefined}
           pageStep={isLongMenu ? LONG_MENU_PAGE_STEP : undefined}
-          onSelect={(option) => submitActionChoice(option.value)}
+          onSelect={(option) => submitChoice(option.value)}
           onCancel={() => {
             if (cancelOption) {
-              submitActionChoice(cancelOption.value);
+              submitChoice(cancelOption.value);
             }
           }}
           renderItem={(option, { selected }) => (

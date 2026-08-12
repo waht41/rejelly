@@ -12,7 +12,7 @@ import { resolveInitialSession } from "./app/resume";
 import { runInteractiveLoop } from "./app/runLoop";
 import { loadStartupSnapshot } from "./app/snapshot";
 import { createCliHostBindings } from "./bindings/cliBinding";
-import { enqueueLineInput } from "./bindings/promptQueue";
+import { enqueueLineInput } from "./bindings/lineInputQueue";
 import { createOpenAIModelFromEnv } from "./model-composition/createModelFromEnv";
 
 export type { EvilJellyBindings } from "../shared/host/bindings";

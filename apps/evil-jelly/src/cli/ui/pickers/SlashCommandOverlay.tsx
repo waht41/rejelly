@@ -5,9 +5,9 @@
  */
 
 import { Box, Text } from "ink";
+import type { PickerKeySink } from "../../operator-decision/ListPicker";
+import { ListPicker } from "../../operator-decision/ListPicker";
 import type { SlashCommand } from "../../prompt-editor/slashCommands";
-import type { PickerKeySink } from "./ListPicker";
-import { ListPicker } from "./ListPicker";
 
 interface SlashCommandOverlayProps {
   /** Filtered commands to show (already matched against the typed query). */

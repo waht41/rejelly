@@ -10,17 +10,21 @@ import type { AgentModeBindings } from "../../shared/host/modeBindings";
 import type { ConversationPresentationBindings } from "../../shared/host/presentationBindings";
 import type { ToolConfirmationBindings } from "../../shared/host/toolConfirmationBindings";
 import { resetInterruptibleTaskStack } from "../../shared/task-interruption/taskStack";
+import type { DecisionView } from "../operator-decision/model";
+import {
+  createOperatorDecision,
+  resetOperatorDecisionSession,
+} from "../operator-decision/operatorDecision";
 import { resetOutputSession, TOOL_FULL_CAP, useOutputStore } from "../store/useOutputStore";
-import type { ActionMenuOption, TransientView } from "../store/usePromptStore";
 import { resetPromptSession, usePromptStore } from "../store/usePromptStore";
 import { resetViewSession } from "../store/useViewStore";
 import { resetModeSession, useModeStore } from "../tool-approval/approvalModeStore";
 import { createToolApproval } from "../tool-approval/createToolApproval";
 import { createInkGetInput } from "./getInput";
 import { createInkLifecycle } from "./inkLifecycle";
-import { resetPromptQueue, runPromptSession } from "./promptQueue";
+import { resetLineInputQueue } from "./lineInputQueue";
 
-function toTransientView(view?: PromptChoiceView): TransientView | undefined {
+function toDecisionView(view?: PromptChoiceView): DecisionView | undefined {
   if (view === undefined) {
     return undefined;
   }
@@ -31,7 +35,8 @@ function toTransientView(view?: PromptChoiceView): TransientView | undefined {
 }
 
 function resetCliBindingSession(): void {
-  resetPromptQueue();
+  resetLineInputQueue();
+  resetOperatorDecisionSession();
   resetPromptSession();
   resetOutputSession();
   resetModeSession();
@@ -40,16 +45,11 @@ function resetCliBindingSession(): void {
 }
 
 function createInkRequestChoice(): PromptInputBindings["requestChoice"] {
-  return async (
-    message: string,
-    options: ActionMenuOption[],
-    view?: PromptChoiceView,
-  ): Promise<string> => {
-    return runPromptSession(async () => {
+  const decision = createOperatorDecision();
+  return async (message: string, options, view?: PromptChoiceView): Promise<string> => {
+    return decision.run(async (session) => {
       useOutputStore.getState().setPhase("awaiting_user", "Waiting for user choice…");
-      const selected = await usePromptStore
-        .getState()
-        .requestActionMenu(message, options, toTransientView(view));
+      const selected = await session.requestChoice(message, options, toDecisionView(view));
       useOutputStore.getState().resumeWork("Running…");
       return selected;
     });
@@ -130,11 +130,13 @@ function createPromptBindings(options: {
   suspendInkForExternalProcess: <T>(fn: () => Promise<T>) => Promise<T>;
 }): PromptInputBindings & AgentModeBindings & ToolConfirmationBindings {
   const { seedInput, suspendInkForExternalProcess } = options;
+  const decision = createOperatorDecision();
   return {
     getInput: createInkGetInput(seedInput !== undefined ? { seedLine: seedInput } : undefined),
     confirmTool: createToolApproval({
       suspendInkForExternalProcess,
       getMode: () => useModeStore.getState().mode,
+      decision,
     }),
     getAgentMode: () => useModeStore.getState().mode,
     requestChoice: createInkRequestChoice(),

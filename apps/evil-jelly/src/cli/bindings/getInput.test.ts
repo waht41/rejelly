@@ -5,14 +5,14 @@ import { enqueueSteer } from "../runtime/steerControl";
 import { resetOutputSession } from "../store/useOutputStore";
 import { resetPromptSession, usePromptStore } from "../store/usePromptStore";
 import { createInkGetInput } from "./getInput";
-import { resetPromptQueue } from "./promptQueue";
+import { resetLineInputQueue } from "./lineInputQueue";
 
 async function flushMicrotasks(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 function resetCliStores(): void {
-  resetPromptQueue();
+  resetLineInputQueue();
   resetPromptSession();
   resetOutputSession();
   takePendingExit();

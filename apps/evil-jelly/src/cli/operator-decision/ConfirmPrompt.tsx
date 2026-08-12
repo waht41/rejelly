@@ -1,8 +1,8 @@
 import { Box, Text, useInput } from "ink";
-import { usePromptStore } from "../../store/usePromptStore";
+import { useDecisionStore } from "./decisionStore";
 
 export function ConfirmPrompt({ message, defaultYes }: { message: string; defaultYes: boolean }) {
-  const submitConfirm = usePromptStore((s) => s.submitConfirm);
+  const submitConfirm = useDecisionStore((state) => state.submitConfirm);
   useInput((input, key) => {
     if (key.return) {
       submitConfirm(defaultYes);

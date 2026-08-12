@@ -6,11 +6,11 @@
 
 import { Box, Text, useInput, useStdout } from "ink";
 import { useEffect, useMemo, useState } from "react";
+import { ListPicker } from "../operator-decision/ListPicker";
+import { getVisibleWindow } from "../operator-decision/navigation";
 import type { ToolBlock } from "../store/useOutputStore";
 import { useOutputStore } from "../store/useOutputStore";
 import { useViewStore } from "../store/useViewStore";
-import { ListPicker } from "./pickers/ListPicker";
-import { getVisibleWindow } from "./pickers/navigation";
 
 type ToolEntry = {
   id: string;

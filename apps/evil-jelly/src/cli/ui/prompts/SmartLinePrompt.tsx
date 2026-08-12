@@ -31,6 +31,7 @@ import type { DOMElement } from "ink";
 import { Box, Text, useCursor, useStdout } from "ink";
 import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
 import stringWidth from "string-width";
+import type { PickerKeyHandler } from "../../operator-decision/ListPicker";
 import { extractAtQuery, refsMissingFromText, replaceAtToken } from "../../prompt-editor/atTrigger";
 import { saveClipboardImage } from "../../prompt-editor/clipboardImage";
 import { copyTextToClipboard } from "../../prompt-editor/clipboardText";
@@ -67,7 +68,6 @@ import {
 import { useViewStore } from "../../store/useViewStore";
 import { applyModeCommand, MODE_META } from "../../tool-approval/approvalModeStore";
 import { FilePickerOverlay } from "../pickers/FilePickerOverlay";
-import type { PickerKeyHandler } from "../pickers/ListPicker";
 import { filterSkillPickerItems, SkillPickerOverlay } from "../pickers/SkillPickerOverlay";
 import { SlashCommandOverlay } from "../pickers/SlashCommandOverlay";
 

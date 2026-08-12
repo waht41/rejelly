@@ -1,35 +1,13 @@
 import type { LineInputValue } from "../../shared/host/inputBindings";
 import { clearSteers } from "../runtime/steerControl";
 
-let promptQueue: Promise<void> = Promise.resolve();
 let queuedLineInputs: LineInputValue[] = [];
 let pendingLineResolver: ((value: LineInputValue) => void) | null = null;
 let pendingLineRejecter: ((reason: Error) => void) | null = null;
 let awaitingMainInput = false;
 
-/**
- * Ink has one global prompt store. Serialize host prompts so concurrent tool calls cannot overwrite
- * each other's resolver and leave the earlier write confirmation hanging forever.
- */
-export function runPromptSession<T>(fn: () => Promise<T>): Promise<T> {
-  const previous = promptQueue;
-  let release!: () => void;
-  promptQueue = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-
-  return previous.then(async () => {
-    try {
-      return await fn();
-    } finally {
-      release();
-    }
-  });
-}
-
-/** Reset pending host prompt queue for a fresh CLI session. */
-export function resetPromptQueue(): void {
-  promptQueue = Promise.resolve();
+/** Reset pending composer input for a fresh CLI session. */
+export function resetLineInputQueue(): void {
   queuedLineInputs = [];
   pendingLineResolver = null;
   pendingLineRejecter = null;

@@ -1,8 +1,8 @@
 import { Box, Text } from "ink";
 import stringWidth from "string-width";
+import type { PickerKeySink } from "../../operator-decision/ListPicker";
+import { ListPicker } from "../../operator-decision/ListPicker";
 import type { SkillPickerItem } from "../../store/usePromptStore";
-import type { PickerKeySink } from "./ListPicker";
-import { ListPicker } from "./ListPicker";
 
 interface SkillPickerOverlayProps {
   items: SkillPickerItem[];

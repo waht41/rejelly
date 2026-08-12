@@ -1,9 +1,9 @@
 import { Box } from "ink";
-import type { TransientView } from "../store/usePromptStore";
+import type { DecisionView } from "../operator-decision/model";
 import { DiffBlock } from "./viewers/DiffViewer";
 import { MarkdownViewer } from "./viewers/MarkdownViewer";
 
-export function TransientPane({ view, columns }: { view: TransientView; columns: number }) {
+export function TransientPane({ view, columns }: { view: DecisionView; columns: number }) {
   if (view.type === "diff") {
     return <DiffBlock text={view.text} caption={view.caption} captionTitle={view.captionTitle} />;
   }

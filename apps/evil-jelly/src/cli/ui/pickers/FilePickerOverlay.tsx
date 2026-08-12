@@ -8,8 +8,8 @@ import { Text } from "ink";
 import { useEffect, useRef, useState } from "react";
 import type { FuzzyPathRefMatch } from "../../../domains/workspace/read/FuzzySearchService";
 import { fuzzySearchPathRefs } from "../../../domains/workspace/read/FuzzySearchService";
-import type { PickerKeySink } from "./ListPicker";
-import { ListPicker } from "./ListPicker";
+import type { PickerKeySink } from "../../operator-decision/ListPicker";
+import { ListPicker } from "../../operator-decision/ListPicker";
 
 const DEFAULT_MAX_VISIBLE_ROWS = 10;
 const DEBOUNCE_MS = 150;

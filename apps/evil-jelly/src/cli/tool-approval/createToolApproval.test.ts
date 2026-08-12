@@ -3,9 +3,9 @@ import {
   runWithToolDetailSlot,
   takeActiveToolDetail,
 } from "../../shared/tool-observation/invocationContext";
-import { resetPromptQueue } from "../bindings/promptQueue";
+import { useDecisionStore } from "../operator-decision/decisionStore";
+import { resetOperatorDecisionSession } from "../operator-decision/operatorDecision";
 import { resetOutputSession, useOutputStore } from "../store/useOutputStore";
-import { resetPromptSession, usePromptStore } from "../store/usePromptStore";
 import { createToolApproval } from "./createToolApproval";
 
 async function flushMicrotasks(): Promise<void> {
@@ -13,8 +13,7 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 function resetCliStores(): void {
-  resetPromptQueue();
-  resetPromptSession();
+  resetOperatorDecisionSession();
   resetOutputSession();
 }
 
@@ -41,31 +40,31 @@ describe("createToolApproval", () => {
     });
 
     await flushMicrotasks();
-    expect(usePromptStore.getState().prompt).toMatchObject({
-      type: "actionMenu",
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      type: "choice",
       message: "Allow edit a.ts?",
     });
 
-    usePromptStore.getState().submitActionChoice("retry");
+    useDecisionStore.getState().submitChoice("retry");
     await flushMicrotasks();
-    expect(usePromptStore.getState().prompt).toMatchObject({
-      type: "line",
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      type: "text",
       label: "Review comments: ",
     });
 
-    usePromptStore.getState().submitLine("please adjust this change");
+    useDecisionStore.getState().submitText("please adjust this change");
     await expect(first).resolves.toEqual({
       action: "retry",
       feedback: "please adjust this change",
     });
 
     await flushMicrotasks();
-    expect(usePromptStore.getState().prompt).toMatchObject({
-      type: "actionMenu",
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      type: "choice",
       message: "Allow edit b.ts?",
     });
 
-    usePromptStore.getState().submitActionChoice("accept");
+    useDecisionStore.getState().submitChoice("accept");
     await expect(second).resolves.toEqual({ action: "accept" });
   });
 
@@ -83,11 +82,11 @@ describe("createToolApproval", () => {
     });
 
     await flushMicrotasks();
-    expect(usePromptStore.getState().prompt).toMatchObject({
-      type: "actionMenu",
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      type: "choice",
       message: "Allow edit a.ts?",
     });
-    usePromptStore.getState().submitActionChoice("accept_all_session");
+    useDecisionStore.getState().submitChoice("accept_all_session");
     await expect(first).resolves.toEqual({ action: "accept" });
 
     const second = confirmWrite({
@@ -99,7 +98,7 @@ describe("createToolApproval", () => {
       supportedActions: ["accept", "reject"],
     });
     await expect(second).resolves.toEqual({ action: "accept" });
-    expect(usePromptStore.getState().prompt).toMatchObject({ type: "idle" });
+    expect(useDecisionStore.getState().decision).toMatchObject({ type: "idle" });
   });
 
   it("supports initial auto-allow policy by kind", async () => {
@@ -117,7 +116,7 @@ describe("createToolApproval", () => {
       supportedActions: ["accept", "reject"],
     });
     expect(result).toEqual({ action: "accept" });
-    expect(usePromptStore.getState().prompt).toMatchObject({ type: "idle" });
+    expect(useDecisionStore.getState().decision).toMatchObject({ type: "idle" });
   });
 
   it("auto mode accepts fs writes of every kind without prompting", async () => {
@@ -152,7 +151,7 @@ describe("createToolApproval", () => {
     expect(created).toEqual({ action: "accept" });
     expect(edited).toEqual({ action: "accept" });
     expect(deleted).toEqual({ action: "accept" });
-    expect(usePromptStore.getState().prompt).toMatchObject({ type: "idle" });
+    expect(useDecisionStore.getState().decision).toMatchObject({ type: "idle" });
   });
 
   it("normal mode still confirms fs writes", async () => {
@@ -169,8 +168,8 @@ describe("createToolApproval", () => {
     });
 
     await flushMicrotasks();
-    expect(usePromptStore.getState().prompt).toMatchObject({
-      type: "actionMenu",
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      type: "choice",
       message: "Allow edit a.ts?",
     });
     // The reviewed diff is committed to scrollback history, not the transient view.
@@ -180,8 +179,8 @@ describe("createToolApproval", () => {
         diff: { text: "--- a.ts\n+++ a.ts\n@@\n-old\n+new\n" },
       }),
     );
-    expect(usePromptStore.getState().view).toEqual({ type: "none" });
-    usePromptStore.getState().submitActionChoice("reject");
+    expect(useDecisionStore.getState().view).toEqual({ type: "none" });
+    useDecisionStore.getState().submitChoice("reject");
     await expect(pending).resolves.toEqual({ action: "reject" });
   });
 
@@ -208,7 +207,7 @@ describe("createToolApproval", () => {
         caption: "Batch edit across 1 files",
       });
 
-      usePromptStore.getState().submitActionChoice("accept");
+      useDecisionStore.getState().submitChoice("accept");
       await expect(pending).resolves.toEqual({ action: "accept" });
     });
   });
@@ -225,10 +224,10 @@ describe("createToolApproval", () => {
     });
 
     await flushMicrotasks();
-    expect(usePromptStore.getState().prompt).toMatchObject({
-      type: "actionMenu",
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      type: "choice",
     });
-    usePromptStore.getState().submitActionChoice("accept_shell_prefix");
+    useDecisionStore.getState().submitChoice("accept_shell_prefix");
     await expect(first).resolves.toEqual({ action: "accept" });
 
     const second = confirmTool({
@@ -238,7 +237,7 @@ describe("createToolApproval", () => {
       supportedActions: ["accept", "reject"],
     });
     await expect(second).resolves.toEqual({ action: "accept" });
-    expect(usePromptStore.getState().prompt).toMatchObject({ type: "idle" });
+    expect(useDecisionStore.getState().decision).toMatchObject({ type: "idle" });
   });
 
   it("auto-runs a read-only/safe shell command in any mode (incl. normal)", async () => {
@@ -252,7 +251,7 @@ describe("createToolApproval", () => {
     });
 
     expect(result).toEqual({ action: "accept" });
-    expect(usePromptStore.getState().prompt).toMatchObject({ type: "idle" });
+    expect(useDecisionStore.getState().decision).toMatchObject({ type: "idle" });
   });
 
   it("auto mode accepts a confirm-tier command declared reversible", async () => {
@@ -268,7 +267,7 @@ describe("createToolApproval", () => {
     });
 
     expect(result).toEqual({ action: "accept" });
-    expect(usePromptStore.getState().prompt).toMatchObject({ type: "idle" });
+    expect(useDecisionStore.getState().decision).toMatchObject({ type: "idle" });
   });
 
   it("states why a shell command was auto-allowed without repeating it", async () => {
@@ -328,11 +327,11 @@ describe("createToolApproval", () => {
     });
 
     await flushMicrotasks();
-    const prompt = usePromptStore.getState().prompt;
+    const prompt = useDecisionStore.getState().decision;
     // Approving something you cannot fully read is the one case where the
     // untruncated command matters.
-    expect(prompt.type === "actionMenu" ? prompt.message : "").toContain(command);
-    usePromptStore.getState().submitActionChoice("reject");
+    expect(prompt.type === "choice" ? prompt.message : "").toContain(command);
+    useDecisionStore.getState().submitChoice("reject");
     await pending;
   });
 
@@ -349,12 +348,12 @@ describe("createToolApproval", () => {
     });
 
     await flushMicrotasks();
-    expect(usePromptStore.getState().prompt).toMatchObject({
-      type: "actionMenu",
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      type: "choice",
       message:
         "Run shell command in workspace root?\n⚠ Runs the test suite without modifying source files.\n> pnpm test",
     });
-    usePromptStore.getState().submitActionChoice("reject");
+    useDecisionStore.getState().submitChoice("reject");
     await expect(pending).resolves.toEqual({ action: "reject" });
   });
 
@@ -371,12 +370,12 @@ describe("createToolApproval", () => {
     });
 
     await flushMicrotasks();
-    expect(usePromptStore.getState().prompt).toMatchObject({
-      type: "actionMenu",
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      type: "choice",
       message:
         "Run shell command in workspace root?\n⚠ Incorrect model declaration should not bypass host policy.\n> rm -rf dist",
     });
-    usePromptStore.getState().submitActionChoice("reject");
+    useDecisionStore.getState().submitChoice("reject");
     await expect(pending).resolves.toEqual({ action: "reject" });
   });
 
@@ -392,12 +391,12 @@ describe("createToolApproval", () => {
     });
 
     await flushMicrotasks();
-    expect(usePromptStore.getState().prompt).toMatchObject({
-      type: "actionMenu",
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      type: "choice",
       message:
         "Run shell command in workspace root?\n⚠ writes output files to dist/\n> pnpm run build",
     });
-    usePromptStore.getState().submitActionChoice("reject");
+    useDecisionStore.getState().submitChoice("reject");
     await expect(pending).resolves.toEqual({ action: "reject" });
   });
 
@@ -415,11 +414,11 @@ describe("createToolApproval", () => {
     });
 
     await flushMicrotasks();
-    expect(usePromptStore.getState().prompt).toMatchObject({
-      type: "actionMenu",
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      type: "choice",
       message: "Run shell command in apps/evil-jelly?\n> pnpm test && echo hacked",
     });
-    usePromptStore.getState().submitActionChoice("reject");
+    useDecisionStore.getState().submitChoice("reject");
     await expect(pending).resolves.toEqual({ action: "reject" });
   });
 });

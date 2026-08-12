@@ -7,6 +7,10 @@ import { Box, measureElement, Static, Text, useInput, useWindowSize } from "ink"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { LineInputValue } from "../../shared/host/inputBindings";
 import type { RuntimePhase } from "../../shared/host/presentationBindings";
+import { ActionMenuPrompt } from "../operator-decision/ActionMenuPrompt";
+import { ConfirmPrompt } from "../operator-decision/ConfirmPrompt";
+import { useDecisionStore } from "../operator-decision/decisionStore";
+import { TextDecisionPrompt } from "../operator-decision/TextDecisionPrompt";
 import { getQueuedSteers, subscribeSteers } from "../runtime/steerControl";
 import { composeToolTailWindow } from "../store/toolTailWindow";
 import {
@@ -15,12 +19,9 @@ import {
   statusTimerAnchor,
   useOutputStore,
 } from "../store/useOutputStore";
-import { usePromptStore } from "../store/usePromptStore";
 import { useViewStore } from "../store/useViewStore";
 import { MODE_META, useModeStore } from "../tool-approval/approvalModeStore";
 import { HistoryItem } from "./HistoryItem";
-import { ActionMenuPrompt } from "./prompts/ActionMenuPrompt";
-import { ConfirmPrompt } from "./prompts/ConfirmPrompt";
 import { SmartLinePrompt } from "./prompts/SmartLinePrompt";
 import { createStreamTailWindow } from "./streamWindow";
 import { TranscriptOverlay } from "./TranscriptOverlay";
@@ -301,8 +302,8 @@ export function Dashboard({ onCtrlCAbort }: { onCtrlCAbort: CtrlCAbortHandler })
 
   const transcriptOpen = useViewStore((s) => s.transcriptOpen);
   const openTranscript = useViewStore((s) => s.openTranscript);
-  const view = usePromptStore((s) => s.view);
-  const prompt = usePromptStore((s) => s.prompt);
+  const view = useDecisionStore((state) => state.view);
+  const decision = useDecisionStore((state) => state.decision);
   const [queuedSteers, setQueuedSteers] = useState<LineInputValue[]>(() => getQueuedSteers());
 
   // Ink's <Static> counts flushed items in instance state, so its items array must only grow
@@ -319,8 +320,7 @@ export function Dashboard({ onCtrlCAbort }: { onCtrlCAbort: CtrlCAbortHandler })
   // terminal so a short window still leaves room for everything else.
   const toolTailRows = Math.max(0, Math.min(TOOL_TAIL_MAX_ROWS, Math.floor(rows / 4)));
   const isAgentWorking = isRuntimeActive(phase, streamBuffer);
-  const canShowLinePrompt = prompt.type !== "confirm" && prompt.type !== "actionMenu";
-  const lineLabel = prompt.type === "line" ? prompt.label : "";
+  const canShowLinePrompt = decision.type === "idle";
   const topTransientRef = useRef<DOMElement>(null);
   const bottomTransientRef = useRef<DOMElement>(null);
   const [layoutRows, setLayoutRows] = useState<LayoutRows | null>(null);
@@ -402,16 +402,18 @@ export function Dashboard({ onCtrlCAbort }: { onCtrlCAbort: CtrlCAbortHandler })
             <Box marginTop={1}>
               <RuntimeStatusLine />
             </Box>
-            {prompt.type === "confirm" ? (
-              <ConfirmPrompt message={prompt.message} defaultYes={prompt.defaultYes} />
-            ) : prompt.type === "actionMenu" ? (
-              <ActionMenuPrompt message={prompt.message} options={prompt.options} />
+            {decision.type === "confirm" ? (
+              <ConfirmPrompt message={decision.message} defaultYes={decision.defaultYes} />
+            ) : decision.type === "choice" ? (
+              <ActionMenuPrompt message={decision.message} options={decision.options} />
+            ) : decision.type === "text" ? (
+              <TextDecisionPrompt label={decision.label} />
             ) : canShowLinePrompt ? (
               <Box flexDirection="column">
                 <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
                   <SteerQueueList items={queuedSteers} columns={columns} />
                   {isAgentWorking ? <Text dimColor> · /stop or Esc to interrupt</Text> : null}
-                  <SmartLinePrompt label={lineLabel} />
+                  <SmartLinePrompt label="" />
                 </Box>
                 <ModeBadge />
               </Box>

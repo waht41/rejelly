@@ -14,7 +14,7 @@ import {
   isAwaitingMainInput,
   rejectPendingLineInput,
   setAwaitingMainInput,
-} from "./promptQueue";
+} from "./lineInputQueue";
 import { restoreSteersToPrompt } from "./restoreSteersToPrompt";
 
 export type InkGetInputOptions = {
