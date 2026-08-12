@@ -9,7 +9,6 @@ import type { LineInputValue } from "../../shared/host/inputBindings";
 import type { RuntimePhase } from "../../shared/host/presentationBindings";
 import { getQueuedSteers, subscribeSteers } from "../runtime/steerControl";
 import { composeToolTailWindow } from "../store/toolTailWindow";
-import { MODE_META, useModeStore } from "../store/useModeStore";
 import {
   isRuntimeActive,
   type RunningTool,
@@ -18,6 +17,7 @@ import {
 } from "../store/useOutputStore";
 import { usePromptStore } from "../store/usePromptStore";
 import { useViewStore } from "../store/useViewStore";
+import { MODE_META, useModeStore } from "../tool-approval/approvalModeStore";
 import { HistoryItem } from "./HistoryItem";
 import { ActionMenuPrompt } from "./prompts/ActionMenuPrompt";
 import { ConfirmPrompt } from "./prompts/ConfirmPrompt";

@@ -1,5 +1,5 @@
 /**
- * Session interaction mode (shift+tab cycles it). Mode governs the ambiguous (confirm) shell tier
+ * Session tool-approval mode (shift+tab cycles it). Mode governs the ambiguous (confirm) shell tier
  * and fs writes; read-only commands auto-run and irreversible shell commands are confirmed in
  * every mode (see shellCommandPolicy). The host reads the current mode via an injected getMode at
  * confirm time.

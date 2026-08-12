@@ -1,3 +1,8 @@
+/**
+ * CLI tool-approval coordinator: applies session policy and delegates unresolved decisions to the
+ * terminal prompt/presentation adapters.
+ */
+
 import type { AgentMode } from "../../shared/host/modeBindings";
 import type {
   FsOutsideAccessPayload,
@@ -8,12 +13,12 @@ import type {
   WriteActionType,
 } from "../../shared/host/toolConfirmationBindings";
 import { recordActiveToolDetail } from "../../shared/tool-observation/invocationContext";
-import { classifyShellCommand, isSimpleCommand } from "../runtime/shellCommandPolicy";
+import { runPromptSession } from "../bindings/promptQueue";
 import { useOutputStore } from "../store/useOutputStore";
 import type { ActionMenuOption } from "../store/usePromptStore";
 import { usePromptStore } from "../store/usePromptStore";
 import { editContentInExternalEditor } from "./externalEditor";
-import { runPromptSession } from "./promptQueue";
+import { classifyShellCommand, isSimpleCommand } from "./shellCommandPolicy";
 
 const ACTION_UI_MAP: Record<WriteActionType, ActionMenuOption> = {
   accept: { key: "y", label: "Accept", value: "accept" },
@@ -34,7 +39,7 @@ function uniqueWriteActions(actions: WriteActionType[]): WriteActionType[] {
   return out;
 }
 
-export type CreateInkConfirmWriteOptions = {
+export type CreateToolApprovalOptions = {
   /**
    * Unmount Ink and release the TTY before running an external editor, then remount after.
    * Omit only in tests or non-Ink hosts; required for correct vim + Ink coexistence.
@@ -234,7 +239,7 @@ async function confirmShellCommand(
 async function confirmFsWrite(
   params: FsWritePayload,
   policy: AutoAllowPolicy,
-  suspendInkForExternalProcess: CreateInkConfirmWriteOptions["suspendInkForExternalProcess"],
+  suspendInkForExternalProcess: CreateToolApprovalOptions["suspendInkForExternalProcess"],
 ): Promise<ToolConfirmationResult> {
   const {
     kind,
@@ -302,8 +307,8 @@ async function confirmFsWrite(
   return { action: "reject" };
 }
 
-export function createInkConfirmWrite(
-  options: CreateInkConfirmWriteOptions = {},
+export function createToolApproval(
+  options: CreateToolApprovalOptions = {},
 ): ToolConfirmationHandler {
   const policy: AutoAllowPolicy = {
     create: options.initialAutoAllow?.create ?? false,

@@ -17,6 +17,11 @@
       "!src/**/__tests__/**/*",
       "!src/**/*.test.*"
     ],
+    "@cli:tool-approval": [
+      "src/cli/tool-approval/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
     "@feature:[feat]": ["src/features/[feat]/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@domain:[dom]": [
       "src/domains/[dom]/**/*",
@@ -104,14 +109,18 @@
         "@cli:bindings": ["@ext:ui"],
         "@cli:ui": ["@cli:runtime", "@ext:ui"],
         "@cli:prompt-editor": ["@ext:ui"],
+        "@cli:tool-approval": ["@ext:ui"],
         "@cli:store": ["@domain:skills:agent", "@ext:ui"]
       }
     },
     "cli_arch": {
       "connect": {
         "@cli:entry": ["@cli:app", "@cli:bindings", "@cli:model-composition"],
-        "@cli:app": ["@cli:runtime", "@cli:model-composition"],
-        "@cli:bindings": ["@cli:ui", "@cli:store", "@cli:runtime"]
+        "@cli:app": ["@cli:runtime", "@cli:model-composition", "@cli:tool-approval"],
+        "@cli:bindings": ["@cli:ui", "@cli:store", "@cli:runtime", "@cli:tool-approval"],
+        "@cli:ui": ["@cli:tool-approval"],
+        "@cli:prompt-editor": ["@cli:tool-approval"],
+        "@cli:tool-approval": ["@cli:bindings", "@cli:store"]
       },
       "cascade": [["@cli:ui"], ["@cli:prompt-editor"], ["@cli:store"]]
     },

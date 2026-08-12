@@ -1,5 +1,5 @@
 /**
- * CLI runtime classifier deciding whether a shell command may auto-pass, needs a prompt, or must
+ * Tool approval classifier deciding whether a shell command may auto-pass, needs a prompt, or must
  * always be confirmed (and can never be auto-allowed). No IO — keep it deterministic and
  * unit-testable.
  *

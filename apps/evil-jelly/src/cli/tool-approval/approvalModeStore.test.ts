@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { applyModeCommand, MODE_ORDER, resetModeSession, useModeStore } from "./useModeStore";
+import { applyModeCommand, MODE_ORDER, resetModeSession, useModeStore } from "./approvalModeStore";
 
 describe("useModeStore", () => {
   beforeEach(() => {

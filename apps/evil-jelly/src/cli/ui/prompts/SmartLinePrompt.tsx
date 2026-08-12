@@ -58,7 +58,6 @@ import { extractSlashQuery, filterSlashCommands } from "../../prompt-editor/slas
 import { caretCell, type WrappedRow, wrapRows } from "../../prompt-editor/softWrap";
 import { useTextBuffer } from "../../prompt-editor/textBuffer";
 import { useLineKeybindings } from "../../prompt-editor/useLineKeybindings";
-import { applyModeCommand, MODE_META } from "../../store/useModeStore";
 import { isRuntimeActive, useOutputStore } from "../../store/useOutputStore";
 import {
   MAX_SELECTED_SKILLS,
@@ -66,6 +65,7 @@ import {
   usePromptStore,
 } from "../../store/usePromptStore";
 import { useViewStore } from "../../store/useViewStore";
+import { applyModeCommand, MODE_META } from "../../tool-approval/approvalModeStore";
 import { FilePickerOverlay } from "../pickers/FilePickerOverlay";
 import type { PickerKeyHandler } from "../pickers/ListPicker";
 import { filterSkillPickerItems, SkillPickerOverlay } from "../pickers/SkillPickerOverlay";

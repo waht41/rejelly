@@ -10,12 +10,12 @@ import type { AgentModeBindings } from "../../shared/host/modeBindings";
 import type { ConversationPresentationBindings } from "../../shared/host/presentationBindings";
 import type { ToolConfirmationBindings } from "../../shared/host/toolConfirmationBindings";
 import { resetInterruptibleTaskStack } from "../../shared/task-interruption/taskStack";
-import { resetModeSession, useModeStore } from "../store/useModeStore";
 import { resetOutputSession, TOOL_FULL_CAP, useOutputStore } from "../store/useOutputStore";
 import type { ActionMenuOption, TransientView } from "../store/usePromptStore";
 import { resetPromptSession, usePromptStore } from "../store/usePromptStore";
 import { resetViewSession } from "../store/useViewStore";
-import { createInkConfirmWrite } from "./confirmWrite";
+import { resetModeSession, useModeStore } from "../tool-approval/approvalModeStore";
+import { createToolApproval } from "../tool-approval/createToolApproval";
 import { createInkGetInput } from "./getInput";
 import { createInkLifecycle } from "./inkLifecycle";
 import { resetPromptQueue, runPromptSession } from "./promptQueue";
@@ -132,7 +132,7 @@ function createPromptBindings(options: {
   const { seedInput, suspendInkForExternalProcess } = options;
   return {
     getInput: createInkGetInput(seedInput !== undefined ? { seedLine: seedInput } : undefined),
-    confirmTool: createInkConfirmWrite({
+    confirmTool: createToolApproval({
       suspendInkForExternalProcess,
       getMode: () => useModeStore.getState().mode,
     }),

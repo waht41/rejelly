@@ -98,7 +98,7 @@
         "!apps/evil-jelly/src/shared/configuration/env.ts",
         "!apps/evil-jelly/src/domains/web/webConfig.ts",
         "!apps/evil-jelly/src/domains/workspace/execute/executeShellCommand.ts",
-        "!apps/evil-jelly/src/cli/bindings/externalEditor.ts",
+        "!apps/evil-jelly/src/cli/tool-approval/externalEditor.ts",
         "!apps/evil-jelly/src/cli/prompt-editor/clipboardImage.ts"
       ],
       "linter": {

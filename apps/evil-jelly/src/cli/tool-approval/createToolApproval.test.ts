@@ -3,14 +3,10 @@ import {
   runWithToolDetailSlot,
   takeActiveToolDetail,
 } from "../../shared/tool-observation/invocationContext";
-import { registerRunAbort } from "../runtime/runControl";
-import { takePendingExit } from "../runtime/sessionRunControl";
-import { enqueueSteer } from "../runtime/steerControl";
+import { resetPromptQueue } from "../bindings/promptQueue";
 import { resetOutputSession, useOutputStore } from "../store/useOutputStore";
 import { resetPromptSession, usePromptStore } from "../store/usePromptStore";
-import { createInkConfirmWrite } from "./confirmWrite";
-import { createInkGetInput } from "./getInput";
-import { resetPromptQueue } from "./promptQueue";
+import { createToolApproval } from "./createToolApproval";
 
 async function flushMicrotasks(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -20,79 +16,12 @@ function resetCliStores(): void {
   resetPromptQueue();
   resetPromptSession();
   resetOutputSession();
-  takePendingExit();
 }
 
-describe("createInkGetInput", () => {
-  it("passes idle exit input through to the main agent", async () => {
-    resetCliStores();
-    const getInput = createInkGetInput();
-
-    const pending = getInput();
-    usePromptStore.getState().submitLine("exit");
-
-    await expect(pending).resolves.toEqual({ text: "exit", attachments: [] });
-    expect(takePendingExit()).toBe(false);
-  });
-
-  it("requests loop exit and aborts the run for background exit input", () => {
-    resetCliStores();
-    const reasons: string[] = [];
-    const unregister = registerRunAbort((reason) => reasons.push(reason));
-    createInkGetInput();
-
-    usePromptStore.getState().submitLine("/exit");
-
-    unregister();
-    expect(takePendingExit()).toBe(true);
-    expect(reasons).toEqual(["Stopped by user (exit)"]);
-  });
-
-  it("queues background input as the next main input when it was not injected", async () => {
-    resetCliStores();
-    const getInput = createInkGetInput();
-
-    usePromptStore.getState().submitLine("please steer this");
-
-    await expect(getInput()).resolves.toEqual({
-      text: "please steer this",
-      attachments: [],
-    });
-  });
-
-  it("preserves background input order when multiple steers carry over", async () => {
-    resetCliStores();
-    const getInput = createInkGetInput();
-
-    usePromptStore.getState().submitLine("first steer");
-    usePromptStore.getState().submitLine("second steer");
-
-    await expect(getInput()).resolves.toEqual({ text: "first steer", attachments: [] });
-    await expect(getInput()).resolves.toEqual({ text: "second steer", attachments: [] });
-  });
-
-  it("restores queued steers to the prompt draft when stopping a running task", async () => {
-    resetCliStores();
-    const getInput = createInkGetInput();
-    enqueueSteer({ text: "queued steer" });
-
-    usePromptStore.getState().submitLine("/stop");
-
-    expect(usePromptStore.getState().draftSeed?.value).toEqual({
-      text: "queued steer",
-      attachments: [],
-    });
-    const pending = getInput();
-    await flushMicrotasks();
-    usePromptStore.getState().submitLine("manual next input");
-    await expect(pending).resolves.toEqual({ text: "manual next input", attachments: [] });
-  });
-});
-
-describe("createInkConfirmWrite", () => {
+describe("createToolApproval", () => {
   it("serializes concurrent confirmations so retry feedback cannot orphan an earlier prompt", async () => {
     resetCliStores();
-    const confirmWrite = createInkConfirmWrite();
+    const confirmWrite = createToolApproval();
 
     const first = confirmWrite({
       type: "fs_write",
@@ -142,7 +71,7 @@ describe("createInkConfirmWrite", () => {
 
   it("enables session-wide auto-allow after selecting accept_all_session", async () => {
     resetCliStores();
-    const confirmWrite = createInkConfirmWrite();
+    const confirmWrite = createToolApproval();
 
     const first = confirmWrite({
       type: "fs_write",
@@ -175,7 +104,7 @@ describe("createInkConfirmWrite", () => {
 
   it("supports initial auto-allow policy by kind", async () => {
     resetCliStores();
-    const confirmWrite = createInkConfirmWrite({
+    const confirmWrite = createToolApproval({
       initialAutoAllow: { delete: true },
     });
 
@@ -193,7 +122,7 @@ describe("createInkConfirmWrite", () => {
 
   it("auto mode accepts fs writes of every kind without prompting", async () => {
     resetCliStores();
-    const confirmWrite = createInkConfirmWrite({ getMode: () => "auto" });
+    const confirmWrite = createToolApproval({ getMode: () => "auto" });
 
     const created = await confirmWrite({
       type: "fs_write",
@@ -228,7 +157,7 @@ describe("createInkConfirmWrite", () => {
 
   it("normal mode still confirms fs writes", async () => {
     resetCliStores();
-    const confirmWrite = createInkConfirmWrite({ getMode: () => "normal" });
+    const confirmWrite = createToolApproval({ getMode: () => "normal" });
 
     const pending = confirmWrite({
       type: "fs_write",
@@ -258,7 +187,7 @@ describe("createInkConfirmWrite", () => {
 
   it("records fs write diffs for tool transcript detail", async () => {
     resetCliStores();
-    const confirmWrite = createInkConfirmWrite({ getMode: () => "normal" });
+    const confirmWrite = createToolApproval({ getMode: () => "normal" });
     const diff = "--- a.ts\n+++ a.ts\n@@\n-old\n+new\n";
 
     await runWithToolDetailSlot(async () => {
@@ -286,7 +215,7 @@ describe("createInkConfirmWrite", () => {
 
   it("enables shell prefix auto-allow for later commands in this session", async () => {
     resetCliStores();
-    const confirmTool = createInkConfirmWrite();
+    const confirmTool = createToolApproval();
 
     const first = confirmTool({
       type: "shell_command",
@@ -314,7 +243,7 @@ describe("createInkConfirmWrite", () => {
 
   it("auto-runs a read-only/safe shell command in any mode (incl. normal)", async () => {
     resetCliStores();
-    const confirmTool = createInkConfirmWrite({ getMode: () => "normal" });
+    const confirmTool = createToolApproval({ getMode: () => "normal" });
 
     const result = await confirmTool({
       type: "shell_command",
@@ -328,7 +257,7 @@ describe("createInkConfirmWrite", () => {
 
   it("auto mode accepts a confirm-tier command declared reversible", async () => {
     resetCliStores();
-    const confirmTool = createInkConfirmWrite({ getMode: () => "auto" });
+    const confirmTool = createToolApproval({ getMode: () => "auto" });
 
     const result = await confirmTool({
       type: "shell_command",
@@ -344,7 +273,7 @@ describe("createInkConfirmWrite", () => {
 
   it("states why a shell command was auto-allowed without repeating it", async () => {
     resetCliStores();
-    const confirmTool = createInkConfirmWrite({ getMode: () => "auto" });
+    const confirmTool = createToolApproval({ getMode: () => "auto" });
     const command = `node -e "let a = 1;\n  let b = 2;\n  console.log(a + b);"`;
 
     await confirmTool({
@@ -368,7 +297,7 @@ describe("createInkConfirmWrite", () => {
 
   it("still names the target in a filesystem auto-allow notice", async () => {
     resetCliStores();
-    const confirmTool = createInkConfirmWrite({ getMode: () => "auto" });
+    const confirmTool = createToolApproval({ getMode: () => "auto" });
 
     await confirmTool({
       type: "fs_write",
@@ -387,7 +316,7 @@ describe("createInkConfirmWrite", () => {
 
   it("still shows the full command in the interactive confirmation", async () => {
     resetCliStores();
-    const confirmTool = createInkConfirmWrite({ getMode: () => "normal" });
+    const confirmTool = createToolApproval({ getMode: () => "normal" });
     const command = `rm -rf ${"nested/dir/".repeat(40)}build`;
 
     const pending = confirmTool({
@@ -409,7 +338,7 @@ describe("createInkConfirmWrite", () => {
 
   it("normal mode still confirms a confirm-tier command even when declared reversible", async () => {
     resetCliStores();
-    const confirmTool = createInkConfirmWrite({ getMode: () => "normal" });
+    const confirmTool = createToolApproval({ getMode: () => "normal" });
 
     const pending = confirmTool({
       type: "shell_command",
@@ -431,7 +360,7 @@ describe("createInkConfirmWrite", () => {
 
   it("never auto-runs a block-tier command even when declared read-only", async () => {
     resetCliStores();
-    const confirmTool = createInkConfirmWrite({ getMode: () => "auto" });
+    const confirmTool = createToolApproval({ getMode: () => "auto" });
 
     const pending = confirmTool({
       type: "shell_command",
@@ -453,7 +382,7 @@ describe("createInkConfirmWrite", () => {
 
   it("shows the model's declared reason in the shell command prompt when provided", async () => {
     resetCliStores();
-    const confirmTool = createInkConfirmWrite();
+    const confirmTool = createToolApproval();
 
     const pending = confirmTool({
       type: "shell_command",
@@ -474,7 +403,7 @@ describe("createInkConfirmWrite", () => {
 
   it("never auto-allows shell commands containing control operators", async () => {
     resetCliStores();
-    const confirmTool = createInkConfirmWrite({
+    const confirmTool = createToolApproval({
       initialShellAutoAllowPrefixes: ["pnpm test"],
     });
 

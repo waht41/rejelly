@@ -15,7 +15,7 @@ import { type Key, useInput } from "ink";
 import { useRef } from "react";
 import { normalizeNewlines } from "../../shared/foundation/string";
 import { hasActiveInterruptibleTask } from "../../shared/task-interruption/taskStack";
-import { useModeStore } from "../store/useModeStore";
+import { useModeStore } from "../tool-approval/approvalModeStore";
 import { looksBinary, stripControlChars } from "./lineText";
 import {
   caretLeft,

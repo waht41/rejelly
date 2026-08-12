@@ -3,10 +3,10 @@
  */
 
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
-import { classifyShellCommand } from "../../runtime/shellCommandPolicy";
+import { classifyShellCommand } from "../../tool-approval/shellCommandPolicy";
 
 export interface StubHostBindingsOptions {
-  /** Return accept for every confirmWrite request (used by test/batch flows). */
+  /** Return accept for every tool approval request (used by test/batch flows). */
   autoAcceptWrite?: boolean;
   /** Accept shell commands classified as read-only/auto; reject writes and higher-risk shell commands. */
   allowReadonlyShellCommands?: boolean;
@@ -52,13 +52,15 @@ function createStubHostBindings(
     confirmTool: async (params) => {
       if (autoAcceptWrite) {
         if (params.type === "fs_write") {
-          console.log(`[${logPrefix}] confirmWrite auto-accept: ${params.kind} ${params.filePath}`);
+          console.log(
+            `[${logPrefix}] tool approval auto-accept: ${params.kind} ${params.filePath}`,
+          );
         } else if (params.type === "fs_outside_access") {
           console.log(
-            `[${logPrefix}] confirmWrite auto-accept: outside ${params.mode} ${params.targetPath}`,
+            `[${logPrefix}] tool approval auto-accept: outside ${params.mode} ${params.targetPath}`,
           );
         } else {
-          console.log(`[${logPrefix}] confirmWrite auto-accept: shell ${params.command}`);
+          console.log(`[${logPrefix}] tool approval auto-accept: shell ${params.command}`);
         }
         return { action: "accept" };
       }
@@ -67,17 +69,17 @@ function createStubHostBindings(
         params.type === "shell_command" &&
         classifyShellCommand(params.command) === "auto"
       ) {
-        console.log(`[${logPrefix}] confirmWrite auto-accept readonly shell: ${params.command}`);
+        console.log(`[${logPrefix}] tool approval auto-accept readonly shell: ${params.command}`);
         return { action: "accept" };
       }
       if (params.type === "fs_write") {
-        console.warn(`[${logPrefix}] confirmWrite auto-reject: ${params.kind} ${params.filePath}`);
+        console.warn(`[${logPrefix}] tool approval auto-reject: ${params.kind} ${params.filePath}`);
       } else if (params.type === "fs_outside_access") {
         console.warn(
-          `[${logPrefix}] confirmWrite auto-reject: outside ${params.mode} ${params.targetPath}`,
+          `[${logPrefix}] tool approval auto-reject: outside ${params.mode} ${params.targetPath}`,
         );
       } else {
-        console.warn(`[${logPrefix}] confirmWrite auto-reject: shell ${params.command}`);
+        console.warn(`[${logPrefix}] tool approval auto-reject: shell ${params.command}`);
       }
       return { action: "reject" };
     },
