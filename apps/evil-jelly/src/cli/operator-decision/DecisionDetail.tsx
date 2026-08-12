@@ -1,9 +1,10 @@
 import { Box } from "ink";
-import type { DecisionView } from "../operator-decision/model";
+import type { PromptChoiceView } from "../../shared/host/inputBindings";
+import { DiffBlock } from "../conversation-display/DiffBlock";
 import { MarkdownViewer } from "../terminal-ui/rich-text/MarkdownViewer";
-import { DiffBlock } from "./viewers/DiffViewer";
 
-export function TransientPane({ view, columns }: { view: DecisionView; columns: number }) {
+/** Optional context shown above an operator choice while the decision remains active. */
+export function DecisionDetail({ view, columns }: { view: PromptChoiceView; columns: number }) {
   if (view.type === "diff") {
     return <DiffBlock text={view.text} caption={view.caption} captionTitle={view.captionTitle} />;
   }

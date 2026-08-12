@@ -13,6 +13,7 @@ import {
 } from "../message-composer/MessageComposer";
 import { ActionMenuPrompt } from "../operator-decision/ActionMenuPrompt";
 import { ConfirmPrompt } from "../operator-decision/ConfirmPrompt";
+import { DecisionDetail } from "../operator-decision/DecisionDetail";
 import { useDecisionStore } from "../operator-decision/decisionStore";
 import { TextDecisionPrompt } from "../operator-decision/TextDecisionPrompt";
 import { getQueuedSteers, subscribeSteers } from "../runtime/steerControl";
@@ -29,7 +30,6 @@ import { createStreamTailWindow } from "../terminal-ui/rich-text/streamWindow";
 import { MODE_META, useModeStore } from "../tool-approval/approvalModeStore";
 import { HistoryItem } from "./HistoryItem";
 import { TranscriptOverlay } from "./TranscriptOverlay";
-import { TransientPane } from "./TransientPane";
 import { type CtrlCAbortHandler, useCtrlCAbort } from "./useCtrlCAbort";
 
 const STEER_QUEUE_VISIBLE_ROWS = 3;
@@ -419,7 +419,7 @@ export function Dashboard({
             </Box>
           ) : null}
           <Box ref={bottomTransientRef} flexDirection="column">
-            <TransientPane view={view} columns={columns} />
+            <DecisionDetail view={view} columns={columns} />
             <Box marginTop={1}>
               <RuntimeStatusLine />
             </Box>

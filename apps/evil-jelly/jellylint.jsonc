@@ -5,6 +5,11 @@
     "@cli:app": ["src/cli/app/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:bindings": ["src/cli/bindings/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:ui": ["src/cli/ui/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@cli:conversation-display": [
+      "src/cli/conversation-display/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
     "@cli:terminal-ui": ["src/cli/terminal-ui/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:message-composer": [
       "src/cli/message-composer/**/*",
@@ -114,6 +119,7 @@
         "@domain:session:repository": ["@ext:fs"],
         "@cli:bindings": ["@ext:ui"],
         "@cli:ui": ["@cli:runtime", "@ext:ui"],
+        "@cli:conversation-display": ["@ext:ui"],
         "@cli:terminal-ui": ["@ext:ui"],
         "@cli:message-composer": ["@domain:skills:agent", "@ext:ui"],
         "@cli:operator-decision": ["@ext:ui"],
@@ -135,13 +141,15 @@
           "@cli:tool-approval"
         ],
         "@cli:ui": [
+          "@cli:conversation-display",
           "@cli:operator-decision",
           "@cli:tool-approval",
           "@cli:terminal-ui",
           "@cli:message-composer"
         ],
+        "@cli:conversation-display": ["@cli:terminal-ui"],
         "@cli:message-composer": ["@cli:terminal-ui"],
-        "@cli:operator-decision": ["@cli:terminal-ui"],
+        "@cli:operator-decision": ["@cli:conversation-display", "@cli:terminal-ui"],
         "@cli:tool-approval": ["@cli:operator-decision", "@cli:store"]
       },
       "cascade": [["@cli:ui"], ["@cli:store"]]

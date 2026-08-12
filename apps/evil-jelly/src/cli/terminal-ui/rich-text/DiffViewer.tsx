@@ -1,35 +1,8 @@
-/**
- * Renders a unified diff inside Ink with per-line coloring (history turns and transient UI).
- */
+/** Renders a unified diff inside Ink with per-line coloring and bounded work. */
 
 import { Box, Text } from "ink";
 
-/** Optional caption ("AI merge summary") above a colored diff — shared by history and transient views. */
-export function DiffBlock({
-  text,
-  caption,
-  captionTitle,
-}: {
-  text: string;
-  caption?: string;
-  captionTitle?: string;
-}) {
-  return (
-    <Box flexDirection="column">
-      {caption ? (
-        <Box flexDirection="column" marginBottom={1} paddingX={1}>
-          <Text bold color="cyan">
-            {captionTitle ?? "AI merge summary"}
-          </Text>
-          <Text wrap="wrap">{caption}</Text>
-        </Box>
-      ) : null}
-      <DiffViewer diffText={text} />
-    </Box>
-  );
-}
-
-/** Bound Ink work when patches are huge; full diff is still passed for the decision, we only render a prefix. */
+/** Full diff remains available to its owner; this terminal view only renders a bounded prefix. */
 const MAX_RENDER_LINES = 1_200;
 
 export function DiffViewer({ diffText }: { diffText: string }) {
