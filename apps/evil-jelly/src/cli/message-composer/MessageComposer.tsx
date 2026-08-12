@@ -27,16 +27,13 @@
  * position come from one list instead of two guesses that drift apart.
  */
 
-import type { DOMElement } from "ink";
-import { Box, Text, useCursor, useStdout } from "ink";
-import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
-import stringWidth from "string-width";
-import type { ProjectedTokenSpan } from "./editor/document/promptDocument";
-import { projectedDisplayRuns } from "./editor/document/promptDocument";
+import { Box, Text, useStdout } from "ink";
+import { useEffect, useRef, useState } from "react";
+import { BufferView } from "./editor/BufferView";
 import { useTextBuffer } from "./editor/document/textBuffer";
 import { useLineKeybindings } from "./editor/keyboard/useLineKeybindings";
 import { useCollapsedPaste } from "./editor/paste/useCollapsedPaste";
-import { caretCell, type WrappedRow, wrapRows } from "./editor/softWrap";
+import { usePromptLayout } from "./editor/usePromptLayout";
 import { attachedImages, imageToken, shiftImageTokens } from "./imageAttachments";
 import { MAX_SELECTED_SKILLS, usePromptStore } from "./session/composerStore";
 import type { ComposerPickerKeyHandler } from "./suggestions/ComposerPicker";
@@ -52,88 +49,6 @@ import { useSkillReferenceSuggestion } from "./suggestions/skill-reference/useSk
 
 const MIN_SUGGESTION_ROWS = 5;
 const MAX_SUGGESTION_ROWS = 10;
-/**
- * Where the text column sits, measured off the laid-out frame rather than
- * guessed: `x`/`y` are its absolute top-left in terminal cells and `width` is
- * the room it has to wrap in. Everything the caret needs is derived from this,
- * so nothing above the prompt (the attachment list, the steer queue, the
- * "agent is running" notice) has to be counted by hand.
- */
-interface TextArea {
-  x: number;
-  y: number;
-  width: number;
-}
-
-function absoluteOrigin(node: DOMElement): { x: number; y: number } {
-  let x = 0;
-  let y = 0;
-  let current: DOMElement | undefined = node;
-
-  while (current) {
-    x += current.yogaNode?.getComputedLeft() ?? 0;
-    y += current.yogaNode?.getComputedTop() ?? 0;
-    current = current.parentNode;
-  }
-
-  return { x, y };
-}
-
-/**
- * `rowRef` goes on the label+text row, whose width is the full inner width of
- * the bordered prompt box and therefore does not move as the buffer grows —
- * unlike the text column itself, which is content-sized.
- */
-function BufferView({
-  rowRef,
-  label,
-  rows,
-  tokenSpans,
-  placeholder,
-}: {
-  rowRef: RefObject<DOMElement | null>;
-  label: string;
-  rows: WrappedRow[];
-  tokenSpans: readonly ProjectedTokenSpan[];
-  placeholder: string;
-}) {
-  return (
-    <Box ref={rowRef} flexDirection="row">
-      <Text bold>{label || "❯"} </Text>
-      <Box flexDirection="column">
-        {rows.length === 0 ? (
-          <Text>
-            <Text dimColor>{placeholder}</Text>
-          </Text>
-        ) : (
-          // Rows are already wrapped to fit, so Ink never wraps them again — and
-          // the caret's row/column can be read off this very list. Trailing
-          // blanks are dropped so a row padded out to the full width can't
-          // overflow the column and trigger a second wrap.
-          rows.map((row, i) => {
-            const rendered = row.text.trimEnd();
-            const runs = projectedDisplayRuns(rendered, row.start, tokenSpans);
-            return (
-              <Text key={i}>
-                {runs.length > 0
-                  ? runs.map((run, runIndex) =>
-                      run.token ? (
-                        <Text key={runIndex} color="magenta" bold>
-                          {run.text}
-                        </Text>
-                      ) : (
-                        run.text
-                      ),
-                    )
-                  : " "}
-              </Text>
-            );
-          })
-        )}
-      </Box>
-    </Box>
-  );
-}
 
 export type ClipboardImageReadResult = { ok: true; path: string } | { ok: false; message: string };
 
@@ -158,7 +73,6 @@ export function MessageComposer({
   onNotice,
   readClipboardImage,
 }: MessageComposerProps) {
-  const { setCursorPosition } = useCursor();
   const { stdout } = useStdout();
   const submitLine = usePromptStore((s) => s.submitLine);
   const selectedFiles = usePromptStore((s) => s.selectedFiles);
@@ -175,9 +89,7 @@ export function MessageComposer({
   const clearSelectedImages = usePromptStore((s) => s.clearSelectedImages);
   const clearSelectedSkills = usePromptStore((s) => s.clearSelectedSkills);
   const clearDraftSeed = usePromptStore((s) => s.clearDraftSeed);
-  const rowRef = useRef<DOMElement>(null);
   const buf = useTextBuffer();
-  const [textArea, setTextArea] = useState<TextArea | null>(null);
   const [terminalRows, setTerminalRows] = useState(stdout.rows || 24);
   const [clipboardImageStatus, setClipboardImageStatus] = useState<string | null>(null);
   const collapsedPaste = useCollapsedPaste(buf);
@@ -186,17 +98,12 @@ export function MessageComposer({
   const overlayKeysRef = useRef<ComposerPickerKeyHandler | null>(null);
 
   const isMultiline = buf.text.includes("\n");
-  const labelWidth = stringWidth(`${label || "❯"} `);
-  // One wrap, used twice: BufferView paints these rows and the caret is placed
-  // against them, so the two can't drift apart.
-  const wrappedRows = wrapRows(buf.text, textArea?.width ?? 0);
-  const caret = caretCell(wrappedRows, buf.cursor, buf.caretAffinity);
-  setCursorPosition(
-    textArea
-      ? { x: textArea.x + caret.col, y: textArea.y + caret.row }
-      : // Nothing measured yet (first frame): no honest place to put the caret.
-        undefined,
-  );
+  const promptLayout = usePromptLayout({
+    text: buf.text,
+    cursor: buf.cursor,
+    caretAffinity: buf.caretAffinity,
+    label,
+  });
 
   useEffect(() => {
     const updateRows = () => setTerminalRows(stdout.rows || 24);
@@ -206,29 +113,6 @@ export function MessageComposer({
       stdout.off("resize", updateRows);
     };
   }, [stdout]);
-
-  // Measure after every commit: Ink lays Yoga out before layout effects run, so
-  // this reads the frame that was just painted. A changed measurement re-renders
-  // and the caret catches up on the next frame — which only matters when the
-  // prompt actually moves (resize, an attachment added), never while typing,
-  // since none of these three values depend on the buffer.
-  useLayoutEffect(() => {
-    const row = rowRef.current;
-    if (!row) {
-      return;
-    }
-    const origin = absoluteOrigin(row);
-    const next: TextArea = {
-      x: origin.x + labelWidth,
-      y: origin.y,
-      width: (row.yogaNode?.getComputedWidth() ?? 0) - labelWidth,
-    };
-    setTextArea((previous) =>
-      previous?.x === next.x && previous.y === next.y && previous.width === next.width
-        ? previous
-        : next,
-    );
-  });
 
   const clearDraft = () => {
     buf.reset();
@@ -364,7 +248,7 @@ export function MessageComposer({
 
   useLineKeybindings({
     buf,
-    wrappedRows,
+    wrappedRows: promptLayout.rows,
     overlayKeys: overlayKeysRef,
     isAgentRunning,
     hasInterruptibleTask,
@@ -411,7 +295,7 @@ export function MessageComposer({
   const promptRows =
     (selectedFiles.length > 0 ? selectedFiles.length + 1 : 0) +
     (selectedSkills.length > 0 ? selectedSkills.length + 1 : 0) +
-    wrappedRows.length;
+    promptLayout.rows.length;
   const suggestionVisibleRows = Math.min(
     MAX_SUGGESTION_ROWS,
     Math.max(MIN_SUGGESTION_ROWS, terminalRows - promptRows - promptChromeRows),
@@ -422,11 +306,12 @@ export function MessageComposer({
       {selectedAttachmentList}
       {selectedSkillList}
       <BufferView
-        rowRef={rowRef}
+        rowRef={promptLayout.rowRef}
         label={label}
-        rows={buf.text.length === 0 ? [] : wrappedRows}
+        rows={promptLayout.rows}
         tokenSpans={buf.tokenSpans}
         placeholder={label || "Message"}
+        empty={buf.text.length === 0}
       />
       {isMultiline ? (
         <Box marginTop={1}>
