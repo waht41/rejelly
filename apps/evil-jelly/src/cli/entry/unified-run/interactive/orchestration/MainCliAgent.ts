@@ -13,28 +13,28 @@ import {
   type Message,
   reborn,
 } from "@rejelly/core";
-import type { SessionRecorder } from "../../../domains/session/recorder/sessionRecorder";
+import type { SessionRecorder } from "../../../../../domains/session/recorder/sessionRecorder";
 import {
   listSessions,
   loadSession,
   type SessionBudget,
-} from "../../../domains/session/repository/sessionStore";
+} from "../../../../../domains/session/repository/sessionStore";
 import {
   SKILL_RUNTIME_PROVIDER_KEY,
   type SkillRuntimeSnapshot,
-} from "../../../domains/skills/agent/skillRuntime";
-import { UnifiedAgent } from "../../../features/unified/UnifiedAgent";
-import { env } from "../../../shared/configuration/env";
-import { countConversationTurns } from "../../../shared/conversation/compactionMessages";
-import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
-import type { EvilJellyBindings } from "../../../shared/host/bindings";
-import { getBinding, setBinding } from "../../../shared/host/context";
-import type { LineInputValue } from "../../../shared/host/inputBindings";
-import { getUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
-import { buildSkillAwareUserMessage } from "../../entry/unified-run/skillAwareUserMessage";
-import { requestNewSession, requestResume } from "../../runtime/sessionRunControl";
-import { drainSteers } from "../../runtime/steerControl";
-import { withAbort } from "../../runtime/withAbort";
+} from "../../../../../domains/skills/agent/skillRuntime";
+import { UnifiedAgent } from "../../../../../features/unified/UnifiedAgent";
+import { env } from "../../../../../shared/configuration/env";
+import { countConversationTurns } from "../../../../../shared/conversation/compactionMessages";
+import { getWorkspaceFsPolicy } from "../../../../../shared/fs-policy/workspace-fs-policy";
+import type { EvilJellyBindings } from "../../../../../shared/host/bindings";
+import { getBinding, setBinding } from "../../../../../shared/host/context";
+import type { LineInputValue } from "../../../../../shared/host/inputBindings";
+import { getUserInputDisplay } from "../../../../../shared/model/message/userInputMetadata";
+import { requestNewSession, requestResume } from "../../../../runtime/sessionRunControl";
+import { drainSteers } from "../../../../runtime/steerControl";
+import { withAbort } from "../../../../runtime/withAbort";
+import { buildSkillAwareUserMessage } from "../../skillAwareUserMessage";
 import { combineSessionBudget, formatSessionStatus, formatTokenUsageLine } from "./sessionStatus";
 import { formatUserInputDisplay } from "./userInputDisplay";
 

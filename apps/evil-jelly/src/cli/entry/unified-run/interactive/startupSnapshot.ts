@@ -1,6 +1,6 @@
 import type { AgentSnapshot } from "@rejelly/core";
-import { loadSnapshotFromTraceId } from "../../features/replay/snapshot/restore";
-import type { EvilJellyBindings } from "../../shared/host/bindings";
+import { loadSnapshotFromTraceId } from "../../../../features/replay/snapshot/restore";
+import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 
 export async function loadStartupSnapshot(
   snapshotTraceId: string | undefined,

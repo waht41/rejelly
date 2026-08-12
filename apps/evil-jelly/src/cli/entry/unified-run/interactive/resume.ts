@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import type { Message } from "@rejelly/core";
-import { buildLegacyTranscript } from "../../domains/session/projection/sessionHistoryProjection";
+import { buildLegacyTranscript } from "../../../../domains/session/projection/sessionHistoryProjection";
 import {
   generateSessionId,
   type LegacyMigrationOptions,
@@ -8,11 +8,11 @@ import {
   resumeSession,
   type SessionBudget,
   type SessionRecord,
-} from "../../domains/session/repository/sessionStore";
-import { countConversationTurns } from "../../shared/conversation/compactionMessages";
-import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
-import type { EvilJellyBindings } from "../../shared/host/bindings";
-import type { TranscriptItem } from "../../shared/session/transcript";
+} from "../../../../domains/session/repository/sessionStore";
+import { countConversationTurns } from "../../../../shared/conversation/compactionMessages";
+import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
+import type { EvilJellyBindings } from "../../../../shared/host/bindings";
+import type { TranscriptItem } from "../../../../shared/session/transcript";
 
 export interface SessionResumeSeed {
   activeContext: Message[];

@@ -2,22 +2,22 @@
 
 import { type AgentSnapshot, isAbortError, type Message, type ModelAdapter } from "@rejelly/core";
 import type { ReviewOptions } from "@rejelly/core/debugger";
-import { LazySessionRecorder } from "../../../domains/session/recorder/lazySessionRecorder";
+import { LazySessionRecorder } from "../../../../domains/session/recorder/lazySessionRecorder";
 import {
   openSessionRecorder,
   type SessionRecorder,
-} from "../../../domains/session/recorder/sessionRecorder";
-import type { SessionBudget } from "../../../domains/session/repository/sessionStore";
+} from "../../../../domains/session/recorder/sessionRecorder";
+import type { SessionBudget } from "../../../../domains/session/repository/sessionStore";
 import {
   SKILL_RUNTIME_PROVIDER_KEY,
   type SkillRuntimeSnapshot,
-} from "../../../domains/skills/agent/skillRuntime";
-import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
-import type { EvilJellyBindings } from "../../../shared/host/bindings";
-import { registerRunAbort } from "../../runtime/runControl";
-import { runWithReview } from "../../runtime/runWithReview";
-import { generateTraceId } from "../../runtime/traceId";
-import { MainCliAgent } from "../orchestration/MainCliAgent";
+} from "../../../../domains/skills/agent/skillRuntime";
+import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
+import type { EvilJellyBindings } from "../../../../shared/host/bindings";
+import { registerRunAbort } from "../../../runtime/runControl";
+import { runWithReview } from "../../../runtime/runWithReview";
+import { generateTraceId } from "../../../runtime/traceId";
+import { MainCliAgent } from "./orchestration/MainCliAgent";
 
 export interface RunEvilJellyHostOptions {
   model: ModelAdapter;

@@ -1,6 +1,6 @@
 import type { Message } from "@rejelly/core";
 import { describe, expect, it } from "vitest";
-import type { EvilJellyBindings } from "../../shared/host/bindings";
+import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 import { buildLegacyResumeSeed, hydrateResumeSeed } from "./resume";
 
 function createBindings() {

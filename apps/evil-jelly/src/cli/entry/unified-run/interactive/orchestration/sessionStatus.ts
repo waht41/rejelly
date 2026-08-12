@@ -8,7 +8,7 @@
  */
 
 import type { UsageStats } from "@rejelly/core";
-import type { SessionBudget } from "../../../domains/session/repository/sessionStore";
+import type { SessionBudget } from "../../../../../domains/session/repository/sessionStore";
 
 export function emptySessionBudget(): SessionBudget {
   return {

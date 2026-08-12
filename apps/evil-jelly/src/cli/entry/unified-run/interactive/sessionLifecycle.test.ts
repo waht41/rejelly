@@ -7,16 +7,16 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   readSessionEvents,
   resolveV2SessionPath,
-} from "../../../domains/session/journal/sessionJsonlStore";
-import { isKnownSessionEvent } from "../../../domains/session/model/sessionEvents";
-import { openSessionRecorder } from "../../../domains/session/recorder/sessionRecorder";
-import { resumeSession } from "../../../domains/session/repository/sessionStore";
-import { isCompactionBridgeMessage } from "../../../shared/conversation/compactionMessages";
-import { setWorkspaceRoot } from "../../../shared/fs-policy/workspace-fs-policy";
-import type { EvilJellyBindings } from "../../../shared/host/bindings";
-import { messageContentToText } from "../../../shared/model/message/content";
-import type { TranscriptItem } from "../../../shared/session/transcript";
-import { runEvilJellyHost } from "./runInteractiveSegment";
+} from "../../../../domains/session/journal/sessionJsonlStore";
+import { isKnownSessionEvent } from "../../../../domains/session/model/sessionEvents";
+import { openSessionRecorder } from "../../../../domains/session/recorder/sessionRecorder";
+import { resumeSession } from "../../../../domains/session/repository/sessionStore";
+import { isCompactionBridgeMessage } from "../../../../shared/conversation/compactionMessages";
+import { setWorkspaceRoot } from "../../../../shared/fs-policy/workspace-fs-policy";
+import type { EvilJellyBindings } from "../../../../shared/host/bindings";
+import { messageContentToText } from "../../../../shared/model/message/content";
+import type { TranscriptItem } from "../../../../shared/session/transcript";
+import { runEvilJellyHost } from "./runSegment";
 
 const originalAutoCompactTokens = process.env.OPENAI_AUTO_COMPACT_TOKENS;
 const originalAutoCompactRatio = process.env.OPENAI_AUTO_COMPACT_RATIO;

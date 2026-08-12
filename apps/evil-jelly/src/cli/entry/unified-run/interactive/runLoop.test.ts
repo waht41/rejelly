@@ -1,16 +1,16 @@
 import type { AgentSnapshot, Message, ModelAdapter } from "@rejelly/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { connectMcpProviders } from "../../domains/mcp/mcpServerKit";
-import * as sessionStore from "../../domains/session/repository/sessionStore";
-import type { EvilJellyBindings } from "../../shared/host/bindings";
+import { connectMcpProviders } from "../../../../domains/mcp/mcpServerKit";
+import * as sessionStore from "../../../../domains/session/repository/sessionStore";
+import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 import {
   requestNewSession,
   requestResume,
   takePendingNewSession,
   takePendingResume,
-} from "../runtime/sessionRunControl";
-import { runEvilJellyHost } from "./host/runInteractiveSegment";
+} from "../../../runtime/sessionRunControl";
 import { runInteractiveLoop } from "./runLoop";
+import { runEvilJellyHost } from "./runSegment";
 
 const runtimeMocks = vi.hoisted(() => ({
   buildSkillRuntime: vi.fn(),
@@ -18,22 +18,22 @@ const runtimeMocks = vi.hoisted(() => ({
   disposeMcp: vi.fn(async () => undefined),
 }));
 
-vi.mock("./host/runInteractiveSegment", () => ({
+vi.mock("./runSegment", () => ({
   runEvilJellyHost: vi.fn(),
 }));
 
-vi.mock("../../domains/mcp/mcpServerKit", () => ({
+vi.mock("../../../../domains/mcp/mcpServerKit", () => ({
   connectMcpProviders: vi.fn(async () => ({
     providers: {},
     dispose: runtimeMocks.disposeMcp,
   })),
 }));
 
-vi.mock("../../shared/configuration/settings", () => ({
+vi.mock("../../../../shared/configuration/settings", () => ({
   getSettings: () => ({ devtoolMcp: true }),
 }));
 
-vi.mock("../entry/unified-run/skillRuntime", () => ({
+vi.mock("../skillRuntime", () => ({
   buildConfiguredSkillRuntimeSnapshot: runtimeMocks.buildSkillRuntime,
   formatSkillRuntimeStartupSummary: runtimeMocks.formatSkillSummary,
 }));

@@ -1,11 +1,11 @@
 import type { ModelAdapter } from "@rejelly/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SkillRuntimeSnapshot } from "../../../domains/skills/agent/skillRuntime";
-import { createSkillCatalog } from "../../../domains/skills/catalog/skillCatalog";
-import { skillOrigin } from "../../../domains/skills/definition/skillDefinition";
-import type { EvilJellyBindings } from "../../../shared/host/bindings";
-import { requestRunAbort } from "../../runtime/runControl";
-import { runEvilJellyHost } from "./runInteractiveSegment";
+import type { SkillRuntimeSnapshot } from "../../../../domains/skills/agent/skillRuntime";
+import { createSkillCatalog } from "../../../../domains/skills/catalog/skillCatalog";
+import { skillOrigin } from "../../../../domains/skills/definition/skillDefinition";
+import type { EvilJellyBindings } from "../../../../shared/host/bindings";
+import { requestRunAbort } from "../../../runtime/runControl";
+import { runEvilJellyHost } from "./runSegment";
 
 const mocks = vi.hoisted(() => ({
   mainCliAgent: vi.fn(),
@@ -13,24 +13,24 @@ const mocks = vi.hoisted(() => ({
   runWithReview: vi.fn(),
 }));
 
-vi.mock("../orchestration/MainCliAgent", () => ({
+vi.mock("./orchestration/MainCliAgent", () => ({
   MainCliAgent: mocks.mainCliAgent,
 }));
 
-vi.mock("../../../domains/session/recorder/sessionRecorder", () => ({
+vi.mock("../../../../domains/session/recorder/sessionRecorder", () => ({
   openSessionRecorder: mocks.openSessionRecorder,
 }));
 
-vi.mock("../../../shared/fs-policy/workspace-fs-policy", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../shared/fs-policy/workspace-fs-policy")>()),
+vi.mock("../../../../shared/fs-policy/workspace-fs-policy", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../../shared/fs-policy/workspace-fs-policy")>()),
   getWorkspaceFsPolicy: () => ({ getRoot: () => "/workspace" }),
 }));
 
-vi.mock("../../runtime/traceId", () => ({
+vi.mock("../../../runtime/traceId", () => ({
   generateTraceId: () => "trace-id",
 }));
 
-vi.mock("../../runtime/runWithReview", () => ({
+vi.mock("../../../runtime/runWithReview", () => ({
   runWithReview: mocks.runWithReview,
 }));
 

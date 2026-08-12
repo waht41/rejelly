@@ -1,9 +1,9 @@
 import { type Instance, render } from "ink";
 import React from "react";
 import { hasActiveInterruptibleTask } from "../../shared/task-interruption/taskStack";
-import { createInteractiveCommandHandler } from "../app/orchestration/interactiveCommands";
 import { useToolTranscriptViewStore } from "../conversation-display/tool-transcript/viewStore";
 import { pruneClearedStaticTurns, useOutputStore } from "../conversation-display/useOutputStore";
+import { createInteractiveCommandHandler } from "../entry/unified-run/interactive/orchestration/interactiveCommands";
 import { useComposerSession } from "../message-composer/session/composerSession";
 import { requestRunAbort } from "../runtime/runControl";
 import { applyModeCommand, MODE_META, useModeStore } from "../tool-approval/approvalModeStore";

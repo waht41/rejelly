@@ -9,13 +9,13 @@ import { getCliVersion, parseCliArgs } from "./app/args";
 import { applyWorkspaceRootFromArgs } from "./app/bootstrap";
 import { createBackgroundHostBindings } from "./app/host/cliStubBindings";
 import { runInitCommand } from "./app/initCommand";
-import { resolveInitialSession } from "./app/resume";
-import { runInteractiveLoop } from "./app/runLoop";
-import { loadStartupSnapshot } from "./app/snapshot";
 import { createCliHostBindings } from "./bindings/cliBinding";
 import { enqueueLineInput } from "./bindings/lineInputQueue";
 import { runAudit } from "./entry/audit-run/runAudit";
 import { runHeadless } from "./entry/unified-run/headless/runHeadless";
+import { resolveInitialSession } from "./entry/unified-run/interactive/resume";
+import { runInteractiveLoop } from "./entry/unified-run/interactive/runLoop";
+import { loadStartupSnapshot } from "./entry/unified-run/interactive/startupSnapshot";
 import { createOpenAIModelFromEnv } from "./model-composition/createModelFromEnv";
 
 export type { EvilJellyBindings } from "../shared/host/bindings";
@@ -23,7 +23,7 @@ export type {
   PromptChoiceOption,
   PromptChoiceView,
 } from "../shared/host/inputBindings";
-export { runEvilJellyHost } from "./app/host/runInteractiveSegment";
+export { runEvilJellyHost } from "./entry/unified-run/interactive/runSegment";
 
 async function main() {
   const args = parseCliArgs();

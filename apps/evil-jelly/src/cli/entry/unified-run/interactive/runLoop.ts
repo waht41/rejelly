@@ -1,31 +1,31 @@
 import type { AgentSnapshot, Message, ModelAdapter } from "@rejelly/core";
-import { connectMcpProviders } from "../../domains/mcp/mcpServerKit";
+import { connectMcpProviders } from "../../../../domains/mcp/mcpServerKit";
 import {
   generateSessionId,
   resumeSession,
   type SessionBudget,
-} from "../../domains/session/repository/sessionStore";
-import { qualifiedSkillName } from "../../domains/skills/definition/skillDefinition";
-import { getSettings } from "../../shared/configuration/settings";
-import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
-import type { EvilJellyBindings } from "../../shared/host/bindings";
-import type { TranscriptItem } from "../../shared/session/transcript";
-import {
-  buildConfiguredSkillRuntimeSnapshot,
-  formatSkillRuntimeStartupSummary,
-} from "../entry/unified-run/skillRuntime";
+} from "../../../../domains/session/repository/sessionStore";
+import { qualifiedSkillName } from "../../../../domains/skills/definition/skillDefinition";
+import { getSettings } from "../../../../shared/configuration/settings";
+import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
+import type { EvilJellyBindings } from "../../../../shared/host/bindings";
+import type { TranscriptItem } from "../../../../shared/session/transcript";
 import {
   takePendingExit,
   takePendingNewSession,
   takePendingResume,
-} from "../runtime/sessionRunControl";
-import { type RunEvilJellyHostOptions, runEvilJellyHost } from "./host/runInteractiveSegment";
+} from "../../../runtime/sessionRunControl";
+import {
+  buildConfiguredSkillRuntimeSnapshot,
+  formatSkillRuntimeStartupSummary,
+} from "../skillRuntime";
 import {
   buildLegacyResumeSeed,
   buildSessionResumeSeed,
   hydrateResumeSeed,
   type SessionResumeSeed,
 } from "./resume";
+import { type RunEvilJellyHostOptions, runEvilJellyHost } from "./runSegment";
 
 export interface RunInteractiveLoopParams {
   bindings: EvilJellyBindings;

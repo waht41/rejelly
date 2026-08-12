@@ -105,13 +105,12 @@
       "connect": {
         "@spec:tests": ["@domain:[dom]", "@domain:session:*", "@domain:skills:*", "@ext:ui"],
         "@cli:**": ["@domain:[dom]"],
-        "@cli:app": [
+        "@cli:unified-run": [
           "@domain:session:repository",
           "@domain:session:recorder",
           "@domain:session:projection",
           "@domain:skills:*"
         ],
-        "@cli:unified-run": ["@domain:skills:*"],
         "@feature:unified": [
           "@domain:workspace",
           "@domain:web",
@@ -147,14 +146,9 @@
         ],
         "@cli:audit-run": ["@cli:runtime"],
         "@cli:unified-run": ["@cli:runtime"],
-        "@cli:app": [
-          "@cli:runtime",
-          "@cli:unified-run",
-          "@cli:model-composition",
-          "@cli:tool-approval"
-        ],
+        "@cli:app": ["@cli:tool-approval"],
         "@cli:bindings": [
-          "@cli:app",
+          "@cli:unified-run",
           "@cli:conversation-display",
           "@cli:message-composer",
           "@cli:ui",
