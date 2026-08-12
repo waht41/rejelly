@@ -7,6 +7,7 @@ import { Box, measureElement, Static, Text, useInput, useWindowSize } from "ink"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { LineInputValue } from "../../shared/host/inputBindings";
 import type { RuntimePhase } from "../../shared/host/presentationBindings";
+import { AssistantStreamView } from "../conversation-display/assistant-stream/AssistantStreamView";
 import { HistoryItem } from "../conversation-display/history/HistoryItem";
 import { ToolTranscriptOverlay } from "../conversation-display/tool-transcript/ToolTranscriptOverlay";
 import { useToolTranscriptViewStore } from "../conversation-display/tool-transcript/viewStore";
@@ -27,8 +28,6 @@ import { DecisionDetail } from "../operator-decision/DecisionDetail";
 import { useDecisionStore } from "../operator-decision/decisionStore";
 import { TextDecisionPrompt } from "../operator-decision/TextDecisionPrompt";
 import { getQueuedSteers, subscribeSteers } from "../runtime/steerControl";
-import { StreamMarkdownViewer } from "../terminal-ui/rich-text/MarkdownViewer";
-import { createStreamTailWindow } from "../terminal-ui/rich-text/streamWindow";
 import { MODE_META, useModeStore } from "../tool-approval/approvalModeStore";
 import { type CtrlCAbortHandler, useCtrlCAbort } from "./useCtrlCAbort";
 
@@ -367,17 +366,6 @@ export function Dashboard({
       ? null
       : layoutRows.topTransient + layoutRows.bottomTransient + OUTER_VERTICAL_MARGIN_ROWS;
   const streamBudgetRows = nonStreamRows === null ? 0 : Math.max(0, rows - 1 - nonStreamRows - 1);
-  const streamWindow = useMemo(
-    () =>
-      createStreamTailWindow({
-        text: streamBuffer,
-        columns,
-        maxRows: streamBudgetRows,
-      }),
-    [columns, streamBuffer, streamBudgetRows],
-  );
-  const canRenderStream = isAgentWorking && streamWindow.text.length > 0;
-
   useCtrlCAbort(onCtrlCAbort);
 
   useEffect(() => subscribeSteers(setQueuedSteers), []);
@@ -409,15 +397,12 @@ export function Dashboard({
               <RunningToolList tools={runningTools} maxTailRows={toolTailRows} />
             ) : null}
           </Box>
-          {canRenderStream ? (
-            <Box flexDirection="column" marginBottom={1}>
-              {streamWindow.forceRaw ? (
-                <Text>{streamWindow.text}</Text>
-              ) : (
-                <StreamMarkdownViewer text={streamWindow.text} columns={columns} />
-              )}
-            </Box>
-          ) : null}
+          <AssistantStreamView
+            text={streamBuffer}
+            columns={columns}
+            maxRows={streamBudgetRows}
+            visible={isAgentWorking}
+          />
           <Box ref={bottomTransientRef} flexDirection="column">
             <DecisionDetail view={view} columns={columns} />
             <Box marginTop={1}>

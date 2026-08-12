@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { StreamStableTailController } from "./streamStableTail";
+import { StreamStableTailController } from "./stableTail";
 
 describe("StreamStableTailController", () => {
   it("keeps an unterminated line in the tail until newline arrives", () => {

@@ -4,6 +4,7 @@ import { create } from "zustand";
 import type { RuntimePhase } from "../../shared/host/presentationBindings";
 import type { TranscriptItem } from "../../shared/session/transcript";
 import type { ToolCallHandle, ToolObservationStart } from "../../shared/tool-observation/model";
+import { AssistantStreamBuffer } from "./assistant-stream/buffer";
 import {
   assistantCompletionTurns,
   assistantStreamTurn,
@@ -17,28 +18,32 @@ import {
 import type { DiffBlockDetail, SessionBanner, ToolBlock, Turn } from "./history/model";
 import { projectTranscriptHistory } from "./history/projection";
 import { HistorySequence } from "./history/sequence";
-import { StreamStableTailController } from "./streamStableTail";
 import { drainToolOutput } from "./toolTailWindow";
 
-const TRANSIENT_STREAM_CAP = 96_000;
 /**
  * Lines kept per running tool. Only a handful are ever on screen; the slack lets
  * a quiet tool's rows be spent on a chatty one without losing its own backlog.
  */
 const TOOL_TAIL_CAP = 32;
-const STREAM_FLUSH_INTERVAL_MS = 50;
 const TOOL_OUTPUT_FLUSH_INTERVAL_MS = 50;
 export const TOOL_FULL_CAP = 96_000;
 
-let pendingStreamText = "";
-let streamFlushTimer: ReturnType<typeof setTimeout> | undefined;
 // Raw chunks per tool call id, drained on a timer. Chunks arrive far faster than
 // the terminal can repaint, so batching here is what keeps a chatty command from
 // melting the render loop.
 const pendingToolOutput = new Map<string, string>();
 let toolOutputFlushTimer: ReturnType<typeof setTimeout> | undefined;
-const streamController = new StreamStableTailController();
 const historySequence = new HistorySequence();
+const assistantStream = new AssistantStreamBuffer(({ stableText, tailText }) => {
+  useOutputStore.setState((state) => ({
+    history:
+      stableText.length === 0
+        ? state.history
+        : [...state.history, assistantStreamTurn(historySequence, stableText)],
+    streamBuffer: tailText,
+    runtime: { ...state.runtime, lastOutputAt: Date.now() },
+  }));
+});
 
 /** A tool call between `beginTool` and `logTool`, with whatever it has printed so far. */
 export type RunningTool = {
@@ -112,55 +117,6 @@ interface OutputState {
   hydrateHistory: (items: readonly TranscriptItem[]) => void;
 }
 
-function capTransientStream(value: string): string {
-  if (value.length <= TRANSIENT_STREAM_CAP) {
-    return value;
-  }
-  return value.slice(-TRANSIENT_STREAM_CAP);
-}
-
-function clearStreamFlushTimer(): void {
-  if (streamFlushTimer === undefined) {
-    return;
-  }
-  clearTimeout(streamFlushTimer);
-  streamFlushTimer = undefined;
-}
-
-function clearPendingStream(): void {
-  pendingStreamText = "";
-  clearStreamFlushTimer();
-}
-
-function flushPendingStream(): void {
-  if (pendingStreamText.length === 0) {
-    clearStreamFlushTimer();
-    return;
-  }
-  const text = pendingStreamText;
-  pendingStreamText = "";
-  clearStreamFlushTimer();
-  const { stableText, tailText } = streamController.push(text);
-  useOutputStore.setState((state) => ({
-    history:
-      stableText.length === 0
-        ? state.history
-        : [...state.history, assistantStreamTurn(historySequence, stableText)],
-    streamBuffer: capTransientStream(tailText),
-    runtime: { ...state.runtime, lastOutputAt: Date.now() },
-  }));
-}
-
-/**
- * Everything the stream still holds, ready to be committed: the batched deltas first (so their
- * stable part reaches history in order), then the source the markdown holdback has not released.
- * Leaves the controller reset, so text arriving after the interruption starts a fresh fragment.
- */
-function takeStreamTail(): string {
-  flushPendingStream();
-  return streamController.drain();
-}
-
 function clearToolOutputFlushTimer(): void {
   if (toolOutputFlushTimer === undefined) {
     return;
@@ -204,9 +160,8 @@ function clearToolOutputState(): void {
 }
 
 function clearStreamState(): void {
-  clearPendingStream();
+  assistantStream.reset();
   clearToolOutputState();
-  streamController.reset();
 }
 
 /** The runtime slice every turn boundary returns to: nothing in flight, timer restarted. */
@@ -233,10 +188,7 @@ export const useOutputStore = create<OutputState>((set) => ({
   clearedStaticTurns: [],
 
   appendStream: (text) => {
-    pendingStreamText += text;
-    if (streamFlushTimer === undefined) {
-      streamFlushTimer = setTimeout(flushPendingStream, STREAM_FLUSH_INTERVAL_MS);
-    }
+    assistantStream.append(text);
   },
 
   beginTool: ({ toolName, summary }) => {
@@ -329,8 +281,7 @@ export const useOutputStore = create<OutputState>((set) => ({
     })),
 
   logAssistant: (content) => {
-    flushPendingStream();
-    const { visualRemainder, shouldHideFinal } = streamController.finalize(content);
+    const { visualRemainder, shouldHideFinal } = assistantStream.finalize(content);
     set((state) => {
       const duration =
         state.runtime.turnStartedAt === null
@@ -354,7 +305,7 @@ export const useOutputStore = create<OutputState>((set) => ({
   logToolRound: (calls) => {
     // Same commit-before-interrupting rule as logSystem: the text that introduced this batch
     // is still the transient tail, and it was written before the header.
-    const tail = takeStreamTail();
+    const tail = assistantStream.drain();
     set((state) => ({
       history: [
         ...state.history,
@@ -366,7 +317,7 @@ export const useOutputStore = create<OutputState>((set) => ({
   },
 
   logTool: (block: ToolBlock) => {
-    flushPendingStream();
+    assistantStream.flush();
     if (block.id !== undefined) {
       pendingToolOutput.delete(block.id);
     }
@@ -405,7 +356,7 @@ export const useOutputStore = create<OutputState>((set) => ({
   },
 
   logDiff: (diff) => {
-    flushPendingStream();
+    assistantStream.flush();
     set((state) => ({
       history: [...state.history, diffTurn(historySequence, diff)],
     }));
@@ -428,7 +379,7 @@ export const useOutputStore = create<OutputState>((set) => ({
     // markdown holdback keeps a whole trailing list or table there — which is the shape
     // "here is what I am about to do" output takes. Discarding it here erased that
     // reasoning from the transcript at every auto-allowed call.
-    const tail = takeStreamTail();
+    const tail = assistantStream.drain();
     set((state) => ({
       history: [
         ...state.history,
