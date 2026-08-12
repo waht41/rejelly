@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { UserSkillReference } from "../../../../shared/host/inputBindings";
 import type { TextBuffer } from "../../editor/document/textBuffer";
 import type { SkillPickerItem } from "../../session/composerStore";
@@ -8,7 +8,6 @@ import {
   extractSkillQuery,
   replaceSkillToken,
   skillReferenceName,
-  skillReferencesFromDocument,
 } from "./skillTrigger";
 
 export interface SkillReferenceSuggestion {
@@ -16,28 +15,24 @@ export interface SkillReferenceSuggestion {
   open: boolean;
   select: (skill: SkillPickerItem) => void;
   dismiss: () => void;
-  createTokenId: () => string;
 }
 
 export function useSkillReferenceSuggestion({
   buffer,
   availableSkills,
   selectedSkills,
-  setSelectedSkills,
+  createTokenId,
   maxSelectedSkills,
   onNotice,
 }: {
   buffer: TextBuffer;
   availableSkills: SkillPickerItem[];
   selectedSkills: UserSkillReference[];
-  setSelectedSkills: (skills: UserSkillReference[]) => void;
+  createTokenId: () => string;
   maxSelectedSkills: number;
   onNotice: (message: string) => void;
 }): SkillReferenceSuggestion {
   const [query, setQuery] = useState<string | null>(null);
-  const nextTokenIdRef = useRef(1);
-
-  const createTokenId = useCallback(() => `skill-${nextTokenIdRef.current++}`, []);
 
   useEffect(() => {
     const followsSemanticToken = buffer.tokenSpans.some(
@@ -45,18 +40,6 @@ export function useSkillReferenceSuggestion({
     );
     setQuery(followsSemanticToken ? null : extractSkillQuery(buffer.text, buffer.cursor));
   }, [buffer.text, buffer.cursor, buffer.tokenSpans]);
-
-  useEffect(() => {
-    const present = skillReferencesFromDocument(buffer.document);
-    const unchanged =
-      present.length === selectedSkills.length &&
-      present.every(
-        (reference, index) => reference.qualifiedName === selectedSkills[index]?.qualifiedName,
-      );
-    if (!unchanged) {
-      setSelectedSkills(present);
-    }
-  }, [buffer.document, selectedSkills, setSelectedSkills]);
 
   const dismiss = useCallback(() => {
     buffer.apply((state) => replaceSkillToken(state, []));
@@ -110,6 +93,5 @@ export function useSkillReferenceSuggestion({
     open: query !== null && matches.length > 0,
     select,
     dismiss,
-    createTokenId,
   };
 }

@@ -30,22 +30,16 @@
 import { Box, Text, useStdout } from "ink";
 import { useEffect, useRef, useState } from "react";
 import { BufferView } from "./editor/BufferView";
-import { useTextBuffer } from "./editor/document/textBuffer";
 import { useLineKeybindings } from "./editor/keyboard/useLineKeybindings";
-import { useCollapsedPaste } from "./editor/paste/useCollapsedPaste";
 import { usePromptLayout } from "./editor/usePromptLayout";
-import { attachedImages, imageToken, shiftImageTokens } from "./imageAttachments";
-import { MAX_SELECTED_SKILLS, usePromptStore } from "./session/composerStore";
+import { MAX_SELECTED_SKILLS } from "./session/composerStore";
 import type { ComposerPickerKeyHandler } from "./suggestions/ComposerPicker";
 import { ComposerSuggestionOverlay } from "./suggestions/ComposerSuggestionOverlay";
 import { useCommandSuggestion } from "./suggestions/commands/useCommandSuggestion";
 import { useFileReferenceSuggestion } from "./suggestions/file-reference/useFileReferenceSuggestion";
-import {
-  hydrateSkillTokens,
-  selectedSkillReferenceName,
-  skillReferencesFromDocument,
-} from "./suggestions/skill-reference/skillTrigger";
+import { selectedSkillReferenceName } from "./suggestions/skill-reference/skillTrigger";
 import { useSkillReferenceSuggestion } from "./suggestions/skill-reference/useSkillReferenceSuggestion";
+import { useComposerDraft } from "./useComposerDraft";
 
 const MIN_SUGGESTION_ROWS = 5;
 const MAX_SUGGESTION_ROWS = 10;
@@ -74,25 +68,18 @@ export function MessageComposer({
   readClipboardImage,
 }: MessageComposerProps) {
   const { stdout } = useStdout();
-  const submitLine = usePromptStore((s) => s.submitLine);
-  const selectedFiles = usePromptStore((s) => s.selectedFiles);
-  const selectedImages = usePromptStore((s) => s.selectedImages);
-  const selectedSkills = usePromptStore((s) => s.selectedSkills);
-  const availableSkills = usePromptStore((s) => s.availableSkills);
-  const draftSeed = usePromptStore((s) => s.draftSeed);
-  const setSelectedFiles = usePromptStore((s) => s.setSelectedFiles);
-  const setSelectedImages = usePromptStore((s) => s.setSelectedImages);
-  const setSelectedSkills = usePromptStore((s) => s.setSelectedSkills);
-  const removeSelectedFile = usePromptStore((s) => s.removeSelectedFile);
-  const clearSelectedFiles = usePromptStore((s) => s.clearSelectedFiles);
-  const addSelectedImage = usePromptStore((s) => s.addSelectedImage);
-  const clearSelectedImages = usePromptStore((s) => s.clearSelectedImages);
-  const clearSelectedSkills = usePromptStore((s) => s.clearSelectedSkills);
-  const clearDraftSeed = usePromptStore((s) => s.clearDraftSeed);
-  const buf = useTextBuffer();
   const [terminalRows, setTerminalRows] = useState(stdout.rows || 24);
   const [clipboardImageStatus, setClipboardImageStatus] = useState<string | null>(null);
-  const collapsedPaste = useCollapsedPaste(buf);
+  const draft = useComposerDraft({ label, onCommand });
+  const {
+    buffer: buf,
+    selectedFiles,
+    selectedImages,
+    selectedSkills,
+    availableSkills,
+    setSelectedFiles,
+    removeSelectedFile,
+  } = draft;
   // Key-claim slot shared with whichever picker overlay is mounted: the picker
   // publishes its handler here and the line keybindings offer it each key first.
   const overlayKeysRef = useRef<ComposerPickerKeyHandler | null>(null);
@@ -115,35 +102,13 @@ export function MessageComposer({
   }, [stdout]);
 
   const clearDraft = () => {
-    buf.reset();
-    clearSelectedFiles();
-    clearSelectedImages();
-    clearSelectedSkills();
     setClipboardImageStatus(null);
-    collapsedPaste.reset();
+    draft.clear();
   };
 
   const submitText = (text: string) => {
-    const expandedText = collapsedPaste.expand(text);
-    if (onCommand(expandedText.trim())) {
-      clearDraft();
-      return;
-    }
-    // Only images whose `[Image #N]` token still survives in the text are sent —
-    // deleting the token drops the image.
-    submitLine(
-      expandedText,
-      [
-        ...selectedFiles.map((path) => ({ type: "file" as const, path })),
-        ...attachedImages(expandedText, selectedImages).map((path) => ({
-          type: "image" as const,
-          path,
-          mimeType: "image/png" as const,
-        })),
-      ],
-      skillReferencesFromDocument(buf.document),
-    );
-    clearDraft();
+    setClipboardImageStatus(null);
+    draft.submitText(text);
   };
 
   const commandSuggestion = useCommandSuggestion({
@@ -161,67 +126,15 @@ export function MessageComposer({
     buffer: buf,
     availableSkills,
     selectedSkills,
-    setSelectedSkills,
+    createTokenId: draft.createSkillTokenId,
     maxSelectedSkills: MAX_SELECTED_SKILLS,
     onNotice,
   });
 
-  // Reset for a fresh prompt (new label) and on unmount.
+  // Clipboard status is not part of the draft hook, but follows prompt identity.
   useEffect(() => {
-    buf.reset();
-    clearSelectedFiles();
-    clearSelectedImages();
-    clearSelectedSkills();
     setClipboardImageStatus(null);
-    collapsedPaste.reset();
-    return () => {
-      clearSelectedFiles();
-      clearSelectedImages();
-      clearSelectedSkills();
-    };
-  }, [label, buf.reset, clearSelectedFiles, clearSelectedImages, clearSelectedSkills]);
-
-  useEffect(() => {
-    if (!draftSeed) {
-      return;
-    }
-    const attachments = draftSeed.value.attachments ?? [];
-    const seedFiles = attachments
-      .filter((attachment) => attachment.type === "file")
-      .map((attachment) => attachment.path);
-    const seedImages = attachments
-      .filter((attachment) => attachment.type === "image")
-      .map((attachment) => attachment.path);
-    const seedText = draftSeed.value.text.trim();
-    const currentText = shiftImageTokens(buf.text.trim(), seedImages.length);
-    const combinedText = [seedText, currentText].filter((text) => text.length > 0).join("\n");
-    const restoredSkills = [...(draftSeed.value.skills ?? []), ...selectedSkills];
-
-    buf.setDocument(
-      hydrateSkillTokens(
-        combinedText,
-        restoredSkills,
-        (reference) => selectedSkillReferenceName(reference, availableSkills),
-        skillSuggestion.createTokenId,
-      ),
-    );
-    setSelectedFiles([...seedFiles, ...selectedFiles]);
-    setSelectedImages([...seedImages, ...selectedImages]);
-    setSelectedSkills(restoredSkills);
-    clearDraftSeed(draftSeed.id);
-  }, [
-    draftSeed,
-    buf,
-    selectedFiles,
-    selectedImages,
-    selectedSkills,
-    availableSkills,
-    setSelectedFiles,
-    setSelectedImages,
-    setSelectedSkills,
-    clearDraftSeed,
-    skillSuggestion.createTokenId,
-  ]);
+  }, [label]);
 
   const submit = () => submitText(buf.text);
 
@@ -229,11 +142,7 @@ export function MessageComposer({
     setClipboardImageStatus("Reading clipboard image...");
     void readClipboardImage().then((result) => {
       if (result.ok) {
-        addSelectedImage(result.path);
-        // Drop an `[Image #N]` placeholder into the line at the caret; N is the
-        // image's 1-based slot, so it maps back to this path on submit.
-        const num = usePromptStore.getState().selectedImages.length;
-        buf.insert(imageToken(num));
+        draft.attachImage(result.path);
         setClipboardImageStatus(null);
         return;
       }
@@ -243,7 +152,7 @@ export function MessageComposer({
 
   const handleTextPaste = (text: string): boolean => {
     setClipboardImageStatus(null);
-    return collapsedPaste.handlePaste(text);
+    return draft.handleTextPaste(text);
   };
 
   useLineKeybindings({
@@ -324,7 +233,7 @@ export function MessageComposer({
         <Box marginTop={1}>
           <Text dimColor>{clipboardImageStatus}</Text>
         </Box>
-      ) : collapsedPaste.hasCollapsedPaste ? (
+      ) : draft.hasCollapsedPaste ? (
         <Box marginTop={1}>
           <Text dimColor>paste again to expand</Text>
         </Box>
