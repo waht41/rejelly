@@ -6,15 +6,16 @@ import { loadMockReplayFromTraceId } from "../features/replay/mock/mockFromTrace
 import { env, exitIfMissingOpenAIKey, loadEvilJellyEnv } from "../shared/configuration/env";
 import { initSettings } from "../shared/configuration/settings";
 import { getCliVersion, parseCliArgs } from "./app/args";
-import { runAuditCommand } from "./app/auditCommand";
 import { applyWorkspaceRootFromArgs } from "./app/bootstrap";
-import { runHeadlessUnifiedCommand } from "./app/headlessUnifiedCommand";
+import { createBackgroundHostBindings } from "./app/host/cliStubBindings";
 import { runInitCommand } from "./app/initCommand";
 import { resolveInitialSession } from "./app/resume";
 import { runInteractiveLoop } from "./app/runLoop";
 import { loadStartupSnapshot } from "./app/snapshot";
 import { createCliHostBindings } from "./bindings/cliBinding";
 import { enqueueLineInput } from "./bindings/lineInputQueue";
+import { runAudit } from "./entry/audit-run/runAudit";
+import { runHeadless } from "./entry/unified-run/headless/runHeadless";
 import { createOpenAIModelFromEnv } from "./model-composition/createModelFromEnv";
 
 export type { EvilJellyBindings } from "../shared/host/bindings";
@@ -51,7 +52,12 @@ async function main() {
   switch (args.kind) {
     case "audit":
       exitIfMissingOpenAIKey();
-      await runAuditCommand(args);
+      await runAudit({
+        model: createOpenAIModelFromEnv(),
+        bindings: createBackgroundHostBindings(),
+        enableReview: args.review || env.REJELLY_ENABLE_REVIEW,
+        auditOptions: args.auditOptions,
+      });
       process.exit(process.exitCode ?? 0);
       break;
     case "run":
@@ -63,7 +69,16 @@ async function main() {
   }
 
   if (args.headless) {
-    await runHeadlessUnifiedCommand(args);
+    const seedInput = args.startup.kind === "fresh" ? args.startup.seedInput : undefined;
+    if (!seedInput || seedInput.trim().length === 0) {
+      console.error("--headless direct UnifiedAgent mode requires --input <text>");
+      process.exit(1);
+    }
+    await runHeadless(createBackgroundHostBindings({ autoAcceptWrite: args.autoAccept }), {
+      model: createOpenAIModelFromEnv(),
+      userInput: seedInput,
+      enableReview: args.review || env.REJELLY_ENABLE_REVIEW,
+    });
     process.exit(process.exitCode ?? 0);
   }
 

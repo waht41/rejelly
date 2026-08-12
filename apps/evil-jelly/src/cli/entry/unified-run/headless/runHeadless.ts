@@ -1,19 +1,19 @@
 import { augmentAgent, type Message, type ModelAdapter } from "@rejelly/core";
 import type { ReviewOptions } from "@rejelly/core/debugger";
-import { SKILL_RUNTIME_PROVIDER_KEY } from "../../../domains/skills/agent/skillRuntime";
-import { UnifiedAgent } from "../../../features/unified/UnifiedAgent";
-import type { EvilJellyBindings } from "../../../shared/host/bindings";
-import { setBinding } from "../../../shared/host/context";
-import { generateTraceId } from "../../runtime/traceId";
-import { withAbort } from "../../runtime/withAbort";
-import { runWithReview } from "./runWithReview";
-import { buildSkillAwareUserMessage } from "./skillAwareUserMessage";
+import { SKILL_RUNTIME_PROVIDER_KEY } from "../../../../domains/skills/agent/skillRuntime";
+import { UnifiedAgent } from "../../../../features/unified/UnifiedAgent";
+import type { EvilJellyBindings } from "../../../../shared/host/bindings";
+import { setBinding } from "../../../../shared/host/context";
+import { runWithReview } from "../../../runtime/runWithReview";
+import { generateTraceId } from "../../../runtime/traceId";
+import { withAbort } from "../../../runtime/withAbort";
+import { buildSkillAwareUserMessage } from "../skillAwareUserMessage";
 import {
   buildConfiguredSkillRuntimeSnapshot,
   formatSkillRuntimeStartupSummary,
-} from "./skillRuntime";
+} from "../skillRuntime";
 
-export interface RunDirectUnifiedOptions {
+export interface RunHeadlessOptions {
   model: ModelAdapter;
   userInput: string;
   history?: Message[];
@@ -22,9 +22,9 @@ export interface RunDirectUnifiedOptions {
 }
 
 /** Runs UnifiedAgent once in headless mode (no router / no Ink prompt loop). */
-export async function runDirectUnified(
+export async function runHeadless(
   bindings: EvilJellyBindings,
-  options: RunDirectUnifiedOptions,
+  options: RunHeadlessOptions,
 ): Promise<void> {
   const { model, userInput, history } = options;
   const traceId = generateTraceId();

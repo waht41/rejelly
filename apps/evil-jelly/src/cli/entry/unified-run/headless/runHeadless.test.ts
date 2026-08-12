@@ -1,10 +1,10 @@
 import type { ModelAdapter } from "@rejelly/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SkillRuntimeSnapshot } from "../../../domains/skills/agent/skillRuntime";
-import { createSkillCatalog } from "../../../domains/skills/catalog/skillCatalog";
-import { skillOrigin } from "../../../domains/skills/definition/skillDefinition";
-import type { EvilJellyBindings } from "../../../shared/host/bindings";
-import { runDirectUnified } from "./runDirectUnified";
+import type { SkillRuntimeSnapshot } from "../../../../domains/skills/agent/skillRuntime";
+import { createSkillCatalog } from "../../../../domains/skills/catalog/skillCatalog";
+import { skillOrigin } from "../../../../domains/skills/definition/skillDefinition";
+import type { EvilJellyBindings } from "../../../../shared/host/bindings";
+import { runHeadless } from "./runHeadless";
 
 const mocks = vi.hoisted(() => ({
   runWithReview: vi.fn(),
@@ -12,12 +12,12 @@ const mocks = vi.hoisted(() => ({
   formatSkillSummary: vi.fn(),
 }));
 
-vi.mock("../../runtime/traceId", () => ({ generateTraceId: () => "trace-id" }));
-vi.mock("./skillRuntime", () => ({
+vi.mock("../../../runtime/traceId", () => ({ generateTraceId: () => "trace-id" }));
+vi.mock("../skillRuntime", () => ({
   buildConfiguredSkillRuntimeSnapshot: mocks.buildSkillRuntime,
   formatSkillRuntimeStartupSummary: mocks.formatSkillSummary,
 }));
-vi.mock("./runWithReview", () => ({ runWithReview: mocks.runWithReview }));
+vi.mock("../../../runtime/runWithReview", () => ({ runWithReview: mocks.runWithReview }));
 
 function skillSnapshot(): SkillRuntimeSnapshot {
   return Object.freeze({
@@ -40,7 +40,7 @@ function skillSnapshot(): SkillRuntimeSnapshot {
   });
 }
 
-describe("runDirectUnified", () => {
+describe("runHeadless", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.formatSkillSummary.mockReturnValue("Loaded 1 local Skill.");
@@ -52,7 +52,7 @@ describe("runDirectUnified", () => {
     mocks.buildSkillRuntime.mockResolvedValue(prepared);
     const logSystemEvent = vi.fn();
 
-    await runDirectUnified({ logSystemEvent } as unknown as EvilJellyBindings, {
+    await runHeadless({ logSystemEvent } as unknown as EvilJellyBindings, {
       model: { id: "test-model" } as ModelAdapter,
       userInput: "hello",
     });

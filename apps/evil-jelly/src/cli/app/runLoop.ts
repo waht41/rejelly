@@ -11,15 +11,15 @@ import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy
 import type { EvilJellyBindings } from "../../shared/host/bindings";
 import type { TranscriptItem } from "../../shared/session/transcript";
 import {
+  buildConfiguredSkillRuntimeSnapshot,
+  formatSkillRuntimeStartupSummary,
+} from "../entry/unified-run/skillRuntime";
+import {
   takePendingExit,
   takePendingNewSession,
   takePendingResume,
 } from "../runtime/sessionRunControl";
 import { type RunEvilJellyHostOptions, runEvilJellyHost } from "./host/runInteractiveSegment";
-import {
-  buildConfiguredSkillRuntimeSnapshot,
-  formatSkillRuntimeStartupSummary,
-} from "./host/skillRuntime";
 import {
   buildLegacyResumeSeed,
   buildSessionResumeSeed,

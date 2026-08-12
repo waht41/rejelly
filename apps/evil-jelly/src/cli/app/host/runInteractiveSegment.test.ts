@@ -30,7 +30,7 @@ vi.mock("../../runtime/traceId", () => ({
   generateTraceId: () => "trace-id",
 }));
 
-vi.mock("./runWithReview", () => ({
+vi.mock("../../runtime/runWithReview", () => ({
   runWithReview: mocks.runWithReview,
 }));
 

@@ -17,6 +17,16 @@
       "!src/**/*.test.*"
     ],
     "@cli:runtime": ["src/cli/runtime/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@cli:audit-run": [
+      "src/cli/entry/audit-run/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@cli:unified-run": [
+      "src/cli/entry/unified-run/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
     "@cli:model-composition": [
       "src/cli/model-composition/**/*",
       "!src/**/__tests__/**/*",
@@ -101,6 +111,7 @@
           "@domain:session:projection",
           "@domain:skills:*"
         ],
+        "@cli:unified-run": ["@domain:skills:*"],
         "@feature:unified": [
           "@domain:workspace",
           "@domain:web",
@@ -127,8 +138,21 @@
     },
     "cli_arch": {
       "connect": {
-        "@cli:entry": ["@cli:app", "@cli:bindings", "@cli:model-composition"],
-        "@cli:app": ["@cli:runtime", "@cli:model-composition", "@cli:tool-approval"],
+        "@cli:entry": [
+          "@cli:app",
+          "@cli:audit-run",
+          "@cli:unified-run",
+          "@cli:bindings",
+          "@cli:model-composition"
+        ],
+        "@cli:audit-run": ["@cli:runtime"],
+        "@cli:unified-run": ["@cli:runtime"],
+        "@cli:app": [
+          "@cli:runtime",
+          "@cli:unified-run",
+          "@cli:model-composition",
+          "@cli:tool-approval"
+        ],
         "@cli:bindings": [
           "@cli:app",
           "@cli:conversation-display",

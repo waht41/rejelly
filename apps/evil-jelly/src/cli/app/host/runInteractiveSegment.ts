@@ -15,9 +15,9 @@ import {
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import { registerRunAbort } from "../../runtime/runControl";
+import { runWithReview } from "../../runtime/runWithReview";
 import { generateTraceId } from "../../runtime/traceId";
 import { MainCliAgent } from "../orchestration/MainCliAgent";
-import { runWithReview } from "./runWithReview";
 
 export interface RunEvilJellyHostOptions {
   model: ModelAdapter;
