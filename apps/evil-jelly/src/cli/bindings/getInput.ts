@@ -22,6 +22,8 @@ export type InkGetInputOptions = {
   seedLine?: string;
 };
 
+const USER_STOP_REASON = "Stopped by user (/stop or Esc)";
+
 function isExitCommand(value: string): boolean {
   const normalized = value.toLowerCase();
   return normalized === "/exit" || normalized === "exit";
@@ -48,9 +50,9 @@ export function createInkGetInput(options?: InkGetInputOptions): () => Promise<L
     const normalized = value.toLowerCase();
     if (normalized === "/stop") {
       restoreSteersToPrompt();
-      const result = interruptActiveTask();
+      const result = interruptActiveTask(USER_STOP_REASON);
       useOutputStore.getState().logSystem(formatTaskInterruption(result));
-      const abortError = new Error("Stopped by user (/stop or Esc)");
+      const abortError = new Error(USER_STOP_REASON);
       abortError.name = "AbortError";
       rejectPendingLineInput(abortError);
       return;

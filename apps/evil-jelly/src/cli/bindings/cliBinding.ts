@@ -36,7 +36,7 @@ function resetCliBindingSession(): void {
   resetOutputSession();
   resetModeSession();
   resetViewSession();
-  resetInterruptibleTaskStack();
+  resetInterruptibleTaskStack("CLI binding session reset");
 }
 
 function createInkRequestChoice(): PromptInputBindings["requestChoice"] {

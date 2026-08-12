@@ -25,13 +25,13 @@ type InterruptibleTask = InterruptibleTaskRegistration & { id: number };
 let taskIdCounter = 0;
 let taskStack: InterruptibleTask[] = [];
 
-export function resetInterruptibleTaskStack(): void {
+export function resetInterruptibleTaskStack(reason: string): void {
   const pendingTasks = taskStack.slice();
   taskStack = [];
   for (let i = pendingTasks.length - 1; i >= 0; i -= 1) {
     const pendingTask = pendingTasks[i];
     if (!pendingTask) continue;
-    pendingTask.abort?.("Interruptible task stack reset");
+    pendingTask.abort?.(reason);
   }
   taskIdCounter = 0;
 }
@@ -54,13 +54,13 @@ export function hasActiveInterruptibleTask(): boolean {
   return taskStack.length > 0;
 }
 
-export function interruptActiveTask(): TaskInterruptionResult {
+export function interruptActiveTask(reason: string): TaskInterruptionResult {
   const topTask = taskStack.at(-1);
   if (!topTask) {
     return { interrupted: false };
   }
 
-  topTask.abort?.("Stopped by user (/stop or Esc)");
+  topTask.abort?.(reason);
   return {
     interrupted: true,
     task: {

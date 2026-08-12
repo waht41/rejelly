@@ -8,7 +8,7 @@ import {
 
 describe("interruptible task stack", () => {
   it("aborts pending tasks before resetting stack", () => {
-    resetInterruptibleTaskStack();
+    resetInterruptibleTaskStack("test setup");
     const calls: string[] = [];
     registerInterruptibleTask({
       type: "agent_thinking",
@@ -21,17 +21,14 @@ describe("interruptible task stack", () => {
       abort: (reason) => calls.push(`tool:${reason}`),
     });
 
-    resetInterruptibleTaskStack();
+    resetInterruptibleTaskStack("session reset");
 
-    expect(calls).toEqual([
-      "tool:Interruptible task stack reset",
-      "agent:Interruptible task stack reset",
-    ]);
-    expect(interruptActiveTask()).toEqual({ interrupted: false });
+    expect(calls).toEqual(["tool:session reset", "agent:session reset"]);
+    expect(interruptActiveTask("user stop")).toEqual({ interrupted: false });
   });
 
   it("reports whether any interruptible task is active", () => {
-    resetInterruptibleTaskStack();
+    resetInterruptibleTaskStack("test setup");
     expect(hasActiveInterruptibleTask()).toBe(false);
 
     const unregister = registerInterruptibleTask({
@@ -45,7 +42,7 @@ describe("interruptible task stack", () => {
   });
 
   it("aborts only the top task", () => {
-    resetInterruptibleTaskStack();
+    resetInterruptibleTaskStack("test setup");
     const calls: string[] = [];
     const unregisterAgent = registerInterruptibleTask({
       type: "agent_thinking",
@@ -58,19 +55,19 @@ describe("interruptible task stack", () => {
       abort: (reason) => calls.push(`tool:${reason}`),
     });
 
-    const result = interruptActiveTask();
+    const result = interruptActiveTask("user requested stop");
 
     expect(result).toEqual({
       interrupted: true,
       task: { type: "tool_execution", name: "run_command" },
     });
-    expect(calls).toEqual(["tool:Stopped by user (/stop or Esc)"]);
+    expect(calls).toEqual(["tool:user requested stop"]);
     unregisterTool();
     unregisterAgent();
   });
 
   it("falls back to agent task after tool is unregistered", () => {
-    resetInterruptibleTaskStack();
+    resetInterruptibleTaskStack("test setup");
     const calls: string[] = [];
     const unregisterAgent = registerInterruptibleTask({
       type: "agent_thinking",
@@ -84,13 +81,13 @@ describe("interruptible task stack", () => {
     });
     unregisterTool();
 
-    const result = interruptActiveTask();
+    const result = interruptActiveTask("escape pressed");
 
     expect(result).toEqual({
       interrupted: true,
       task: { type: "agent_thinking", name: "main_agent_run" },
     });
-    expect(calls).toEqual(["agent:Stopped by user (/stop or Esc)"]);
+    expect(calls).toEqual(["agent:escape pressed"]);
     unregisterAgent();
   });
 });
