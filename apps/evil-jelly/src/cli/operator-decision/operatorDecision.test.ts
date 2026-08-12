@@ -8,7 +8,10 @@ describe("operator decision", () => {
   it("serializes complete decision sessions", async () => {
     const decision = createOperatorDecision();
     const first = decision.run((session) =>
-      session.requestChoice("First?", [{ key: "y", label: "Yes", value: "yes" }]),
+      session.requestChoice({
+        message: "First?",
+        options: [{ key: "y", label: "Yes", value: "yes" }],
+      }),
     );
     const second = decision.run((session) => session.requestText("Second: "));
 
@@ -29,9 +32,10 @@ describe("operator decision", () => {
   });
 
   it("ignores values absent from the current choice", async () => {
-    const pending = createOperatorDecision().requestChoice("Pick", [
-      { key: "a", label: "Allowed", value: "allowed" },
-    ]);
+    const pending = createOperatorDecision().requestChoice({
+      message: "Pick",
+      options: [{ key: "a", label: "Allowed", value: "allowed" }],
+    });
     await Promise.resolve();
 
     useDecisionStore.getState().submitChoice("unknown");
@@ -39,5 +43,52 @@ describe("operator decision", () => {
     useDecisionStore.getState().submitChoice("allowed");
 
     await expect(pending).resolves.toBe("allowed");
+  });
+
+  it("resolves cancellation only through the explicit cancel value", async () => {
+    const pending = createOperatorDecision().requestChoice({
+      message: "Pick",
+      options: [
+        { key: "a", label: "Allowed", value: "allowed" },
+        { key: "x", label: "Cancel", value: "cancelled" },
+      ],
+      cancelValue: "cancelled",
+    });
+    await Promise.resolve();
+
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      type: "choice",
+      cancelable: true,
+    });
+    useDecisionStore.getState().cancelChoice();
+
+    await expect(pending).resolves.toBe("cancelled");
+    expect(useDecisionStore.getState().decision).toEqual({ type: "idle" });
+  });
+
+  it("keeps a non-cancelable choice pending", async () => {
+    const pending = createOperatorDecision().requestChoice({
+      message: "Pick",
+      options: [{ key: "a", label: "Allowed", value: "allowed" }],
+    });
+    await Promise.resolve();
+
+    useDecisionStore.getState().cancelChoice();
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      type: "choice",
+      cancelable: false,
+    });
+    useDecisionStore.getState().submitChoice("allowed");
+    await expect(pending).resolves.toBe("allowed");
+  });
+
+  it("rejects a cancel value absent from the options", async () => {
+    await expect(
+      createOperatorDecision().requestChoice({
+        message: "Pick",
+        options: [{ key: "a", label: "Allowed", value: "allowed" }],
+        cancelValue: "missing",
+      }),
+    ).rejects.toThrow("Choice cancelValue must match an option value: missing");
   });
 });

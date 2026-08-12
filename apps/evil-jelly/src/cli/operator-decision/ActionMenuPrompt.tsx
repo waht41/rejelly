@@ -1,5 +1,4 @@
 import { Box, Text } from "ink";
-import { useDecisionStore } from "./decisionStore";
 import { ListPicker } from "./ListPicker";
 import type { DecisionOption } from "./model";
 
@@ -9,16 +8,14 @@ const LONG_MENU_PAGE_STEP = 9;
 export function ActionMenuPrompt({
   message,
   options,
+  onSelect,
+  onCancel,
 }: {
   message: string;
   options: DecisionOption[];
+  onSelect: (value: string) => void;
+  onCancel?: () => void;
 }) {
-  const submitChoice = useDecisionStore((state) => state.submitChoice);
-  const cancelOption =
-    options.find((o) => o.value === "reject") ??
-    options.find((o) => o.value === "skip") ??
-    options.find((o) => o.value === "cancel") ??
-    options.find((o) => o.value === "");
   const isLongMenu = options.length > LONG_MENU_VISIBLE_ROWS;
 
   return (
@@ -32,12 +29,8 @@ export function ActionMenuPrompt({
           navigation="wrap"
           maxVisibleRows={isLongMenu ? LONG_MENU_VISIBLE_ROWS : undefined}
           pageStep={isLongMenu ? LONG_MENU_PAGE_STEP : undefined}
-          onSelect={(option) => submitChoice(option.value)}
-          onCancel={() => {
-            if (cancelOption) {
-              submitChoice(cancelOption.value);
-            }
-          }}
+          onSelect={(option) => onSelect(option.value)}
+          onCancel={() => onCancel?.()}
           renderItem={(option, { selected }) => (
             <Text color={selected ? "cyan" : undefined} bold={selected}>
               {selected ? "▸ " : "  "}
@@ -49,7 +42,8 @@ export function ActionMenuPrompt({
       </Box>
       <Text dimColor>
         ↑/↓ move · Enter select · hotkey jumps
-        {isLongMenu ? " · PgUp/PgDn page" : ""} · Esc reject/skip/cancel (if listed)
+        {isLongMenu ? " · PgUp/PgDn page" : ""}
+        {onCancel ? " · Esc cancel" : ""}
       </Text>
     </Box>
   );

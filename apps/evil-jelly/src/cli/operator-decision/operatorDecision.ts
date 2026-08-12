@@ -3,8 +3,7 @@ import { resetDecisionStore, useDecisionStore } from "./decisionStore";
 import type { OperatorDecision, OperatorDecisionSession } from "./model";
 
 const session: OperatorDecisionSession = {
-  requestChoice: (message, options, view) =>
-    useDecisionStore.getState().requestChoice(message, options, view),
+  requestChoice: (request) => useDecisionStore.getState().requestChoice(request),
   requestConfirm: (message, initial, view) =>
     useDecisionStore.getState().requestConfirm(message, initial, view),
   requestText: (label) => useDecisionStore.getState().requestText(label),
@@ -13,8 +12,7 @@ const session: OperatorDecisionSession = {
 export function createOperatorDecision(): OperatorDecision {
   return {
     run: (operation) => runDecisionSession(() => operation(session)),
-    requestChoice: (message, options, view) =>
-      runDecisionSession(() => session.requestChoice(message, options, view)),
+    requestChoice: (request) => runDecisionSession(() => session.requestChoice(request)),
   };
 }
 

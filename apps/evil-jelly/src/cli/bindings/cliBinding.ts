@@ -5,7 +5,11 @@
 import { env, getReviewEndpointFromEnv } from "../../shared/configuration/env";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../shared/host/bindings";
-import type { PromptChoiceView, PromptInputBindings } from "../../shared/host/inputBindings";
+import type {
+  PromptChoiceRequest,
+  PromptChoiceView,
+  PromptInputBindings,
+} from "../../shared/host/inputBindings";
 import type { AgentModeBindings } from "../../shared/host/modeBindings";
 import type { ConversationPresentationBindings } from "../../shared/host/presentationBindings";
 import type { ToolConfirmationBindings } from "../../shared/host/toolConfirmationBindings";
@@ -46,10 +50,13 @@ function resetCliBindingSession(): void {
 
 function createInkRequestChoice(): PromptInputBindings["requestChoice"] {
   const decision = createOperatorDecision();
-  return async (message: string, options, view?: PromptChoiceView): Promise<string> => {
+  return async (request: PromptChoiceRequest): Promise<string> => {
     return decision.run(async (session) => {
       useOutputStore.getState().setPhase("awaiting_user", "Waiting for user choice…");
-      const selected = await session.requestChoice(message, options, toDecisionView(view));
+      const selected = await session.requestChoice({
+        ...request,
+        view: toDecisionView(request.view),
+      });
       useOutputStore.getState().resumeWork("Running…");
       return selected;
     });

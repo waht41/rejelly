@@ -18,7 +18,7 @@ export function createTestHostBindings(options: {
       }
       return { action: "accept" };
     },
-    requestChoice: async (_message, choices) => choices[0]?.value ?? "",
+    requestChoice: async ({ options }) => options[0]?.value ?? "",
     getAgentMode: () => options.mode ?? "normal",
   };
 }

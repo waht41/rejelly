@@ -83,7 +83,7 @@ function createStubHostBindings(
       }
       return { action: "reject" };
     },
-    requestChoice: async (_message, options) => {
+    requestChoice: async ({ options }) => {
       const value = options[0]?.value ?? "";
       console.log(`[${logPrefix}] requestChoice → first option (${value})`);
       return value;

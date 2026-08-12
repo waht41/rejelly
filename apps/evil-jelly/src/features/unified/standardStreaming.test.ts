@@ -34,7 +34,7 @@ function createTestBindings(
     logToolRound: (calls) => rounds.push(calls),
     onPhaseUpdate: (phase) => phases.push(phase),
     confirmTool: async () => ({ action: "accept" }),
-    requestChoice: async (_message, options) => options[0]?.value ?? "",
+    requestChoice: async ({ options }) => options[0]?.value ?? "",
   };
 }
 

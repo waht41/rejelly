@@ -46,13 +46,17 @@ export type PromptChoiceView =
   | { type: "diff"; text: string; caption?: string; captionTitle?: string }
   | { type: "markdown"; text: string };
 
+export interface PromptChoiceRequest {
+  message: string;
+  options: PromptChoiceOption[];
+  view?: PromptChoiceView;
+  /** Option value resolved when the operator presses Esc; omit to make the choice non-cancelable. */
+  cancelValue?: string;
+}
+
 /** User input, picker inventory, and general prompt choices supplied to the agent runtime. */
 export interface PromptInputBindings {
   getInput: () => Promise<LineInputValue>;
   setAvailableSkills?: (skills: UserSkillListItem[]) => void;
-  requestChoice: (
-    message: string,
-    options: PromptChoiceOption[],
-    view?: PromptChoiceView,
-  ) => Promise<string>;
+  requestChoice: (request: PromptChoiceRequest) => Promise<string>;
 }

@@ -1,11 +1,16 @@
 import { create } from "zustand";
-import type { DecisionOption, DecisionSnapshot, DecisionView } from "./model";
+import type { ChoiceRequest, DecisionOption, DecisionSnapshot, DecisionView } from "./model";
 
 type PendingDecision =
   | { type: "idle" }
   | { type: "text"; resolve: (value: string) => void }
   | { type: "confirm"; resolve: (value: boolean) => void }
-  | { type: "choice"; options: DecisionOption[]; resolve: (value: string) => void };
+  | {
+      type: "choice";
+      options: DecisionOption[];
+      cancelValue?: string;
+      resolve: (value: string) => void;
+    };
 
 const idleDecision: PendingDecision = { type: "idle" };
 
@@ -17,8 +22,9 @@ interface DecisionState {
   submitText(value: string): void;
   requestConfirm(message: string, initial?: boolean, view?: DecisionView): Promise<boolean>;
   submitConfirm(value: boolean): void;
-  requestChoice(message: string, options: DecisionOption[], view?: DecisionView): Promise<string>;
+  requestChoice(request: ChoiceRequest): Promise<string>;
   submitChoice(value: string): void;
+  cancelChoice(): void;
 }
 
 function idleState(): Pick<DecisionState, "view" | "decision" | "pending"> {
@@ -55,12 +61,15 @@ export const useDecisionStore = create<DecisionState>((set, get) => ({
     set(idleState());
     pending.resolve(value);
   },
-  requestChoice: (message, options, view) =>
+  requestChoice: ({ message, options, view, cancelValue }) =>
     new Promise((resolve) => {
+      if (cancelValue !== undefined && !options.some((option) => option.value === cancelValue)) {
+        throw new Error(`Choice cancelValue must match an option value: ${cancelValue}`);
+      }
       set({
         ...(view !== undefined ? { view } : {}),
-        decision: { type: "choice", message, options },
-        pending: { type: "choice", options, resolve },
+        decision: { type: "choice", message, options, cancelable: cancelValue !== undefined },
+        pending: { type: "choice", options, cancelValue, resolve },
       });
     }),
   submitChoice: (value) => {
@@ -70,6 +79,14 @@ export const useDecisionStore = create<DecisionState>((set, get) => ({
     }
     set(idleState());
     pending.resolve(value);
+  },
+  cancelChoice: () => {
+    const pending = get().pending;
+    if (pending.type !== "choice" || pending.cancelValue === undefined) {
+      return;
+    }
+    set(idleState());
+    pending.resolve(pending.cancelValue);
   },
 }));
 

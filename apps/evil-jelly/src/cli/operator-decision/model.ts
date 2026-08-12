@@ -1,23 +1,28 @@
-export type DecisionOption = { key: string; label: string; value: string };
+import type {
+  PromptChoiceOption,
+  PromptChoiceRequest,
+  PromptChoiceView,
+} from "../../shared/host/inputBindings";
 
-export type DecisionView =
-  | { type: "none" }
-  | { type: "diff"; text: string; caption?: string; captionTitle?: string }
-  | { type: "markdown"; text: string };
+export type DecisionOption = PromptChoiceOption;
+export type DecisionView = PromptChoiceView;
+export type ChoiceRequest = PromptChoiceRequest;
 
 export type DecisionSnapshot =
   | { type: "idle" }
   | { type: "text"; label: string }
   | { type: "confirm"; message: string; defaultYes: boolean }
-  | { type: "choice"; message: string; options: DecisionOption[] };
+  | { type: "choice"; message: string; options: DecisionOption[]; cancelable: boolean };
 
 export interface OperatorDecisionSession {
-  requestChoice(message: string, options: DecisionOption[], view?: DecisionView): Promise<string>;
+  /** `cancelValue`, when supplied, must match an option and is resolved when the user presses Esc. */
+  requestChoice(request: ChoiceRequest): Promise<string>;
   requestConfirm(message: string, initial?: boolean, view?: DecisionView): Promise<boolean>;
   requestText(label: string): Promise<string>;
 }
 
 export interface OperatorDecision {
   run<T>(operation: (session: OperatorDecisionSession) => Promise<T>): Promise<T>;
-  requestChoice(message: string, options: DecisionOption[], view?: DecisionView): Promise<string>;
+  /** `cancelValue`, when supplied, must match an option and is resolved when the user presses Esc. */
+  requestChoice(request: ChoiceRequest): Promise<string>;
 }

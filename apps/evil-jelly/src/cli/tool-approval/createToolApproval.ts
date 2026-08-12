@@ -145,10 +145,11 @@ async function confirmOutsideAccess(
   useOutputStore
     .getState()
     .setPhase("awaiting_user", `outside ${params.mode} → ${params.targetPath}`);
-  const selected = await decision.requestChoice(
-    `Allow ${params.mode} outside workspace?\n${params.targetPath}\n\nApprove directory for this session:\n${params.approveDir}`,
-    menuOptions,
-  );
+  const selected = await decision.requestChoice({
+    message: `Allow ${params.mode} outside workspace?\n${params.targetPath}\n\nApprove directory for this session:\n${params.approveDir}`,
+    options: menuOptions,
+    cancelValue: "reject",
+  });
   useOutputStore.getState().resumeWork("Running…");
   return selected === "accept" ? { action: "accept" } : { action: "reject" };
 }
@@ -225,10 +226,11 @@ async function confirmShellCommand(
     );
   }
   const safetyNote = declaredReason ? `\n⚠ ${declaredReason}` : "";
-  const selected = await decision.requestChoice(
-    `Run shell command in ${cwd}?${safetyNote}\n> ${params.command}`,
-    menuOptions,
-  );
+  const selected = await decision.requestChoice({
+    message: `Run shell command in ${cwd}?${safetyNote}\n> ${params.command}`,
+    options: menuOptions,
+    ...(actions.includes("reject") ? { cancelValue: "reject" } : {}),
+  });
   useOutputStore.getState().resumeWork("Running…");
 
   if (selected === "accept_shell_prefix") {
@@ -275,10 +277,11 @@ async function confirmFsWrite(
     text: unifiedDiff,
     ...(reviewCaption?.trim() ? { caption: reviewCaption.trim() } : {}),
   });
-  const selected = await decision.requestChoice(
-    `Allow ${kind}${outsideLabel} ${filePath}?`,
-    menuOptions,
-  );
+  const selected = await decision.requestChoice({
+    message: `Allow ${kind}${outsideLabel} ${filePath}?`,
+    options: menuOptions,
+    ...(actions.includes("reject") ? { cancelValue: "reject" } : {}),
+  });
   useOutputStore.getState().resumeWork("Running…");
 
   if (selected === "accept_all_session") {

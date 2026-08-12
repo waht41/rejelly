@@ -45,7 +45,7 @@ function createMemoryBindings(inputs: Array<string | MemoryInput>): EvilJellyBin
     logSystemEvent: () => undefined,
     logToolBlock: () => undefined,
     confirmTool: async () => ({ action: "accept" }),
-    requestChoice: async (_message, options) => options[0]?.value ?? "",
+    requestChoice: async ({ options }) => options[0]?.value ?? "",
     getAgentMode: () => "auto",
   };
 }

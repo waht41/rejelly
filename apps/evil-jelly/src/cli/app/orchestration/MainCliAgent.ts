@@ -80,7 +80,11 @@ export async function tryRequestResume(
     value: s.id,
   }));
   options.push({ key: "x", label: "Cancel", value: "" });
-  const chosen = await host.requestChoice("Resume which session?", options);
+  const chosen = await host.requestChoice({
+    message: "Resume which session?",
+    options,
+    cancelValue: "",
+  });
   if (!chosen) {
     host.logSystemEvent("Resume cancelled.\n");
     return false;

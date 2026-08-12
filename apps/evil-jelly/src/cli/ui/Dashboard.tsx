@@ -304,6 +304,8 @@ export function Dashboard({ onCtrlCAbort }: { onCtrlCAbort: CtrlCAbortHandler })
   const openTranscript = useViewStore((s) => s.openTranscript);
   const view = useDecisionStore((state) => state.view);
   const decision = useDecisionStore((state) => state.decision);
+  const submitChoice = useDecisionStore((state) => state.submitChoice);
+  const cancelChoice = useDecisionStore((state) => state.cancelChoice);
   const [queuedSteers, setQueuedSteers] = useState<LineInputValue[]>(() => getQueuedSteers());
 
   // Ink's <Static> counts flushed items in instance state, so its items array must only grow
@@ -405,7 +407,12 @@ export function Dashboard({ onCtrlCAbort }: { onCtrlCAbort: CtrlCAbortHandler })
             {decision.type === "confirm" ? (
               <ConfirmPrompt message={decision.message} defaultYes={decision.defaultYes} />
             ) : decision.type === "choice" ? (
-              <ActionMenuPrompt message={decision.message} options={decision.options} />
+              <ActionMenuPrompt
+                message={decision.message}
+                options={decision.options}
+                onSelect={submitChoice}
+                onCancel={decision.cancelable ? cancelChoice : undefined}
+              />
             ) : decision.type === "text" ? (
               <TextDecisionPrompt label={decision.label} />
             ) : canShowLinePrompt ? (
