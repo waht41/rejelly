@@ -24,7 +24,7 @@ async function* throwBeforeYield(error: unknown): AsyncGenerator<StreamEvent> {
   throw error;
 }
 
-describe("CLI model withRetry", () => {
+describe("model composition withRetry", () => {
   it("retries retryable ModelCallError before the first yielded event", async () => {
     let calls = 0;
     const adapter: ModelAdapter = {

@@ -7,7 +7,7 @@ import {
   type StreamEvent,
 } from "@rejelly/core";
 
-/** CLI model retry policy applied when composing the process model adapter. */
+/** Retry policy applied by Evil Jelly's model composition boundary. */
 export interface WithRetryOptions {
   /** Total attempts, including the first call. */
   maxAttempts?: number;

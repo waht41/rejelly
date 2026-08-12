@@ -8,12 +8,12 @@ import { initSettings } from "../shared/configuration/settings";
 import { getCliVersion, parseCliArgs } from "./app/args";
 import { applyWorkspaceRootFromArgs } from "./app/bootstrap";
 import { runAuditCommand, runHeadlessUnifiedCommand, runInitCommand } from "./app/commands";
-import { createOpenAIModelFromEnv } from "./app/model/createModelFromEnv";
 import { resolveInitialSession } from "./app/resume";
 import { runInteractiveLoop } from "./app/runLoop";
 import { loadStartupSnapshot } from "./app/snapshot";
 import { createCliHostBindings } from "./bindings/cliBinding";
 import { enqueueLineInput } from "./bindings/promptQueue";
+import { createOpenAIModelFromEnv } from "./model-composition/createModelFromEnv";
 
 export type { EvilJellyBindings } from "../shared/host/bindings";
 export type {

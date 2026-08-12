@@ -9,6 +9,7 @@ import {
   saveEnvValues,
 } from "../../shared/configuration/env";
 import { setBinding } from "../../shared/host/context";
+import { createOpenAIModelFromEnv } from "../model-composition/createModelFromEnv";
 import { generateTraceId } from "../runtime/traceId";
 import { withAbort } from "../runtime/withAbort";
 import type { ParsedAuditArgs, ParsedRunArgs } from "./args";
@@ -16,7 +17,6 @@ import { createBackgroundHostBindings } from "./host/cliStubBindings";
 import { runDirectUnified } from "./host/runHost";
 import { runWithReview } from "./host/runWithReview";
 import { collectInitConfig } from "./initConfig";
-import { createOpenAIModelFromEnv } from "./model/createModelFromEnv";
 
 const AuditAgentWithAbort = AuditAgent.fork({ middlewares: [withAbort()] });
 

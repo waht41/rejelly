@@ -12,6 +12,11 @@
     ],
     "@cli:store": ["src/cli/store/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:runtime": ["src/cli/runtime/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@cli:model-composition": [
+      "src/cli/model-composition/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
     "@feature:[feat]": ["src/features/[feat]/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@domain:[dom]": [
       "src/domains/[dom]/**/*",
@@ -104,8 +109,8 @@
     },
     "cli_arch": {
       "connect": {
-        "@cli:entry": ["@cli:app", "@cli:bindings"],
-        "@cli:app": ["@cli:runtime"],
+        "@cli:entry": ["@cli:app", "@cli:bindings", "@cli:model-composition"],
+        "@cli:app": ["@cli:runtime", "@cli:model-composition"],
         "@cli:bindings": ["@cli:ui", "@cli:store", "@cli:runtime"]
       },
       "cascade": [["@cli:ui"], ["@cli:prompt-editor"], ["@cli:store"]]
