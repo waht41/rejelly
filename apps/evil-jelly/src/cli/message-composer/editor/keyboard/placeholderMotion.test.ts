@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { BufferState } from "../document/textBuffer";
 import {
   caretDown,
   caretLeft,
@@ -9,7 +10,6 @@ import {
   deletePlaceholderOrChar,
   deleteWordLeftAtomic,
 } from "./placeholderMotion";
-import type { BufferState } from "./textBuffer";
 
 const at = (text: string, cursor: number): BufferState => ({ text, cursor });
 

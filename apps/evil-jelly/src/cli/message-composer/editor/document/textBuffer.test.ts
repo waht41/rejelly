@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { replaceAtToken } from "../suggestions/file-reference/atTrigger";
-import { deletePlaceholderOrChar } from "./placeholderMotion";
+import { replaceAtToken } from "../../suggestions/file-reference/atTrigger";
+import { deletePlaceholderOrChar } from "../keyboard/placeholderMotion";
+import { caretCell, verticalCaretTarget, wrapRows } from "../softWrap";
 import {
   documentLogicalLength,
   projectPromptDocument,
   replacePromptRange,
   textPromptDocument,
 } from "./promptDocument";
-import { caretCell, verticalCaretTarget, wrapRows } from "./softWrap";
 import {
   applyProjectedTransform,
   type BufferState,

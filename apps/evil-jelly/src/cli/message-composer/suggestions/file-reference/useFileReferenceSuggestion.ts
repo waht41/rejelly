@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { TextBuffer } from "../../editor/textBuffer";
+import type { TextBuffer } from "../../editor/document/textBuffer";
 import { extractAtQuery, refsMissingFromText, replaceAtToken } from "./atTrigger";
 
 export interface FileReferenceSuggestion {

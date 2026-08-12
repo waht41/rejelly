@@ -1,5 +1,5 @@
 /**
- * Line input backed by a single text buffer + caret (see ./editor/textBuffer), so
+ * Line input backed by a single text buffer + caret (see ./editor/document/textBuffer), so
  * single- and multi-line editing share one model with full caret movement
  * (←/→, ↑/↓, Home/End, word-jump) and editing (backspace, word/line delete).
  *
@@ -31,13 +31,13 @@ import type { DOMElement } from "ink";
 import { Box, Text, useCursor, useStdout } from "ink";
 import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
 import stringWidth from "string-width";
-import { useCollapsedPaste } from "./collapsed-paste/useCollapsedPaste";
-import { attachedImages } from "./editor/lineText";
-import type { ProjectedTokenSpan } from "./editor/promptDocument";
-import { projectedDisplayRuns } from "./editor/promptDocument";
+import type { ProjectedTokenSpan } from "./editor/document/promptDocument";
+import { projectedDisplayRuns } from "./editor/document/promptDocument";
+import { useTextBuffer } from "./editor/document/textBuffer";
+import { useLineKeybindings } from "./editor/keyboard/useLineKeybindings";
+import { useCollapsedPaste } from "./editor/paste/useCollapsedPaste";
 import { caretCell, type WrappedRow, wrapRows } from "./editor/softWrap";
-import { useTextBuffer } from "./editor/textBuffer";
-import { useLineKeybindings } from "./editor/useLineKeybindings";
+import { attachedImages, imageToken, shiftImageTokens } from "./imageAttachments";
 import { MAX_SELECTED_SKILLS, usePromptStore } from "./session/composerStore";
 import type { ComposerPickerKeyHandler } from "./suggestions/ComposerPicker";
 import { ComposerSuggestionOverlay } from "./suggestions/ComposerSuggestionOverlay";
@@ -198,16 +198,6 @@ export function MessageComposer({
         undefined,
   );
 
-  const shiftImageTokens = (text: string, offset: number): string => {
-    if (offset <= 0) {
-      return text;
-    }
-    return text.replace(/\[Image #(\d+)\]/g, (_token, rawIndex: string) => {
-      const index = Number.parseInt(rawIndex, 10);
-      return Number.isFinite(index) ? `[Image #${index + offset}]` : _token;
-    });
-  };
-
   useEffect(() => {
     const updateRows = () => setTerminalRows(stdout.rows || 24);
     updateRows();
@@ -359,7 +349,7 @@ export function MessageComposer({
         // Drop an `[Image #N]` placeholder into the line at the caret; N is the
         // image's 1-based slot, so it maps back to this path on submit.
         const num = usePromptStore.getState().selectedImages.length;
-        buf.insert(`[Image #${num}]`);
+        buf.insert(imageToken(num));
         setClipboardImageStatus(null);
         return;
       }

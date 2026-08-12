@@ -14,7 +14,6 @@
  * compatibility policy for legacy placeholders in the rich buffer's text projection.
  */
 
-import { alignDeletionStart, tokenSpanAt, tokenSpanBefore } from "./lineText";
 import {
   type BufferState,
   backspace,
@@ -25,7 +24,8 @@ import {
   moveWordLeft,
   moveWordRight,
   wordLeft,
-} from "./textBuffer";
+} from "../document/textBuffer";
+import { alignDeletionStart, tokenSpanAt, tokenSpanBefore } from "../placeholderText";
 
 /** Which edge to bounce to when a motion lands the caret inside a token. */
 export type SnapDirection = "left" | "right" | "nearest";

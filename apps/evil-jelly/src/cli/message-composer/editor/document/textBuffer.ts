@@ -5,6 +5,7 @@
  */
 
 import { useMemo, useState } from "react";
+import type { CaretAffinity } from "../softWrap";
 import {
   documentLogicalLength,
   type ProjectedTokenSpan,
@@ -15,7 +16,6 @@ import {
   replacePromptRange,
   textPromptDocument,
 } from "./promptDocument";
-import type { CaretAffinity } from "./softWrap";
 
 export interface BufferState {
   text: string;

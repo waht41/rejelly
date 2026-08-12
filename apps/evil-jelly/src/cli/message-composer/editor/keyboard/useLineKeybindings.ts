@@ -13,8 +13,9 @@
 
 import { type Key, useInput } from "ink";
 import { useRef } from "react";
-import { normalizeNewlines } from "../../../shared/foundation/string";
-import { looksBinary, stripControlChars } from "./lineText";
+import { normalizeNewlines } from "../../../../shared/foundation/string";
+import { cursorRowCol, type TextBuffer } from "../document/textBuffer";
+import { verticalCaretTarget, type WrappedRow } from "../softWrap";
 import {
   caretLeft,
   caretRight,
@@ -24,8 +25,7 @@ import {
   deleteWordLeftAtomic,
   snapCaretOutOfPlaceholder,
 } from "./placeholderMotion";
-import { verticalCaretTarget, type WrappedRow } from "./softWrap";
-import { cursorRowCol, type TextBuffer } from "./textBuffer";
+import { looksBinary, stripControlChars } from "./textInput";
 
 // Tab inserts spaces up to the next multiple of this; see the key.tab handler.
 const TAB_WIDTH = 2;

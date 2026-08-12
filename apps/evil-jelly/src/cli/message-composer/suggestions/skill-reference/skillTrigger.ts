@@ -4,8 +4,8 @@ import {
   type PromptDocument,
   type PromptNode,
   promptTokens,
-} from "../../editor/promptDocument";
-import type { BufferState } from "../../editor/textBuffer";
+} from "../../editor/document/promptDocument";
+import type { BufferState } from "../../editor/document/textBuffer";
 
 const SKILL_QUERY_PATTERN = /^[a-z0-9._:-]*$/;
 

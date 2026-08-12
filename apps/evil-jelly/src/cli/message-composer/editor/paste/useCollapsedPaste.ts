@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import type { TextBuffer } from "../document/textBuffer";
 import {
   coalescePaste,
   expandPastedTextTokens,
@@ -6,8 +7,7 @@ import {
   type PasteRun,
   pastedTextToken,
   pastedTextTokenBefore,
-} from "../editor/lineText";
-import type { TextBuffer } from "../editor/textBuffer";
+} from "./collapsedPaste";
 
 const PASTE_CHUNK_MERGE_MS = 120;
 
