@@ -3,9 +3,9 @@ import {
   runWithToolDetailSlot,
   takeActiveToolDetail,
 } from "../../shared/tool-observation/invocationContext";
+import { resetOutputSession, useOutputStore } from "../conversation-display/useOutputStore";
 import { useDecisionStore } from "../operator-decision/decisionStore";
 import { resetOperatorDecisionSession } from "../operator-decision/operatorDecision";
-import { resetOutputSession, useOutputStore } from "../store/useOutputStore";
 import { createToolApproval } from "./createToolApproval";
 
 async function flushMicrotasks(): Promise<void> {

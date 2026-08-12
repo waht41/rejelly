@@ -15,6 +15,12 @@ import type { ConversationPresentationBindings } from "../../shared/host/present
 import type { ToolConfirmationBindings } from "../../shared/host/toolConfirmationBindings";
 import { resetInterruptibleTaskStack } from "../../shared/task-interruption/taskStack";
 import {
+  resetOutputSession,
+  TOOL_FULL_CAP,
+  useOutputStore,
+} from "../conversation-display/useOutputStore";
+import { resetViewSession } from "../conversation-display/useViewStore";
+import {
   resetComposerSession,
   useComposerSession,
 } from "../message-composer/session/composerSession";
@@ -23,8 +29,6 @@ import {
   createOperatorDecision,
   resetOperatorDecisionSession,
 } from "../operator-decision/operatorDecision";
-import { resetOutputSession, TOOL_FULL_CAP, useOutputStore } from "../store/useOutputStore";
-import { resetViewSession } from "../store/useViewStore";
 import { resetModeSession, useModeStore } from "../tool-approval/approvalModeStore";
 import { createToolApproval } from "../tool-approval/createToolApproval";
 import { createInkGetInput } from "./getInput";

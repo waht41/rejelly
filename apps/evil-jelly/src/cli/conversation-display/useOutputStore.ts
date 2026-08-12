@@ -1,6 +1,4 @@
-/**
- * Zustand store: transient stream + `<Static>` history for the Ink CLI.
- */
+/** Conversation display projection: transient stream + `<Static>` history for the Ink CLI. */
 
 import { create } from "zustand";
 import type { RuntimePhase } from "../../shared/host/presentationBindings";

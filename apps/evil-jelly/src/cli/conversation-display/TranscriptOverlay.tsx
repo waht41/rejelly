@@ -6,11 +6,11 @@
 
 import { Box, Text, useInput, useStdout } from "ink";
 import { useEffect, useMemo, useState } from "react";
-import type { ToolBlock } from "../store/useOutputStore";
-import { useOutputStore } from "../store/useOutputStore";
-import { useViewStore } from "../store/useViewStore";
 import { ListViewport } from "../terminal-ui/picker/ListViewport";
 import { getVisibleWindow, moveListSelection } from "../terminal-ui/picker/listNavigation";
+import type { ToolBlock } from "./useOutputStore";
+import { useOutputStore } from "./useOutputStore";
+import { useViewStore } from "./useViewStore";
 
 type ToolEntry = {
   id: string;

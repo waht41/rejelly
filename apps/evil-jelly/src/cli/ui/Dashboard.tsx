@@ -7,6 +7,16 @@ import { Box, measureElement, Static, Text, useInput, useWindowSize } from "ink"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { LineInputValue } from "../../shared/host/inputBindings";
 import type { RuntimePhase } from "../../shared/host/presentationBindings";
+import { HistoryItem } from "../conversation-display/HistoryItem";
+import { TranscriptOverlay } from "../conversation-display/TranscriptOverlay";
+import { composeToolTailWindow } from "../conversation-display/toolTailWindow";
+import {
+  isRuntimeActive,
+  type RunningTool,
+  statusTimerAnchor,
+  useOutputStore,
+} from "../conversation-display/useOutputStore";
+import { useViewStore } from "../conversation-display/useViewStore";
 import {
   type ClipboardImageReadResult,
   MessageComposer,
@@ -17,19 +27,9 @@ import { DecisionDetail } from "../operator-decision/DecisionDetail";
 import { useDecisionStore } from "../operator-decision/decisionStore";
 import { TextDecisionPrompt } from "../operator-decision/TextDecisionPrompt";
 import { getQueuedSteers, subscribeSteers } from "../runtime/steerControl";
-import { composeToolTailWindow } from "../store/toolTailWindow";
-import {
-  isRuntimeActive,
-  type RunningTool,
-  statusTimerAnchor,
-  useOutputStore,
-} from "../store/useOutputStore";
-import { useViewStore } from "../store/useViewStore";
 import { StreamMarkdownViewer } from "../terminal-ui/rich-text/MarkdownViewer";
 import { createStreamTailWindow } from "../terminal-ui/rich-text/streamWindow";
 import { MODE_META, useModeStore } from "../tool-approval/approvalModeStore";
-import { HistoryItem } from "./HistoryItem";
-import { TranscriptOverlay } from "./TranscriptOverlay";
 import { type CtrlCAbortHandler, useCtrlCAbort } from "./useCtrlCAbort";
 
 const STEER_QUEUE_VISIBLE_ROWS = 3;

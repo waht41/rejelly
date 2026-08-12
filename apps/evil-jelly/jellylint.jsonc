@@ -16,7 +16,6 @@
       "!src/**/__tests__/**/*",
       "!src/**/*.test.*"
     ],
-    "@cli:store": ["src/cli/store/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:runtime": ["src/cli/runtime/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:model-composition": [
       "src/cli/model-composition/**/*",
@@ -123,8 +122,7 @@
         "@cli:terminal-ui": ["@ext:ui"],
         "@cli:message-composer": ["@domain:skills:agent", "@ext:ui"],
         "@cli:operator-decision": ["@ext:ui"],
-        "@cli:tool-approval": ["@ext:ui"],
-        "@cli:store": ["@domain:skills:agent", "@ext:ui"]
+        "@cli:tool-approval": ["@ext:ui"]
       }
     },
     "cli_arch": {
@@ -133,9 +131,9 @@
         "@cli:app": ["@cli:runtime", "@cli:model-composition", "@cli:tool-approval"],
         "@cli:bindings": [
           "@cli:app",
+          "@cli:conversation-display",
           "@cli:message-composer",
           "@cli:ui",
-          "@cli:store",
           "@cli:runtime",
           "@cli:operator-decision",
           "@cli:tool-approval"
@@ -150,9 +148,8 @@
         "@cli:conversation-display": ["@cli:terminal-ui"],
         "@cli:message-composer": ["@cli:terminal-ui"],
         "@cli:operator-decision": ["@cli:conversation-display", "@cli:terminal-ui"],
-        "@cli:tool-approval": ["@cli:operator-decision", "@cli:store"]
-      },
-      "cascade": [["@cli:ui"], ["@cli:store"]]
+        "@cli:tool-approval": ["@cli:conversation-display", "@cli:operator-decision"]
+      }
     },
     "session_arch": {
       "cascade": [

@@ -1,5 +1,5 @@
 /**
- * Transcript overlay state (ctrl+o) for viewing full tool results. UI-only; assistant output is
+ * Tool transcript overlay state (ctrl+o) for viewing full tool results. UI-only; assistant output is
  * always rendered as markdown (with an automatic raw fallback in the stream when it can't render
  * safely — see streamWindow's forceRaw).
  */

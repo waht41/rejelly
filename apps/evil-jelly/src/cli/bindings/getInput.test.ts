@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { resetOutputSession } from "../conversation-display/useOutputStore";
 import {
   resetComposerSession,
   useComposerSession,
@@ -6,7 +7,6 @@ import {
 import { registerRunAbort } from "../runtime/runControl";
 import { takePendingExit } from "../runtime/sessionRunControl";
 import { enqueueSteer } from "../runtime/steerControl";
-import { resetOutputSession } from "../store/useOutputStore";
 import { createInkGetInput } from "./getInput";
 import { resetLineInputQueue } from "./lineInputQueue";
 

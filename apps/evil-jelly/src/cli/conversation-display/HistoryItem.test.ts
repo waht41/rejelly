@@ -3,8 +3,8 @@ import { createElement } from "react";
 import stringWidth from "string-width";
 import stripAnsi from "strip-ansi";
 import { describe, expect, it } from "vitest";
-import type { Turn } from "../store/useOutputStore";
 import { HistoryItem } from "./HistoryItem";
+import type { Turn } from "./useOutputStore";
 
 const COLUMNS = 60;
 

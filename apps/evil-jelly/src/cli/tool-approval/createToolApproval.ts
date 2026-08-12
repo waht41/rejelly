@@ -13,13 +13,13 @@ import type {
   WriteActionType,
 } from "../../shared/host/toolConfirmationBindings";
 import { recordActiveToolDetail } from "../../shared/tool-observation/invocationContext";
+import { useOutputStore } from "../conversation-display/useOutputStore";
 import type {
   DecisionOption,
   OperatorDecision,
   OperatorDecisionSession,
 } from "../operator-decision/model";
 import { createOperatorDecision } from "../operator-decision/operatorDecision";
-import { useOutputStore } from "../store/useOutputStore";
 import { editContentInExternalEditor } from "./externalEditor";
 import { classifyShellCommand, isSimpleCommand } from "./shellCommandPolicy";
 

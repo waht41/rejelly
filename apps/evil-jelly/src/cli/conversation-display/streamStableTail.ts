@@ -1,3 +1,4 @@
+/** Stabilizes incremental Markdown before it enters persistent conversation history. */
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import { normalizeNewlines } from "../../shared/foundation/string";
