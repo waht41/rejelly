@@ -4,7 +4,7 @@ import {
   drainToolOutput,
   type RunningToolTail,
   toDisplayLine,
-} from "./toolTailWindow";
+} from "./tailWindow";
 
 const tool = (ordinal: number, tail: string[], partial = ""): RunningToolTail => ({
   ordinal,

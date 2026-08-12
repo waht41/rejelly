@@ -18,21 +18,26 @@ import {
 import type { DiffBlockDetail, SessionBanner, ToolBlock, Turn } from "./history/model";
 import { projectTranscriptHistory } from "./history/projection";
 import { HistorySequence } from "./history/sequence";
-import { drainToolOutput } from "./toolTailWindow";
+import { RunningToolOutputBuffer } from "./running-tools/outputBuffer";
+import {
+  applyRunningToolOutput,
+  finishRunningTool,
+  type RunningToolsState,
+  startRunningTool,
+} from "./running-tools/state";
+import {
+  beginRuntimeTurn,
+  finishRuntimeToolBatch,
+  idleRuntime,
+  type RuntimeStatusState,
+  recordRuntimeOutput,
+  resumeRuntimeWork,
+  transitionRuntimePhase,
+  withRuntimeDetail,
+} from "./runtime-status/state";
 
-/**
- * Lines kept per running tool. Only a handful are ever on screen; the slack lets
- * a quiet tool's rows be spent on a chatty one without losing its own backlog.
- */
-const TOOL_TAIL_CAP = 32;
-const TOOL_OUTPUT_FLUSH_INTERVAL_MS = 50;
 export const TOOL_FULL_CAP = 96_000;
 
-// Raw chunks per tool call id, drained on a timer. Chunks arrive far faster than
-// the terminal can repaint, so batching here is what keeps a chatty command from
-// melting the render loop.
-const pendingToolOutput = new Map<string, string>();
-let toolOutputFlushTimer: ReturnType<typeof setTimeout> | undefined;
 const historySequence = new HistorySequence();
 const assistantStream = new AssistantStreamBuffer(({ stableText, tailText }) => {
   useOutputStore.setState((state) => ({
@@ -41,49 +46,12 @@ const assistantStream = new AssistantStreamBuffer(({ stableText, tailText }) => 
         ? state.history
         : [...state.history, assistantStreamTurn(historySequence, stableText)],
     streamBuffer: tailText,
-    runtime: { ...state.runtime, lastOutputAt: Date.now() },
+    runtime: recordRuntimeOutput(state.runtime),
   }));
 });
 
-/** A tool call between `beginTool` and `logTool`, with whatever it has printed so far. */
-export type RunningTool = {
-  id: string;
-  ordinal: number;
-  summary: string;
-  /** Complete output lines, oldest first, capped at {@link TOOL_TAIL_CAP}. */
-  tail: string[];
-  /** Raw unterminated remainder of the newest line. */
-  partial: string;
-  /** Complete lines seen in total, so a squeezed-out tool can still show progress. */
-  lineCount: number;
-};
-
-/** The status-line slice: what the runtime is doing, its stall anchor, and the turn timer. */
-interface RuntimeStatus {
-  /** Free-text detail for the status line (e.g. `shell → workspace root`). Display only. */
-  detail: string;
-  /** What the runtime is doing; owns the idle/active decision and the status-line label. */
-  phase: RuntimePhase;
-  /** Epoch ms of the last actual phase change — the stall check counts from here. */
-  phaseSince: number;
-  /**
-   * Epoch ms when the current turn's initial user input was recorded (anchored by beginTurn),
-   * or null between turns. Counts the whole turn: it survives phase changes, mid-turn steers,
-   * and the `awaiting_user` pauses of tool confirmations, and only a turn boundary
-   * (logAssistant / clear / reset) returns it to null. This is the number the status line displays.
-   */
-  turnStartedAt: number | null;
-  /**
-   * Epoch ms of the last model output flushed to the stream, for the streaming-stall check.
-   * The stream flush refreshes it; a long answer keeps it current, silence does not.
-   */
-  lastOutputAt: number;
-}
-
-interface OutputState {
+interface OutputState extends RunningToolsState, RuntimeStatusState {
   streamBuffer: string;
-  runningTools: RunningTool[];
-  runtime: RuntimeStatus;
   history: Turn[];
   /**
    * Turns wiped by `/clear`, kept as a frozen prefix for the Dashboard `<Static>` items.
@@ -116,68 +84,15 @@ interface OutputState {
   clearHistory: () => void;
   hydrateHistory: (items: readonly TranscriptItem[]) => void;
 }
-
-function clearToolOutputFlushTimer(): void {
-  if (toolOutputFlushTimer === undefined) {
-    return;
-  }
-  clearTimeout(toolOutputFlushTimer);
-  toolOutputFlushTimer = undefined;
-}
-
-function flushPendingToolOutput(): void {
-  clearToolOutputFlushTimer();
-  if (pendingToolOutput.size === 0) {
-    return;
-  }
-  const drained = new Map<string, ReturnType<typeof drainToolOutput>>();
-  for (const [id, buffer] of pendingToolOutput) {
-    const result = drainToolOutput(buffer);
-    drained.set(id, result);
-    pendingToolOutput.set(id, result.rest);
-  }
-
+const runningToolOutput = new RunningToolOutputBuffer((drained) => {
   useOutputStore.setState((state) => ({
-    runningTools: state.runningTools.map((tool) => {
-      const result = drained.get(tool.id);
-      if (!result) {
-        return tool;
-      }
-      const tail = [...tool.tail, ...result.lines];
-      return {
-        ...tool,
-        tail: tail.length > TOOL_TAIL_CAP ? tail.slice(-TOOL_TAIL_CAP) : tail,
-        partial: result.rest,
-        lineCount: tool.lineCount + result.lines.length,
-      };
-    }),
+    runningTools: applyRunningToolOutput(state.runningTools, drained),
   }));
-}
-
-function clearToolOutputState(): void {
-  clearToolOutputFlushTimer();
-  pendingToolOutput.clear();
-}
+});
 
 function clearStreamState(): void {
   assistantStream.reset();
-  clearToolOutputState();
-}
-
-/** The runtime slice every turn boundary returns to: nothing in flight, timer restarted. */
-function idleRuntime(): RuntimeStatus {
-  return {
-    detail: "Ready",
-    phase: "idle",
-    phaseSince: Date.now(),
-    turnStartedAt: null,
-    lastOutputAt: Date.now(),
-  };
-}
-
-/** Phases where the runtime is parked on the user: no turn in flight, nothing to time. */
-function isInactivePhase(phase: RuntimePhase): boolean {
-  return phase === "idle" || phase === "awaiting_user";
+  runningToolOutput.reset();
 }
 
 export const useOutputStore = create<OutputState>((set) => ({
@@ -201,20 +116,12 @@ export const useOutputStore = create<OutputState>((set) => ({
     };
     set((state) => {
       const patch: Partial<OutputState> = {
-        runningTools: [
-          ...state.runningTools,
-          { id: handle.id, ordinal: handle.ordinal, summary, tail: [], partial: "", lineCount: 0 },
-        ],
+        runningTools: startRunningTool(state.runningTools, handle, summary),
       };
-      const runtimePatch: Partial<RuntimeStatus> = {};
       if (state.runtime.phase !== "tool") {
         // The first concurrent call owns the timer; later ones join the same phase,
         // so the counter measures the whole batch rather than restarting per tool.
-        runtimePatch.phase = "tool";
-        runtimePatch.phaseSince = Date.now();
-      }
-      if (Object.keys(runtimePatch).length > 0) {
-        patch.runtime = { ...state.runtime, ...runtimePatch };
+        patch.runtime = transitionRuntimePhase(state.runtime, "tool");
       }
       return patch;
     });
@@ -222,24 +129,17 @@ export const useOutputStore = create<OutputState>((set) => ({
   },
 
   appendToolOutput: (toolCallId, chunk) => {
-    if (chunk.length === 0) {
-      return;
-    }
-    pendingToolOutput.set(toolCallId, (pendingToolOutput.get(toolCallId) ?? "") + chunk);
-    if (toolOutputFlushTimer === undefined) {
-      toolOutputFlushTimer = setTimeout(flushPendingToolOutput, TOOL_OUTPUT_FLUSH_INTERVAL_MS);
-    }
+    runningToolOutput.append(toolCallId, chunk);
   },
 
-  setDetail: (detail) => set((state) => ({ runtime: { ...state.runtime, detail } })),
+  setDetail: (detail) => set((state) => ({ runtime: withRuntimeDetail(state.runtime, detail) })),
 
   /** Anchor the turn timer; idempotent until a turn boundary resets it. */
   beginTurn: () =>
-    set((state) =>
-      state.runtime.turnStartedAt === null
-        ? { runtime: { ...state.runtime, turnStartedAt: Date.now() } }
-        : {},
-    ),
+    set((state) => {
+      const runtime = beginRuntimeTurn(state.runtime);
+      return runtime === state.runtime ? {} : { runtime };
+    }),
 
   /**
    * After a confirmation the agent goes back to work; the label must match the state — a tool
@@ -248,31 +148,18 @@ export const useOutputStore = create<OutputState>((set) => ({
    */
   resumeWork: (detail) =>
     set((state) => ({
-      runtime: {
-        ...state.runtime,
-        phase: state.runningTools.length > 0 ? "tool" : "working",
-        phaseSince: Date.now(),
-        ...(detail === undefined ? {} : { detail }),
-      },
+      runtime: resumeRuntimeWork(state.runtime, state.runningTools.length > 0, detail),
     })),
 
   setPhase: (phase, detail) =>
     set((state) => {
       // Stream deltas arrive far faster than the phase changes, so a no-op must stay a no-op:
       // restarting phaseSince here would peg the per-phase stall check at 0s.
-      if (phase === state.runtime.phase) {
-        return detail === undefined || detail === state.runtime.detail
-          ? {}
-          : { runtime: { ...state.runtime, detail } };
-      }
-      const runtimePatch: Partial<RuntimeStatus> = { phase, phaseSince: Date.now() };
-      if (detail !== undefined) {
-        runtimePatch.detail = detail;
-      }
       // The turn timer is anchored only by beginTurn (the shell's initial-input record point);
       // phase transitions never start or restart it — steers and maintenance commands must not
       // move the turn boundary.
-      return { runtime: { ...state.runtime, ...runtimePatch } };
+      const runtime = transitionRuntimePhase(state.runtime, phase, detail);
+      return runtime === state.runtime ? {} : { runtime };
     }),
 
   logUser: (content) =>
@@ -319,16 +206,13 @@ export const useOutputStore = create<OutputState>((set) => ({
   logTool: (block: ToolBlock) => {
     assistantStream.flush();
     if (block.id !== undefined) {
-      pendingToolOutput.delete(block.id);
+      runningToolOutput.discard(block.id);
     }
     set((state) => {
       // The block replaces the live view, so this tool's rows leave the window
       // with it — a stale tail under a number that already scrolled past reads
       // as if the tool were still running.
-      const runningTools =
-        block.id === undefined
-          ? state.runningTools
-          : state.runningTools.filter((tool) => tool.id !== block.id);
+      const runningTools = finishRunningTool(state.runningTools, block.id);
       const patch: Partial<OutputState> = {
         history: [
           ...state.history,
@@ -342,14 +226,11 @@ export const useOutputStore = create<OutputState>((set) => ({
         ],
         runningTools,
       };
-      if (state.runtime.phase === "tool" && runningTools.length === 0) {
+      const runtime = finishRuntimeToolBatch(state.runtime, runningTools.length > 0);
+      if (runtime !== state.runtime) {
         // With the batch drained the agent is on its way back to the model; holding
         // "Running tools" here would keep counting against a tool that already ended.
-        patch.runtime = {
-          ...state.runtime,
-          phase: "working",
-          phaseSince: Date.now(),
-        };
+        patch.runtime = runtime;
       }
       return patch;
     });
@@ -418,34 +299,6 @@ export const useOutputStore = create<OutputState>((set) => ({
     }));
   },
 }));
-
-/**
- * Whether the runtime is mid-flight, i.e. whether the transient surface and the interrupt hint
- * belong on screen. Reads the phase, not the detail text: this used to sniff the status string for
- * a `"Waiting for "` prefix, which made every new status a chance to silently report the agent idle.
- */
-export function isRuntimeActive(phase: RuntimePhase, streamBuffer: string): boolean {
-  if (streamBuffer.length > 0) {
-    return true;
-  }
-  return !isInactivePhase(phase);
-}
-
-/**
- * The epoch ms the status line counts from: the whole turn when one is running, otherwise the
- * current phase.
- *
- * `turnStartedAt` is anchored only by the shell's initial-input point, which maintenance commands
- * deliberately skip — but `/compress` still runs a model call the user sits and waits on, and with
- * no anchor the line read `Compacting context 0s` for the entire operation. A dead counter is worse
- * than a coarse one: the number exists precisely so a stalled round trip is visible. Falling back to
- * `phaseSince` times the phase instead, which is the honest unit when there is no turn to time, and
- * keeps this read-only — an anchor written here would leak into the next real turn, whose
- * `beginTurn` is idempotent and would not re-anchor.
- */
-export function statusTimerAnchor(turnStartedAt: number | null, phaseSince: number): number {
-  return turnStartedAt ?? phaseSince;
-}
 
 /** Clear history/stream for a new CLI session (singleton store). */
 export function resetOutputSession(): void {

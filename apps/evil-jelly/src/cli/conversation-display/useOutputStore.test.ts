@@ -1,12 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ToolBlock } from "./history/model";
-import {
-  isRuntimeActive,
-  resetOutputSession,
-  statusTimerAnchor,
-  TOOL_FULL_CAP,
-  useOutputStore,
-} from "./useOutputStore";
+import { isRuntimeActive, statusTimerAnchor } from "./runtime-status/state";
+import { resetOutputSession, TOOL_FULL_CAP, useOutputStore } from "./useOutputStore";
 
 beforeEach(() => {
   resetOutputSession();

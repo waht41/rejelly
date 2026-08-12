@@ -3,9 +3,9 @@ import { createElement } from "react";
 import stringWidth from "string-width";
 import stripAnsi from "strip-ansi";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { RuntimePhase } from "../../shared/host/presentationBindings";
-import { resetOutputSession, useOutputStore } from "../conversation-display/useOutputStore";
-import { RuntimeStatusLine } from "./Dashboard";
+import type { RuntimePhase } from "../../../shared/host/presentationBindings";
+import { resetOutputSession, useOutputStore } from "../useOutputStore";
+import { RuntimeStatusLine } from "./RuntimeStatusLine";
 
 beforeEach(() => {
   resetOutputSession();
