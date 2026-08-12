@@ -1,4 +1,4 @@
-import type { ToolBlock, Turn } from "../useOutputStore";
+import type { ToolBlock, Turn } from "../history/model";
 
 export interface ToolTranscriptEntry {
   id: string;

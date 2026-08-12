@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
-import { MarkdownViewer } from "../terminal-ui/rich-text/MarkdownViewer";
-import { DiffBlock } from "./DiffBlock";
-import type { Turn } from "./useOutputStore";
+import { MarkdownViewer } from "../../terminal-ui/rich-text/MarkdownViewer";
+import { DiffBlock } from "../DiffBlock";
+import type { Turn } from "./model";
 
 const TOOL_PREVIEW_OUTPUT_ROWS = 3;
 const TRUNCATION_LINES = new Set(["...", "…"]);

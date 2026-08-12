@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Turn } from "../useOutputStore";
+import type { Turn } from "../history/model";
 import {
   buildToolTranscriptDetailLines,
   buildToolTranscriptEntries,

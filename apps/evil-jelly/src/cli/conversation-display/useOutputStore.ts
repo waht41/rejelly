@@ -3,11 +3,20 @@
 import { create } from "zustand";
 import type { RuntimePhase } from "../../shared/host/presentationBindings";
 import type { TranscriptItem } from "../../shared/session/transcript";
-import type {
-  ToolCallHandle,
-  ToolObservationDetail,
-  ToolObservationStart,
-} from "../../shared/tool-observation/model";
+import type { ToolCallHandle, ToolObservationStart } from "../../shared/tool-observation/model";
+import {
+  assistantCompletionTurns,
+  assistantStreamTurn,
+  bannerTurn,
+  diffTurn,
+  systemTurn,
+  toolRoundTurn,
+  toolTurn,
+  userTurn,
+} from "./history/entries";
+import type { DiffBlockDetail, SessionBanner, ToolBlock, Turn } from "./history/model";
+import { projectTranscriptHistory } from "./history/projection";
+import { HistorySequence } from "./history/sequence";
 import { StreamStableTailController } from "./streamStableTail";
 import { drainToolOutput } from "./toolTailWindow";
 
@@ -21,8 +30,6 @@ const STREAM_FLUSH_INTERVAL_MS = 50;
 const TOOL_OUTPUT_FLUSH_INTERVAL_MS = 50;
 export const TOOL_FULL_CAP = 96_000;
 
-let turnIdCounter = 0;
-let toolOrdinalCounter = 0;
 let pendingStreamText = "";
 let streamFlushTimer: ReturnType<typeof setTimeout> | undefined;
 // Raw chunks per tool call id, drained on a timer. Chunks arrive far faster than
@@ -31,18 +38,7 @@ let streamFlushTimer: ReturnType<typeof setTimeout> | undefined;
 const pendingToolOutput = new Map<string, string>();
 let toolOutputFlushTimer: ReturnType<typeof setTimeout> | undefined;
 const streamController = new StreamStableTailController();
-
-export type ToolBlock = {
-  id?: string;
-  toolName: string;
-  summary: string;
-  args?: string;
-  detail?: ToolObservationDetail;
-  preview: string;
-  fullResult: string;
-  ok: boolean;
-  ordinal?: number;
-};
+const historySequence = new HistorySequence();
 
 /** A tool call between `beginTool` and `logTool`, with whatever it has printed so far. */
 export type RunningTool = {
@@ -55,36 +51,6 @@ export type RunningTool = {
   partial: string;
   /** Complete lines seen in total, so a squeezed-out tool can still show progress. */
   lineCount: number;
-};
-
-/** Session header shown at the top of a fresh view (startup and after `/clear`). */
-export type SessionBanner = {
-  model: string;
-  dir: string;
-  version: string;
-};
-
-export type Turn =
-  | { id: string; type: "user"; content: string }
-  /** `oneLine`: a notice, truncated to a single row rather than wrapped. */
-  | { id: string; type: "system"; content: string; oneLine?: boolean }
-  | { id: string; type: "assistant"; content: string; hidden?: boolean }
-  | { id: string; type: "assistant_stream"; content: string; final?: boolean }
-  /**
-   * Heads the tool blocks one model call issued together. Only written for two or more:
-   * a single block is trivially its own batch, so a header on every call would be noise,
-   * and the rule stays unambiguous — a block with no header above it is a batch of one.
-   */
-  | { id: string; type: "tool_round"; calls: number }
-  | { id: string; type: "tool"; content: string; tool: ToolBlock }
-  | { id: string; type: "diff"; diff: DiffBlockDetail }
-  | { id: string; type: "banner"; banner: SessionBanner };
-
-/** Reviewed diff committed to scrollback history (so the user can scroll back to it later). */
-export type DiffBlockDetail = {
-  text: string;
-  caption?: string;
-  captionTitle?: string;
 };
 
 /** The status-line slice: what the runtime is doing, its stall anchor, and the turn timer. */
@@ -146,52 +112,6 @@ interface OutputState {
   hydrateHistory: (items: readonly TranscriptItem[]) => void;
 }
 
-function transcriptTurn(item: TranscriptItem): Turn {
-  switch (item.type) {
-    case "user": {
-      const actions = item.attachments?.map(
-        (attachment) => `  -> ${attachment.action} ${attachment.label}`,
-      );
-      return {
-        id: `resume_${item.id}`,
-        type: "user",
-        content: actions?.length ? `${item.content}\n${actions.join("\n")}` : item.content,
-      };
-    }
-    case "assistant":
-      return {
-        id: `resume_${item.id}`,
-        type: "assistant",
-        content: item.content,
-        hidden: false,
-      };
-    case "system":
-      return { id: `resume_${item.id}`, type: "system", content: item.content };
-    case "tool_round":
-      return { id: `resume_${item.id}`, type: "tool_round", calls: item.calls };
-    case "tool": {
-      const compactArgs = item.arguments?.trim().replace(/\s+/g, " ");
-      const suffix =
-        compactArgs && compactArgs.length > 120 ? `${compactArgs.slice(0, 117)}...` : compactArgs;
-      const summary = `[Tools] ${item.toolName}${suffix ? ` ${suffix}` : ""} (resumed)`;
-      const fullResult = item.result ?? "";
-      return {
-        id: `resume_${item.id}`,
-        type: "tool",
-        content: summary,
-        tool: {
-          toolName: item.toolName,
-          summary,
-          args: item.arguments,
-          preview: fullResult.split("\n").slice(0, 6).join("\n").slice(0, 600),
-          fullResult,
-          ok: item.ok,
-        },
-      };
-    }
-  }
-}
-
 function capTransientStream(value: string): string {
   if (value.length <= TRANSIENT_STREAM_CAP) {
     return value;
@@ -225,10 +145,7 @@ function flushPendingStream(): void {
     history:
       stableText.length === 0
         ? state.history
-        : [
-            ...state.history,
-            { id: `as_${turnIdCounter++}`, type: "assistant_stream", content: stableText },
-          ],
+        : [...state.history, assistantStreamTurn(historySequence, stableText)],
     streamBuffer: capTransientStream(tailText),
     runtime: { ...state.runtime, lastOutputAt: Date.now() },
   }));
@@ -303,17 +220,6 @@ function idleRuntime(): RuntimeStatus {
   };
 }
 
-/** `12345ms` → `12.3s`, `92345ms` → `1m 32s`. */
-function formatTurnDuration(ms: number): string {
-  const seconds = ms / 1000;
-  if (seconds < 60) {
-    return `${seconds.toFixed(1)}s`;
-  }
-  const minutes = Math.floor(seconds / 60);
-  const rest = Math.round(seconds % 60);
-  return `${minutes}m ${rest}s`;
-}
-
 /** Phases where the runtime is parked on the user: no turn in flight, nothing to time. */
 function isInactivePhase(phase: RuntimePhase): boolean {
   return phase === "idle" || phase === "awaiting_user";
@@ -336,9 +242,10 @@ export const useOutputStore = create<OutputState>((set) => ({
   beginTool: ({ toolName, summary }) => {
     // Numbered here, when the call starts, so parallel tools read in the order
     // the model issued them rather than the order they happen to finish in.
+    const ordinal = historySequence.nextToolOrdinal();
     const handle: ToolCallHandle = {
-      id: `tc_${toolName}_${++toolOrdinalCounter}`,
-      ordinal: toolOrdinalCounter,
+      id: `tc_${toolName}_${ordinal}`,
+      ordinal,
     };
     set((state) => {
       const patch: Partial<OutputState> = {
@@ -418,7 +325,7 @@ export const useOutputStore = create<OutputState>((set) => ({
 
   logUser: (content) =>
     set((state) => ({
-      history: [...state.history, { id: `u_${turnIdCounter++}`, type: "user", content }],
+      history: [...state.history, userTurn(historySequence, content)],
     })),
 
   logAssistant: (content) => {
@@ -429,34 +336,12 @@ export const useOutputStore = create<OutputState>((set) => ({
         state.runtime.turnStartedAt === null
           ? null
           : Math.max(0, Date.now() - state.runtime.turnStartedAt);
-      // The reply's rows, in order: the streamed remainder (when the final text duplicated
-      // it), the assistant turn itself, and the one-line timing notice.
-      const turns: Turn[] = [];
-      if (shouldHideFinal && visualRemainder.length > 0) {
-        turns.push({
-          id: `as_${turnIdCounter++}`,
-          type: "assistant_stream",
-          content: visualRemainder,
-          final: true,
-        });
-      }
-      turns.push({
-        id: `a_${turnIdCounter++}`,
-        type: "assistant",
+      const turns = assistantCompletionTurns(historySequence, {
         content,
-        hidden: shouldHideFinal,
+        visualRemainder,
+        shouldHideFinal,
+        durationMs: duration,
       });
-      if (duration !== null) {
-        // One dim line after the reply: how long the agent worked, so a slow run
-        // leaves evidence in scrollback even after the status line resets. Skipped
-        // when no turn actually ran (e.g. resumed/hydrated sessions).
-        turns.push({
-          id: `s_${turnIdCounter++}`,
-          type: "system",
-          content: `Worked for ${formatTurnDuration(duration)}`,
-          oneLine: true,
-        });
-      }
       return {
         history: [...state.history, ...turns],
         streamBuffer: "",
@@ -473,10 +358,8 @@ export const useOutputStore = create<OutputState>((set) => ({
     set((state) => ({
       history: [
         ...state.history,
-        ...(tail.length > 0
-          ? [{ id: `as_${turnIdCounter++}`, type: "assistant_stream" as const, content: tail }]
-          : []),
-        { id: `tr_${turnIdCounter++}`, type: "tool_round" as const, calls },
+        ...(tail.length > 0 ? [assistantStreamTurn(historySequence, tail)] : []),
+        toolRoundTurn(historySequence, calls),
       ],
       streamBuffer: "",
     }));
@@ -498,21 +381,13 @@ export const useOutputStore = create<OutputState>((set) => ({
       const patch: Partial<OutputState> = {
         history: [
           ...state.history,
-          {
-            id: `t_${turnIdCounter++}`,
-            type: "tool",
-            content: block.summary,
-            tool: {
-              ...block,
-              // Without a handle the host never numbered this call, so fall back to
-              // the order blocks land in.
-              ordinal:
-                block.ordinal ??
-                state.history.filter(
-                  (turn): turn is Extract<Turn, { type: "tool" }> => turn.type === "tool",
-                ).length + 1,
-            },
-          },
+          toolTurn(
+            historySequence,
+            block,
+            // Without a handle the host never numbered this call, so fall back to
+            // the order blocks land in.
+            state.history.filter((turn) => turn.type === "tool").length + 1,
+          ),
         ],
         runningTools,
       };
@@ -532,13 +407,13 @@ export const useOutputStore = create<OutputState>((set) => ({
   logDiff: (diff) => {
     flushPendingStream();
     set((state) => ({
-      history: [...state.history, { id: `d_${turnIdCounter++}`, type: "diff", diff }],
+      history: [...state.history, diffTurn(historySequence, diff)],
     }));
   },
 
   logBanner: (banner) =>
     set((state) => ({
-      history: [...state.history, { id: `b_${turnIdCounter++}`, type: "banner", banner }],
+      history: [...state.history, bannerTurn(historySequence, banner)],
     })),
 
   logSystem: (content, options) => {
@@ -558,16 +433,8 @@ export const useOutputStore = create<OutputState>((set) => ({
       history: [
         ...state.history,
         // Ahead of the notice: this text was written before whatever the notice reports.
-        ...(tail.length > 0
-          ? [
-              {
-                id: `as_${turnIdCounter++}`,
-                type: "assistant_stream" as const,
-                content: tail,
-              },
-            ]
-          : []),
-        { id: `s_${turnIdCounter++}`, type: "system" as const, content, oneLine: options?.oneLine },
+        ...(tail.length > 0 ? [assistantStreamTurn(historySequence, tail)] : []),
+        systemTurn(historySequence, content, options?.oneLine),
       ],
       streamBuffer: "",
     }));
@@ -578,9 +445,9 @@ export const useOutputStore = create<OutputState>((set) => ({
     set({ streamBuffer: "", runningTools: [], runtime: idleRuntime() });
   },
   clearHistory: () => {
-    // turnIdCounter keeps counting: ids must stay unique across clearedStaticTurns + history.
+    // Turn ids keep counting: they must stay unique across clearedStaticTurns + history.
     // Ordinals do restart: `/expand-tool #N` only searches the live history, which is now empty.
-    toolOrdinalCounter = 0;
+    historySequence.resetToolOrdinals();
     clearStreamState();
     set((state) => ({
       clearedStaticTurns: [...state.clearedStaticTurns, ...state.history],
@@ -593,7 +460,7 @@ export const useOutputStore = create<OutputState>((set) => ({
   hydrateHistory: (items) => {
     clearStreamState();
     set((state) => ({
-      history: [...state.history, ...items.map(transcriptTurn)],
+      history: [...state.history, ...projectTranscriptHistory(items)],
       streamBuffer: "",
       runningTools: [],
       runtime: idleRuntime(),
@@ -631,8 +498,7 @@ export function statusTimerAnchor(turnStartedAt: number | null, phaseSince: numb
 
 /** Clear history/stream for a new CLI session (singleton store). */
 export function resetOutputSession(): void {
-  turnIdCounter = 0;
-  toolOrdinalCounter = 0;
+  historySequence.reset();
   clearStreamState();
   useOutputStore.setState({
     streamBuffer: "",

@@ -4,7 +4,7 @@ import stringWidth from "string-width";
 import stripAnsi from "strip-ansi";
 import { describe, expect, it } from "vitest";
 import { HistoryItem } from "./HistoryItem";
-import type { Turn } from "./useOutputStore";
+import type { Turn } from "./model";
 
 const COLUMNS = 60;
 

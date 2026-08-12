@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ToolBlock } from "./history/model";
 import {
   isRuntimeActive,
   resetOutputSession,
   statusTimerAnchor,
   TOOL_FULL_CAP,
-  type ToolBlock,
   useOutputStore,
 } from "./useOutputStore";
 

@@ -7,7 +7,7 @@ import { Box, measureElement, Static, Text, useInput, useWindowSize } from "ink"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { LineInputValue } from "../../shared/host/inputBindings";
 import type { RuntimePhase } from "../../shared/host/presentationBindings";
-import { HistoryItem } from "../conversation-display/HistoryItem";
+import { HistoryItem } from "../conversation-display/history/HistoryItem";
 import { ToolTranscriptOverlay } from "../conversation-display/tool-transcript/ToolTranscriptOverlay";
 import { useToolTranscriptViewStore } from "../conversation-display/tool-transcript/viewStore";
 import { composeToolTailWindow } from "../conversation-display/toolTailWindow";
