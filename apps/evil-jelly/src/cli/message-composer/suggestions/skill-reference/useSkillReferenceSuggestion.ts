@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { UserSkillReference } from "../../../../shared/host/inputBindings";
 import type { TextBuffer } from "../../editor/document/textBuffer";
-import type { SkillPickerItem } from "../../session/composerStore";
+import type { SkillPickerItem } from "../../session/composerSession";
 import { filterSkillPickerItems } from "./skillMatching";
 import {
   activeSkillTrigger,

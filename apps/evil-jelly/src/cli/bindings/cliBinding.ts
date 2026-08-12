@@ -14,7 +14,10 @@ import type { AgentModeBindings } from "../../shared/host/modeBindings";
 import type { ConversationPresentationBindings } from "../../shared/host/presentationBindings";
 import type { ToolConfirmationBindings } from "../../shared/host/toolConfirmationBindings";
 import { resetInterruptibleTaskStack } from "../../shared/task-interruption/taskStack";
-import { resetPromptSession, usePromptStore } from "../message-composer/session/composerStore";
+import {
+  resetComposerSession,
+  useComposerSession,
+} from "../message-composer/session/composerSession";
 import type { DecisionView } from "../operator-decision/model";
 import {
   createOperatorDecision,
@@ -41,7 +44,7 @@ function toDecisionView(view?: PromptChoiceView): DecisionView | undefined {
 function resetCliBindingSession(): void {
   resetLineInputQueue();
   resetOperatorDecisionSession();
-  resetPromptSession();
+  resetComposerSession();
   resetOutputSession();
   resetModeSession();
   resetViewSession();
@@ -148,7 +151,7 @@ function createPromptBindings(options: {
     getAgentMode: () => useModeStore.getState().mode,
     requestChoice: createInkRequestChoice(),
     setAvailableSkills: (skills) => {
-      usePromptStore.getState().setAvailableSkills(skills);
+      useComposerSession.getState().setAvailableSkills(skills);
     },
   };
 }

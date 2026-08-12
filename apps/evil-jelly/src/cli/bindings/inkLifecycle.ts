@@ -2,7 +2,7 @@ import { type Instance, render } from "ink";
 import React from "react";
 import { hasActiveInterruptibleTask } from "../../shared/task-interruption/taskStack";
 import { createInteractiveCommandHandler } from "../app/orchestration/interactiveCommands";
-import { usePromptStore } from "../message-composer/session/composerStore";
+import { useComposerSession } from "../message-composer/session/composerSession";
 import { requestRunAbort } from "../runtime/runControl";
 import { pruneClearedStaticTurns, useOutputStore } from "../store/useOutputStore";
 import { useViewStore } from "../store/useViewStore";
@@ -83,7 +83,7 @@ export function mountInkApp(): Instance {
     React.createElement(Dashboard, {
       onCtrlCAbort: handleCtrlCAbort,
       hasInterruptibleTask: hasActiveInterruptibleTask,
-      onInterrupt: () => usePromptStore.getState().submitLine("/stop"),
+      onInterrupt: () => useComposerSession.getState().submitLine({ text: "/stop" }),
       onCycleMode: () => {
         useModeStore.getState().cycleMode();
       },

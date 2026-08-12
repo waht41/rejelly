@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resetPromptSession, usePromptStore } from "../message-composer/session/composerStore";
+import {
+  resetComposerSession,
+  useComposerSession,
+} from "../message-composer/session/composerSession";
 import { registerRunAbort } from "../runtime/runControl";
 import { takePendingExit } from "../runtime/sessionRunControl";
 import { enqueueSteer } from "../runtime/steerControl";
@@ -13,7 +16,7 @@ async function flushMicrotasks(): Promise<void> {
 
 function resetCliStores(): void {
   resetLineInputQueue();
-  resetPromptSession();
+  resetComposerSession();
   resetOutputSession();
   takePendingExit();
 }
@@ -24,7 +27,7 @@ describe("createInkGetInput", () => {
     const getInput = createInkGetInput();
 
     const pending = getInput();
-    usePromptStore.getState().submitLine("exit");
+    useComposerSession.getState().submitLine({ text: "exit", attachments: [] });
 
     await expect(pending).resolves.toEqual({ text: "exit", attachments: [] });
     expect(takePendingExit()).toBe(false);
@@ -36,7 +39,7 @@ describe("createInkGetInput", () => {
     const unregister = registerRunAbort((reason) => reasons.push(reason));
     createInkGetInput();
 
-    usePromptStore.getState().submitLine("/exit");
+    useComposerSession.getState().submitLine({ text: "/exit" });
 
     unregister();
     expect(takePendingExit()).toBe(true);
@@ -47,7 +50,7 @@ describe("createInkGetInput", () => {
     resetCliStores();
     const getInput = createInkGetInput();
 
-    usePromptStore.getState().submitLine("please steer this");
+    useComposerSession.getState().submitLine({ text: "please steer this", attachments: [] });
 
     await expect(getInput()).resolves.toEqual({
       text: "please steer this",
@@ -59,8 +62,8 @@ describe("createInkGetInput", () => {
     resetCliStores();
     const getInput = createInkGetInput();
 
-    usePromptStore.getState().submitLine("first steer");
-    usePromptStore.getState().submitLine("second steer");
+    useComposerSession.getState().submitLine({ text: "first steer", attachments: [] });
+    useComposerSession.getState().submitLine({ text: "second steer", attachments: [] });
 
     await expect(getInput()).resolves.toEqual({ text: "first steer", attachments: [] });
     await expect(getInput()).resolves.toEqual({ text: "second steer", attachments: [] });
@@ -71,15 +74,15 @@ describe("createInkGetInput", () => {
     const getInput = createInkGetInput();
     enqueueSteer({ text: "queued steer" });
 
-    usePromptStore.getState().submitLine("/stop");
+    useComposerSession.getState().submitLine({ text: "/stop" });
 
-    expect(usePromptStore.getState().draftSeed?.value).toEqual({
+    expect(useComposerSession.getState().draftSeed?.value).toEqual({
       text: "queued steer",
       attachments: [],
     });
     const pending = getInput();
     await flushMicrotasks();
-    usePromptStore.getState().submitLine("manual next input");
+    useComposerSession.getState().submitLine({ text: "manual next input", attachments: [] });
     await expect(pending).resolves.toEqual({ text: "manual next input", attachments: [] });
   });
 });

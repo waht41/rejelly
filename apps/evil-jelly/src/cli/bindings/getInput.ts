@@ -3,7 +3,7 @@ import {
   interruptActiveTask,
   type TaskInterruptionResult,
 } from "../../shared/task-interruption/taskStack";
-import { usePromptStore } from "../message-composer/session/composerStore";
+import { useComposerSession } from "../message-composer/session/composerSession";
 import { requestRunAbort } from "../runtime/runControl";
 import { requestExit } from "../runtime/sessionRunControl";
 import { drainSteers, enqueueSteer } from "../runtime/steerControl";
@@ -42,7 +42,7 @@ function formatTaskInterruption(result: TaskInterruptionResult): string {
 
 export function createInkGetInput(options?: InkGetInputOptions): () => Promise<LineInputValue> {
   let pendingSeed = options?.seedLine !== undefined;
-  usePromptStore.getState().setBackgroundLineHandler((rawValue) => {
+  useComposerSession.getState().setBackgroundLineHandler((rawValue) => {
     const value = rawValue.text.trim();
     if (value.length === 0) {
       return;

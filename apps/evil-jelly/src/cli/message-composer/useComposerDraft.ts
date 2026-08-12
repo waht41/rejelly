@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { UserAttachment, UserSkillReference } from "../../shared/host/inputBindings";
 import type { TextBuffer } from "./editor/document/textBuffer";
 import { useTextBuffer } from "./editor/document/textBuffer";
 import { useCollapsedPaste } from "./editor/paste/useCollapsedPaste";
 import { attachedImages, imageToken, shiftImageTokens } from "./imageAttachments";
-import type { SkillPickerItem } from "./session/composerStore";
-import { usePromptStore } from "./session/composerStore";
+import type { SkillPickerItem } from "./session/composerSession";
+import { useComposerSession } from "./session/composerSession";
 import {
   hydrateSkillTokens,
   selectedSkillReferenceName,
@@ -28,6 +28,18 @@ export interface ComposerDraft {
   createSkillTokenId: () => string;
 }
 
+function uniquePaths(paths: string[]): string[] {
+  const seen = new Set<string>();
+  return paths.filter((path) => {
+    const normalized = path.trim();
+    if (!normalized || seen.has(normalized)) {
+      return false;
+    }
+    seen.add(normalized);
+    return true;
+  });
+}
+
 /** Owns one editable draft from hydration through materialization and submission. */
 export function useComposerDraft({
   label,
@@ -36,41 +48,37 @@ export function useComposerDraft({
   label: string;
   onCommand: (text: string) => boolean;
 }): ComposerDraft {
-  const submitLine = usePromptStore((state) => state.submitLine);
-  const selectedFiles = usePromptStore((state) => state.selectedFiles);
-  const selectedImages = usePromptStore((state) => state.selectedImages);
-  const selectedSkills = usePromptStore((state) => state.selectedSkills);
-  const availableSkills = usePromptStore((state) => state.availableSkills);
-  const draftSeed = usePromptStore((state) => state.draftSeed);
-  const setSelectedFiles = usePromptStore((state) => state.setSelectedFiles);
-  const setSelectedImages = usePromptStore((state) => state.setSelectedImages);
-  const setSelectedSkills = usePromptStore((state) => state.setSelectedSkills);
-  const removeSelectedFile = usePromptStore((state) => state.removeSelectedFile);
-  const clearSelectedFiles = usePromptStore((state) => state.clearSelectedFiles);
-  const addSelectedImage = usePromptStore((state) => state.addSelectedImage);
-  const clearSelectedImages = usePromptStore((state) => state.clearSelectedImages);
-  const clearSelectedSkills = usePromptStore((state) => state.clearSelectedSkills);
-  const clearDraftSeed = usePromptStore((state) => state.clearDraftSeed);
+  const submitLine = useComposerSession((state) => state.submitLine);
+  const availableSkills = useComposerSession((state) => state.availableSkills);
+  const draftSeed = useComposerSession((state) => state.draftSeed);
+  const clearDraftSeed = useComposerSession((state) => state.clearDraftSeed);
+  const [selectedFiles, setSelectedFilesState] = useState<string[]>([]);
+  const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const buffer = useTextBuffer();
   const collapsedPaste = useCollapsedPaste(buffer);
   const nextSkillTokenIdRef = useRef(1);
+  const selectedSkills = useMemo(
+    () => skillReferencesFromDocument(buffer.document),
+    [buffer.document],
+  );
+
+  const setSelectedFiles = useCallback((paths: string[]) => {
+    setSelectedFilesState(uniquePaths(paths));
+  }, []);
+
+  const removeSelectedFile = useCallback((path: string) => {
+    setSelectedFilesState((files) => files.filter((selected) => selected !== path));
+  }, []);
 
   const createSkillTokenId = useCallback(() => `skill-${nextSkillTokenIdRef.current++}`, []);
 
   const clear = useCallback(() => {
     buffer.reset();
-    clearSelectedFiles();
-    clearSelectedImages();
-    clearSelectedSkills();
+    setSelectedFilesState([]);
+    setSelectedImages([]);
     collapsedPaste.reset();
     nextSkillTokenIdRef.current = 1;
-  }, [
-    buffer.reset,
-    clearSelectedFiles,
-    clearSelectedImages,
-    clearSelectedSkills,
-    collapsedPaste.reset,
-  ]);
+  }, [buffer.reset, collapsedPaste.reset]);
 
   const submitText = useCallback(
     (text: string) => {
@@ -87,51 +95,44 @@ export function useComposerDraft({
           mimeType: "image/png" as const,
         })),
       ];
-      submitLine(expandedText, attachments, skillReferencesFromDocument(buffer.document));
+      submitLine({
+        text: expandedText.trim(),
+        attachments,
+        ...(selectedSkills.length > 0 ? { skills: selectedSkills } : {}),
+      });
       clear();
     },
     [
-      buffer.document,
       clear,
       collapsedPaste.expand,
       onCommand,
       selectedFiles,
       selectedImages,
+      selectedSkills,
       submitLine,
     ],
   );
 
   const attachImage = useCallback(
     (path: string) => {
-      addSelectedImage(path);
-      const imageCount = usePromptStore.getState().selectedImages.length;
-      buffer.insert(imageToken(imageCount));
+      const normalized = path.trim();
+      if (!normalized) {
+        return;
+      }
+      const existingIndex = selectedImages.indexOf(normalized);
+      const imageIndex = existingIndex >= 0 ? existingIndex + 1 : selectedImages.length + 1;
+      if (existingIndex < 0) {
+        setSelectedImages((images) => [...images, normalized]);
+      }
+      buffer.insert(imageToken(imageIndex));
     },
-    [addSelectedImage, buffer.insert],
+    [buffer.insert, selectedImages],
   );
 
-  // Keep the external compatibility selection synchronized with semantic Skill tokens.
-  useEffect(() => {
-    const present = skillReferencesFromDocument(buffer.document);
-    const unchanged =
-      present.length === selectedSkills.length &&
-      present.every(
-        (reference, index) => reference.qualifiedName === selectedSkills[index]?.qualifiedName,
-      );
-    if (!unchanged) {
-      setSelectedSkills(present);
-    }
-  }, [buffer.document, selectedSkills, setSelectedSkills]);
-
-  // A new prompt identity starts with an empty draft; unmount drops local selections too.
+  // A new prompt identity starts with an empty local draft.
   useEffect(() => {
     clear();
-    return () => {
-      clearSelectedFiles();
-      clearSelectedImages();
-      clearSelectedSkills();
-    };
-  }, [label, clear, clearSelectedFiles, clearSelectedImages, clearSelectedSkills]);
+  }, [label, clear]);
 
   // Restore queued steers into the live editor exactly once.
   useEffect(() => {
@@ -159,8 +160,7 @@ export function useComposerDraft({
       ),
     );
     setSelectedFiles([...seedFiles, ...selectedFiles]);
-    setSelectedImages([...seedImages, ...selectedImages]);
-    setSelectedSkills(restoredSkills);
+    setSelectedImages(uniquePaths([...seedImages, ...selectedImages]));
     clearDraftSeed(draftSeed.id);
   }, [
     draftSeed,
@@ -172,7 +172,6 @@ export function useComposerDraft({
     availableSkills,
     setSelectedFiles,
     setSelectedImages,
-    setSelectedSkills,
     clearDraftSeed,
     createSkillTokenId,
   ]);

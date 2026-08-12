@@ -32,7 +32,7 @@ import { useEffect, useRef, useState } from "react";
 import { BufferView } from "./editor/BufferView";
 import { useLineKeybindings } from "./editor/keyboard/useLineKeybindings";
 import { usePromptLayout } from "./editor/usePromptLayout";
-import { MAX_SELECTED_SKILLS } from "./session/composerStore";
+import { MAX_SELECTED_SKILLS } from "./session/composerSession";
 import type { ComposerPickerKeyHandler } from "./suggestions/ComposerPicker";
 import { ComposerSuggestionOverlay } from "./suggestions/ComposerSuggestionOverlay";
 import { useCommandSuggestion } from "./suggestions/commands/useCommandSuggestion";

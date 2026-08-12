@@ -1,5 +1,5 @@
 import type { LineInputValue, UserAttachment } from "../../shared/host/inputBindings";
-import { usePromptStore } from "../message-composer/session/composerStore";
+import { useComposerSession } from "../message-composer/session/composerSession";
 import { drainSteers } from "../runtime/steerControl";
 
 function mergeAttachments(inputs: LineInputValue[]): UserAttachment[] {
@@ -12,7 +12,7 @@ export function restoreSteersToPrompt(): number {
     return 0;
   }
   const skills = steers.flatMap((input) => input.skills ?? []);
-  usePromptStore.getState().seedDraft({
+  useComposerSession.getState().seedDraft({
     text: steers
       .map((input) => input.text.trim())
       .filter(Boolean)
