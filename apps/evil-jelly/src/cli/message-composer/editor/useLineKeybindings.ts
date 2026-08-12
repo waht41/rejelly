@@ -13,7 +13,7 @@
 
 import { type Key, useInput } from "ink";
 import { useRef } from "react";
-import { normalizeNewlines } from "../../shared/foundation/string";
+import { normalizeNewlines } from "../../../shared/foundation/string";
 import { looksBinary, stripControlChars } from "./lineText";
 import {
   caretLeft,

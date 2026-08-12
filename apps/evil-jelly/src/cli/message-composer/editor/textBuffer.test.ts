@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { replaceAtToken } from "../message-composer/suggestions/file-reference/atTrigger";
+import { replaceAtToken } from "../suggestions/file-reference/atTrigger";
 import { deletePlaceholderOrChar } from "./placeholderMotion";
 import {
   documentLogicalLength,

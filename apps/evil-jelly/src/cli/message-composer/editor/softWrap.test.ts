@@ -110,3 +110,15 @@ describe("verticalCaretTarget", () => {
     expect(caretCell(rows, target.cursor, target.affinity)).toEqual({ row: 0, col: 4 });
   });
 });
+
+describe("CJK wrapping", () => {
+  it("keeps prompt wrapping lossless so caret offsets remain source offsets", () => {
+    const input = "在一条消息里调用 grep 和 list_directory，然后继续";
+    const rows = wrapRows(input, 16);
+
+    expect(rows.map((row) => row.text).join("")).toBe(input);
+    expect(rows.map((row) => row.start)).toEqual(
+      rows.map((_, index) => rows.slice(0, index).reduce((sum, row) => sum + row.text.length, 0)),
+    );
+  });
+});

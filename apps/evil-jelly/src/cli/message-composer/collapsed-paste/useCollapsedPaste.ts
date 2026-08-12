@@ -6,8 +6,8 @@ import {
   type PasteRun,
   pastedTextToken,
   pastedTextTokenBefore,
-} from "../../prompt-editor/lineText";
-import type { TextBuffer } from "../../prompt-editor/textBuffer";
+} from "../editor/lineText";
+import type { TextBuffer } from "../editor/textBuffer";
 
 const PASTE_CHUNK_MERGE_MS = 120;
 

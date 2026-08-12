@@ -1,5 +1,5 @@
 /**
- * Line input backed by a single text buffer + caret (see ../prompt-editor/textBuffer), so
+ * Line input backed by a single text buffer + caret (see ./editor/textBuffer), so
  * single- and multi-line editing share one model with full caret movement
  * (←/→, ↑/↓, Home/End, word-jump) and editing (backspace, word/line delete).
  *
@@ -21,7 +21,7 @@
  * deleting the token drops the image from the submitted turn.
  *
  * Rendering: the prompt soft-wraps the buffer itself (see
- * ../prompt-editor/softWrap) rather than handing Ink a long line to wrap.
+ * ./editor/softWrap) rather than handing Ink a long line to wrap.
  * The caret is a terminal cell, so it has to be placed in *physical* rows and
  * columns; owning the wrap is what lets the painted rows and the caret's
  * position come from one list instead of two guesses that drift apart.
@@ -31,13 +31,13 @@ import type { DOMElement } from "ink";
 import { Box, Text, useCursor, useStdout } from "ink";
 import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
 import stringWidth from "string-width";
-import { attachedImages } from "../prompt-editor/lineText";
-import type { ProjectedTokenSpan } from "../prompt-editor/promptDocument";
-import { projectedDisplayRuns } from "../prompt-editor/promptDocument";
-import { caretCell, type WrappedRow, wrapRows } from "../prompt-editor/softWrap";
-import { useTextBuffer } from "../prompt-editor/textBuffer";
-import { useLineKeybindings } from "../prompt-editor/useLineKeybindings";
 import { useCollapsedPaste } from "./collapsed-paste/useCollapsedPaste";
+import { attachedImages } from "./editor/lineText";
+import type { ProjectedTokenSpan } from "./editor/promptDocument";
+import { projectedDisplayRuns } from "./editor/promptDocument";
+import { caretCell, type WrappedRow, wrapRows } from "./editor/softWrap";
+import { useTextBuffer } from "./editor/textBuffer";
+import { useLineKeybindings } from "./editor/useLineKeybindings";
 import { MAX_SELECTED_SKILLS, usePromptStore } from "./session/composerStore";
 import type { ComposerPickerKeyHandler } from "./suggestions/ComposerPicker";
 import { ComposerSuggestionOverlay } from "./suggestions/ComposerSuggestionOverlay";

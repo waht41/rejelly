@@ -3,7 +3,6 @@ import stringWidth from "string-width";
 import stripAnsi from "strip-ansi";
 import { describe, expect, it } from "vitest";
 import wrapAnsi from "wrap-ansi";
-import { wrapRows } from "../prompt-editor/softWrap";
 
 const OPTIONS = { hard: true, trim: false } as const;
 const FORBIDDEN_LINE_START =
@@ -56,15 +55,5 @@ describe("patched wrap-ansi CJK wrapping", () => {
     expect(lines.every((line) => stringWidth(line) <= 8)).toBe(true);
     expect(wrapped).toContain("https://example.com/a");
     expect(wrapped).toContain("\u001B[31m");
-  });
-
-  it("keeps prompt wrapping lossless so caret offsets remain source offsets", () => {
-    const input = "在一条消息里调用 grep 和 list_directory，然后继续";
-    const rows = wrapRows(input, 16);
-
-    expect(rows.map((row) => row.text).join("")).toBe(input);
-    expect(rows.map((row) => row.start)).toEqual(
-      rows.map((_, index) => rows.slice(0, index).reduce((sum, row) => sum + row.text.length, 0)),
-    );
   });
 });

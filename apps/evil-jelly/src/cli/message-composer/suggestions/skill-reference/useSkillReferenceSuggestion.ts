@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { UserSkillReference } from "../../../../shared/host/inputBindings";
-import type { TextBuffer } from "../../../prompt-editor/textBuffer";
+import type { TextBuffer } from "../../editor/textBuffer";
 import type { SkillPickerItem } from "../../session/composerStore";
 import { filterSkillPickerItems } from "./skillMatching";
 import {
