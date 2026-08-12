@@ -40,37 +40,25 @@ import {
   pastedTextToken,
   pastedTextTokenBefore,
 } from "../prompt-editor/lineText";
-import type { ProjectedTokenSpan, SkillPromptToken } from "../prompt-editor/promptDocument";
+import type { ProjectedTokenSpan } from "../prompt-editor/promptDocument";
 import { projectedDisplayRuns } from "../prompt-editor/promptDocument";
 import { caretCell, type WrappedRow, wrapRows } from "../prompt-editor/softWrap";
 import { useTextBuffer } from "../prompt-editor/textBuffer";
 import { useLineKeybindings } from "../prompt-editor/useLineKeybindings";
-import { MAX_SELECTED_SKILLS, type SkillPickerItem, usePromptStore } from "./session/composerStore";
+import { MAX_SELECTED_SKILLS, usePromptStore } from "./session/composerStore";
 import type { ComposerPickerKeyHandler } from "./suggestions/ComposerPicker";
-import { SlashCommandOverlay } from "./suggestions/commands/SlashCommandOverlay";
-import { extractSlashQuery, filterSlashCommands } from "./suggestions/commands/slashCommands";
+import { ComposerSuggestionOverlay } from "./suggestions/ComposerSuggestionOverlay";
+import { useCommandSuggestion } from "./suggestions/commands/useCommandSuggestion";
+import { useFileReferenceSuggestion } from "./suggestions/file-reference/useFileReferenceSuggestion";
 import {
-  extractAtQuery,
-  refsMissingFromText,
-  replaceAtToken,
-} from "./suggestions/file-reference/atTrigger";
-import { FilePickerOverlay } from "./suggestions/file-reference/FilePickerOverlay";
-import {
-  filterSkillPickerItems,
-  SkillPickerOverlay,
-} from "./suggestions/skill-reference/SkillPickerOverlay";
-import {
-  activeSkillTrigger,
-  extractSkillQuery,
   hydrateSkillTokens,
-  replaceSkillToken,
   selectedSkillReferenceName,
-  skillReferenceName,
   skillReferencesFromDocument,
 } from "./suggestions/skill-reference/skillTrigger";
+import { useSkillReferenceSuggestion } from "./suggestions/skill-reference/useSkillReferenceSuggestion";
 
-const MIN_FILE_PICKER_ROWS = 5;
-const MAX_FILE_PICKER_ROWS = 10;
+const MIN_SUGGESTION_ROWS = 5;
+const MAX_SUGGESTION_ROWS = 10;
 const PASTE_CHUNK_MERGE_MS = 120;
 
 interface PastedText {
@@ -209,16 +197,12 @@ export function MessageComposer({
   const rowRef = useRef<DOMElement>(null);
   const buf = useTextBuffer();
   const [textArea, setTextArea] = useState<TextArea | null>(null);
-  const [atQuery, setAtQuery] = useState<string | null>(null);
-  const [slashQuery, setSlashQuery] = useState<string | null>(null);
-  const [skillQuery, setSkillQuery] = useState<string | null>(null);
   const [terminalRows, setTerminalRows] = useState(stdout.rows || 24);
   const [pasteStatus, setPasteStatus] = useState<string | null>(null);
   const [pastedTexts, setPastedTexts] = useState<PastedText[]>([]);
   const [nextPasteId, setNextPasteId] = useState(1);
   const pastedTextsRef = useRef<PastedText[]>([]);
   const pendingPasteChunkRef = useRef<PendingPasteChunk | null>(null);
-  const nextPromptTokenIdRef = useRef(1);
   // A run of printable input arriving faster than a human types — a paste
   // fragmented into sub-threshold events. We insert each fragment immediately
   // (no typing latency) and retroactively collapse the run once it grows large.
@@ -282,43 +266,65 @@ export function MessageComposer({
     );
   });
 
-  // Track the active token at the caret on any logical/soft-wrapped row.
-  useEffect(() => {
-    setAtQuery(extractAtQuery(buf.text, buf.cursor));
-  }, [buf.text, buf.cursor]);
+  const clearDraft = () => {
+    buf.reset();
+    clearSelectedFiles();
+    clearSelectedImages();
+    clearSelectedSkills();
+    setPasteStatus(null);
+    setPastedTexts([]);
+    pastedTextsRef.current = [];
+    pendingPasteChunkRef.current = null;
+    pasteRunRef.current = null;
+    setNextPasteId(1);
+  };
 
-  // The slash palette opens on a leading `/` command token (single-line only).
-  useEffect(() => {
-    setSlashQuery(isMultiline ? null : extractSlashQuery(buf.text, buf.cursor));
-  }, [buf.text, buf.cursor, isMultiline]);
-
-  // `$` is only an autocomplete trigger. A Skill becomes active after picker selection stores a
-  // structured reference; arbitrary `$text` remains ordinary prompt text.
-  useEffect(() => {
-    const followsSemanticToken = buf.tokenSpans.some(
-      (span) => span.start < buf.cursor && buf.cursor <= span.end,
-    );
-    setSkillQuery(followsSemanticToken ? null : extractSkillQuery(buf.text, buf.cursor));
-  }, [buf.text, buf.cursor, buf.tokenSpans]);
-
-  useEffect(() => {
-    const present = skillReferencesFromDocument(buf.document);
-    const unchanged =
-      present.length === selectedSkills.length &&
-      present.every(
-        (reference, index) => reference.qualifiedName === selectedSkills[index]?.qualifiedName,
-      );
-    if (!unchanged) {
-      setSelectedSkills(present);
+  const submitText = (text: string) => {
+    const expandedText = expandPastedTextTokens(text, pastedTextsRef.current);
+    if (onCommand(expandedText.trim())) {
+      clearDraft();
+      return;
     }
-  }, [buf.document, selectedSkills, setSelectedSkills]);
+    // Only images whose `[Image #N]` token still survives in the text are sent —
+    // deleting the token drops the image.
+    submitLine(
+      expandedText,
+      [
+        ...selectedFiles.map((path) => ({ type: "file" as const, path })),
+        ...attachedImages(expandedText, selectedImages).map((path) => ({
+          type: "image" as const,
+          path,
+          mimeType: "image/png" as const,
+        })),
+      ],
+      skillReferencesFromDocument(buf.document),
+    );
+    clearDraft();
+  };
+
+  const commandSuggestion = useCommandSuggestion({
+    text: buf.text,
+    cursor: buf.cursor,
+    isMultiline,
+    onSelect: submitText,
+  });
+  const fileSuggestion = useFileReferenceSuggestion({
+    buffer: buf,
+    selectedFiles,
+    setSelectedFiles,
+  });
+  const skillSuggestion = useSkillReferenceSuggestion({
+    buffer: buf,
+    availableSkills,
+    selectedSkills,
+    setSelectedSkills,
+    maxSelectedSkills: MAX_SELECTED_SKILLS,
+    onNotice,
+  });
 
   // Reset for a fresh prompt (new label) and on unmount.
   useEffect(() => {
     buf.reset();
-    setAtQuery(null);
-    setSlashQuery(null);
-    setSkillQuery(null);
     clearSelectedFiles();
     clearSelectedImages();
     clearSelectedSkills();
@@ -356,7 +362,7 @@ export function MessageComposer({
         combinedText,
         restoredSkills,
         (reference) => selectedSkillReferenceName(reference, availableSkills),
-        () => `skill-${nextPromptTokenIdRef.current++}`,
+        skillSuggestion.createTokenId,
       ),
     );
     setSelectedFiles([...seedFiles, ...selectedFiles]);
@@ -374,103 +380,10 @@ export function MessageComposer({
     setSelectedImages,
     setSelectedSkills,
     clearDraftSeed,
+    skillSuggestion.createTokenId,
   ]);
 
-  const clearDraft = () => {
-    buf.reset();
-    setAtQuery(null);
-    setSlashQuery(null);
-    setSkillQuery(null);
-    clearSelectedFiles();
-    clearSelectedImages();
-    clearSelectedSkills();
-    setPasteStatus(null);
-    setPastedTexts([]);
-    pastedTextsRef.current = [];
-    pendingPasteChunkRef.current = null;
-    pasteRunRef.current = null;
-    setNextPasteId(1);
-  };
-
-  const submitText = (text: string) => {
-    const expandedText = expandPastedTextTokens(text, pastedTextsRef.current);
-    if (onCommand(expandedText.trim())) {
-      clearDraft();
-      return;
-    }
-    // Only images whose `[Image #N]` token still survives in the text are sent —
-    // deleting the token drops the image.
-    submitLine(
-      expandedText,
-      [
-        ...selectedFiles.map((path) => ({ type: "file" as const, path })),
-        ...attachedImages(expandedText, selectedImages).map((path) => ({
-          type: "image" as const,
-          path,
-          mimeType: "image/png" as const,
-        })),
-      ],
-      skillReferencesFromDocument(buf.document),
-    );
-    clearDraft();
-  };
-
   const submit = () => submitText(buf.text);
-
-  // Selecting from the palette follows the same path as typed input. The host handles local
-  // commands; unclaimed commands continue through the normal input adapter/application router.
-  const handleSlashSelect = (name: string) => {
-    setSlashQuery(null);
-    submitText(name);
-  };
-
-  const handleFileSelect = (filePath: string) => {
-    // Single-select: append the picked file (setSelectedFiles de-dupes), replace
-    // the active @token with its @ref, and close the picker.
-    setSelectedFiles([...selectedFiles, filePath]);
-    buf.apply((s) => replaceAtToken(s, refsMissingFromText(s.text, [filePath])));
-    setAtQuery(null);
-  };
-
-  const dismissPicker = () => {
-    buf.apply((s) => replaceAtToken(s, []));
-    setAtQuery(null);
-  };
-
-  const handleSkillSelect = (skill: SkillPickerItem) => {
-    if (
-      selectedSkills.length >= MAX_SELECTED_SKILLS &&
-      !selectedSkills.some((selected) => selected.qualifiedName === skill.qualifiedName)
-    ) {
-      onNotice(`At most ${MAX_SELECTED_SKILLS} Skills can be selected for one input.`);
-      buf.apply((state) => replaceSkillToken(state, []));
-      setSkillQuery(null);
-      return;
-    }
-    const trigger = activeSkillTrigger(buf.text, buf.cursor);
-    if (!trigger) {
-      setSkillQuery(null);
-      return;
-    }
-    const token: SkillPromptToken = {
-      type: "token",
-      kind: "skill",
-      id: `skill-${nextPromptTokenIdRef.current++}`,
-      qualifiedName: skill.qualifiedName,
-      displayText: `$${skillReferenceName(skill, availableSkills)}`,
-    };
-    const after = buf.text.slice(trigger.end);
-    buf.replaceDisplayRange(trigger.start, trigger.end, [
-      token,
-      ...(after.length === 0 || !/^\s/.test(after) ? [{ type: "text" as const, text: " " }] : []),
-    ]);
-    setSkillQuery(null);
-  };
-
-  const dismissSkillPicker = () => {
-    buf.apply((state) => replaceSkillToken(state, []));
-    setSkillQuery(null);
-  };
 
   const attachClipboardImage = () => {
     setPasteStatus("Reading clipboard image...");
@@ -561,15 +474,6 @@ export function MessageComposer({
     return true;
   };
 
-  // Slash palette takes priority over the @ picker; a line starting with `/` can't hold an
-  // active @token anyway. With no matching command the palette stays closed and Enter submits.
-  const slashMatches = slashQuery !== null ? filterSlashCommands(slashQuery) : [];
-  const slashOpen = slashMatches.length > 0;
-  const skillMatches =
-    skillQuery === null ? [] : filterSkillPickerItems(availableSkills, skillQuery);
-  const skillPickerOpen = skillQuery !== null && skillMatches.length > 0 && !slashOpen;
-  const filePickerOpen = atQuery !== null && !slashOpen && !skillPickerOpen;
-
   useLineKeybindings({
     buf,
     wrappedRows,
@@ -623,9 +527,9 @@ export function MessageComposer({
     (selectedFiles.length > 0 ? selectedFiles.length + 1 : 0) +
     (selectedSkills.length > 0 ? selectedSkills.length + 1 : 0) +
     wrappedRows.length;
-  const filePickerVisibleRows = Math.min(
-    MAX_FILE_PICKER_ROWS,
-    Math.max(MIN_FILE_PICKER_ROWS, terminalRows - promptRows - promptChromeRows),
+  const suggestionVisibleRows = Math.min(
+    MAX_SUGGESTION_ROWS,
+    Math.max(MIN_SUGGESTION_ROWS, terminalRows - promptRows - promptChromeRows),
   );
 
   return (
@@ -655,31 +559,14 @@ export function MessageComposer({
           <Text dimColor>paste again to expand</Text>
         </Box>
       ) : null}
-      {slashOpen ? (
-        <SlashCommandOverlay
-          commands={slashMatches}
-          onSelect={handleSlashSelect}
-          onCancel={() => setSlashQuery(null)}
-          keySink={overlayKeysRef}
-        />
-      ) : skillPickerOpen ? (
-        <SkillPickerOverlay
-          items={skillMatches}
-          getReferenceName={(skill) => skillReferenceName(skill, availableSkills)}
-          maxVisibleRows={filePickerVisibleRows}
-          onSelect={handleSkillSelect}
-          onCancel={dismissSkillPicker}
-          keySink={overlayKeysRef}
-        />
-      ) : filePickerOpen ? (
-        <FilePickerOverlay
-          query={atQuery ?? ""}
-          maxVisibleRows={filePickerVisibleRows}
-          onSelect={handleFileSelect}
-          onCancel={dismissPicker}
-          keySink={overlayKeysRef}
-        />
-      ) : null}
+      <ComposerSuggestionOverlay
+        command={commandSuggestion}
+        skill={skillSuggestion}
+        file={fileSuggestion}
+        availableSkills={availableSkills}
+        visibleRows={suggestionVisibleRows}
+        keySink={overlayKeysRef}
+      />
     </Box>
   );
 }
