@@ -31,20 +31,13 @@ import type { DOMElement } from "ink";
 import { Box, Text, useCursor, useStdout } from "ink";
 import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
 import stringWidth from "string-width";
-import {
-  attachedImages,
-  coalescePaste,
-  expandPastedTextTokens,
-  PASTE_COALESCE_MS,
-  type PasteRun,
-  pastedTextToken,
-  pastedTextTokenBefore,
-} from "../prompt-editor/lineText";
+import { attachedImages } from "../prompt-editor/lineText";
 import type { ProjectedTokenSpan } from "../prompt-editor/promptDocument";
 import { projectedDisplayRuns } from "../prompt-editor/promptDocument";
 import { caretCell, type WrappedRow, wrapRows } from "../prompt-editor/softWrap";
 import { useTextBuffer } from "../prompt-editor/textBuffer";
 import { useLineKeybindings } from "../prompt-editor/useLineKeybindings";
+import { useCollapsedPaste } from "./collapsed-paste/useCollapsedPaste";
 import { MAX_SELECTED_SKILLS, usePromptStore } from "./session/composerStore";
 import type { ComposerPickerKeyHandler } from "./suggestions/ComposerPicker";
 import { ComposerSuggestionOverlay } from "./suggestions/ComposerSuggestionOverlay";
@@ -59,18 +52,6 @@ import { useSkillReferenceSuggestion } from "./suggestions/skill-reference/useSk
 
 const MIN_SUGGESTION_ROWS = 5;
 const MAX_SUGGESTION_ROWS = 10;
-const PASTE_CHUNK_MERGE_MS = 120;
-
-interface PastedText {
-  id: number;
-  text: string;
-}
-
-interface PendingPasteChunk {
-  id: number;
-  updatedAt: number;
-}
-
 /**
  * Where the text column sits, measured off the laid-out frame rather than
  * guessed: `x`/`y` are its absolute top-left in terminal cells and `width` is
@@ -198,15 +179,8 @@ export function MessageComposer({
   const buf = useTextBuffer();
   const [textArea, setTextArea] = useState<TextArea | null>(null);
   const [terminalRows, setTerminalRows] = useState(stdout.rows || 24);
-  const [pasteStatus, setPasteStatus] = useState<string | null>(null);
-  const [pastedTexts, setPastedTexts] = useState<PastedText[]>([]);
-  const [nextPasteId, setNextPasteId] = useState(1);
-  const pastedTextsRef = useRef<PastedText[]>([]);
-  const pendingPasteChunkRef = useRef<PendingPasteChunk | null>(null);
-  // A run of printable input arriving faster than a human types — a paste
-  // fragmented into sub-threshold events. We insert each fragment immediately
-  // (no typing latency) and retroactively collapse the run once it grows large.
-  const pasteRunRef = useRef<PasteRun | null>(null);
+  const [clipboardImageStatus, setClipboardImageStatus] = useState<string | null>(null);
+  const collapsedPaste = useCollapsedPaste(buf);
   // Key-claim slot shared with whichever picker overlay is mounted: the picker
   // publishes its handler here and the line keybindings offer it each key first.
   const overlayKeysRef = useRef<ComposerPickerKeyHandler | null>(null);
@@ -271,16 +245,12 @@ export function MessageComposer({
     clearSelectedFiles();
     clearSelectedImages();
     clearSelectedSkills();
-    setPasteStatus(null);
-    setPastedTexts([]);
-    pastedTextsRef.current = [];
-    pendingPasteChunkRef.current = null;
-    pasteRunRef.current = null;
-    setNextPasteId(1);
+    setClipboardImageStatus(null);
+    collapsedPaste.reset();
   };
 
   const submitText = (text: string) => {
-    const expandedText = expandPastedTextTokens(text, pastedTextsRef.current);
+    const expandedText = collapsedPaste.expand(text);
     if (onCommand(expandedText.trim())) {
       clearDraft();
       return;
@@ -328,12 +298,8 @@ export function MessageComposer({
     clearSelectedFiles();
     clearSelectedImages();
     clearSelectedSkills();
-    setPasteStatus(null);
-    setPastedTexts([]);
-    pastedTextsRef.current = [];
-    pendingPasteChunkRef.current = null;
-    pasteRunRef.current = null;
-    setNextPasteId(1);
+    setClipboardImageStatus(null);
+    collapsedPaste.reset();
     return () => {
       clearSelectedFiles();
       clearSelectedImages();
@@ -386,7 +352,7 @@ export function MessageComposer({
   const submit = () => submitText(buf.text);
 
   const attachClipboardImage = () => {
-    setPasteStatus("Reading clipboard image...");
+    setClipboardImageStatus("Reading clipboard image...");
     void readClipboardImage().then((result) => {
       if (result.ok) {
         addSelectedImage(result.path);
@@ -394,84 +360,16 @@ export function MessageComposer({
         // image's 1-based slot, so it maps back to this path on submit.
         const num = usePromptStore.getState().selectedImages.length;
         buf.insert(`[Image #${num}]`);
-        setPasteStatus(null);
+        setClipboardImageStatus(null);
         return;
       }
-      setPasteStatus(result.message);
+      setClipboardImageStatus(result.message);
     });
   };
 
   const handleTextPaste = (text: string): boolean => {
-    const tokenBefore = pastedTextTokenBefore(buf.text, buf.cursor);
-    if (tokenBefore) {
-      const id = Number(tokenBefore.match(/#(\d+)/)?.[1]);
-      const pasted = pastedTextsRef.current.find((entry) => entry.id === id);
-      const pending = pendingPasteChunkRef.current;
-      const now = Date.now();
-      if (pasted && pending?.id === id && now - pending.updatedAt <= PASTE_CHUNK_MERGE_MS) {
-        const mergedText = pasted.text + text;
-        const nextToken = pastedTextToken(id, mergedText);
-        pastedTextsRef.current = pastedTextsRef.current.map((entry) =>
-          entry.id === id ? { ...entry, text: mergedText } : entry,
-        );
-        pendingPasteChunkRef.current = { id, updatedAt: now };
-        pasteRunRef.current = null;
-        setPastedTexts(pastedTextsRef.current);
-        buf.apply((s) => ({
-          text: s.text.slice(0, s.cursor - tokenBefore.length) + nextToken + s.text.slice(s.cursor),
-          cursor: s.cursor - tokenBefore.length + nextToken.length,
-        }));
-        setPasteStatus(null);
-        return true;
-      }
-      if (pasted?.text === text) {
-        buf.apply((s) => ({
-          text: s.text.slice(0, s.cursor - tokenBefore.length) + text + s.text.slice(s.cursor),
-          cursor: s.cursor - tokenBefore.length + text.length,
-        }));
-        pendingPasteChunkRef.current = null;
-        pasteRunRef.current = null;
-        setPasteStatus(null);
-        return true;
-      }
-    }
-
-    // Fold this fragment into the current run (or start a fresh one) and insert
-    // it right away — typing stays latency-free. Only a run that grows past the
-    // collapse threshold is promoted to a token, so real typing never collapses.
-    const now = Date.now();
-    const { run, collapse } = coalescePaste(pasteRunRef.current, text, now, PASTE_COALESCE_MS);
-    buf.insert(text);
-    if (!collapse) {
-      pasteRunRef.current = run;
-      setPasteStatus(null);
-      return true;
-    }
-
-    const accum = run.text;
-    const id = nextPasteId;
-    const token = pastedTextToken(id, accum);
-    pastedTextsRef.current = [...pastedTextsRef.current, { id, text: accum }];
-    pendingPasteChunkRef.current = { id, updatedAt: now };
-    pasteRunRef.current = null;
-    setPastedTexts(pastedTextsRef.current);
-    setNextPasteId(id + 1);
-    // Retroactively swap the just-inserted run for its token. A functional
-    // update composes with the queued inserts from this same burst (reading
-    // buf.text/cursor here would be stale); bail if the caret is no longer
-    // right after the run (an edit slipped in mid-burst).
-    buf.apply((s) => {
-      const start = s.cursor - accum.length;
-      if (start < 0 || s.text.slice(start, s.cursor) !== accum) {
-        return s;
-      }
-      return {
-        text: s.text.slice(0, start) + token + s.text.slice(s.cursor),
-        cursor: start + token.length,
-      };
-    });
-    setPasteStatus(null);
-    return true;
+    setClipboardImageStatus(null);
+    return collapsedPaste.handlePaste(text);
   };
 
   useLineKeybindings({
@@ -518,9 +416,6 @@ export function MessageComposer({
     ) : null;
 
   const promptChromeRows = 4;
-  const hasCollapsedPaste = pastedTexts.some((entry) =>
-    buf.text.includes(pastedTextToken(entry.id, entry.text)),
-  );
   // Rough budget for how tall the picker may grow — the rows the prompt itself
   // eats. Sizing only; the caret no longer depends on this estimate.
   const promptRows =
@@ -550,11 +445,11 @@ export function MessageComposer({
           </Text>
         </Box>
       ) : null}
-      {pasteStatus ? (
+      {clipboardImageStatus ? (
         <Box marginTop={1}>
-          <Text dimColor>{pasteStatus}</Text>
+          <Text dimColor>{clipboardImageStatus}</Text>
         </Box>
-      ) : hasCollapsedPaste ? (
+      ) : collapsedPaste.hasCollapsedPaste ? (
         <Box marginTop={1}>
           <Text dimColor>paste again to expand</Text>
         </Box>
