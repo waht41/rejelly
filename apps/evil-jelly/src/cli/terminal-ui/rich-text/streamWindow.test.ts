@@ -2,8 +2,8 @@ import { renderToString } from "ink";
 import { createElement } from "react";
 import stripAnsi from "strip-ansi";
 import { describe, expect, it } from "vitest";
+import { MarkdownViewer } from "./MarkdownViewer";
 import { createStreamTailWindow, measureStreamRows, measureWrappedRows } from "./streamWindow";
-import { MarkdownViewer } from "./viewers/MarkdownViewer";
 
 describe("stream window measurement", () => {
   it("measures wrapped rows with hard wrapping", () => {

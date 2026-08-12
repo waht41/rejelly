@@ -1,7 +1,7 @@
 import { Box } from "ink";
 import type { DecisionView } from "../operator-decision/model";
+import { MarkdownViewer } from "../terminal-ui/rich-text/MarkdownViewer";
 import { DiffBlock } from "./viewers/DiffViewer";
-import { MarkdownViewer } from "./viewers/MarkdownViewer";
 
 export function TransientPane({ view, columns }: { view: DecisionView; columns: number }) {
   if (view.type === "diff") {

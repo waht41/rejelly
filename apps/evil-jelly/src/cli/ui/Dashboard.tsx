@@ -20,14 +20,14 @@ import {
   useOutputStore,
 } from "../store/useOutputStore";
 import { useViewStore } from "../store/useViewStore";
+import { StreamMarkdownViewer } from "../terminal-ui/rich-text/MarkdownViewer";
+import { createStreamTailWindow } from "../terminal-ui/rich-text/streamWindow";
 import { MODE_META, useModeStore } from "../tool-approval/approvalModeStore";
 import { HistoryItem } from "./HistoryItem";
 import { SmartLinePrompt } from "./prompts/SmartLinePrompt";
-import { createStreamTailWindow } from "./streamWindow";
 import { TranscriptOverlay } from "./TranscriptOverlay";
 import { TransientPane } from "./TransientPane";
 import { type CtrlCAbortHandler, useCtrlCAbort } from "./useCtrlCAbort";
-import { StreamMarkdownViewer } from "./viewers/MarkdownViewer";
 
 const STEER_QUEUE_VISIBLE_ROWS = 3;
 const OUTER_VERTICAL_MARGIN_ROWS = 2;

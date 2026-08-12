@@ -1,5 +1,5 @@
 import wrapAnsi from "wrap-ansi";
-import { normalizeNewlines } from "../../shared/foundation/string";
+import { normalizeNewlines } from "../../../shared/foundation/string";
 import {
   markdownHeadingStyle,
   markdownListItemIndent,
@@ -7,8 +7,8 @@ import {
   markdownTableLayout,
   markdownTableRowHeight,
   splitStreamingMarkdown,
-} from "./viewers/MarkdownViewer";
-import { parseMarkdownBlocks } from "./viewers/markdownParser";
+} from "./MarkdownViewer";
+import { parseMarkdownBlocks } from "./markdownParser";
 
 const MIN_COLUMNS = 1;
 const CODE_BLOCK_HORIZONTAL_CHROME = 4;
