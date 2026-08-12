@@ -7,7 +7,7 @@ import { qualifiedSkillName } from "../../../domains/skills/definition/skillDefi
 import type { LineInputValue, UserSkillReference } from "../../../shared/host/inputBindings";
 import { appendMessageContentSuffix } from "../../../shared/model/message/content";
 import { renderPseudoXmlElement } from "../../../shared/model/prompt/pseudoXml";
-import { buildUserMessage } from "./userMessageBuilder";
+import { buildUserMessage } from "./userMessage";
 
 /** Resolve only structured, qualified picker selections against the enabled process snapshot. */
 export function resolveExplicitSkills(

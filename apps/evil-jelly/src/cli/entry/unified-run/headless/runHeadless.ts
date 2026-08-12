@@ -4,10 +4,10 @@ import { SKILL_RUNTIME_PROVIDER_KEY } from "../../../../domains/skills/agent/ski
 import { UnifiedAgent } from "../../../../features/unified/UnifiedAgent";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 import { setBinding } from "../../../../shared/host/context";
+import { buildSkillAwareUserMessage } from "../../../message-composer/submission/skillAwareUserMessage";
 import { runWithReview } from "../../../runtime/runWithReview";
 import { generateTraceId } from "../../../runtime/traceId";
 import { withAbort } from "../../../runtime/withAbort";
-import { buildSkillAwareUserMessage } from "../skillAwareUserMessage";
 import {
   buildConfiguredSkillRuntimeSnapshot,
   formatSkillRuntimeStartupSummary,

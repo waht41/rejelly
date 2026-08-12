@@ -31,10 +31,10 @@ import type { EvilJellyBindings } from "../../../../../shared/host/bindings";
 import { getBinding, setBinding } from "../../../../../shared/host/context";
 import type { LineInputValue } from "../../../../../shared/host/inputBindings";
 import { getUserInputDisplay } from "../../../../../shared/model/message/userInputMetadata";
+import { buildSkillAwareUserMessage } from "../../../../message-composer/submission/skillAwareUserMessage";
 import { requestNewSession, requestResume } from "../../../../runtime/sessionRunControl";
 import { drainSteers } from "../../../../runtime/steerControl";
 import { withAbort } from "../../../../runtime/withAbort";
-import { buildSkillAwareUserMessage } from "../../skillAwareUserMessage";
 import { combineSessionBudget, formatSessionStatus, formatTokenUsageLine } from "./sessionStatus";
 import { formatUserInputDisplay } from "./userInputDisplay";
 

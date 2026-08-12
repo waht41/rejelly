@@ -130,7 +130,7 @@
         "@cli:ui": ["@cli:runtime", "@ext:ui"],
         "@cli:conversation-display": ["@ext:ui"],
         "@cli:terminal-ui": ["@ext:ui"],
-        "@cli:message-composer": ["@domain:skills:agent", "@ext:ui"],
+        "@cli:message-composer": ["@domain:skills:agent", "@domain:skills:definition", "@ext:ui"],
         "@cli:operator-decision": ["@ext:ui"],
         "@cli:tool-approval": ["@ext:ui"]
       }
@@ -145,7 +145,7 @@
           "@cli:model-composition"
         ],
         "@cli:audit-run": ["@cli:runtime"],
-        "@cli:unified-run": ["@cli:runtime"],
+        "@cli:unified-run": ["@cli:runtime", "@cli:message-composer"],
         "@cli:app": ["@cli:tool-approval"],
         "@cli:bindings": [
           "@cli:unified-run",

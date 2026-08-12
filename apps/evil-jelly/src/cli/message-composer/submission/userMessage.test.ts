@@ -7,7 +7,7 @@ import {
   setWorkspaceRoot,
 } from "../../../shared/fs-policy/workspace-fs-policy";
 import { getUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
-import { buildUserMessage } from "./userMessageBuilder";
+import { buildUserMessage } from "./userMessage";
 
 describe("buildUserMessage", () => {
   let prevRoot: string;
