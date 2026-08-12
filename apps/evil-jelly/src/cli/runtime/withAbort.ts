@@ -1,12 +1,12 @@
 import { type AgentMiddleware, getAbortHandle } from "@rejelly/core";
-import { pushRuntimeTask } from "../../shared/runtime/runtimeControl";
+import { registerInterruptibleTask } from "../../shared/task-interruption/taskStack";
 
 export function withAbort<Props = unknown, Result = unknown>(): AgentMiddleware<Props, Result> {
   return {
     name: "withAbort",
     handler: async (ctx, next) => {
       const abortCurrentAgent = getAbortHandle();
-      const popTask = pushRuntimeTask({
+      const unregisterTask = registerInterruptibleTask({
         type: "agent_thinking",
         name: ctx.agentId,
         abort: (reason) => {
@@ -17,7 +17,7 @@ export function withAbort<Props = unknown, Result = unknown>(): AgentMiddleware<
       try {
         return await next();
       } finally {
-        popTask();
+        unregisterTask();
       }
     },
   };

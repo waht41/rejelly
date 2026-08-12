@@ -1,5 +1,8 @@
 import type { LineInputValue } from "../../shared/host/inputBindings";
-import { requestRuntimeStop } from "../../shared/runtime/runtimeControl";
+import {
+  interruptActiveTask,
+  type TaskInterruptionResult,
+} from "../../shared/task-interruption/taskStack";
 import { requestRunAbort } from "../runtime/runControl";
 import { requestExit } from "../runtime/sessionRunControl";
 import { drainSteers, enqueueSteer } from "../runtime/steerControl";
@@ -28,6 +31,13 @@ function isRuntimeSlashCommand(value: string): boolean {
   return value.startsWith("/");
 }
 
+function formatTaskInterruption(result: TaskInterruptionResult): string {
+  if (!result.interrupted) {
+    return "[System] Nothing to stop right now.";
+  }
+  return `[System] Interrupted active task [${result.task.type}] ${result.task.name}.`;
+}
+
 export function createInkGetInput(options?: InkGetInputOptions): () => Promise<LineInputValue> {
   let pendingSeed = options?.seedLine !== undefined;
   usePromptStore.getState().setBackgroundLineHandler((rawValue) => {
@@ -38,8 +48,8 @@ export function createInkGetInput(options?: InkGetInputOptions): () => Promise<L
     const normalized = value.toLowerCase();
     if (normalized === "/stop") {
       restoreSteersToPrompt();
-      const message = requestRuntimeStop();
-      useOutputStore.getState().logSystem(message);
+      const result = interruptActiveTask();
+      useOutputStore.getState().logSystem(formatTaskInterruption(result));
       const abortError = new Error("Stopped by user (/stop or Esc)");
       abortError.name = "AbortError";
       rejectPendingLineInput(abortError);

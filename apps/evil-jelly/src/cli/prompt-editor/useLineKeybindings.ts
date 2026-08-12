@@ -14,7 +14,7 @@
 import { type Key, useInput } from "ink";
 import { useRef } from "react";
 import { normalizeNewlines } from "../../shared/foundation/string";
-import { hasRuntimeTask } from "../../shared/runtime/runtimeControl";
+import { hasActiveInterruptibleTask } from "../../shared/task-interruption/taskStack";
 import { useModeStore } from "../store/useModeStore";
 import { looksBinary, stripControlChars } from "./lineText";
 import {
@@ -133,7 +133,7 @@ export function useLineKeybindings(deps: LineKeybindingDeps): void {
 
     // Only a consecutive vertical-motion sequence keeps its desired visual column.
     preferredColumnRef.current = null;
-    if (key.escape && (isAgentRunning || hasRuntimeTask())) {
+    if (key.escape && (isAgentRunning || hasActiveInterruptibleTask())) {
       submitLine("/stop");
       return;
     }

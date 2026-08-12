@@ -10,7 +10,7 @@ import {
   resolveWorkspaceCwd,
 } from "../../../shared/fs-policy/workspace-fs-policy";
 import { getBinding } from "../../../shared/host/context";
-import { pushRuntimeTask } from "../../../shared/runtime/runtimeControl";
+import { registerInterruptibleTask } from "../../../shared/task-interruption/taskStack";
 import { getActiveToolCall } from "../../../shared/tool-observation/invocationContext";
 import { executeShellCommand, getShellEnvironmentSummary } from "./executeShellCommand";
 
@@ -92,7 +92,7 @@ export const RunCommandTool: ToolDefinition<typeof runCommandParameters> = {
     }
     const contextSignal = getContextSignal();
     const localAbortController = new AbortController();
-    const popTask = pushRuntimeTask({
+    const unregisterTask = registerInterruptibleTask({
       type: "tool_execution",
       name: `run_command: ${command.slice(0, 60)}`,
       abort: (reason) => {
@@ -120,7 +120,7 @@ export const RunCommandTool: ToolDefinition<typeof runCommandParameters> = {
       },
       onOutput,
     ).finally(() => {
-      popTask();
+      unregisterTask();
     });
     if (result.error?.code === "EABORTED") {
       const output = result.output?.trim().length ? result.output : "(no output)";

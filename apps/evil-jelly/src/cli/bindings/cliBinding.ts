@@ -9,7 +9,7 @@ import type { PromptChoiceView, PromptInputBindings } from "../../shared/host/in
 import type { AgentModeBindings } from "../../shared/host/modeBindings";
 import type { ConversationPresentationBindings } from "../../shared/host/presentationBindings";
 import type { ToolConfirmationBindings } from "../../shared/host/toolConfirmationBindings";
-import { resetRuntimeTaskStack } from "../../shared/runtime/runtimeControl";
+import { resetInterruptibleTaskStack } from "../../shared/task-interruption/taskStack";
 import { resetModeSession, useModeStore } from "../store/useModeStore";
 import { resetOutputSession, TOOL_FULL_CAP, useOutputStore } from "../store/useOutputStore";
 import type { ActionMenuOption, TransientView } from "../store/usePromptStore";
@@ -36,7 +36,7 @@ function resetCliBindingSession(): void {
   resetOutputSession();
   resetModeSession();
   resetViewSession();
-  resetRuntimeTaskStack();
+  resetInterruptibleTaskStack();
 }
 
 function createInkRequestChoice(): PromptInputBindings["requestChoice"] {
