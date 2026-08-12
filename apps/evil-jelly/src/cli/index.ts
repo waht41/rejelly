@@ -6,8 +6,10 @@ import { loadMockReplayFromTraceId } from "../features/replay/mock/mockFromTrace
 import { env, exitIfMissingOpenAIKey, loadEvilJellyEnv } from "../shared/configuration/env";
 import { initSettings } from "../shared/configuration/settings";
 import { getCliVersion, parseCliArgs } from "./app/args";
+import { runAuditCommand } from "./app/auditCommand";
 import { applyWorkspaceRootFromArgs } from "./app/bootstrap";
-import { runAuditCommand, runHeadlessUnifiedCommand, runInitCommand } from "./app/commands";
+import { runHeadlessUnifiedCommand } from "./app/headlessUnifiedCommand";
+import { runInitCommand } from "./app/initCommand";
 import { resolveInitialSession } from "./app/resume";
 import { runInteractiveLoop } from "./app/runLoop";
 import { loadStartupSnapshot } from "./app/snapshot";
@@ -20,7 +22,7 @@ export type {
   PromptChoiceOption,
   PromptChoiceView,
 } from "../shared/host/inputBindings";
-export { runEvilJellyHost } from "./app/host/runHost";
+export { runEvilJellyHost } from "./app/host/runInteractiveSegment";
 
 async function main() {
   const args = parseCliArgs();

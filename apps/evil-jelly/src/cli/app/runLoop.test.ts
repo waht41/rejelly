@@ -9,7 +9,7 @@ import {
   takePendingNewSession,
   takePendingResume,
 } from "../runtime/sessionRunControl";
-import { runEvilJellyHost } from "./host/runHost";
+import { runEvilJellyHost } from "./host/runInteractiveSegment";
 import { runInteractiveLoop } from "./runLoop";
 
 const runtimeMocks = vi.hoisted(() => ({
@@ -18,7 +18,7 @@ const runtimeMocks = vi.hoisted(() => ({
   disposeMcp: vi.fn(async () => undefined),
 }));
 
-vi.mock("./host/runHost", () => ({
+vi.mock("./host/runInteractiveSegment", () => ({
   runEvilJellyHost: vi.fn(),
 }));
 

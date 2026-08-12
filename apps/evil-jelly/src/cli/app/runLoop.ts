@@ -15,7 +15,7 @@ import {
   takePendingNewSession,
   takePendingResume,
 } from "../runtime/sessionRunControl";
-import { type RunEvilJellyHostOptions, runEvilJellyHost } from "./host/runHost";
+import { type RunEvilJellyHostOptions, runEvilJellyHost } from "./host/runInteractiveSegment";
 import {
   buildConfiguredSkillRuntimeSnapshot,
   formatSkillRuntimeStartupSummary,

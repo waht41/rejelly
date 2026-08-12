@@ -5,14 +5,12 @@ import { createSkillCatalog } from "../../../domains/skills/catalog/skillCatalog
 import { skillOrigin } from "../../../domains/skills/definition/skillDefinition";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import { requestRunAbort } from "../../runtime/runControl";
-import { runDirectUnified, runEvilJellyHost } from "./runHost";
+import { runEvilJellyHost } from "./runInteractiveSegment";
 
 const mocks = vi.hoisted(() => ({
   mainCliAgent: vi.fn(),
   openSessionRecorder: vi.fn(),
   runWithReview: vi.fn(),
-  buildSkillRuntime: vi.fn(),
-  formatSkillSummary: vi.fn(),
 }));
 
 vi.mock("../orchestration/MainCliAgent", () => ({
@@ -30,11 +28,6 @@ vi.mock("../../../shared/fs-policy/workspace-fs-policy", async (importOriginal) 
 
 vi.mock("../../runtime/traceId", () => ({
   generateTraceId: () => "trace-id",
-}));
-
-vi.mock("./skillRuntime", () => ({
-  buildConfiguredSkillRuntimeSnapshot: mocks.buildSkillRuntime,
-  formatSkillRuntimeStartupSummary: mocks.formatSkillSummary,
 }));
 
 vi.mock("./runWithReview", () => ({
@@ -65,11 +58,6 @@ describe("runEvilJellyHost session teardown", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.buildSkillRuntime.mockResolvedValue({
-      snapshot: skillSnapshot(),
-      diagnostics: [],
-    });
-    mocks.formatSkillSummary.mockReturnValue("Loaded 1 local Skill.");
   });
 
   it("ends an idle Ctrl+C run as interrupted before closing the writer", async () => {
@@ -169,27 +157,6 @@ describe("runEvilJellyHost session teardown", () => {
     expect(runWithOptions.trace.attributes).toMatchObject({
       "evil_jelly.skills.count": 1,
       "evil_jelly.skills.catalog_fingerprint": snapshot.catalog.fingerprint,
-    });
-  });
-
-  it("uses the same configured snapshot builder for direct headless UnifiedAgent runs", async () => {
-    mocks.runWithReview.mockResolvedValue(undefined);
-    const prepared = { snapshot: skillSnapshot(), diagnostics: [] };
-    mocks.buildSkillRuntime.mockResolvedValue(prepared);
-    const logSystemEvent = vi.fn();
-
-    await runDirectUnified({ logSystemEvent } as unknown as EvilJellyBindings, {
-      model: { id: "test-model" } as ModelAdapter,
-      userInput: "hello",
-    });
-
-    expect(mocks.buildSkillRuntime).toHaveBeenCalledOnce();
-    expect(logSystemEvent).toHaveBeenCalledWith("Loaded 1 local Skill.\n");
-    const runWithOptions = mocks.runWithReview.mock.calls[0]?.[0].runWithOptions;
-    expect(runWithOptions.providers["evil-jelly:skill-runtime:v1"]).toBe(prepared.snapshot);
-    expect(runWithOptions.trace.attributes).toMatchObject({
-      "evil_jelly.headless": true,
-      "evil_jelly.skills.count": 1,
     });
   });
 });

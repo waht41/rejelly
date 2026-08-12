@@ -16,7 +16,7 @@ import { setWorkspaceRoot } from "../../../shared/fs-policy/workspace-fs-policy"
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import { messageContentToText } from "../../../shared/model/message/content";
 import type { TranscriptItem } from "../../../shared/session/transcript";
-import { runEvilJellyHost } from "./runHost";
+import { runEvilJellyHost } from "./runInteractiveSegment";
 
 const originalAutoCompactTokens = process.env.OPENAI_AUTO_COMPACT_TOKENS;
 const originalAutoCompactRatio = process.env.OPENAI_AUTO_COMPACT_RATIO;
