@@ -6,126 +6,24 @@
 
 import { Box, Text, useInput, useStdout } from "ink";
 import { useEffect, useMemo, useState } from "react";
-import { ListViewport } from "../terminal-ui/picker/ListViewport";
-import { getVisibleWindow, moveListSelection } from "../terminal-ui/picker/listNavigation";
-import type { ToolBlock } from "./useOutputStore";
-import { useOutputStore } from "./useOutputStore";
-import { useViewStore } from "./useViewStore";
-
-type ToolEntry = {
-  id: string;
-  tool: ToolBlock;
-  ordinal: number;
-};
-
-/** One viewport line plus how to color it. Each entry is exactly one visual row. */
-type RenderLine = { text: string; color?: string; dim?: boolean };
+import { ListViewport } from "../../terminal-ui/picker/ListViewport";
+import { getVisibleWindow, moveListSelection } from "../../terminal-ui/picker/listNavigation";
+import { useOutputStore } from "../useOutputStore";
+import { buildToolTranscriptDetailLines, buildToolTranscriptEntries } from "./projection";
+import { useToolTranscriptViewStore } from "./viewStore";
 
 type OverlayMode = "list" | "detail";
 
-function buildToolEntries(
-  history: ReturnType<typeof useOutputStore.getState>["history"],
-): ToolEntry[] {
-  return history
-    .filter((turn) => turn.type === "tool")
-    .map((turn, index) => ({
-      id: turn.id,
-      tool: turn.tool,
-      ordinal: turn.tool.ordinal ?? index + 1,
-    }))
-    .reverse();
-}
-
-function appendVisualLines(
-  target: RenderLine[],
-  text: string,
-  columns: number,
-  style: Pick<RenderLine, "color" | "dim"> = {},
-): void {
-  const width = Math.max(1, columns);
-  const rawLines = text.split("\n");
-  for (const rawLine of rawLines) {
-    const line = rawLine || " ";
-    if (line.length <= width) {
-      target.push({ text: line, ...style });
-      continue;
-    }
-    for (let offset = 0; offset < line.length; offset += width) {
-      target.push({ text: line.slice(offset, offset + width), ...style });
-    }
-  }
-}
-
-function getDiffLineStyle(line: string): Pick<RenderLine, "color" | "dim"> {
-  if (line.startsWith("+") && !line.startsWith("+++")) {
-    return { color: "green" };
-  }
-  if (line.startsWith("-") && !line.startsWith("---")) {
-    return { color: "red" };
-  }
-  if (line.startsWith("@@")) {
-    return { color: "cyan" };
-  }
-  if (line.startsWith("---") || line.startsWith("+++")) {
-    return { dim: true };
-  }
-  return {};
-}
-
-function appendFramedDiffLines(target: RenderLine[], diffText: string, columns: number): void {
-  const width = Math.max(8, columns);
-  const innerWidth = Math.max(1, width - 4);
-  const border = "─".repeat(width - 2);
-  target.push({ text: `╭${border}╮`, dim: true });
-  for (const rawLine of diffText.split("\n")) {
-    const line = rawLine || " ";
-    const style = getDiffLineStyle(line);
-    for (let offset = 0; offset < line.length; offset += innerWidth) {
-      const segment = line.slice(offset, offset + innerWidth).padEnd(innerWidth, " ");
-      target.push({ text: `│ ${segment} │`, ...style });
-    }
-  }
-  target.push({ text: `╰${border}╯`, dim: true });
-}
-
-/** Build rendered lines for one selected tool block. */
-function buildDetailLines(entry: ToolEntry, columns: number): RenderLine[] {
-  const allLines: RenderLine[] = [];
-  allLines.push({
-    text: `#${entry.ordinal} ${entry.tool.toolName}`,
-    color: entry.tool.ok ? "green" : "red",
-  });
-  allLines.push({ text: entry.tool.summary, dim: true });
-  if (entry.tool.detail?.type === "diff" && entry.tool.detail.text.trim().length > 0) {
-    allLines.push({ text: " ", dim: true });
-    if (entry.tool.detail.caption) {
-      allLines.push({ text: entry.tool.detail.caption, dim: true });
-    }
-    allLines.push({ text: "Diff", color: "cyan" });
-    appendFramedDiffLines(allLines, entry.tool.detail.text, columns);
-  } else if (entry.tool.args !== undefined && entry.tool.args.trim().length > 0) {
-    allLines.push({ text: " ", dim: true });
-    allLines.push({ text: "Arguments", color: "cyan" });
-    appendVisualLines(allLines, entry.tool.args, columns, { dim: true });
-  }
-  allLines.push({ text: "".padEnd(Math.min(columns - 2, 40), "─"), dim: true });
-  const contentLines = entry.tool.fullResult.split("\n");
-  for (const line of contentLines) {
-    appendVisualLines(allLines, line || " ", columns);
-  }
-  return allLines;
-}
-
 const PAGE_SCROLL_FRACTION = 0.8;
 
-export function TranscriptOverlay() {
+export function ToolTranscriptOverlay() {
   const history = useOutputStore((s) => s.history);
-  const closeTranscript = useViewStore((s) => s.closeTranscript);
+  const closeTranscript = useToolTranscriptViewStore((s) => s.closeTranscript);
   const { stdout } = useStdout();
   const rows = stdout?.rows ?? 24;
   const columns = stdout?.columns ?? 80;
 
-  const toolEntries = useMemo(() => buildToolEntries(history), [history]);
+  const toolEntries = useMemo(() => buildToolTranscriptEntries(history), [history]);
   const listViewportRows = Math.max(4, rows - 3); // reserve 1 for header + 1 gap + 1 status
   const detailViewportLines = Math.max(4, rows - 3);
   const pageStep = Math.max(1, Math.floor(listViewportRows * PAGE_SCROLL_FRACTION));
@@ -140,7 +38,7 @@ export function TranscriptOverlay() {
 
   const selectedEntry = toolEntries[selectedIndex];
   const detailLines = useMemo(
-    () => (selectedEntry ? buildDetailLines(selectedEntry, columns) : []),
+    () => (selectedEntry ? buildToolTranscriptDetailLines(selectedEntry, columns) : []),
     [columns, selectedEntry],
   );
   const detailMaxOffset = Math.max(0, detailLines.length - detailViewportLines);

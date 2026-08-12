@@ -6,20 +6,20 @@
 
 import { create } from "zustand";
 
-interface ViewState {
+interface ToolTranscriptViewState {
   /** Transcript overlay (ctrl+o) for full tool results. */
   transcriptOpen: boolean;
   openTranscript: () => void;
   closeTranscript: () => void;
 }
 
-export const useViewStore = create<ViewState>((set) => ({
+export const useToolTranscriptViewStore = create<ToolTranscriptViewState>((set) => ({
   transcriptOpen: false,
   openTranscript: () => set({ transcriptOpen: true }),
   closeTranscript: () => set({ transcriptOpen: false }),
 }));
 
 /** Reset the transcript overlay for a fresh CLI session. */
-export function resetViewSession(): void {
-  useViewStore.setState({ transcriptOpen: false });
+export function resetToolTranscriptViewSession(): void {
+  useToolTranscriptViewStore.setState({ transcriptOpen: false });
 }

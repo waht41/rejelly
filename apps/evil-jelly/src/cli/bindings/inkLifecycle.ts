@@ -2,8 +2,8 @@ import { type Instance, render } from "ink";
 import React from "react";
 import { hasActiveInterruptibleTask } from "../../shared/task-interruption/taskStack";
 import { createInteractiveCommandHandler } from "../app/orchestration/interactiveCommands";
+import { useToolTranscriptViewStore } from "../conversation-display/tool-transcript/viewStore";
 import { pruneClearedStaticTurns, useOutputStore } from "../conversation-display/useOutputStore";
-import { useViewStore } from "../conversation-display/useViewStore";
 import { useComposerSession } from "../message-composer/session/composerSession";
 import { requestRunAbort } from "../runtime/runControl";
 import { applyModeCommand, MODE_META, useModeStore } from "../tool-approval/approvalModeStore";
@@ -68,7 +68,7 @@ const handleLocalCommand = createInteractiveCommandHandler({
   getLastAssistantMessage: () =>
     [...useOutputStore.getState().history].reverse().find((turn) => turn.type === "assistant")
       ?.content,
-  openTranscript: () => useViewStore.getState().openTranscript(),
+  openTranscript: () => useToolTranscriptViewStore.getState().openTranscript(),
   copyText: copyTextToClipboard,
   logSystem: (message) => useOutputStore.getState().logSystem(message),
 });

@@ -14,12 +14,12 @@ import type { AgentModeBindings } from "../../shared/host/modeBindings";
 import type { ConversationPresentationBindings } from "../../shared/host/presentationBindings";
 import type { ToolConfirmationBindings } from "../../shared/host/toolConfirmationBindings";
 import { resetInterruptibleTaskStack } from "../../shared/task-interruption/taskStack";
+import { resetToolTranscriptViewSession } from "../conversation-display/tool-transcript/viewStore";
 import {
   resetOutputSession,
   TOOL_FULL_CAP,
   useOutputStore,
 } from "../conversation-display/useOutputStore";
-import { resetViewSession } from "../conversation-display/useViewStore";
 import {
   resetComposerSession,
   useComposerSession,
@@ -51,7 +51,7 @@ function resetCliBindingSession(): void {
   resetComposerSession();
   resetOutputSession();
   resetModeSession();
-  resetViewSession();
+  resetToolTranscriptViewSession();
   resetInterruptibleTaskStack("CLI binding session reset");
 }
 

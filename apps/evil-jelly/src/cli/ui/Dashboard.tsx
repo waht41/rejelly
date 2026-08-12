@@ -8,7 +8,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { LineInputValue } from "../../shared/host/inputBindings";
 import type { RuntimePhase } from "../../shared/host/presentationBindings";
 import { HistoryItem } from "../conversation-display/HistoryItem";
-import { TranscriptOverlay } from "../conversation-display/TranscriptOverlay";
+import { ToolTranscriptOverlay } from "../conversation-display/tool-transcript/ToolTranscriptOverlay";
+import { useToolTranscriptViewStore } from "../conversation-display/tool-transcript/viewStore";
 import { composeToolTailWindow } from "../conversation-display/toolTailWindow";
 import {
   isRuntimeActive,
@@ -16,7 +17,6 @@ import {
   statusTimerAnchor,
   useOutputStore,
 } from "../conversation-display/useOutputStore";
-import { useViewStore } from "../conversation-display/useViewStore";
 import {
   type ClipboardImageReadResult,
   MessageComposer,
@@ -319,8 +319,8 @@ export function Dashboard({
   const runningTools = useOutputStore((s) => s.runningTools);
   const phase = useOutputStore((s) => s.runtime.phase);
 
-  const transcriptOpen = useViewStore((s) => s.transcriptOpen);
-  const openTranscript = useViewStore((s) => s.openTranscript);
+  const transcriptOpen = useToolTranscriptViewStore((s) => s.transcriptOpen);
+  const openTranscript = useToolTranscriptViewStore((s) => s.openTranscript);
   const view = useDecisionStore((state) => state.view);
   const decision = useDecisionStore((state) => state.decision);
   const submitChoice = useDecisionStore((state) => state.submitChoice);
@@ -382,7 +382,7 @@ export function Dashboard({
 
   useEffect(() => subscribeSteers(setQueuedSteers), []);
 
-  // ctrl+o opens transcript overlay; TranscriptOverlay handles its own close (Esc / ctrl+o)
+  // ctrl+o opens the tool transcript; ToolTranscriptOverlay handles its own close (Esc / ctrl+o)
   useInput((input, key) => {
     if (!transcriptOpen && key.ctrl && input === "o") {
       openTranscript();
@@ -401,7 +401,7 @@ export function Dashboard({
       </Static>
 
       {transcriptOpen ? (
-        <TranscriptOverlay />
+        <ToolTranscriptOverlay />
       ) : (
         <Box flexDirection="column" marginTop={1} marginBottom={1}>
           <Box ref={topTransientRef} flexDirection="column">
