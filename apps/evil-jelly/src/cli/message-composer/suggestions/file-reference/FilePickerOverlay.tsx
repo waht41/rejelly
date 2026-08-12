@@ -6,10 +6,10 @@
 
 import { Text } from "ink";
 import { useEffect, useRef, useState } from "react";
-import type { FuzzyPathRefMatch } from "../../../domains/workspace/read/FuzzySearchService";
-import { fuzzySearchPathRefs } from "../../../domains/workspace/read/FuzzySearchService";
-import type { ComposerPickerKeySink } from "./ComposerPicker";
-import { ComposerPicker } from "./ComposerPicker";
+import type { FuzzyPathRefMatch } from "../../../../domains/workspace/read/FuzzySearchService";
+import { fuzzySearchPathRefs } from "../../../../domains/workspace/read/FuzzySearchService";
+import type { ComposerPickerKeySink } from "../ComposerPicker";
+import { ComposerPicker } from "../ComposerPicker";
 
 const DEFAULT_MAX_VISIBLE_ROWS = 10;
 const DEBOUNCE_MS = 150;

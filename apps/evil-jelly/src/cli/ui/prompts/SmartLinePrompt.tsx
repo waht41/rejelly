@@ -31,7 +31,31 @@ import type { DOMElement } from "ink";
 import { Box, Text, useCursor, useStdout } from "ink";
 import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
 import stringWidth from "string-width";
-import { extractAtQuery, refsMissingFromText, replaceAtToken } from "../../prompt-editor/atTrigger";
+import type { ComposerPickerKeyHandler } from "../../message-composer/suggestions/ComposerPicker";
+import { SlashCommandOverlay } from "../../message-composer/suggestions/commands/SlashCommandOverlay";
+import {
+  extractSlashQuery,
+  filterSlashCommands,
+} from "../../message-composer/suggestions/commands/slashCommands";
+import {
+  extractAtQuery,
+  refsMissingFromText,
+  replaceAtToken,
+} from "../../message-composer/suggestions/file-reference/atTrigger";
+import { FilePickerOverlay } from "../../message-composer/suggestions/file-reference/FilePickerOverlay";
+import {
+  filterSkillPickerItems,
+  SkillPickerOverlay,
+} from "../../message-composer/suggestions/skill-reference/SkillPickerOverlay";
+import {
+  activeSkillTrigger,
+  extractSkillQuery,
+  hydrateSkillTokens,
+  replaceSkillToken,
+  selectedSkillReferenceName,
+  skillReferenceName,
+  skillReferencesFromDocument,
+} from "../../message-composer/suggestions/skill-reference/skillTrigger";
 import { saveClipboardImage } from "../../prompt-editor/clipboardImage";
 import { copyTextToClipboard } from "../../prompt-editor/clipboardText";
 import {
@@ -45,16 +69,6 @@ import {
 } from "../../prompt-editor/lineText";
 import type { ProjectedTokenSpan, SkillPromptToken } from "../../prompt-editor/promptDocument";
 import { projectedDisplayRuns } from "../../prompt-editor/promptDocument";
-import {
-  activeSkillTrigger,
-  extractSkillQuery,
-  hydrateSkillTokens,
-  replaceSkillToken,
-  selectedSkillReferenceName,
-  skillReferenceName,
-  skillReferencesFromDocument,
-} from "../../prompt-editor/skillTrigger";
-import { extractSlashQuery, filterSlashCommands } from "../../prompt-editor/slashCommands";
 import { caretCell, type WrappedRow, wrapRows } from "../../prompt-editor/softWrap";
 import { useTextBuffer } from "../../prompt-editor/textBuffer";
 import { useLineKeybindings } from "../../prompt-editor/useLineKeybindings";
@@ -66,10 +80,6 @@ import {
 } from "../../store/usePromptStore";
 import { useViewStore } from "../../store/useViewStore";
 import { applyModeCommand, MODE_META } from "../../tool-approval/approvalModeStore";
-import type { ComposerPickerKeyHandler } from "../pickers/ComposerPicker";
-import { FilePickerOverlay } from "../pickers/FilePickerOverlay";
-import { filterSkillPickerItems, SkillPickerOverlay } from "../pickers/SkillPickerOverlay";
-import { SlashCommandOverlay } from "../pickers/SlashCommandOverlay";
 
 const MIN_FILE_PICKER_ROWS = 5;
 const MAX_FILE_PICKER_ROWS = 10;

@@ -6,6 +6,11 @@
     "@cli:bindings": ["src/cli/bindings/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:ui": ["src/cli/ui/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:terminal-ui": ["src/cli/terminal-ui/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@cli:message-composer": [
+      "src/cli/message-composer/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
     "@cli:prompt-editor": [
       "src/cli/prompt-editor/**/*",
       "!src/**/__tests__/**/*",
@@ -115,6 +120,7 @@
         "@cli:bindings": ["@ext:ui"],
         "@cli:ui": ["@cli:runtime", "@ext:ui"],
         "@cli:terminal-ui": ["@ext:ui"],
+        "@cli:message-composer": ["@ext:ui"],
         "@cli:prompt-editor": ["@ext:ui"],
         "@cli:operator-decision": ["@ext:ui"],
         "@cli:tool-approval": ["@ext:ui"],
@@ -132,7 +138,13 @@
           "@cli:operator-decision",
           "@cli:tool-approval"
         ],
-        "@cli:ui": ["@cli:operator-decision", "@cli:tool-approval", "@cli:terminal-ui"],
+        "@cli:ui": [
+          "@cli:operator-decision",
+          "@cli:tool-approval",
+          "@cli:terminal-ui",
+          "@cli:message-composer"
+        ],
+        "@cli:message-composer": ["@cli:prompt-editor", "@cli:terminal-ui"],
         "@cli:operator-decision": ["@cli:terminal-ui"],
         "@cli:prompt-editor": ["@cli:tool-approval"],
         "@cli:tool-approval": ["@cli:operator-decision", "@cli:store"]

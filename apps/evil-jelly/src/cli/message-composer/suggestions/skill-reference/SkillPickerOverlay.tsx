@@ -1,8 +1,10 @@
 import { Box, Text } from "ink";
 import stringWidth from "string-width";
-import type { SkillPickerItem } from "../../store/usePromptStore";
-import type { ComposerPickerKeySink } from "./ComposerPicker";
-import { ComposerPicker } from "./ComposerPicker";
+import type { UserSkillListItem } from "../../../../shared/host/inputBindings";
+import type { ComposerPickerKeySink } from "../ComposerPicker";
+import { ComposerPicker } from "../ComposerPicker";
+
+type SkillPickerItem = UserSkillListItem;
 
 interface SkillPickerOverlayProps {
   items: SkillPickerItem[];

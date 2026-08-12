@@ -5,9 +5,9 @@
  */
 
 import { Box, Text } from "ink";
-import type { SlashCommand } from "../../prompt-editor/slashCommands";
-import type { ComposerPickerKeySink } from "./ComposerPicker";
-import { ComposerPicker } from "./ComposerPicker";
+import type { ComposerPickerKeySink } from "../ComposerPicker";
+import { ComposerPicker } from "../ComposerPicker";
+import type { SlashCommand } from "./slashCommands";
 
 interface SlashCommandOverlayProps {
   /** Filtered commands to show (already matched against the typed query). */

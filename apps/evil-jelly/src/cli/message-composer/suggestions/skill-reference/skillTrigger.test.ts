@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { UserSkillListItem } from "../../shared/host/inputBindings";
-import { projectPromptDocument } from "./promptDocument";
+import type { UserSkillListItem } from "../../../../shared/host/inputBindings";
+import { projectPromptDocument } from "../../../prompt-editor/promptDocument";
 import {
   activeSkillTrigger,
   extractSkillQuery,

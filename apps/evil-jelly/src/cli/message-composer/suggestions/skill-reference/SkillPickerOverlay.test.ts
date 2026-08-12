@@ -2,10 +2,10 @@ import { renderToString } from "ink";
 import { createElement } from "react";
 import stripAnsi from "strip-ansi";
 import { describe, expect, it, vi } from "vitest";
-import type { SkillPickerItem } from "../../store/usePromptStore";
+import type { UserSkillListItem } from "../../../../shared/host/inputBindings";
 import { SkillPickerOverlay } from "./SkillPickerOverlay";
 
-const items: SkillPickerItem[] = [
+const items: UserSkillListItem[] = [
   {
     qualifiedName: "user:short",
     name: "short",
@@ -63,7 +63,7 @@ describe("SkillPickerOverlay", () => {
   });
 
   it("shows qualified names only when multiple Skills share a name", () => {
-    const duplicateItems: SkillPickerItem[] = [
+    const duplicateItems: UserSkillListItem[] = [
       {
         qualifiedName: "user:review",
         name: "review",

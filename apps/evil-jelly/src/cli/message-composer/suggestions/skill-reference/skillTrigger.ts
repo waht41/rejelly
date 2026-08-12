@@ -1,11 +1,11 @@
-import type { UserSkillListItem, UserSkillReference } from "../../shared/host/inputBindings";
+import type { UserSkillListItem, UserSkillReference } from "../../../../shared/host/inputBindings";
 import {
   normalizePromptDocument,
   type PromptDocument,
   type PromptNode,
   promptTokens,
-} from "./promptDocument";
-import type { BufferState } from "./textBuffer";
+} from "../../../prompt-editor/promptDocument";
+import type { BufferState } from "../../../prompt-editor/textBuffer";
 
 const SKILL_QUERY_PATTERN = /^[a-z0-9._:-]*$/;
 

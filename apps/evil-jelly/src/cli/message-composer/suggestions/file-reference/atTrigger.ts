@@ -5,7 +5,7 @@
  * ref), it is finalized and must not re-open the picker on itself.
  */
 
-import type { BufferState } from "./textBuffer";
+import type { BufferState } from "../../../prompt-editor/textBuffer";
 
 /**
  * Return the query after the `@` token the caret currently sits at the end of,
