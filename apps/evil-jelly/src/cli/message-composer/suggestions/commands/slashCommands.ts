@@ -1,9 +1,8 @@
 /**
- * Slash-command palette for SmartLinePrompt. Typing `/` at the start of an empty-ish line
+ * Slash-command palette for MessageComposer. Typing `/` at the start of an empty-ish line
  * opens a discovery panel (mirrors the `@` file picker). The commands themselves are handled
- * downstream at the layer that owns them — /mode, /copy-last, and /expand-tool in
- * SmartLinePrompt, /stop plus running-time /exit in io.ts, /resume, /clear, /compress, and
- * idle /exit in MainCliAgent — so this module only describes and filters.
+ * downstream by the interactive command or application router, depending on the command's
+ * lifetime and data needs, so this module only describes and filters.
  */
 
 export interface SlashCommand {

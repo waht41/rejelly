@@ -1,5 +1,5 @@
 /**
- * File-picker overlay for the @-trigger in SmartLinePrompt.
+ * File-picker overlay for the @-trigger in MessageComposer.
  * Displays fuzzy-matched file and directory paths; Enter attaches the highlighted path
  * (single-select: one @ inserts one path, like Claude Code / Codex).
  */

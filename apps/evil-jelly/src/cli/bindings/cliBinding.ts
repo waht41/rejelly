@@ -14,13 +14,13 @@ import type { AgentModeBindings } from "../../shared/host/modeBindings";
 import type { ConversationPresentationBindings } from "../../shared/host/presentationBindings";
 import type { ToolConfirmationBindings } from "../../shared/host/toolConfirmationBindings";
 import { resetInterruptibleTaskStack } from "../../shared/task-interruption/taskStack";
+import { resetPromptSession, usePromptStore } from "../message-composer/session/composerStore";
 import type { DecisionView } from "../operator-decision/model";
 import {
   createOperatorDecision,
   resetOperatorDecisionSession,
 } from "../operator-decision/operatorDecision";
 import { resetOutputSession, TOOL_FULL_CAP, useOutputStore } from "../store/useOutputStore";
-import { resetPromptSession, usePromptStore } from "../store/usePromptStore";
 import { resetViewSession } from "../store/useViewStore";
 import { resetModeSession, useModeStore } from "../tool-approval/approvalModeStore";
 import { createToolApproval } from "../tool-approval/createToolApproval";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resetPromptSession, usePromptStore } from "./usePromptStore";
+import { resetPromptSession, usePromptStore } from "./composerStore";
 
 describe("usePromptStore file attachments", () => {
   it("passes selected files to the background line handler as attachments", () => {

@@ -1,13 +1,13 @@
 /** Message-composer input state shared by the Ink editor and host input adapter. */
 
 import { create } from "zustand";
-import { SKILL_AGENT_LIMITS } from "../../domains/skills/agent/limits";
+import { SKILL_AGENT_LIMITS } from "../../../domains/skills/agent/limits";
 import type {
   LineInputValue,
   UserAttachment,
   UserSkillListItem,
   UserSkillReference,
-} from "../../shared/host/inputBindings";
+} from "../../../shared/host/inputBindings";
 
 export type SkillPickerItem = UserSkillListItem;
 export const MAX_SELECTED_SKILLS = SKILL_AGENT_LIMITS.explicitSkillsPerTurn;

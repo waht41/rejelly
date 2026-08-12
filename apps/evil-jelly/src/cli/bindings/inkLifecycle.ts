@@ -1,9 +1,16 @@
 import { type Instance, render } from "ink";
 import React from "react";
+import { hasActiveInterruptibleTask } from "../../shared/task-interruption/taskStack";
+import { createInteractiveCommandHandler } from "../app/orchestration/interactiveCommands";
+import { usePromptStore } from "../message-composer/session/composerStore";
 import { requestRunAbort } from "../runtime/runControl";
-import { pruneClearedStaticTurns } from "../store/useOutputStore";
+import { pruneClearedStaticTurns, useOutputStore } from "../store/useOutputStore";
+import { useViewStore } from "../store/useViewStore";
+import { applyModeCommand, MODE_META, useModeStore } from "../tool-approval/approvalModeStore";
 import { Dashboard } from "../ui/Dashboard";
 import type { CtrlCAbortHandler } from "../ui/useCtrlCAbort";
+import { saveClipboardImage } from "./clipboard/clipboardImage";
+import { copyTextToClipboard } from "./clipboard/clipboardText";
 import { failPendingLineInput } from "./lineInputQueue";
 import { restoreSteersToPrompt } from "./restoreSteersToPrompt";
 import { installWindowsVirtualTerminalInputPatch } from "./windowsVtInput";
@@ -41,15 +48,52 @@ const handleCtrlCAbort: CtrlCAbortHandler = ({ exit, repeated }) => {
   }
 };
 
+const handleLocalCommand = createInteractiveCommandHandler({
+  applyMode: (text) => {
+    const mode = applyModeCommand(text);
+    return mode ? MODE_META[mode] : null;
+  },
+  listTools: () =>
+    useOutputStore
+      .getState()
+      .history.filter((turn) => turn.type === "tool")
+      .map((turn, index) => ({
+        ordinal: turn.tool.ordinal ?? index + 1,
+        toolName: turn.tool.toolName,
+        summary: turn.tool.summary,
+        args: turn.tool.args,
+        detail: turn.tool.detail,
+        fullResult: turn.tool.fullResult,
+      })),
+  getLastAssistantMessage: () =>
+    [...useOutputStore.getState().history].reverse().find((turn) => turn.type === "assistant")
+      ?.content,
+  openTranscript: () => useViewStore.getState().openTranscript(),
+  copyText: copyTextToClipboard,
+  logSystem: (message) => useOutputStore.getState().logSystem(message),
+});
+
 export function mountInkApp(): Instance {
   installWindowsVirtualTerminalInputPatch();
   // A fresh <Static> starts its flushed count at 0, so the cleared-turns prefix (kept only to
   // pad the previous instance's count) must go, or it would be re-emitted on mount.
   pruneClearedStaticTurns();
   // exitOnCtrlC:false: Dashboard owns Ctrl+C so it can abort the run and close traces cleanly.
-  return render(React.createElement(Dashboard, { onCtrlCAbort: handleCtrlCAbort }), {
-    exitOnCtrlC: false,
-  });
+  return render(
+    React.createElement(Dashboard, {
+      onCtrlCAbort: handleCtrlCAbort,
+      hasInterruptibleTask: hasActiveInterruptibleTask,
+      onInterrupt: () => usePromptStore.getState().submitLine("/stop"),
+      onCycleMode: () => {
+        useModeStore.getState().cycleMode();
+      },
+      onLocalCommand: handleLocalCommand,
+      readClipboardImage: saveClipboardImage,
+    }),
+    {
+      exitOnCtrlC: false,
+    },
+  );
 }
 
 export function createInkLifecycle(): {

@@ -1,5 +1,5 @@
 /**
- * Line input backed by a single text buffer + caret (see ../../prompt-editor/textBuffer), so
+ * Line input backed by a single text buffer + caret (see ../prompt-editor/textBuffer), so
  * single- and multi-line editing share one model with full caret movement
  * (←/→, ↑/↓, Home/End, word-jump) and editing (backspace, word/line delete).
  *
@@ -21,7 +21,7 @@
  * deleting the token drops the image from the submitted turn.
  *
  * Rendering: the prompt soft-wraps the buffer itself (see
- * ../../prompt-editor/softWrap) rather than handing Ink a long line to wrap.
+ * ../prompt-editor/softWrap) rather than handing Ink a long line to wrap.
  * The caret is a terminal cell, so it has to be placed in *physical* rows and
  * columns; owning the wrap is what lets the painted rows and the caret's
  * position come from one list instead of two guesses that drift apart.
@@ -31,33 +31,6 @@ import type { DOMElement } from "ink";
 import { Box, Text, useCursor, useStdout } from "ink";
 import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
 import stringWidth from "string-width";
-import type { ComposerPickerKeyHandler } from "../../message-composer/suggestions/ComposerPicker";
-import { SlashCommandOverlay } from "../../message-composer/suggestions/commands/SlashCommandOverlay";
-import {
-  extractSlashQuery,
-  filterSlashCommands,
-} from "../../message-composer/suggestions/commands/slashCommands";
-import {
-  extractAtQuery,
-  refsMissingFromText,
-  replaceAtToken,
-} from "../../message-composer/suggestions/file-reference/atTrigger";
-import { FilePickerOverlay } from "../../message-composer/suggestions/file-reference/FilePickerOverlay";
-import {
-  filterSkillPickerItems,
-  SkillPickerOverlay,
-} from "../../message-composer/suggestions/skill-reference/SkillPickerOverlay";
-import {
-  activeSkillTrigger,
-  extractSkillQuery,
-  hydrateSkillTokens,
-  replaceSkillToken,
-  selectedSkillReferenceName,
-  skillReferenceName,
-  skillReferencesFromDocument,
-} from "../../message-composer/suggestions/skill-reference/skillTrigger";
-import { saveClipboardImage } from "../../prompt-editor/clipboardImage";
-import { copyTextToClipboard } from "../../prompt-editor/clipboardText";
 import {
   attachedImages,
   coalescePaste,
@@ -66,25 +39,39 @@ import {
   type PasteRun,
   pastedTextToken,
   pastedTextTokenBefore,
-} from "../../prompt-editor/lineText";
-import type { ProjectedTokenSpan, SkillPromptToken } from "../../prompt-editor/promptDocument";
-import { projectedDisplayRuns } from "../../prompt-editor/promptDocument";
-import { caretCell, type WrappedRow, wrapRows } from "../../prompt-editor/softWrap";
-import { useTextBuffer } from "../../prompt-editor/textBuffer";
-import { useLineKeybindings } from "../../prompt-editor/useLineKeybindings";
-import { isRuntimeActive, useOutputStore } from "../../store/useOutputStore";
+} from "../prompt-editor/lineText";
+import type { ProjectedTokenSpan, SkillPromptToken } from "../prompt-editor/promptDocument";
+import { projectedDisplayRuns } from "../prompt-editor/promptDocument";
+import { caretCell, type WrappedRow, wrapRows } from "../prompt-editor/softWrap";
+import { useTextBuffer } from "../prompt-editor/textBuffer";
+import { useLineKeybindings } from "../prompt-editor/useLineKeybindings";
+import { MAX_SELECTED_SKILLS, type SkillPickerItem, usePromptStore } from "./session/composerStore";
+import type { ComposerPickerKeyHandler } from "./suggestions/ComposerPicker";
+import { SlashCommandOverlay } from "./suggestions/commands/SlashCommandOverlay";
+import { extractSlashQuery, filterSlashCommands } from "./suggestions/commands/slashCommands";
 import {
-  MAX_SELECTED_SKILLS,
-  type SkillPickerItem,
-  usePromptStore,
-} from "../../store/usePromptStore";
-import { useViewStore } from "../../store/useViewStore";
-import { applyModeCommand, MODE_META } from "../../tool-approval/approvalModeStore";
+  extractAtQuery,
+  refsMissingFromText,
+  replaceAtToken,
+} from "./suggestions/file-reference/atTrigger";
+import { FilePickerOverlay } from "./suggestions/file-reference/FilePickerOverlay";
+import {
+  filterSkillPickerItems,
+  SkillPickerOverlay,
+} from "./suggestions/skill-reference/SkillPickerOverlay";
+import {
+  activeSkillTrigger,
+  extractSkillQuery,
+  hydrateSkillTokens,
+  replaceSkillToken,
+  selectedSkillReferenceName,
+  skillReferenceName,
+  skillReferencesFromDocument,
+} from "./suggestions/skill-reference/skillTrigger";
 
 const MIN_FILE_PICKER_ROWS = 5;
 const MAX_FILE_PICKER_ROWS = 10;
 const PASTE_CHUNK_MERGE_MS = 120;
-const EXPAND_TOOL_RE = /^\/expand-tool\s+#?(\d+)\s*$/;
 
 interface PastedText {
   id: number;
@@ -179,46 +166,29 @@ function BufferView({
   );
 }
 
-function expandToolCommand(text: string): boolean {
-  if (text === "/expand-tool") {
-    useViewStore.getState().openTranscript();
-    return true;
-  }
-  const match = text.match(EXPAND_TOOL_RE);
-  if (!match) {
-    if (text.startsWith("/expand-tool ")) {
-      useOutputStore.getState().logSystem("Usage: /expand-tool #N");
-      return true;
-    }
-    return false;
-  }
+export type ClipboardImageReadResult = { ok: true; path: string } | { ok: false; message: string };
 
-  const ordinal = Number(match[1]);
-  const toolTurn = useOutputStore
-    .getState()
-    .history.filter((turn) => turn.type === "tool")
-    .find((turn, index) => (turn.tool.ordinal ?? index + 1) === ordinal);
-  if (!toolTurn || toolTurn.type !== "tool") {
-    useOutputStore.getState().logSystem(`No tool call #${ordinal}.`);
-    return true;
-  }
-
-  const border = "".padEnd(40, "─");
-  const detailBlock =
-    toolTurn.tool.detail?.type === "diff" && toolTurn.tool.detail.text.trim().length > 0
-      ? `\nDiff\n${toolTurn.tool.detail.text}\n`
-      : toolTurn.tool.args !== undefined && toolTurn.tool.args.trim().length > 0
-        ? `\nArguments\n${toolTurn.tool.args}\n`
-        : "\n";
-  useOutputStore
-    .getState()
-    .logSystem(
-      `#${ordinal} ${toolTurn.tool.toolName}\n${toolTurn.tool.summary}${detailBlock}${border}\n${toolTurn.tool.fullResult}`,
-    );
-  return true;
+export interface MessageComposerProps {
+  label: string;
+  isAgentRunning: boolean;
+  hasInterruptibleTask: () => boolean;
+  onInterrupt: () => void;
+  onCycleMode: () => void;
+  onCommand: (text: string) => boolean;
+  onNotice: (message: string) => void;
+  readClipboardImage: () => Promise<ClipboardImageReadResult>;
 }
 
-export function SmartLinePrompt({ label }: { label: string }) {
+export function MessageComposer({
+  label,
+  isAgentRunning,
+  hasInterruptibleTask,
+  onInterrupt,
+  onCycleMode,
+  onCommand,
+  onNotice,
+  readClipboardImage,
+}: MessageComposerProps) {
   const { setCursorPosition } = useCursor();
   const { stdout } = useStdout();
   const submitLine = usePromptStore((s) => s.submitLine);
@@ -236,8 +206,6 @@ export function SmartLinePrompt({ label }: { label: string }) {
   const clearSelectedImages = usePromptStore((s) => s.clearSelectedImages);
   const clearSelectedSkills = usePromptStore((s) => s.clearSelectedSkills);
   const clearDraftSeed = usePromptStore((s) => s.clearDraftSeed);
-  const phase = useOutputStore((s) => s.runtime.phase);
-  const streamBuffer = useOutputStore((s) => s.streamBuffer);
   const rowRef = useRef<DOMElement>(null);
   const buf = useTextBuffer();
   const [textArea, setTextArea] = useState<TextArea | null>(null);
@@ -426,38 +394,7 @@ export function SmartLinePrompt({ label }: { label: string }) {
 
   const submitText = (text: string) => {
     const expandedText = expandPastedTextTokens(text, pastedTextsRef.current);
-    // `/mode` switches modes from the prompt (reliable everywhere, unlike shift+tab); handle it
-    // locally instead of sending it to the agent. Works at the idle prompt and while it runs.
-    const switched = applyModeCommand(expandedText);
-    if (switched) {
-      useOutputStore
-        .getState()
-        .logSystem(`Mode → ${MODE_META[switched].label} (${MODE_META[switched].hint})`);
-      clearDraft();
-      return;
-    }
-    if (expandToolCommand(expandedText.trim())) {
-      clearDraft();
-      return;
-    }
-    if (expandedText.trim() === "/copy-last") {
-      const lastAssistant = [...useOutputStore.getState().history]
-        .reverse()
-        .find((turn) => turn.type === "assistant");
-      if (!lastAssistant) {
-        useOutputStore.getState().logSystem("No assistant message to copy.");
-        clearDraft();
-        return;
-      }
-      useOutputStore.getState().logSystem("Copying last assistant message...");
-      void copyTextToClipboard(lastAssistant.content)
-        .then(() => {
-          useOutputStore.getState().logSystem("Copied last assistant message to clipboard.");
-        })
-        .catch((error) => {
-          const message = error instanceof Error ? error.message : String(error);
-          useOutputStore.getState().logSystem(`Copy failed: ${message}`);
-        });
+    if (onCommand(expandedText.trim())) {
       clearDraft();
       return;
     }
@@ -480,14 +417,10 @@ export function SmartLinePrompt({ label }: { label: string }) {
 
   const submit = () => submitText(buf.text);
 
-  // Selecting from the slash palette submits the bare command; each command is handled
-  // by its owning layer (/mode here, /stop in io.ts, /resume + /exit in MainCliAgent).
+  // Selecting from the palette follows the same path as typed input. The host handles local
+  // commands; unclaimed commands continue through the normal input adapter/application router.
   const handleSlashSelect = (name: string) => {
     setSlashQuery(null);
-    if (name === "/expand-tool") {
-      submitText("/expand-tool");
-      return;
-    }
     submitText(name);
   };
 
@@ -509,9 +442,7 @@ export function SmartLinePrompt({ label }: { label: string }) {
       selectedSkills.length >= MAX_SELECTED_SKILLS &&
       !selectedSkills.some((selected) => selected.qualifiedName === skill.qualifiedName)
     ) {
-      useOutputStore
-        .getState()
-        .logSystem(`At most ${MAX_SELECTED_SKILLS} Skills can be selected for one input.`);
+      onNotice(`At most ${MAX_SELECTED_SKILLS} Skills can be selected for one input.`);
       buf.apply((state) => replaceSkillToken(state, []));
       setSkillQuery(null);
       return;
@@ -543,7 +474,7 @@ export function SmartLinePrompt({ label }: { label: string }) {
 
   const attachClipboardImage = () => {
     setPasteStatus("Reading clipboard image...");
-    void saveClipboardImage().then((result) => {
+    void readClipboardImage().then((result) => {
       if (result.ok) {
         addSelectedImage(result.path);
         // Drop an `[Image #N]` placeholder into the line at the caret; N is the
@@ -643,10 +574,12 @@ export function SmartLinePrompt({ label }: { label: string }) {
     buf,
     wrappedRows,
     overlayKeys: overlayKeysRef,
-    isAgentRunning: isRuntimeActive(phase, streamBuffer),
+    isAgentRunning,
+    hasInterruptibleTask,
+    onInterrupt,
+    onCycleMode,
     selectedFiles,
     selectedImages,
-    submitLine,
     removeSelectedFile,
     clearDraft,
     submit,

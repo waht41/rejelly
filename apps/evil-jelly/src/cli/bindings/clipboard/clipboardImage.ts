@@ -73,6 +73,7 @@ try {
       "-Command",
       script,
     ],
+    // biome-ignore lint/style/noProcessEnv: platform subprocess must inherit PATH and user env.
     env: { ...process.env, CLIP_IMG_PATH: imagePath },
     windowsHide: true,
   };
@@ -106,6 +107,7 @@ return "OK"
   return {
     file: "osascript",
     args: ["-e", script],
+    // biome-ignore lint/style/noProcessEnv: platform subprocess must inherit PATH and user env.
     env: { ...process.env, CLIP_IMG_PATH: imagePath },
     windowsHide: false,
   };

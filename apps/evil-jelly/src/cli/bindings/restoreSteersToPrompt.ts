@@ -1,6 +1,6 @@
 import type { LineInputValue, UserAttachment } from "../../shared/host/inputBindings";
+import { usePromptStore } from "../message-composer/session/composerStore";
 import { drainSteers } from "../runtime/steerControl";
-import { usePromptStore } from "../store/usePromptStore";
 
 function mergeAttachments(inputs: LineInputValue[]): UserAttachment[] {
   return inputs.flatMap((input) => input.attachments ?? []);

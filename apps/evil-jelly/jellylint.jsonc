@@ -120,7 +120,7 @@
         "@cli:bindings": ["@ext:ui"],
         "@cli:ui": ["@cli:runtime", "@ext:ui"],
         "@cli:terminal-ui": ["@ext:ui"],
-        "@cli:message-composer": ["@ext:ui"],
+        "@cli:message-composer": ["@domain:skills:agent", "@ext:ui"],
         "@cli:prompt-editor": ["@ext:ui"],
         "@cli:operator-decision": ["@ext:ui"],
         "@cli:tool-approval": ["@ext:ui"],
@@ -132,6 +132,8 @@
         "@cli:entry": ["@cli:app", "@cli:bindings", "@cli:model-composition"],
         "@cli:app": ["@cli:runtime", "@cli:model-composition", "@cli:tool-approval"],
         "@cli:bindings": [
+          "@cli:app",
+          "@cli:message-composer",
           "@cli:ui",
           "@cli:store",
           "@cli:runtime",

@@ -7,6 +7,10 @@ import { Box, measureElement, Static, Text, useInput, useWindowSize } from "ink"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { LineInputValue } from "../../shared/host/inputBindings";
 import type { RuntimePhase } from "../../shared/host/presentationBindings";
+import {
+  type ClipboardImageReadResult,
+  MessageComposer,
+} from "../message-composer/MessageComposer";
 import { ActionMenuPrompt } from "../operator-decision/ActionMenuPrompt";
 import { ConfirmPrompt } from "../operator-decision/ConfirmPrompt";
 import { useDecisionStore } from "../operator-decision/decisionStore";
@@ -24,7 +28,6 @@ import { StreamMarkdownViewer } from "../terminal-ui/rich-text/MarkdownViewer";
 import { createStreamTailWindow } from "../terminal-ui/rich-text/streamWindow";
 import { MODE_META, useModeStore } from "../tool-approval/approvalModeStore";
 import { HistoryItem } from "./HistoryItem";
-import { SmartLinePrompt } from "./prompts/SmartLinePrompt";
 import { TranscriptOverlay } from "./TranscriptOverlay";
 import { TransientPane } from "./TransientPane";
 import { type CtrlCAbortHandler, useCtrlCAbort } from "./useCtrlCAbort";
@@ -292,7 +295,23 @@ export function RuntimeStatusLine() {
   );
 }
 
-export function Dashboard({ onCtrlCAbort }: { onCtrlCAbort: CtrlCAbortHandler }) {
+export interface DashboardProps {
+  onCtrlCAbort: CtrlCAbortHandler;
+  hasInterruptibleTask: () => boolean;
+  onInterrupt: () => void;
+  onCycleMode: () => void;
+  onLocalCommand: (text: string) => boolean;
+  readClipboardImage: () => Promise<ClipboardImageReadResult>;
+}
+
+export function Dashboard({
+  onCtrlCAbort,
+  hasInterruptibleTask,
+  onInterrupt,
+  onCycleMode,
+  onLocalCommand,
+  readClipboardImage,
+}: DashboardProps) {
   const { columns, rows } = useWindowSize();
   const history = useOutputStore((s) => s.history);
   const clearedStaticTurns = useOutputStore((s) => s.clearedStaticTurns);
@@ -420,7 +439,16 @@ export function Dashboard({ onCtrlCAbort }: { onCtrlCAbort: CtrlCAbortHandler })
                 <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
                   <SteerQueueList items={queuedSteers} columns={columns} />
                   {isAgentWorking ? <Text dimColor> · /stop or Esc to interrupt</Text> : null}
-                  <SmartLinePrompt label="" />
+                  <MessageComposer
+                    label=""
+                    isAgentRunning={isAgentWorking}
+                    hasInterruptibleTask={hasInterruptibleTask}
+                    onInterrupt={onInterrupt}
+                    onCycleMode={onCycleMode}
+                    onCommand={onLocalCommand}
+                    onNotice={(message) => useOutputStore.getState().logSystem(message)}
+                    readClipboardImage={readClipboardImage}
+                  />
                 </Box>
                 <ModeBadge />
               </Box>

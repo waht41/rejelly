@@ -1,5 +1,5 @@
 /**
- * Slash-command palette overlay for the `/`-trigger in SmartLinePrompt.
+ * Slash-command palette overlay for the `/`-trigger in MessageComposer.
  * Presentational + keyboard navigation over a controlled command list; Enter submits the
  * highlighted command, Esc dismisses. Mirrors FilePickerOverlay's interaction model.
  */

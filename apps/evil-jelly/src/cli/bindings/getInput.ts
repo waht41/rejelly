@@ -3,11 +3,11 @@ import {
   interruptActiveTask,
   type TaskInterruptionResult,
 } from "../../shared/task-interruption/taskStack";
+import { usePromptStore } from "../message-composer/session/composerStore";
 import { requestRunAbort } from "../runtime/runControl";
 import { requestExit } from "../runtime/sessionRunControl";
 import { drainSteers, enqueueSteer } from "../runtime/steerControl";
 import { useOutputStore } from "../store/useOutputStore";
-import { usePromptStore } from "../store/usePromptStore";
 import {
   dequeueLineInput,
   enqueueLineInput,

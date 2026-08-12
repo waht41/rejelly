@@ -14,8 +14,6 @@
 import { type Key, useInput } from "ink";
 import { useRef } from "react";
 import { normalizeNewlines } from "../../shared/foundation/string";
-import { hasActiveInterruptibleTask } from "../../shared/task-interruption/taskStack";
-import { useModeStore } from "../tool-approval/approvalModeStore";
 import { looksBinary, stripControlChars } from "./lineText";
 import {
   caretLeft,
@@ -72,8 +70,9 @@ export interface LineKeybindingDeps {
   isAgentRunning: boolean;
   selectedFiles: string[];
   selectedImages: string[];
-  /** Send a bare control command to the host (used for `/stop`). */
-  submitLine: (value: string) => void;
+  hasInterruptibleTask: () => boolean;
+  onInterrupt: () => void;
+  onCycleMode: () => void;
   removeSelectedFile: (path: string) => void;
   clearDraft: () => void;
   submit: () => void;
@@ -89,7 +88,9 @@ export function useLineKeybindings(deps: LineKeybindingDeps): void {
     isAgentRunning,
     selectedFiles,
     selectedImages,
-    submitLine,
+    hasInterruptibleTask,
+    onInterrupt,
+    onCycleMode,
     removeSelectedFile,
     clearDraft,
     submit,
@@ -133,8 +134,8 @@ export function useLineKeybindings(deps: LineKeybindingDeps): void {
 
     // Only a consecutive vertical-motion sequence keeps its desired visual column.
     preferredColumnRef.current = null;
-    if (key.escape && (isAgentRunning || hasActiveInterruptibleTask())) {
-      submitLine("/stop");
+    if (key.escape && (isAgentRunning || hasInterruptibleTask())) {
+      onInterrupt();
       return;
     }
     if (key.escape) {
@@ -147,7 +148,7 @@ export function useLineKeybindings(deps: LineKeybindingDeps): void {
     // Shift+Tab cycles the session interaction mode (normal ⇄ auto). Must precede the plain-Tab
     // handler below, which inserts spaces.
     if (key.tab && key.shift) {
-      useModeStore.getState().cycleMode();
+      onCycleMode();
       return;
     }
 
