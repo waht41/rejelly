@@ -1,8 +1,8 @@
 import { Box, Text } from "ink";
 import stringWidth from "string-width";
-import type { PickerKeySink } from "../../operator-decision/ListPicker";
-import { ListPicker } from "../../operator-decision/ListPicker";
 import type { SkillPickerItem } from "../../store/usePromptStore";
+import type { ComposerPickerKeySink } from "./ComposerPicker";
+import { ComposerPicker } from "./ComposerPicker";
 
 interface SkillPickerOverlayProps {
   items: SkillPickerItem[];
@@ -10,7 +10,7 @@ interface SkillPickerOverlayProps {
   onSelect: (skill: SkillPickerItem) => void;
   onCancel: () => void;
   maxVisibleRows?: number;
-  keySink?: PickerKeySink;
+  keySink?: ComposerPickerKeySink;
 }
 
 function pickerDescription(item: SkillPickerItem): string {
@@ -48,14 +48,14 @@ export function SkillPickerOverlay({
   );
 
   return (
-    <ListPicker
+    <ComposerPicker
       items={items}
-      getId={(item) => item.qualifiedName}
+      getKey={(item) => item.qualifiedName}
       onSelect={onSelect}
       onCancel={onCancel}
       keySink={keySink}
-      emptyText="No matching Skills"
-      maxVisibleRows={maxVisibleRows}
+      empty={<Text dimColor>No matching Skills</Text>}
+      visibleRows={maxVisibleRows}
       renderItem={(item, { selected }) => (
         <Box flexDirection="row">
           <Box width={titleColumnWidth + 3} flexShrink={0}>

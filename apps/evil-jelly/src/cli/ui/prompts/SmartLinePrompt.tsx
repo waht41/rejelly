@@ -31,7 +31,6 @@ import type { DOMElement } from "ink";
 import { Box, Text, useCursor, useStdout } from "ink";
 import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
 import stringWidth from "string-width";
-import type { PickerKeyHandler } from "../../operator-decision/ListPicker";
 import { extractAtQuery, refsMissingFromText, replaceAtToken } from "../../prompt-editor/atTrigger";
 import { saveClipboardImage } from "../../prompt-editor/clipboardImage";
 import { copyTextToClipboard } from "../../prompt-editor/clipboardText";
@@ -67,6 +66,7 @@ import {
 } from "../../store/usePromptStore";
 import { useViewStore } from "../../store/useViewStore";
 import { applyModeCommand, MODE_META } from "../../tool-approval/approvalModeStore";
+import type { ComposerPickerKeyHandler } from "../pickers/ComposerPicker";
 import { FilePickerOverlay } from "../pickers/FilePickerOverlay";
 import { filterSkillPickerItems, SkillPickerOverlay } from "../pickers/SkillPickerOverlay";
 import { SlashCommandOverlay } from "../pickers/SlashCommandOverlay";
@@ -247,7 +247,7 @@ export function SmartLinePrompt({ label }: { label: string }) {
   const pasteRunRef = useRef<PasteRun | null>(null);
   // Key-claim slot shared with whichever picker overlay is mounted: the picker
   // publishes its handler here and the line keybindings offer it each key first.
-  const overlayKeysRef = useRef<PickerKeyHandler | null>(null);
+  const overlayKeysRef = useRef<ComposerPickerKeyHandler | null>(null);
 
   const isMultiline = buf.text.includes("\n");
   const labelWidth = stringWidth(`${label || "❯"} `);

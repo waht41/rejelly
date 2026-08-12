@@ -5,9 +5,9 @@
  */
 
 import { Box, Text } from "ink";
-import type { PickerKeySink } from "../../operator-decision/ListPicker";
-import { ListPicker } from "../../operator-decision/ListPicker";
 import type { SlashCommand } from "../../prompt-editor/slashCommands";
+import type { ComposerPickerKeySink } from "./ComposerPicker";
+import { ComposerPicker } from "./ComposerPicker";
 
 interface SlashCommandOverlayProps {
   /** Filtered commands to show (already matched against the typed query). */
@@ -17,7 +17,7 @@ interface SlashCommandOverlayProps {
   /** Called when the user dismisses the panel (Esc). */
   onCancel: () => void;
   /** Slot to publish the picker's key handler into (shared-stdin hosts). */
-  keySink?: PickerKeySink;
+  keySink?: ComposerPickerKeySink;
 }
 
 export function SlashCommandOverlay({
@@ -27,9 +27,9 @@ export function SlashCommandOverlay({
   keySink,
 }: SlashCommandOverlayProps) {
   return (
-    <ListPicker
+    <ComposerPicker
       items={commands}
-      getId={(command) => command.name}
+      getKey={(command) => command.name}
       onSelect={(command) => onSelect(command.name)}
       onCancel={onCancel}
       keySink={keySink}

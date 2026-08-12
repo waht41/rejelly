@@ -8,8 +8,8 @@ import { Text } from "ink";
 import { useEffect, useRef, useState } from "react";
 import type { FuzzyPathRefMatch } from "../../../domains/workspace/read/FuzzySearchService";
 import { fuzzySearchPathRefs } from "../../../domains/workspace/read/FuzzySearchService";
-import type { PickerKeySink } from "../../operator-decision/ListPicker";
-import { ListPicker } from "../../operator-decision/ListPicker";
+import type { ComposerPickerKeySink } from "./ComposerPicker";
+import { ComposerPicker } from "./ComposerPicker";
 
 const DEFAULT_MAX_VISIBLE_ROWS = 10;
 const DEBOUNCE_MS = 150;
@@ -24,7 +24,7 @@ interface FilePickerOverlayProps {
   /** Maximum result rows to render without moving the prompt too far up. */
   maxVisibleRows?: number;
   /** Slot to publish the picker's key handler into (shared-stdin hosts). */
-  keySink?: PickerKeySink;
+  keySink?: ComposerPickerKeySink;
 }
 
 export function FilePickerOverlay({
@@ -78,14 +78,14 @@ export function FilePickerOverlay({
   }, [query]);
 
   return (
-    <ListPicker
+    <ComposerPicker
       items={matches}
-      getId={(match) => match.path}
+      getKey={(match) => match.path}
       onSelect={(match) => onSelect(match.path)}
       onCancel={onCancel}
       keySink={keySink}
-      emptyText="No matching paths"
-      maxVisibleRows={maxVisibleRows}
+      empty={<Text dimColor>No matching paths</Text>}
+      visibleRows={maxVisibleRows}
       renderItem={(match, { selected }) => (
         <Text color={selected ? "cyan" : undefined}>
           {selected ? "▸ " : "  "}

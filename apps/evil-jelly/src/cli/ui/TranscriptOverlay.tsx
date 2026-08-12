@@ -6,11 +6,11 @@
 
 import { Box, Text, useInput, useStdout } from "ink";
 import { useEffect, useMemo, useState } from "react";
-import { ListPicker } from "../operator-decision/ListPicker";
-import { getVisibleWindow } from "../operator-decision/navigation";
 import type { ToolBlock } from "../store/useOutputStore";
 import { useOutputStore } from "../store/useOutputStore";
 import { useViewStore } from "../store/useViewStore";
+import { ListViewport } from "../terminal-ui/picker/ListViewport";
+import { getVisibleWindow, moveListSelection } from "../terminal-ui/picker/listNavigation";
 
 type ToolEntry = {
   id: string;
@@ -155,8 +155,44 @@ export function TranscriptOverlay() {
     visibleRowCount: listViewportRows,
   });
 
-  useInput((_input, key) => {
-    if (mode !== "detail") {
+  useInput((input, key) => {
+    if (mode === "list") {
+      if (key.escape || (key.ctrl && input === "o")) {
+        closeTranscript();
+        return;
+      }
+      if (key.upArrow || key.downArrow) {
+        setSelectedIndex((previous) =>
+          moveListSelection({
+            selectedIndex: previous,
+            itemCount: toolEntries.length,
+            command: key.upArrow ? "up" : "down",
+          }),
+        );
+        return;
+      }
+      if (key.pageUp || (key.shift && key.tab) || key.pageDown || key.home || key.end) {
+        const command = key.home
+          ? "home"
+          : key.end
+            ? "end"
+            : key.pageDown
+              ? "page-down"
+              : "page-up";
+        setSelectedIndex((previous) =>
+          moveListSelection({
+            selectedIndex: previous,
+            itemCount: toolEntries.length,
+            command,
+            pageStep,
+          }),
+        );
+        return;
+      }
+      if (key.return && selectedEntry) {
+        setScrollOffset(0);
+        setMode("detail");
+      }
       return;
     }
     // Esc pops one layer (detail → list, keeping the selection); ctrl+o closes the
@@ -165,7 +201,7 @@ export function TranscriptOverlay() {
       setMode("list");
       return;
     }
-    if (key.ctrl && _input === "o") {
+    if (key.ctrl && input === "o") {
       closeTranscript();
       return;
     }
@@ -238,23 +274,12 @@ export function TranscriptOverlay() {
         <Text dimColor>(↑↓ pgup/pgdn select · Enter open · Esc/ctrl+o close)</Text>
       </Box>
       <Box flexDirection="column" marginTop={1}>
-        <ListPicker
+        <ListViewport
           items={toolEntries}
-          getId={(entry) => entry.id}
-          navigation="clamp"
-          maxVisibleRows={listViewportRows}
-          pageStep={pageStep}
           selectedIndex={selectedIndex}
-          onSelectedIndexChange={setSelectedIndex}
-          isCancelInput={(input, key) => key.ctrl && input === "o"}
-          emptyText="No tool calls in this session."
-          onCancel={closeTranscript}
-          onSelect={(entry) => {
-            const index = toolEntries.findIndex((candidate) => candidate.id === entry.id);
-            setSelectedIndex(Math.max(0, index));
-            setScrollOffset(0);
-            setMode("detail");
-          }}
+          getKey={(entry) => entry.id}
+          visibleRows={listViewportRows}
+          empty={<Text dimColor>No tool calls in this session.</Text>}
           renderItem={(entry, { selected }) => {
             return (
               <Text wrap="truncate-end" color={selected ? "cyan" : undefined} inverse={selected}>

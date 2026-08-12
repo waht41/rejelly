@@ -5,6 +5,7 @@
     "@cli:app": ["src/cli/app/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:bindings": ["src/cli/bindings/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:ui": ["src/cli/ui/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@cli:terminal-ui": ["src/cli/terminal-ui/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:prompt-editor": [
       "src/cli/prompt-editor/**/*",
       "!src/**/__tests__/**/*",
@@ -113,6 +114,7 @@
         "@domain:session:repository": ["@ext:fs"],
         "@cli:bindings": ["@ext:ui"],
         "@cli:ui": ["@cli:runtime", "@ext:ui"],
+        "@cli:terminal-ui": ["@ext:ui"],
         "@cli:prompt-editor": ["@ext:ui"],
         "@cli:operator-decision": ["@ext:ui"],
         "@cli:tool-approval": ["@ext:ui"],
@@ -130,7 +132,8 @@
           "@cli:operator-decision",
           "@cli:tool-approval"
         ],
-        "@cli:ui": ["@cli:operator-decision", "@cli:tool-approval"],
+        "@cli:ui": ["@cli:operator-decision", "@cli:tool-approval", "@cli:terminal-ui"],
+        "@cli:operator-decision": ["@cli:terminal-ui"],
         "@cli:prompt-editor": ["@cli:tool-approval"],
         "@cli:tool-approval": ["@cli:operator-decision", "@cli:store"]
       },
