@@ -4,30 +4,31 @@ import {
   type TaskInterruptionResult,
 } from "../../shared/task-interruption/taskStack";
 import { useOutputStore } from "../conversation-display/useOutputStore";
-import type { InteractiveRunControl } from "../entry/unified-run/interactive/runControl";
 import { useComposerSession } from "../message-composer/session/composerSession";
 import {
   createSubmissionDispatcher,
-  type SubmissionDispatcher,
   type SubmissionDispatcherOptions,
 } from "../submission-dispatch/dispatcher";
 
-let activeDispatcher: SubmissionDispatcher | undefined;
+export interface InteractiveSubmissionControl {
+  requestExit: () => void;
+  requestRunAbort: (reason: string) => boolean;
+}
 
 function formatTaskInterruption(result: TaskInterruptionResult): string {
   if (!result.interrupted) return "[System] Nothing to stop right now.";
   return `[System] Interrupted active task [${result.task.type}] ${result.task.name}.`;
 }
 
-export function createCliSubmissionDispatcher(
-  runControl: InteractiveRunControl,
+export function createInteractiveSubmission(
+  control: InteractiveSubmissionControl,
   options?: SubmissionDispatcherOptions,
 ) {
   const dispatcher = createSubmissionDispatcher(
     {
       interruptTask: (reason) => formatTaskInterruption(interruptActiveTask(reason)),
-      requestExit: () => runControl.loop.request({ type: "exit" }),
-      requestRunAbort: runControl.segment.requestAbort,
+      requestExit: control.requestExit,
+      requestRunAbort: control.requestRunAbort,
       restoreDraft: (draft: LineInputValue) => useComposerSession.getState().seedDraft(draft),
       logSystem: (message) => useOutputStore.getState().logSystem(message),
       setInputPhase: (phase) =>
@@ -38,10 +39,5 @@ export function createCliSubmissionDispatcher(
     options,
   );
   useComposerSession.getState().setBackgroundLineHandler(dispatcher.submit);
-  activeDispatcher = dispatcher;
   return dispatcher;
-}
-
-export function cancelCliSubmission(reason: string): boolean {
-  return activeDispatcher?.cancel(reason) ?? false;
 }

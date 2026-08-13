@@ -22,6 +22,7 @@ import {
 } from "../conversation-display/useOutputStore";
 import type { InteractiveRunControl } from "../entry/unified-run/interactive/runControl";
 import { createInteractiveShell } from "../interactive-shell/inkLifecycle";
+import { createInteractiveSubmission } from "../interactive-shell/submission";
 import {
   resetComposerSession,
   useComposerSession,
@@ -34,7 +35,6 @@ import {
 import { resetSubmissionDispatch } from "../submission-dispatch/dispatcher";
 import { resetModeSession, useModeStore } from "../tool-approval/approvalModeStore";
 import { createToolApproval } from "../tool-approval/createToolApproval";
-import { cancelCliSubmission, createCliSubmissionDispatcher } from "./submissionDispatcher";
 
 function toDecisionView(view?: PromptChoiceView): DecisionView | undefined {
   if (view === undefined) {
@@ -141,18 +141,13 @@ function logCliStartup(
 }
 
 function createPromptBindings(options: {
-  seedInput: string | undefined;
+  getInput: PromptInputBindings["getInput"];
   suspendInkForExternalProcess: <T>(fn: () => Promise<T>) => Promise<T>;
-  runControl: InteractiveRunControl;
 }): PromptInputBindings & AgentModeBindings & ToolConfirmationBindings {
-  const { seedInput, suspendInkForExternalProcess, runControl } = options;
+  const { getInput, suspendInkForExternalProcess } = options;
   const decision = createOperatorDecision();
-  const submissionDispatcher = createCliSubmissionDispatcher(
-    runControl,
-    seedInput !== undefined ? { seedLine: seedInput } : undefined,
-  );
   return {
-    getInput: submissionDispatcher.getInput,
+    getInput,
     confirmTool: createToolApproval({
       suspendInkForExternalProcess,
       getMode: () => useModeStore.getState().mode,
@@ -188,15 +183,21 @@ export function createCliHostBindings(options: CreateCliHostBindingsOptions): {
   const { version, seedInput, reviewCliFlag, runControl } = options;
   resetCliBindingSession();
 
+  const submission = createInteractiveSubmission(
+    {
+      requestExit: () => runControl.loop.request({ type: "exit" }),
+      requestRunAbort: runControl.segment.requestAbort,
+    },
+    seedInput !== undefined ? { seedLine: seedInput } : undefined,
+  );
   const lifecycle = createInteractiveShell({
     requestRunAbort: runControl.segment.requestAbort,
-    cancelSubmission: cancelCliSubmission,
+    cancelSubmission: submission.cancel,
   });
   const outputBindings = createOutputBindings();
   const promptBindings = createPromptBindings({
-    seedInput,
+    getInput: submission.getInput,
     suspendInkForExternalProcess: lifecycle.suspendForExternalProcess,
-    runControl,
   });
   const showBanner = () => showSessionBanner(version);
 
