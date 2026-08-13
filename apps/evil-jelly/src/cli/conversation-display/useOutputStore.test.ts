@@ -716,6 +716,40 @@ describe("logToolRound", () => {
       "tool",
     ]);
   });
+
+  it("numbers resumed tools and continues the sequence for live tools", () => {
+    useOutputStore.getState().hydrateHistory([
+      {
+        id: "1:a:tool:0",
+        type: "tool",
+        turnId: "t1",
+        seq: 1,
+        toolCallId: "call_1",
+        toolName: "grep",
+        ok: true,
+      },
+      {
+        id: "1:a:tool:1",
+        type: "tool",
+        turnId: "t1",
+        seq: 1,
+        toolCallId: "call_2",
+        toolName: "read_file",
+        ok: true,
+      },
+    ]);
+
+    const resumedOrdinals = useOutputStore
+      .getState()
+      .history.filter((turn) => turn.type === "tool")
+      .map((turn) => turn.tool.ordinal);
+    const live = useOutputStore
+      .getState()
+      .beginTool({ toolName: "shell", summary: "[Tools] shell" });
+
+    expect(resumedOrdinals).toEqual([1, 2]);
+    expect(live.ordinal).toBe(3);
+  });
 });
 
 describe("clearHistory", () => {

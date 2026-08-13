@@ -1,7 +1,8 @@
 import type { TranscriptItem } from "../../../shared/session/transcript";
 import type { Turn } from "./model";
+import type { HistorySequence } from "./sequence";
 
-export function projectTranscriptItem(item: TranscriptItem): Turn {
+export function projectTranscriptItem(item: TranscriptItem, sequence: HistorySequence): Turn {
   switch (item.type) {
     case "user": {
       const actions = item.attachments?.map(
@@ -41,12 +42,16 @@ export function projectTranscriptItem(item: TranscriptItem): Turn {
           preview: fullResult.split("\n").slice(0, 6).join("\n").slice(0, 600),
           fullResult,
           ok: item.ok,
+          ordinal: sequence.nextToolOrdinal(),
         },
       };
     }
   }
 }
 
-export function projectTranscriptHistory(items: readonly TranscriptItem[]): Turn[] {
-  return items.map(projectTranscriptItem);
+export function projectTranscriptHistory(
+  items: readonly TranscriptItem[],
+  sequence: HistorySequence,
+): Turn[] {
+  return items.map((item) => projectTranscriptItem(item, sequence));
 }

@@ -292,7 +292,7 @@ export const useOutputStore = create<OutputState>((set) => ({
   hydrateHistory: (items) => {
     clearStreamState();
     set((state) => ({
-      history: [...state.history, ...projectTranscriptHistory(items)],
+      history: [...state.history, ...projectTranscriptHistory(items, historySequence)],
       streamBuffer: "",
       runningTools: [],
       runtime: idleRuntime(),
