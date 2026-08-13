@@ -2,8 +2,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { parseWorkspaceRelToAst } from "../domains/workspace/ast/heuristicAstCore";
-import { getWorkspaceFsPolicy, setWorkspaceRoot } from "../shared/fs-policy/workspace-fs-policy";
+import {
+  getWorkspaceFsPolicy,
+  setWorkspaceRoot,
+} from "../../../shared/fs-policy/workspace-fs-policy";
+import { parseWorkspaceRelToAst } from "./heuristicAstCore";
 
 describe("heuristic AST workspace behavior", () => {
   let prevRoot: string;

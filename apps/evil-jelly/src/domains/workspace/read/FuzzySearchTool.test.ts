@@ -36,4 +36,31 @@ describe("FuzzySearchTool", () => {
 
     expect(result).toContain("nested/NewReport.md");
   });
+
+  it("returns ranked paths for a fuzzy needle", async () => {
+    await fs.mkdir(path.join(workspace, "src"), { recursive: true });
+    await fs.writeFile(path.join(workspace, "src", "FuzzyMatchMe.ts"), "// probe\n");
+
+    const args = FuzzySearchTool.parameters.parse({
+      keyword: "FuzzyMtch",
+      directory: ".",
+      limit: 10,
+    });
+    const result = await FuzzySearchTool.handler(args);
+
+    expect(result, String(result)).not.toMatch(/^fuzzy_search_paths failed:/);
+    expect(typeof result).toBe("string");
+    expect(result).toContain("FuzzyMatchMe.ts");
+  });
+
+  it("rejects paths outside workspace", async () => {
+    const args = FuzzySearchTool.parameters.parse({
+      keyword: "x",
+      directory: "..",
+      limit: 5,
+    });
+    const result = await FuzzySearchTool.handler(args);
+
+    expect(result).toMatch(/escape|working directory|not allowed/i);
+  });
 });

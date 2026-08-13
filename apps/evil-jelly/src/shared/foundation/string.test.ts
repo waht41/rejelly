@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { compareStringsByCodeUnit, normalizeNewlines } from "./string";
+import { compareStringsByCodeUnit, escapeRegexLiteral, normalizeNewlines } from "./string";
+
+describe("escapeRegexLiteral", () => {
+  it("escapes regular-expression metacharacters", () => {
+    expect(escapeRegexLiteral("a+b")).toBe("a\\+b");
+    expect(escapeRegexLiteral("foo.bar")).toBe("foo\\.bar");
+  });
+});
 
 describe("normalizeNewlines", () => {
   it("normalizes CRLF and lone CR to LF", () => {

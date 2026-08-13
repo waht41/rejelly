@@ -3,13 +3,13 @@ import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createTestHostBindings } from "../../../__tests__/testHostBindings";
 import { setWorkspaceRoot } from "../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import type {
   FsOutsideAccessPayload,
   FsWritePayload,
 } from "../../../shared/host/toolConfirmationBindings";
+import { createTestHostBindings } from "../__tests__/testHostBindings";
 import { createCreateFileTool, createDeleteFileTool, createEditFileTool } from "./WriteTools";
 
 const hostBindingMock = vi.hoisted(() => ({

@@ -1,6 +1,5 @@
 import { Lang, parse } from "@ast-grep/napi";
 import { describe, expect, it } from "vitest";
-import { extractLeadingFileJsDoc } from "../domains/workspace/ast/jsdoc";
 import {
   collectDocumentSymbols,
   extractExternalCalleeSymbols,
@@ -9,15 +8,9 @@ import {
   findNamedDeclarationAstNodes,
   getCallableEnvelope,
   sliceDeclarationSignature,
-} from "../domains/workspace/ast/queries";
-import { escapeRegexLiteral } from "../shared/foundation/string";
+} from "./queries";
 
-describe("heuristicAstCore", () => {
-  it("escapeRegexLiteral escapes metacharacters", () => {
-    expect(escapeRegexLiteral("a+b")).toBe("a\\+b");
-    expect(escapeRegexLiteral("foo.bar")).toBe("foo\\.bar");
-  });
-
+describe("workspace AST queries", () => {
   it("collectDocumentSymbols captures declarations", () => {
     const code = `
       class C {}
@@ -96,19 +89,6 @@ describe("heuristicAstCore", () => {
     expect(nodes[0]?.text()).toContain("return 0");
     expect(nodes[1]?.kind()).toBe("function_declaration");
     expect(nodes[1]?.text()).toContain("return 1");
-  });
-
-  it("extractLeadingFileJsDoc reads top-of-file block", () => {
-    const lines = [
-      "/**",
-      " * Module overview line.",
-      " */",
-      "",
-      'import "./x";',
-      "export const a = 1;",
-    ];
-    const raw = extractLeadingFileJsDoc(lines);
-    expect(raw).toContain("Module overview line.");
   });
 
   it("filterDeclarationsByName respects case flag", () => {
