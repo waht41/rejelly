@@ -170,12 +170,18 @@
           "@cli:runtime",
           "@cli:message-composer",
           "@cli:submission-dispatch",
-          "@cli:conversation-display",
           "@cli:skill-runtime",
           "@cli:unified-conversation"
         ],
         "@cli:skill-runtime": ["@domain:skills:*"],
-        "@cli:unified-conversation": ["@domain:session:*"],
+        "@cli:unified-conversation": [
+          "@cli:conversation-display",
+          "@cli:message-composer",
+          "@cli:runtime",
+          "@cli:submission-dispatch",
+          "@domain:session:*",
+          "@domain:skills:agent"
+        ],
         "@cli:bindings": [
           "@cli:unified-run",
           "@cli:conversation-display",

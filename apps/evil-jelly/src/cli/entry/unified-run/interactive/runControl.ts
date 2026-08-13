@@ -1,16 +1,16 @@
-export type RunLoopIntent =
-  | { type: "exit" }
-  | { type: "new_session" }
-  | { type: "resume"; sessionId: string }
-  | { type: "none" };
+import type {
+  ConversationLoopControl,
+  ConversationLoopIntent,
+} from "../../../unified-conversation/MainCliAgent";
+
+export type RunLoopIntent = ConversationLoopIntent | { type: "none" };
 
 export interface RunSegmentControl {
   registerAbort: (handler: (reason: string) => void) => () => void;
   requestAbort: (reason: string) => boolean;
 }
 
-export interface RunLoopControl {
-  request: (intent: Exclude<RunLoopIntent, { type: "none" }>) => void;
+export interface RunLoopControl extends ConversationLoopControl {
   take: () => RunLoopIntent;
 }
 

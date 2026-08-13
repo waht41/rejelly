@@ -16,7 +16,7 @@ import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 import { runWithReview } from "../../../runtime/runWithReview";
 import { generateTraceId } from "../../../runtime/traceId";
-import { MainCliAgent } from "./orchestration/MainCliAgent";
+import { MainCliAgent } from "../../../unified-conversation/MainCliAgent";
 import type { InteractiveRunControl } from "./runControl";
 
 export interface RunEvilJellyHostOptions {

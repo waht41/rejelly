@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   runWithReview: vi.fn(),
 }));
 
-vi.mock("./orchestration/MainCliAgent", () => ({
+vi.mock("../../../unified-conversation/MainCliAgent", () => ({
   MainCliAgent: mocks.mainCliAgent,
 }));
 

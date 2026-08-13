@@ -13,36 +13,44 @@ import {
   type Message,
   reborn,
 } from "@rejelly/core";
-import type { SessionRecorder } from "../../../../../domains/session/recorder/sessionRecorder";
+import type { SessionRecorder } from "../../domains/session/recorder/sessionRecorder";
 import {
   listSessions,
   loadSession,
   type SessionBudget,
-} from "../../../../../domains/session/repository/sessionStore";
+} from "../../domains/session/repository/sessionStore";
 import {
   SKILL_RUNTIME_PROVIDER_KEY,
   type SkillRuntimeSnapshot,
-} from "../../../../../domains/skills/agent/skillRuntime";
-import { UnifiedAgent } from "../../../../../features/unified/UnifiedAgent";
-import { env } from "../../../../../shared/configuration/env";
-import { countConversationTurns } from "../../../../../shared/conversation/compactionMessages";
-import { getWorkspaceFsPolicy } from "../../../../../shared/fs-policy/workspace-fs-policy";
-import type { EvilJellyBindings } from "../../../../../shared/host/bindings";
-import { getBinding, setBinding } from "../../../../../shared/host/context";
-import type { LineInputValue } from "../../../../../shared/host/inputBindings";
-import { getUserInputDisplay } from "../../../../../shared/model/message/userInputMetadata";
-import { formatUserInputDisplay } from "../../../../conversation-display/history/userInputDisplay";
+} from "../../domains/skills/agent/skillRuntime";
+import { UnifiedAgent } from "../../features/unified/UnifiedAgent";
+import { env } from "../../shared/configuration/env";
+import { countConversationTurns } from "../../shared/conversation/compactionMessages";
+import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
+import type { EvilJellyBindings } from "../../shared/host/bindings";
+import { getBinding, setBinding } from "../../shared/host/context";
+import type { LineInputValue } from "../../shared/host/inputBindings";
+import { getUserInputDisplay } from "../../shared/model/message/userInputMetadata";
+import { formatUserInputDisplay } from "../conversation-display/history/userInputDisplay";
 import {
   formatSessionStatus,
   formatTokenUsageLine,
-} from "../../../../conversation-display/session-summary/format";
-import { buildSkillAwareUserMessage } from "../../../../message-composer/message-materialization/skillAwareUserMessage";
-import { withAbort } from "../../../../runtime/withAbort";
-import { drainSteers } from "../../../../submission-dispatch/steerQueue";
-import { combineSessionBudget } from "../../../../unified-conversation/budget";
-import type { RunLoopControl } from "../runControl";
+} from "../conversation-display/session-summary/format";
+import { buildSkillAwareUserMessage } from "../message-composer/message-materialization/skillAwareUserMessage";
+import { withAbort } from "../runtime/withAbort";
+import { drainSteers } from "../submission-dispatch/steerQueue";
+import { combineSessionBudget } from "./budget";
 
 const UnifiedAgentWithAbort = UnifiedAgent.fork({ middlewares: [withAbort()] });
+
+export type ConversationLoopIntent =
+  | { type: "exit" }
+  | { type: "new_session" }
+  | { type: "resume"; sessionId: string };
+
+export interface ConversationLoopControl {
+  request: (intent: ConversationLoopIntent) => void;
+}
 
 /**
  * Handle a `/resume [sessionId]` command. Resolves the target (by id, or via an Ink-native
@@ -53,7 +61,7 @@ export async function tryRequestResume(
   rawInput: string,
   currentSessionId: string | undefined,
   host: EvilJellyBindings,
-  runLoopControl: Pick<RunLoopControl, "request">,
+  runLoopControl: ConversationLoopControl,
 ): Promise<boolean> {
   const arg = rawInput.slice("/resume".length).trim();
   const workspaceRoot = getWorkspaceFsPolicy().getRoot();
@@ -100,7 +108,7 @@ export async function tryRequestResume(
 }
 
 export interface MainCliAgentProps extends EvilJellyBindings {
-  runLoopControl: Pick<RunLoopControl, "request">;
+  runLoopControl: ConversationLoopControl;
   /** Durable session id; when set, each completed turn is persisted locally for resume. */
   sessionId?: string;
   /** Current run segment traceId, recorded in the session's trace chain. */
