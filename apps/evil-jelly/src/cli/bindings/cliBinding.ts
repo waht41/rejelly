@@ -20,6 +20,7 @@ import {
   TOOL_FULL_CAP,
   useOutputStore,
 } from "../conversation-display/useOutputStore";
+import type { InteractiveRunControl } from "../entry/unified-run/interactive/runControl";
 import {
   resetComposerSession,
   useComposerSession,
@@ -142,10 +143,12 @@ function logCliStartup(
 function createPromptBindings(options: {
   seedInput: string | undefined;
   suspendInkForExternalProcess: <T>(fn: () => Promise<T>) => Promise<T>;
+  runControl: InteractiveRunControl;
 }): PromptInputBindings & AgentModeBindings & ToolConfirmationBindings {
-  const { seedInput, suspendInkForExternalProcess } = options;
+  const { seedInput, suspendInkForExternalProcess, runControl } = options;
   const decision = createOperatorDecision();
   const submissionDispatcher = createCliSubmissionDispatcher(
+    runControl,
     seedInput !== undefined ? { seedLine: seedInput } : undefined,
   );
   return {
@@ -170,6 +173,8 @@ export interface CreateCliHostBindingsOptions {
   seedInput?: string;
   /** When true, logs review endpoint (matches CLI `--review` only, not env-only enable). */
   reviewCliFlag?: boolean;
+  /** Per-invocation control shared by Ink, submission dispatch, and the interactive run loop. */
+  runControl: InteractiveRunControl;
 }
 
 /**
@@ -180,14 +185,15 @@ export function createCliHostBindings(options: CreateCliHostBindingsOptions): {
   bindings: EvilJellyBindings;
   dispose: () => void;
 } {
-  const { version, seedInput, reviewCliFlag } = options;
+  const { version, seedInput, reviewCliFlag, runControl } = options;
   resetCliBindingSession();
 
-  const lifecycle = createInkLifecycle();
+  const lifecycle = createInkLifecycle(runControl.segment);
   const outputBindings = createOutputBindings();
   const promptBindings = createPromptBindings({
     seedInput,
     suspendInkForExternalProcess: lifecycle.suspendForExternalProcess,
+    runControl,
   });
   const showBanner = () => showSessionBanner(version);
 

@@ -16,6 +16,7 @@ import { setWorkspaceRoot } from "../../../../shared/fs-policy/workspace-fs-poli
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 import { messageContentToText } from "../../../../shared/model/message/content";
 import type { TranscriptItem } from "../../../../shared/session/transcript";
+import { createInteractiveRunControl } from "./runControl";
 import { runEvilJellyHost } from "./runSegment";
 
 const originalAutoCompactTokens = process.env.OPENAI_AUTO_COMPACT_TOKENS;
@@ -83,6 +84,7 @@ describe("non-TTY session lifecycle", () => {
   ])("does not create an empty session when it $name", async ({ inputs }) => {
     const model = createMockModel();
     await runEvilJellyHost(createMemoryBindings(inputs), {
+      runControl: createInteractiveRunControl(),
       model: model.adapter,
       sessionId: "untouched",
       sessionStartMode: "new",
@@ -137,6 +139,7 @@ describe("non-TTY session lifecycle", () => {
     ]);
 
     await runEvilJellyHost(createMemoryBindings(["Inspect the workspace", "/compress", "/exit"]), {
+      runControl: createInteractiveRunControl(),
       model: firstModel.adapter,
       sessionId: "lifecycle",
       sessionStartMode: "new",
@@ -165,6 +168,7 @@ describe("non-TTY session lifecycle", () => {
     ]);
 
     await runEvilJellyHost(createMemoryBindings(["Continue from the inspection", "/exit"]), {
+      runControl: createInteractiveRunControl(),
       model: secondModel.adapter,
       sessionId: "lifecycle",
       sessionStartMode: "resumed",
@@ -284,6 +288,7 @@ describe("non-TTY session lifecycle", () => {
     ]);
 
     await runEvilJellyHost(createMemoryBindings(["Check the workspace twice", "/exit"]), {
+      runControl: createInteractiveRunControl(),
       model: model.adapter,
       sessionId: "auto-compact",
       sessionStartMode: "new",
@@ -387,6 +392,7 @@ describe("non-TTY session lifecycle", () => {
 
     const model = createMockModel();
     await runEvilJellyHost(createMemoryBindings(["/exit"]), {
+      runControl: createInteractiveRunControl(),
       model: model.adapter,
       sessionId: "user-only-crash",
       sessionStartMode: "resumed",
@@ -453,6 +459,7 @@ describe("non-TTY session lifecycle", () => {
         "/exit",
       ]),
       {
+        runControl: createInteractiveRunControl(),
         model: firstModel.adapter,
         sessionId: "image-lifecycle",
         sessionStartMode: "new",
@@ -508,6 +515,7 @@ describe("non-TTY session lifecycle", () => {
     await runEvilJellyHost(
       createMemoryBindings(["Continue the comparison", "/compress", "/exit"]),
       {
+        runControl: createInteractiveRunControl(),
         model: compactModel.adapter,
         sessionId: "image-lifecycle",
         sessionStartMode: "resumed",

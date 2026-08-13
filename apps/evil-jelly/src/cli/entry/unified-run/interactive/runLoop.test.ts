@@ -3,12 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { connectMcpProviders } from "../../../../domains/mcp/mcpServerKit";
 import * as sessionStore from "../../../../domains/session/repository/sessionStore";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
-import {
-  requestNewSession,
-  requestResume,
-  takePendingNewSession,
-  takePendingResume,
-} from "../../../runtime/sessionRunControl";
+import { createInteractiveRunControl, type InteractiveRunControl } from "./runControl";
 import { runInteractiveLoop } from "./runLoop";
 import { runEvilJellyHost } from "./runSegment";
 
@@ -40,11 +35,7 @@ vi.mock("../skillRuntime", () => ({
 
 const runHostMock = vi.mocked(runEvilJellyHost);
 const connectMcpProvidersMock = vi.mocked(connectMcpProviders);
-
-function drainSessionSwitches(): void {
-  takePendingNewSession();
-  takePendingResume();
-}
+let runControl: InteractiveRunControl;
 
 function createBindings() {
   const systemEvents: string[] = [];
@@ -64,7 +55,7 @@ function createBindings() {
 describe("runInteractiveLoop mock session isolation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    drainSessionSwitches();
+    runControl = createInteractiveRunControl();
     runtimeMocks.buildSkillRuntime.mockResolvedValue({
       snapshot: { catalog: { size: 0, hash: "00000000" } },
       diagnostics: [],
@@ -78,6 +69,7 @@ describe("runInteractiveLoop mock session isolation", () => {
 
     await runInteractiveLoop({
       bindings,
+      runControl,
       model: {} as ModelAdapter,
       enableReview: false,
       snapshot: undefined,
@@ -114,6 +106,7 @@ describe("runInteractiveLoop mock session isolation", () => {
 
     await runInteractiveLoop({
       bindings,
+      runControl,
       model: {} as ModelAdapter,
       enableReview: false,
       snapshot: undefined,
@@ -136,12 +129,13 @@ describe("runInteractiveLoop mock session isolation", () => {
     runtimeMocks.formatSkillSummary.mockReturnValueOnce("Loaded 1 local Skill.");
     runHostMock
       .mockImplementationOnce(async () => {
-        requestNewSession();
+        runControl.loop.request({ type: "new_session" });
       })
       .mockResolvedValueOnce(undefined);
 
     await runInteractiveLoop({
       bindings,
+      runControl,
       model: {} as ModelAdapter,
       enableReview: false,
       snapshot: undefined,
@@ -177,11 +171,12 @@ describe("runInteractiveLoop mock session isolation", () => {
     const { bindings, systemEvents } = createBindings();
     const loadSessionSpy = vi.spyOn(sessionStore, "resumeSession");
     runHostMock.mockImplementationOnce(async () => {
-      requestResume("session_real");
+      runControl.loop.request({ type: "resume", sessionId: "session_real" });
     });
 
     await runInteractiveLoop({
       bindings,
+      runControl,
       model: {} as ModelAdapter,
       enableReview: false,
       snapshot: undefined,
@@ -211,12 +206,13 @@ describe("runInteractiveLoop mock session isolation", () => {
     };
     runHostMock
       .mockImplementationOnce(async () => {
-        requestNewSession();
+        runControl.loop.request({ type: "new_session" });
       })
       .mockResolvedValueOnce(undefined);
 
     await runInteractiveLoop({
       bindings,
+      runControl,
       model: {} as ModelAdapter,
       enableReview: false,
       snapshot: {} as AgentSnapshot,
@@ -279,12 +275,13 @@ describe("runInteractiveLoop mock session isolation", () => {
     });
     runHostMock
       .mockImplementationOnce(async () => {
-        requestResume("session_target");
+        runControl.loop.request({ type: "resume", sessionId: "session_target" });
       })
       .mockResolvedValueOnce(undefined);
 
     await runInteractiveLoop({
       bindings,
+      runControl,
       model: {} as ModelAdapter,
       enableReview: false,
       snapshot: {} as AgentSnapshot,
@@ -312,6 +309,7 @@ describe("runInteractiveLoop mock session isolation", () => {
     await expect(
       runInteractiveLoop({
         bindings,
+        runControl,
         model: {} as ModelAdapter,
         enableReview: false,
         snapshot: undefined,

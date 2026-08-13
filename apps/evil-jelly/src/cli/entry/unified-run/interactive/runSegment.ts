@@ -14,12 +14,13 @@ import {
 } from "../../../../domains/skills/agent/skillRuntime";
 import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
-import { registerRunAbort } from "../../../runtime/runControl";
 import { runWithReview } from "../../../runtime/runWithReview";
 import { generateTraceId } from "../../../runtime/traceId";
 import { MainCliAgent } from "./orchestration/MainCliAgent";
+import type { InteractiveRunControl } from "./runControl";
 
 export interface RunEvilJellyHostOptions {
+  runControl: InteractiveRunControl;
   model: ModelAdapter;
   /** Enable Review exporter with default endpoint or custom options. */
   enableReview?: boolean | ReviewOptions;
@@ -175,7 +176,7 @@ export async function runEvilJellyHost(
   const runAbortController = new AbortController();
   // Ctrl+C routes here: abort the whole run so the cancel signal reaches the
   // agent tree + teardown and the trace closes before exit.
-  const unregisterRunAbort = registerRunAbort((reason) => {
+  const unregisterRunAbort = options.runControl.segment.registerAbort((reason) => {
     if (!runAbortController.signal.aborted) {
       runAbortController.abort(new Error(reason));
     }
@@ -189,6 +190,7 @@ export async function runEvilJellyHost(
         // newly added (especially optional) bindings, e.g. showSessionBanner.
         MainCliAgent({
           ...bindings,
+          runLoopControl: options.runControl.loop,
           sessionId,
           traceId,
           seedContext,

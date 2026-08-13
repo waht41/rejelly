@@ -4,9 +4,8 @@ import {
   type TaskInterruptionResult,
 } from "../../shared/task-interruption/taskStack";
 import { useOutputStore } from "../conversation-display/useOutputStore";
+import type { InteractiveRunControl } from "../entry/unified-run/interactive/runControl";
 import { useComposerSession } from "../message-composer/session/composerSession";
-import { requestRunAbort } from "../runtime/runControl";
-import { requestExit } from "../runtime/sessionRunControl";
 import {
   createSubmissionDispatcher,
   type SubmissionDispatcher,
@@ -20,12 +19,15 @@ function formatTaskInterruption(result: TaskInterruptionResult): string {
   return `[System] Interrupted active task [${result.task.type}] ${result.task.name}.`;
 }
 
-export function createCliSubmissionDispatcher(options?: SubmissionDispatcherOptions) {
+export function createCliSubmissionDispatcher(
+  runControl: InteractiveRunControl,
+  options?: SubmissionDispatcherOptions,
+) {
   const dispatcher = createSubmissionDispatcher(
     {
       interruptTask: (reason) => formatTaskInterruption(interruptActiveTask(reason)),
-      requestExit,
-      requestRunAbort,
+      requestExit: () => runControl.loop.request({ type: "exit" }),
+      requestRunAbort: runControl.segment.requestAbort,
       restoreDraft: (draft: LineInputValue) => useComposerSession.getState().seedDraft(draft),
       logSystem: (message) => useOutputStore.getState().logSystem(message),
       setInputPhase: (phase) =>

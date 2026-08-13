@@ -11,11 +11,6 @@ import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 import type { TranscriptItem } from "../../../../shared/session/transcript";
 import {
-  takePendingExit,
-  takePendingNewSession,
-  takePendingResume,
-} from "../../../runtime/sessionRunControl";
-import {
   buildConfiguredSkillRuntimeSnapshot,
   formatSkillRuntimeStartupSummary,
 } from "../skillRuntime";
@@ -25,10 +20,12 @@ import {
   hydrateResumeSeed,
   type SessionResumeSeed,
 } from "./resume";
+import type { InteractiveRunControl } from "./runControl";
 import { type RunEvilJellyHostOptions, runEvilJellyHost } from "./runSegment";
 
 export interface RunInteractiveLoopParams {
   bindings: EvilJellyBindings;
+  runControl: InteractiveRunControl;
   model: ModelAdapter;
   enableReview: boolean;
   snapshot: AgentSnapshot | undefined;
@@ -65,12 +62,6 @@ interface ResumedSessionState extends InteractiveSessionState {
   resumeSeed: SessionResumeSeed;
 }
 
-type RunLoopIntent =
-  | { type: "exit" }
-  | { type: "new_session" }
-  | { type: "resume"; sessionId: string }
-  | { type: "none" };
-
 function normalizeInitialResumeSeed(
   params: RunInteractiveLoopParams,
 ): SessionResumeSeed | undefined {
@@ -93,17 +84,6 @@ function normalizeInitialResumeSeed(
     ...legacySeed,
     ...(params.seedTranscript ? { transcript: params.seedTranscript } : {}),
   };
-}
-
-function takeRunLoopIntent(): RunLoopIntent {
-  if (takePendingExit()) {
-    return { type: "exit" };
-  }
-  if (takePendingNewSession()) {
-    return { type: "new_session" };
-  }
-  const sessionId = takePendingResume();
-  return sessionId ? { type: "resume", sessionId } : { type: "none" };
 }
 
 function startNewSession(isolateSessionState: boolean): InteractiveSessionState {
@@ -148,6 +128,7 @@ async function loadResumedSession(
 export async function runInteractiveLoop(params: RunInteractiveLoopParams): Promise<void> {
   const {
     bindings,
+    runControl,
     model,
     enableReview,
     mockSourceTraceId,
@@ -190,9 +171,10 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
       bindings.logSystemEvent(`${skillSummary}\n`);
     }
     // Outer loop: each iteration is one runWith segment (own traceId). A mid-session /resume ends
-    // the current run, queues a target via sessionRunControl, and we restart with the loaded history.
+    // the current run, queues a loop intent, and we restart with the loaded history.
     while (true) {
       await runEvilJellyHost(bindings, {
+        runControl,
         model,
         enableReview,
         snapshot: state.snapshot,
@@ -207,7 +189,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
         sessionV2,
       });
 
-      const intent = takeRunLoopIntent();
+      const intent = runControl.loop.take();
       switch (intent.type) {
         case "exit":
         case "none":

@@ -32,9 +32,9 @@ import { getBinding, setBinding } from "../../../../../shared/host/context";
 import type { LineInputValue } from "../../../../../shared/host/inputBindings";
 import { getUserInputDisplay } from "../../../../../shared/model/message/userInputMetadata";
 import { buildSkillAwareUserMessage } from "../../../../message-composer/message-materialization/skillAwareUserMessage";
-import { requestNewSession, requestResume } from "../../../../runtime/sessionRunControl";
 import { withAbort } from "../../../../runtime/withAbort";
 import { drainSteers } from "../../../../submission-dispatch/steerQueue";
+import type { RunLoopControl } from "../runControl";
 import { combineSessionBudget, formatSessionStatus, formatTokenUsageLine } from "./sessionStatus";
 import { formatUserInputDisplay } from "./userInputDisplay";
 
@@ -49,6 +49,7 @@ export async function tryRequestResume(
   rawInput: string,
   currentSessionId: string | undefined,
   host: EvilJellyBindings,
+  runLoopControl: Pick<RunLoopControl, "request">,
 ): Promise<boolean> {
   const arg = rawInput.slice("/resume".length).trim();
   const workspaceRoot = getWorkspaceFsPolicy().getRoot();
@@ -63,7 +64,7 @@ export async function tryRequestResume(
       return false;
     }
     host.logSystemEvent(`Switching to session ${arg}…\n`);
-    requestResume(arg);
+    runLoopControl.request({ type: "resume", sessionId: arg });
     return true;
   }
 
@@ -90,11 +91,12 @@ export async function tryRequestResume(
     return false;
   }
   host.logSystemEvent(`Switching to session ${chosen}…\n`);
-  requestResume(chosen);
+  runLoopControl.request({ type: "resume", sessionId: chosen });
   return true;
 }
 
 export interface MainCliAgentProps extends EvilJellyBindings {
+  runLoopControl: Pick<RunLoopControl, "request">;
   /** Durable session id; when set, each completed turn is persisted locally for resume. */
   sessionId?: string;
   /** Current run segment traceId, recorded in the session's trace chain. */
@@ -186,7 +188,7 @@ async function handleClear(runtime: RouterRuntime): Promise<void> {
     reason: "new_session",
     budget: previousBudget,
   });
-  requestNewSession();
+  runtime.props.runLoopControl.request({ type: "new_session" });
 }
 
 function handleStatus(runtime: RouterRuntime): void {
@@ -251,7 +253,14 @@ async function handleResume(runtime: RouterRuntime, rawInput: string): Promise<b
     runtime.host.logSystemEvent("Resume is disabled during mock replay.\n");
     return false;
   }
-  if (!(await tryRequestResume(rawInput, runtime.props.sessionId, runtime.host))) {
+  if (
+    !(await tryRequestResume(
+      rawInput,
+      runtime.props.sessionId,
+      runtime.host,
+      runtime.props.runLoopControl,
+    ))
+  ) {
     return false;
   }
   // End the run (no reborn) so this trace closes before the outer loop starts the target segment.

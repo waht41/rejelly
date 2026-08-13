@@ -2,8 +2,8 @@ import { type Instance, render } from "ink";
 import React from "react";
 import { hasActiveInterruptibleTask } from "../../shared/task-interruption/taskStack";
 import { pruneClearedStaticTurns } from "../conversation-display/useOutputStore";
+import type { RunSegmentControl } from "../entry/unified-run/interactive/runControl";
 import { useComposerSession } from "../message-composer/session/composerSession";
-import { requestRunAbort } from "../runtime/runControl";
 import { useModeStore } from "../tool-approval/approvalModeStore";
 import { Dashboard } from "../ui/Dashboard";
 import type { CtrlCAbortHandler } from "../ui/useCtrlCAbort";
@@ -28,21 +28,25 @@ function releaseStdinRawMode(): void {
   }
 }
 
-const handleCtrlCAbort: CtrlCAbortHandler = ({ exit, repeated }) => {
-  if (repeated) {
-    process.exit(130);
-  }
-  const reason = "Stopped by user (Ctrl+C)";
-  const dispatched = requestRunAbort(reason);
-  cancelCliSubmission(reason);
-  if (!dispatched) {
-    // No run registered to unwind; exit directly.
-    exit();
-    process.exit(130);
-  }
-};
+function createCtrlCAbortHandler(
+  requestRunAbort: RunSegmentControl["requestAbort"],
+): CtrlCAbortHandler {
+  return ({ exit, repeated }) => {
+    if (repeated) {
+      process.exit(130);
+    }
+    const reason = "Stopped by user (Ctrl+C)";
+    const dispatched = requestRunAbort(reason);
+    cancelCliSubmission(reason);
+    if (!dispatched) {
+      // No run registered to unwind; exit directly.
+      exit();
+      process.exit(130);
+    }
+  };
+}
 
-export function mountInkApp(): Instance {
+export function mountInkApp(requestRunAbort: RunSegmentControl["requestAbort"]): Instance {
   installWindowsVirtualTerminalInputPatch();
   // A fresh <Static> starts its flushed count at 0, so the cleared-turns prefix (kept only to
   // pad the previous instance's count) must go, or it would be re-emitted on mount.
@@ -50,7 +54,7 @@ export function mountInkApp(): Instance {
   // exitOnCtrlC:false: Dashboard owns Ctrl+C so it can abort the run and close traces cleanly.
   return render(
     React.createElement(Dashboard, {
-      onCtrlCAbort: handleCtrlCAbort,
+      onCtrlCAbort: createCtrlCAbortHandler(requestRunAbort),
       hasInterruptibleTask: hasActiveInterruptibleTask,
       onInterrupt: () => useComposerSession.getState().submitLine({ text: "/stop" }),
       onCycleMode: () => {
@@ -65,12 +69,12 @@ export function mountInkApp(): Instance {
   );
 }
 
-export function createInkLifecycle(): {
+export function createInkLifecycle(runControl: RunSegmentControl): {
   suspendForExternalProcess: <T>(fn: () => Promise<T>) => Promise<T>;
   clearScreen: () => void;
   dispose: () => void;
 } {
-  let ink: Instance = mountInkApp();
+  let ink: Instance = mountInkApp(runControl.requestAbort);
 
   /** Unmount Ink and drop raw mode before handing the TTY to vim / an external editor. */
   const suspendForExternalProcess = async <T>(fn: () => Promise<T>): Promise<T> => {
@@ -79,7 +83,7 @@ export function createInkLifecycle(): {
     try {
       return await fn();
     } finally {
-      ink = mountInkApp();
+      ink = mountInkApp(runControl.requestAbort);
     }
   };
 

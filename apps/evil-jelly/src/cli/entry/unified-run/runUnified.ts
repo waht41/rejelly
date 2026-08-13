@@ -6,6 +6,7 @@ import { enqueueMainInput } from "../../submission-dispatch/mainInputQueue";
 import type { RunStartupArgs } from "./args";
 import { runHeadless } from "./headless/runHeadless";
 import { resolveInitialSession } from "./interactive/resume";
+import { createInteractiveRunControl, type InteractiveRunControl } from "./interactive/runControl";
 import { runInteractiveLoop } from "./interactive/runLoop";
 import { loadStartupSnapshot } from "./interactive/startupSnapshot";
 
@@ -21,6 +22,7 @@ export interface RunUnifiedOptions {
     version: string;
     seedInput?: string;
     reviewCliFlag?: boolean;
+    runControl: InteractiveRunControl;
   }) => {
     bindings: EvilJellyBindings;
     dispose: () => void;
@@ -53,10 +55,12 @@ export async function runUnified(options: RunUnifiedOptions): Promise<void> {
     appVersion,
   });
 
+  const runControl = createInteractiveRunControl();
   const { bindings, dispose } = options.createInteractiveBindings({
     version: appVersion,
     seedInput: startup.seedInput,
     reviewCliFlag: options.review,
+    runControl,
   });
   const mockTraceId = startup.kind === "mock" ? startup.traceId : undefined;
   const mockReplay = mockTraceId ? await loadMockReplayFromTraceId(mockTraceId) : undefined;
@@ -85,6 +89,7 @@ export async function runUnified(options: RunUnifiedOptions): Promise<void> {
   try {
     await runInteractiveLoop({
       bindings,
+      runControl,
       model,
       enableReview: options.review || env.REJELLY_ENABLE_REVIEW,
       snapshot,

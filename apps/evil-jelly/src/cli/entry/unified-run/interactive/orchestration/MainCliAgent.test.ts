@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionMeta } from "../../../../../domains/session/repository/sessionStore";
 import type { EvilJellyBindings } from "../../../../../shared/host/bindings";
 import type { PromptChoiceRequest } from "../../../../../shared/host/inputBindings";
-import { takePendingResume } from "../../../../runtime/sessionRunControl";
+import { createInteractiveRunControl } from "../runControl";
 import { tryRequestResume } from "./MainCliAgent";
 
 const mocks = vi.hoisted(() => ({
@@ -52,41 +52,47 @@ function createHost(choice = ""): {
 describe("runtime session resume", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    takePendingResume();
   });
 
   it("treats an explicit request for the current session as a no-op", async () => {
     const { host, logSystemEvent, requestChoice } = createHost();
+    const runControl = createInteractiveRunControl();
 
-    await expect(tryRequestResume("/resume current", "current", host)).resolves.toBe(false);
+    await expect(
+      tryRequestResume("/resume current", "current", host, runControl.loop),
+    ).resolves.toBe(false);
 
     expect(logSystemEvent).toHaveBeenCalledWith("Session current is already current.\n");
     expect(mocks.loadSession).not.toHaveBeenCalled();
     expect(mocks.listSessions).not.toHaveBeenCalled();
     expect(requestChoice).not.toHaveBeenCalled();
-    expect(takePendingResume()).toBeNull();
+    expect(runControl.loop.take()).toEqual({ type: "none" });
   });
 
   it("excludes the current session from the picker", async () => {
     mocks.listSessions.mockResolvedValue([session("current", 2), session("other", 1)]);
     const { host, requestChoice } = createHost("other");
+    const runControl = createInteractiveRunControl();
 
-    await expect(tryRequestResume("/resume", "current", host)).resolves.toBe(true);
+    await expect(tryRequestResume("/resume", "current", host, runControl.loop)).resolves.toBe(true);
 
     const request = requestChoice.mock.calls[0]?.[0] as PromptChoiceRequest;
     expect(request.options.map((option) => option.value)).toEqual(["other", ""]);
     expect(request.cancelValue).toBe("");
-    expect(takePendingResume()).toBe("other");
+    expect(runControl.loop.take()).toEqual({ type: "resume", sessionId: "other" });
   });
 
   it("does not open a picker when only the current session is saved", async () => {
     mocks.listSessions.mockResolvedValue([session("current", 1)]);
     const { host, logSystemEvent, requestChoice } = createHost();
+    const runControl = createInteractiveRunControl();
 
-    await expect(tryRequestResume("/resume", "current", host)).resolves.toBe(false);
+    await expect(tryRequestResume("/resume", "current", host, runControl.loop)).resolves.toBe(
+      false,
+    );
 
     expect(requestChoice).not.toHaveBeenCalled();
     expect(logSystemEvent).toHaveBeenCalledWith("No other saved sessions for this workspace.\n");
-    expect(takePendingResume()).toBeNull();
+    expect(runControl.loop.take()).toEqual({ type: "none" });
   });
 });

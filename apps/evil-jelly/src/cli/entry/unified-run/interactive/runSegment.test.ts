@@ -4,7 +4,7 @@ import type { SkillRuntimeSnapshot } from "../../../../domains/skills/agent/skil
 import { createSkillCatalog } from "../../../../domains/skills/catalog/skillCatalog";
 import { skillOrigin } from "../../../../domains/skills/definition/skillDefinition";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
-import { requestRunAbort } from "../../../runtime/runControl";
+import { createInteractiveRunControl } from "./runControl";
 import { runEvilJellyHost } from "./runSegment";
 
 const mocks = vi.hoisted(() => ({
@@ -61,6 +61,7 @@ describe("runEvilJellyHost session teardown", () => {
   });
 
   it("ends an idle Ctrl+C run as interrupted before closing the writer", async () => {
+    const runControl = createInteractiveRunControl();
     const endSegment = vi.fn();
     const close = vi.fn();
     mocks.openSessionRecorder.mockResolvedValue({
@@ -83,13 +84,14 @@ describe("runEvilJellyHost session teardown", () => {
             { once: true },
           );
         });
-        queueMicrotask(() => requestRunAbort("Stopped by user (Ctrl+C)"));
+        queueMicrotask(() => runControl.segment.requestAbort("Stopped by user (Ctrl+C)"));
         return Promise.race([running, aborted]);
       },
     );
 
     const logSystemEvent = vi.fn();
     await runEvilJellyHost({ logSystemEvent } as unknown as EvilJellyBindings, {
+      runControl,
       model: { id: "test-model" } as ModelAdapter,
       sessionId: "idle-session",
       sessionStartMode: "resumed",
@@ -107,6 +109,7 @@ describe("runEvilJellyHost session teardown", () => {
   });
 
   it("does not open a recorder when a new untouched session is interrupted while idle", async () => {
+    const runControl = createInteractiveRunControl();
     mocks.mainCliAgent.mockReturnValue(new Promise(() => undefined));
     mocks.runWithReview.mockImplementation(
       async (options: { run: () => Promise<unknown>; runWithOptions: { signal: AbortSignal } }) => {
@@ -122,13 +125,14 @@ describe("runEvilJellyHost session teardown", () => {
             { once: true },
           );
         });
-        queueMicrotask(() => requestRunAbort("Stopped by user (Ctrl+C)"));
+        queueMicrotask(() => runControl.segment.requestAbort("Stopped by user (Ctrl+C)"));
         return Promise.race([running, aborted]);
       },
     );
 
     const logSystemEvent = vi.fn();
     await runEvilJellyHost({ logSystemEvent } as unknown as EvilJellyBindings, {
+      runControl,
       model: { id: "test-model" } as ModelAdapter,
       sessionId: "new-idle-session",
       sessionStartMode: "new",
@@ -144,6 +148,7 @@ describe("runEvilJellyHost session teardown", () => {
     mocks.runWithReview.mockResolvedValue(undefined);
 
     await runEvilJellyHost({ logSystemEvent: vi.fn() } as unknown as EvilJellyBindings, {
+      runControl: createInteractiveRunControl(),
       model: { id: "test-model" } as ModelAdapter,
       mcpProviders: { "mcp:devtool": { id: "client" } },
       skillSnapshot: snapshot,
