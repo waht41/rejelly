@@ -4,10 +4,10 @@ import {
   resolveEnvProfilePath,
   resolveGlobalEnvPath,
   saveEnvValues,
-} from "../../shared/configuration/env";
+} from "../../../shared/configuration/env";
 import { collectInitConfig } from "./initConfig";
 
-export async function runInitCommand(options: {
+export async function runInit(options: {
   apiKey: string | undefined;
   baseUrl: string | undefined;
   modelId: string | undefined;

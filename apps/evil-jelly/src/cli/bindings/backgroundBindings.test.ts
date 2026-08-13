@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createBackgroundHostBindings } from "./cliStubBindings";
+import { createBackgroundHostBindings } from "./backgroundBindings";
 
 describe("cli stub host bindings", () => {
   afterEach(() => {

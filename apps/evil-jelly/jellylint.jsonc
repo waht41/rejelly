@@ -1,8 +1,12 @@
 {
   "nodes": {
     "@spec:tests": ["src/**/__tests__/**/*", "src/**/*.test.*"],
-    "@cli:entry": ["src/cli/index.ts"],
-    "@cli:app": ["src/cli/app/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@cli:entry": [
+      "src/cli/index.ts",
+      "src/cli/entry/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
     "@cli:bindings": ["src/cli/bindings/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:ui": ["src/cli/ui/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:conversation-display": [
@@ -22,6 +26,7 @@
       "!src/**/__tests__/**/*",
       "!src/**/*.test.*"
     ],
+    "@cli:init-run": ["src/cli/entry/init-run/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:unified-run": [
       "src/cli/entry/unified-run/**/*",
       "!src/**/__tests__/**/*",
@@ -138,15 +143,14 @@
     "cli_arch": {
       "connect": {
         "@cli:entry": [
-          "@cli:app",
           "@cli:audit-run",
+          "@cli:init-run",
           "@cli:unified-run",
           "@cli:bindings",
           "@cli:model-composition"
         ],
         "@cli:audit-run": ["@cli:runtime"],
         "@cli:unified-run": ["@cli:runtime", "@cli:message-composer"],
-        "@cli:app": ["@cli:tool-approval"],
         "@cli:bindings": [
           "@cli:unified-run",
           "@cli:conversation-display",

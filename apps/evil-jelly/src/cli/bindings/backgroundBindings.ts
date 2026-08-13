@@ -2,10 +2,10 @@
  * Host binding stubs for non-router entry points.
  */
 
-import type { EvilJellyBindings } from "../../../shared/host/bindings";
-import { classifyShellCommand } from "../../tool-approval/shellCommandPolicy";
+import type { EvilJellyBindings } from "../../shared/host/bindings";
+import { classifyShellCommand } from "../tool-approval/shellCommandPolicy";
 
-export interface StubHostBindingsOptions {
+export interface BackgroundBindingsOptions {
   /** Return accept for every tool approval request (used by test/batch flows). */
   autoAcceptWrite?: boolean;
   /** Accept shell commands classified as read-only/auto; reject writes and higher-risk shell commands. */
@@ -16,7 +16,7 @@ export interface StubHostBindingsOptions {
 
 function createStubHostBindings(
   logPrefix: string,
-  options: StubHostBindingsOptions = {},
+  options: BackgroundBindingsOptions = {},
 ): EvilJellyBindings {
   const {
     autoAcceptWrite = false,
@@ -95,7 +95,7 @@ function createStubHostBindings(
  * Stub bindings for headless CLI commands (`summary`, future batch modes).
  */
 export function createBackgroundHostBindings(
-  options: StubHostBindingsOptions = {},
+  options: BackgroundBindingsOptions = {},
 ): EvilJellyBindings {
   return createStubHostBindings("cli", {
     allowReadonlyShellCommands: true,
