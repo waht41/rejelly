@@ -1,21 +1,19 @@
 import type { LineInputValue } from "../../shared/host/inputBindings";
-import { clearSteers } from "../runtime/steerControl";
 
 let queuedLineInputs: LineInputValue[] = [];
 let pendingLineResolver: ((value: LineInputValue) => void) | null = null;
 let pendingLineRejecter: ((reason: Error) => void) | null = null;
 let awaitingMainInput = false;
 
-/** Reset pending composer input for a fresh CLI session. */
-export function resetLineInputQueue(): void {
+/** Reset pending main input for a fresh CLI session. */
+export function resetMainInputQueue(): void {
   queuedLineInputs = [];
   pendingLineResolver = null;
   pendingLineRejecter = null;
   awaitingMainInput = false;
-  clearSteers();
 }
 
-export function enqueueLineInput(value: LineInputValue): void {
+export function enqueueMainInput(value: LineInputValue): void {
   if (pendingLineResolver) {
     const resolve = pendingLineResolver;
     pendingLineResolver = null;
@@ -31,10 +29,6 @@ export function enqueueLineInput(value: LineInputValue): void {
  * nothing is waiting. Lets MainCliAgent's `await host.getInput()` throw so the
  * run can unwind to exit instead of hanging on the prompt.
  */
-export function failPendingLineInput(reason: Error): void {
-  rejectPendingLineInput(reason);
-}
-
 export function rejectPendingLineInput(reason: Error): boolean {
   if (pendingLineRejecter) {
     const reject = pendingLineRejecter;
@@ -46,7 +40,7 @@ export function rejectPendingLineInput(reason: Error): boolean {
   return false;
 }
 
-export function dequeueLineInput(): Promise<LineInputValue> {
+export function dequeueMainInput(): Promise<LineInputValue> {
   const next = queuedLineInputs.shift();
   if (next !== undefined) {
     return Promise.resolve(next);

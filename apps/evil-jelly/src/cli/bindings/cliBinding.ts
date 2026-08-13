@@ -29,11 +29,11 @@ import {
   createOperatorDecision,
   resetOperatorDecisionSession,
 } from "../operator-decision/operatorDecision";
+import { resetSubmissionDispatch } from "../submission-dispatch/dispatcher";
 import { resetModeSession, useModeStore } from "../tool-approval/approvalModeStore";
 import { createToolApproval } from "../tool-approval/createToolApproval";
-import { createInkGetInput } from "./getInput";
 import { createInkLifecycle } from "./inkLifecycle";
-import { resetLineInputQueue } from "./lineInputQueue";
+import { createCliSubmissionDispatcher } from "./submissionDispatcher";
 
 function toDecisionView(view?: PromptChoiceView): DecisionView | undefined {
   if (view === undefined) {
@@ -46,7 +46,7 @@ function toDecisionView(view?: PromptChoiceView): DecisionView | undefined {
 }
 
 function resetCliBindingSession(): void {
-  resetLineInputQueue();
+  resetSubmissionDispatch();
   resetOperatorDecisionSession();
   resetComposerSession();
   resetOutputSession();
@@ -145,8 +145,11 @@ function createPromptBindings(options: {
 }): PromptInputBindings & AgentModeBindings & ToolConfirmationBindings {
   const { seedInput, suspendInkForExternalProcess } = options;
   const decision = createOperatorDecision();
+  const submissionDispatcher = createCliSubmissionDispatcher(
+    seedInput !== undefined ? { seedLine: seedInput } : undefined,
+  );
   return {
-    getInput: createInkGetInput(seedInput !== undefined ? { seedLine: seedInput } : undefined),
+    getInput: submissionDispatcher.getInput,
     confirmTool: createToolApproval({
       suspendInkForExternalProcess,
       getMode: () => useModeStore.getState().mode,

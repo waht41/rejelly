@@ -7,7 +7,6 @@ import { env, exitIfMissingOpenAIKey, loadEvilJellyEnv } from "../shared/configu
 import { initSettings } from "../shared/configuration/settings";
 import { createBackgroundHostBindings } from "./bindings/backgroundBindings";
 import { createCliHostBindings } from "./bindings/cliBinding";
-import { enqueueLineInput } from "./bindings/lineInputQueue";
 import { getCliVersion, parseCliArgs } from "./entry/args";
 import { runAudit } from "./entry/audit-run/runAudit";
 import { applyWorkspaceRootFromArgs } from "./entry/bootstrap";
@@ -17,6 +16,7 @@ import { resolveInitialSession } from "./entry/unified-run/interactive/resume";
 import { runInteractiveLoop } from "./entry/unified-run/interactive/runLoop";
 import { loadStartupSnapshot } from "./entry/unified-run/interactive/startupSnapshot";
 import { createOpenAIModelFromEnv } from "./model-composition/createModelFromEnv";
+import { enqueueMainInput } from "./submission-dispatch/mainInputQueue";
 
 export type { EvilJellyBindings } from "../shared/host/bindings";
 export type {
@@ -101,7 +101,7 @@ async function main() {
     );
     if (args.startup.kind === "mock" && args.startup.enqueueTraceInputs) {
       for (const input of mockReplay.inputs) {
-        enqueueLineInput({ text: input });
+        enqueueMainInput({ text: input });
       }
       bindings.logSystemEvent(
         mockReplay.inputs.length > 0

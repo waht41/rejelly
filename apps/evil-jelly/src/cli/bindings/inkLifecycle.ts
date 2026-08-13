@@ -11,8 +11,7 @@ import { Dashboard } from "../ui/Dashboard";
 import type { CtrlCAbortHandler } from "../ui/useCtrlCAbort";
 import { saveClipboardImage } from "./clipboard/clipboardImage";
 import { copyTextToClipboard } from "./clipboard/clipboardText";
-import { failPendingLineInput } from "./lineInputQueue";
-import { restoreSteersToPrompt } from "./restoreSteersToPrompt";
+import { cancelCliSubmission } from "./submissionDispatcher";
 import { installWindowsVirtualTerminalInputPatch } from "./windowsVtInput";
 
 /** Exit Ink raw mode so an external TUI (vim, etc.) can own the terminal. Best-effort. */
@@ -36,11 +35,8 @@ const handleCtrlCAbort: CtrlCAbortHandler = ({ exit, repeated }) => {
     process.exit(130);
   }
   const reason = "Stopped by user (Ctrl+C)";
-  const abortError = new Error(reason);
-  abortError.name = "AbortError";
-  restoreSteersToPrompt();
   const dispatched = requestRunAbort(reason);
-  failPendingLineInput(abortError);
+  cancelCliSubmission(reason);
   if (!dispatched) {
     // No run registered to unwind; exit directly.
     exit();

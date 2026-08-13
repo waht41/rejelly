@@ -23,7 +23,7 @@ import { ConfirmPrompt } from "../operator-decision/ConfirmPrompt";
 import { DecisionDetail } from "../operator-decision/DecisionDetail";
 import { useDecisionStore } from "../operator-decision/decisionStore";
 import { TextDecisionPrompt } from "../operator-decision/TextDecisionPrompt";
-import { getQueuedSteers, subscribeSteers } from "../runtime/steerControl";
+import { getQueuedSteers, subscribeSteers } from "../submission-dispatch/steerQueue";
 import { MODE_META, useModeStore } from "../tool-approval/approvalModeStore";
 import { type CtrlCAbortHandler, useCtrlCAbort } from "./useCtrlCAbort";
 

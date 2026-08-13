@@ -21,6 +21,11 @@
       "!src/**/*.test.*"
     ],
     "@cli:runtime": ["src/cli/runtime/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@cli:submission-dispatch": [
+      "src/cli/submission-dispatch/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
     "@cli:audit-run": [
       "src/cli/entry/audit-run/**/*",
       "!src/**/__tests__/**/*",
@@ -147,16 +152,18 @@
           "@cli:init-run",
           "@cli:unified-run",
           "@cli:bindings",
+          "@cli:submission-dispatch",
           "@cli:model-composition"
         ],
         "@cli:audit-run": ["@cli:runtime"],
-        "@cli:unified-run": ["@cli:runtime", "@cli:message-composer"],
+        "@cli:unified-run": ["@cli:runtime", "@cli:message-composer", "@cli:submission-dispatch"],
         "@cli:bindings": [
           "@cli:unified-run",
           "@cli:conversation-display",
           "@cli:message-composer",
           "@cli:ui",
           "@cli:runtime",
+          "@cli:submission-dispatch",
           "@cli:operator-decision",
           "@cli:tool-approval"
         ],
@@ -165,7 +172,8 @@
           "@cli:operator-decision",
           "@cli:tool-approval",
           "@cli:terminal-ui",
-          "@cli:message-composer"
+          "@cli:message-composer",
+          "@cli:submission-dispatch"
         ],
         "@cli:conversation-display": ["@cli:terminal-ui"],
         "@cli:message-composer": ["@cli:terminal-ui"],
