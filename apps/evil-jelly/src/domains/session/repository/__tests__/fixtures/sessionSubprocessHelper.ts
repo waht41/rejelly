@@ -1,6 +1,6 @@
-import { createSessionMetaLine, openSessionWriter } from "../../journal/sessionJsonlStore";
-import { readLegacySession } from "../legacySessionStore";
-import { migrateLegacySession } from "../sessionMigration";
+import { createSessionMetaLine, openSessionWriter } from "../../../journal/sessionJsonlStore";
+import { readLegacySession } from "../../legacySessionStore";
+import { migrateLegacySession } from "../../sessionMigration";
 
 type ParentMessage = { type: "start" };
 

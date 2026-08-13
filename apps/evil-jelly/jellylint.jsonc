@@ -126,14 +126,36 @@
   "graph": {
     "runtime_arch": {
       "cascade": [["@spec:tests"], ["@cli:**"], ["@feature:[feat]"], ["@shared"], ["@ext:fs"]],
+      "sequence": {
+        "domain_foundation": [
+          ["@domain:[dom]", "@domain:session:*", "@domain:skills:*"],
+          ["@shared"]
+        ],
+        "direct_fs": [
+          ["@domain:skills:loader", "@domain:session:journal", "@domain:session:repository"],
+          ["@ext:fs"]
+        ],
+        "terminal_ui": [
+          [
+            "@cli:interactive-shell",
+            "@cli:conversation-display",
+            "@cli:terminal-ui",
+            "@cli:message-composer",
+            "@cli:operator-decision",
+            "@cli:tool-approval"
+          ],
+          ["@ext:ui"]
+        ]
+      },
       "connect": {
         "@spec:tests": ["@domain:[dom]", "@domain:session:*", "@domain:skills:*", "@ext:ui"],
-        "@cli:**": ["@domain:[dom]"],
         "@cli:unified-run": [
           "@domain:session:repository",
           "@domain:session:recorder",
           "@domain:session:projection",
-          "@domain:skills:*"
+          "@domain:skills:agent",
+          "@domain:skills:definition",
+          "@domain:mcp"
         ],
         "@feature:unified": [
           "@domain:workspace",
@@ -143,20 +165,12 @@
           "@domain:policy",
           "@domain:mcp"
         ],
-        "@feature:audit": ["@domain:workspace", "@domain:policy"],
-        "@domain:[dom]": ["@shared"],
-        "@domain:session:*": ["@shared"],
-        "@domain:skills:*": ["@shared"],
-        "@domain:skills:loader": ["@ext:fs"],
-        "@domain:session:journal": ["@ext:fs"],
-        "@domain:session:repository": ["@ext:fs"],
-        "@cli:bindings": ["@ext:ui"],
-        "@cli:interactive-shell": ["@ext:ui"],
-        "@cli:conversation-display": ["@ext:ui"],
-        "@cli:terminal-ui": ["@ext:ui"],
-        "@cli:message-composer": ["@domain:skills:agent", "@domain:skills:definition", "@ext:ui"],
-        "@cli:operator-decision": ["@ext:ui"],
-        "@cli:tool-approval": ["@ext:ui"]
+        "@feature:audit": ["@domain:workspace"],
+        "@cli:message-composer": [
+          "@domain:workspace",
+          "@domain:skills:agent",
+          "@domain:skills:definition"
+        ]
       }
     },
     "cli_arch": {
@@ -166,7 +180,6 @@
           "@cli:init-run",
           "@cli:unified-run",
           "@cli:bindings",
-          "@cli:submission-dispatch",
           "@cli:model-composition"
         ],
         "@cli:audit-run": ["@cli:runtime"],
@@ -183,7 +196,9 @@
           "@cli:message-composer",
           "@cli:runtime",
           "@cli:submission-dispatch",
-          "@domain:session:*",
+          "@domain:session:model",
+          "@domain:session:recorder",
+          "@domain:session:repository",
           "@domain:skills:agent"
         ],
         "@cli:bindings": [
@@ -191,7 +206,6 @@
           "@cli:conversation-display",
           "@cli:message-composer",
           "@cli:interactive-shell",
-          "@cli:runtime",
           "@cli:submission-dispatch",
           "@cli:operator-decision",
           "@cli:tool-approval"
@@ -217,11 +231,12 @@
       ]
     },
     "skills_arch": {
-      "connect": {
-        "@domain:skills:loader": ["@domain:skills:definition"],
-        "@domain:skills:catalog": ["@domain:skills:definition"],
-        "@domain:skills:agent": ["@domain:skills:catalog", "@domain:skills:definition"]
-      }
+      "cascade": [
+        ["@domain:skills:agent"],
+        ["@domain:skills:catalog"],
+        ["@domain:skills:definition"]
+      ],
+      "sequence": [["@domain:skills:loader"], ["@domain:skills:definition"]]
     }
   },
   "rules": [

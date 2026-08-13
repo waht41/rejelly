@@ -23,7 +23,7 @@ type ChildMessage =
 const require = createRequire(import.meta.url);
 const tsxLoaderUrl = pathToFileURL(require.resolve("tsx")).href;
 const helperPath = fileURLToPath(
-  new URL("./__fixtures__/sessionSubprocessHelper.ts", import.meta.url),
+  new URL("./__tests__/fixtures/sessionSubprocessHelper.ts", import.meta.url),
 );
 const MESSAGE_TIMEOUT_MS = 10_000;
 
