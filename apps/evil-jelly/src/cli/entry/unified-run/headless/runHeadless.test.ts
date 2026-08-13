@@ -13,8 +13,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../../../runtime/traceId", () => ({ generateTraceId: () => "trace-id" }));
-vi.mock("../skillRuntime", () => ({
+vi.mock("../../../skill-runtime/configuredRuntime", () => ({
   buildConfiguredSkillRuntimeSnapshot: mocks.buildSkillRuntime,
+}));
+
+vi.mock("../../../skill-runtime/startupSummary", () => ({
   formatSkillRuntimeStartupSummary: mocks.formatSkillSummary,
 }));
 vi.mock("../../../runtime/runWithReview", () => ({ runWithReview: mocks.runWithReview }));

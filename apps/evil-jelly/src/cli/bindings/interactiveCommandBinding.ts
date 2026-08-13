@@ -1,8 +1,8 @@
 import { useToolTranscriptViewStore } from "../conversation-display/tool-transcript/viewStore";
 import { useOutputStore } from "../conversation-display/useOutputStore";
-import { createInteractiveCommandHandler } from "../entry/unified-run/interactive/orchestration/interactiveCommands";
 import { applyModeCommand, MODE_META } from "../tool-approval/approvalModeStore";
 import { copyTextToClipboard } from "./clipboard/clipboardText";
+import { createInteractiveCommandHandler } from "./localCommands";
 
 export const handleLocalCommand = createInteractiveCommandHandler({
   applyMode: (text) => {

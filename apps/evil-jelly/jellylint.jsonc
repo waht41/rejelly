@@ -20,6 +20,16 @@
       "!src/**/__tests__/**/*",
       "!src/**/*.test.*"
     ],
+    "@cli:unified-conversation": [
+      "src/cli/unified-conversation/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@cli:skill-runtime": [
+      "src/cli/skill-runtime/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
     "@cli:runtime": ["src/cli/runtime/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:submission-dispatch": [
       "src/cli/submission-dispatch/**/*",
@@ -156,7 +166,16 @@
           "@cli:model-composition"
         ],
         "@cli:audit-run": ["@cli:runtime"],
-        "@cli:unified-run": ["@cli:runtime", "@cli:message-composer", "@cli:submission-dispatch"],
+        "@cli:unified-run": [
+          "@cli:runtime",
+          "@cli:message-composer",
+          "@cli:submission-dispatch",
+          "@cli:conversation-display",
+          "@cli:skill-runtime",
+          "@cli:unified-conversation"
+        ],
+        "@cli:skill-runtime": ["@domain:skills:*"],
+        "@cli:unified-conversation": ["@domain:session:*"],
         "@cli:bindings": [
           "@cli:unified-run",
           "@cli:conversation-display",

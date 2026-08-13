@@ -28,8 +28,11 @@ vi.mock("../../../../shared/configuration/settings", () => ({
   getSettings: () => ({ devtoolMcp: true }),
 }));
 
-vi.mock("../skillRuntime", () => ({
+vi.mock("../../../skill-runtime/configuredRuntime", () => ({
   buildConfiguredSkillRuntimeSnapshot: runtimeMocks.buildSkillRuntime,
+}));
+
+vi.mock("../../../skill-runtime/startupSummary", () => ({
   formatSkillRuntimeStartupSummary: runtimeMocks.formatSkillSummary,
 }));
 

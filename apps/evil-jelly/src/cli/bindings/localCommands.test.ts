@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  createInteractiveCommandHandler,
-  type InteractiveCommandPorts,
-} from "./interactiveCommands";
+import { createInteractiveCommandHandler, type InteractiveCommandPorts } from "./localCommands";
 
 function createPorts(overrides: Partial<InteractiveCommandPorts> = {}): InteractiveCommandPorts {
   return {

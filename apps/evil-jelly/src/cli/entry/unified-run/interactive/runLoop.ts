@@ -10,10 +10,8 @@ import { getSettings } from "../../../../shared/configuration/settings";
 import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 import type { TranscriptItem } from "../../../../shared/session/transcript";
-import {
-  buildConfiguredSkillRuntimeSnapshot,
-  formatSkillRuntimeStartupSummary,
-} from "../skillRuntime";
+import { buildConfiguredSkillRuntimeSnapshot } from "../../../skill-runtime/configuredRuntime";
+import { formatSkillRuntimeStartupSummary } from "../../../skill-runtime/startupSummary";
 import {
   buildLegacyResumeSeed,
   buildSessionResumeSeed,

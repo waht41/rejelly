@@ -31,12 +31,16 @@ import type { EvilJellyBindings } from "../../../../../shared/host/bindings";
 import { getBinding, setBinding } from "../../../../../shared/host/context";
 import type { LineInputValue } from "../../../../../shared/host/inputBindings";
 import { getUserInputDisplay } from "../../../../../shared/model/message/userInputMetadata";
+import { formatUserInputDisplay } from "../../../../conversation-display/history/userInputDisplay";
+import {
+  formatSessionStatus,
+  formatTokenUsageLine,
+} from "../../../../conversation-display/session-summary/format";
 import { buildSkillAwareUserMessage } from "../../../../message-composer/message-materialization/skillAwareUserMessage";
 import { withAbort } from "../../../../runtime/withAbort";
 import { drainSteers } from "../../../../submission-dispatch/steerQueue";
+import { combineSessionBudget } from "../../../../unified-conversation/budget";
 import type { RunLoopControl } from "../runControl";
-import { combineSessionBudget, formatSessionStatus, formatTokenUsageLine } from "./sessionStatus";
-import { formatUserInputDisplay } from "./userInputDisplay";
 
 const UnifiedAgentWithAbort = UnifiedAgent.fork({ middlewares: [withAbort()] });
 

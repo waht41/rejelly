@@ -8,10 +8,8 @@ import { buildSkillAwareUserMessage } from "../../../message-composer/message-ma
 import { runWithReview } from "../../../runtime/runWithReview";
 import { generateTraceId } from "../../../runtime/traceId";
 import { withAbort } from "../../../runtime/withAbort";
-import {
-  buildConfiguredSkillRuntimeSnapshot,
-  formatSkillRuntimeStartupSummary,
-} from "../skillRuntime";
+import { buildConfiguredSkillRuntimeSnapshot } from "../../../skill-runtime/configuredRuntime";
+import { formatSkillRuntimeStartupSummary } from "../../../skill-runtime/startupSummary";
 
 export interface RunHeadlessOptions {
   model: ModelAdapter;
