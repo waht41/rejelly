@@ -1,16 +1,14 @@
 import { type Instance, render } from "ink";
 import React from "react";
-import { hasActiveInterruptibleTask } from "../../shared/task-interruption/taskStack";
 import { pruneClearedStaticTurns } from "../conversation-display/useOutputStore";
-import type { RunSegmentControl } from "../entry/unified-run/interactive/runControl";
-import { useComposerSession } from "../message-composer/session/composerSession";
-import { useModeStore } from "../tool-approval/approvalModeStore";
-import { Dashboard } from "../ui/Dashboard";
-import type { CtrlCAbortHandler } from "../ui/useCtrlCAbort";
-import { saveClipboardImage } from "./clipboard/clipboardImage";
-import { handleLocalCommand } from "./interactiveCommandBinding";
-import { cancelCliSubmission } from "./submissionDispatcher";
+import { Dashboard } from "./Dashboard";
+import type { CtrlCAbortHandler } from "./useCtrlCAbort";
 import { installWindowsVirtualTerminalInputPatch } from "./windowsVtInput";
+
+export interface InteractiveShellControl {
+  requestRunAbort: (reason: string) => boolean;
+  cancelSubmission: (reason: string) => boolean;
+}
 
 /** Exit Ink raw mode so an external TUI (vim, etc.) can own the terminal. Best-effort. */
 function releaseStdinRawMode(): void {
@@ -28,16 +26,14 @@ function releaseStdinRawMode(): void {
   }
 }
 
-function createCtrlCAbortHandler(
-  requestRunAbort: RunSegmentControl["requestAbort"],
-): CtrlCAbortHandler {
+function createCtrlCAbortHandler(control: InteractiveShellControl): CtrlCAbortHandler {
   return ({ exit, repeated }) => {
     if (repeated) {
       process.exit(130);
     }
     const reason = "Stopped by user (Ctrl+C)";
-    const dispatched = requestRunAbort(reason);
-    cancelCliSubmission(reason);
+    const dispatched = control.requestRunAbort(reason);
+    control.cancelSubmission(reason);
     if (!dispatched) {
       // No run registered to unwind; exit directly.
       exit();
@@ -46,7 +42,7 @@ function createCtrlCAbortHandler(
   };
 }
 
-export function mountInkApp(requestRunAbort: RunSegmentControl["requestAbort"]): Instance {
+function mountInkApp(control: InteractiveShellControl): Instance {
   installWindowsVirtualTerminalInputPatch();
   // A fresh <Static> starts its flushed count at 0, so the cleared-turns prefix (kept only to
   // pad the previous instance's count) must go, or it would be re-emitted on mount.
@@ -54,14 +50,7 @@ export function mountInkApp(requestRunAbort: RunSegmentControl["requestAbort"]):
   // exitOnCtrlC:false: Dashboard owns Ctrl+C so it can abort the run and close traces cleanly.
   return render(
     React.createElement(Dashboard, {
-      onCtrlCAbort: createCtrlCAbortHandler(requestRunAbort),
-      hasInterruptibleTask: hasActiveInterruptibleTask,
-      onInterrupt: () => useComposerSession.getState().submitLine({ text: "/stop" }),
-      onCycleMode: () => {
-        useModeStore.getState().cycleMode();
-      },
-      onLocalCommand: handleLocalCommand,
-      readClipboardImage: saveClipboardImage,
+      onCtrlCAbort: createCtrlCAbortHandler(control),
     }),
     {
       exitOnCtrlC: false,
@@ -69,12 +58,12 @@ export function mountInkApp(requestRunAbort: RunSegmentControl["requestAbort"]):
   );
 }
 
-export function createInkLifecycle(runControl: RunSegmentControl): {
+export function createInteractiveShell(control: InteractiveShellControl): {
   suspendForExternalProcess: <T>(fn: () => Promise<T>) => Promise<T>;
   clearScreen: () => void;
   dispose: () => void;
 } {
-  let ink: Instance = mountInkApp(runControl.requestAbort);
+  let ink: Instance = mountInkApp(control);
 
   /** Unmount Ink and drop raw mode before handing the TTY to vim / an external editor. */
   const suspendForExternalProcess = async <T>(fn: () => Promise<T>): Promise<T> => {
@@ -83,7 +72,7 @@ export function createInkLifecycle(runControl: RunSegmentControl): {
     try {
       return await fn();
     } finally {
-      ink = mountInkApp(runControl.requestAbort);
+      ink = mountInkApp(control);
     }
   };
 

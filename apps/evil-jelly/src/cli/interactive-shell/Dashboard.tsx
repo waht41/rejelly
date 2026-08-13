@@ -6,6 +6,7 @@ import type { DOMElement } from "ink";
 import { Box, measureElement, Static, Text, useInput, useWindowSize } from "ink";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { LineInputValue } from "../../shared/host/inputBindings";
+import { hasActiveInterruptibleTask } from "../../shared/task-interruption/taskStack";
 import { AssistantStreamView } from "../conversation-display/assistant-stream/AssistantStreamView";
 import { HistoryItem } from "../conversation-display/history/HistoryItem";
 import { RunningToolList } from "../conversation-display/running-tools/RunningToolList";
@@ -14,10 +15,8 @@ import { isRuntimeActive } from "../conversation-display/runtime-status/state";
 import { ToolTranscriptOverlay } from "../conversation-display/tool-transcript/ToolTranscriptOverlay";
 import { useToolTranscriptViewStore } from "../conversation-display/tool-transcript/viewStore";
 import { useOutputStore } from "../conversation-display/useOutputStore";
-import {
-  type ClipboardImageReadResult,
-  MessageComposer,
-} from "../message-composer/MessageComposer";
+import { MessageComposer } from "../message-composer/MessageComposer";
+import { useComposerSession } from "../message-composer/session/composerSession";
 import { ActionMenuPrompt } from "../operator-decision/ActionMenuPrompt";
 import { ConfirmPrompt } from "../operator-decision/ConfirmPrompt";
 import { DecisionDetail } from "../operator-decision/DecisionDetail";
@@ -25,6 +24,8 @@ import { useDecisionStore } from "../operator-decision/decisionStore";
 import { TextDecisionPrompt } from "../operator-decision/TextDecisionPrompt";
 import { getQueuedSteers, subscribeSteers } from "../submission-dispatch/steerQueue";
 import { MODE_META, useModeStore } from "../tool-approval/approvalModeStore";
+import { saveClipboardImage } from "./clipboard/clipboardImage";
+import { handleLocalCommand } from "./interactiveCommandBinding";
 import { type CtrlCAbortHandler, useCtrlCAbort } from "./useCtrlCAbort";
 
 const STEER_QUEUE_VISIBLE_ROWS = 3;
@@ -89,21 +90,9 @@ function SteerQueueList({ items, columns }: { items: LineInputValue[]; columns: 
 
 export interface DashboardProps {
   onCtrlCAbort: CtrlCAbortHandler;
-  hasInterruptibleTask: () => boolean;
-  onInterrupt: () => void;
-  onCycleMode: () => void;
-  onLocalCommand: (text: string) => boolean;
-  readClipboardImage: () => Promise<ClipboardImageReadResult>;
 }
 
-export function Dashboard({
-  onCtrlCAbort,
-  hasInterruptibleTask,
-  onInterrupt,
-  onCycleMode,
-  onLocalCommand,
-  readClipboardImage,
-}: DashboardProps) {
+export function Dashboard({ onCtrlCAbort }: DashboardProps) {
   const { columns, rows } = useWindowSize();
   const history = useOutputStore((s) => s.history);
   const clearedStaticTurns = useOutputStore((s) => s.clearedStaticTurns);
@@ -220,12 +209,12 @@ export function Dashboard({
                   <MessageComposer
                     label=""
                     isAgentRunning={isAgentWorking}
-                    hasInterruptibleTask={hasInterruptibleTask}
-                    onInterrupt={onInterrupt}
-                    onCycleMode={onCycleMode}
-                    onCommand={onLocalCommand}
+                    hasInterruptibleTask={hasActiveInterruptibleTask}
+                    onInterrupt={() => useComposerSession.getState().submitLine({ text: "/stop" })}
+                    onCycleMode={() => useModeStore.getState().cycleMode()}
+                    onCommand={handleLocalCommand}
                     onNotice={(message) => useOutputStore.getState().logSystem(message)}
-                    readClipboardImage={readClipboardImage}
+                    readClipboardImage={saveClipboardImage}
                   />
                 </Box>
                 <ModeBadge />

@@ -1,6 +1,7 @@
 import { useApp, useInput } from "ink";
 import { useRef } from "react";
 
+/** Process-level Ctrl+C policy supplied by the interactive shell lifecycle. */
 export type CtrlCAbortHandler = (event: {
   /** Ink app exit hook for hosts that need to unmount before process exit. */
   exit: () => void;

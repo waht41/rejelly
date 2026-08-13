@@ -8,7 +8,11 @@
       "!src/**/*.test.*"
     ],
     "@cli:bindings": ["src/cli/bindings/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
-    "@cli:ui": ["src/cli/ui/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@cli:interactive-shell": [
+      "src/cli/interactive-shell/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
     "@cli:conversation-display": [
       "src/cli/conversation-display/**/*",
       "!src/**/__tests__/**/*",
@@ -147,7 +151,7 @@
         "@domain:session:journal": ["@ext:fs"],
         "@domain:session:repository": ["@ext:fs"],
         "@cli:bindings": ["@ext:ui"],
-        "@cli:ui": ["@cli:runtime", "@ext:ui"],
+        "@cli:interactive-shell": ["@ext:ui"],
         "@cli:conversation-display": ["@ext:ui"],
         "@cli:terminal-ui": ["@ext:ui"],
         "@cli:message-composer": ["@domain:skills:agent", "@domain:skills:definition", "@ext:ui"],
@@ -186,17 +190,16 @@
           "@cli:unified-run",
           "@cli:conversation-display",
           "@cli:message-composer",
-          "@cli:ui",
+          "@cli:interactive-shell",
           "@cli:runtime",
           "@cli:submission-dispatch",
           "@cli:operator-decision",
           "@cli:tool-approval"
         ],
-        "@cli:ui": [
+        "@cli:interactive-shell": [
           "@cli:conversation-display",
           "@cli:operator-decision",
           "@cli:tool-approval",
-          "@cli:terminal-ui",
           "@cli:message-composer",
           "@cli:submission-dispatch"
         ],

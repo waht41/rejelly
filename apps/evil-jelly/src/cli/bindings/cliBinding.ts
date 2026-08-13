@@ -21,6 +21,7 @@ import {
   useOutputStore,
 } from "../conversation-display/useOutputStore";
 import type { InteractiveRunControl } from "../entry/unified-run/interactive/runControl";
+import { createInteractiveShell } from "../interactive-shell/inkLifecycle";
 import {
   resetComposerSession,
   useComposerSession,
@@ -33,8 +34,7 @@ import {
 import { resetSubmissionDispatch } from "../submission-dispatch/dispatcher";
 import { resetModeSession, useModeStore } from "../tool-approval/approvalModeStore";
 import { createToolApproval } from "../tool-approval/createToolApproval";
-import { createInkLifecycle } from "./inkLifecycle";
-import { createCliSubmissionDispatcher } from "./submissionDispatcher";
+import { cancelCliSubmission, createCliSubmissionDispatcher } from "./submissionDispatcher";
 
 function toDecisionView(view?: PromptChoiceView): DecisionView | undefined {
   if (view === undefined) {
@@ -188,7 +188,10 @@ export function createCliHostBindings(options: CreateCliHostBindingsOptions): {
   const { version, seedInput, reviewCliFlag, runControl } = options;
   resetCliBindingSession();
 
-  const lifecycle = createInkLifecycle(runControl.segment);
+  const lifecycle = createInteractiveShell({
+    requestRunAbort: runControl.segment.requestAbort,
+    cancelSubmission: cancelCliSubmission,
+  });
   const outputBindings = createOutputBindings();
   const promptBindings = createPromptBindings({
     seedInput,
