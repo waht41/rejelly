@@ -11,9 +11,6 @@ import { deriveSessionTitle } from "./sessionTitle";
  * changes model memory, but must not change the title, user-turn count, or trace chain shown for
  * the durable session.
  */
-export type { PreparedSessionEvent, PreparedSessionReplay } from "./sessionReplay";
-export { prepareSessionReplay } from "./sessionReplay";
-
 export interface SessionSummary {
   id: string;
   workspaceRoot: string;

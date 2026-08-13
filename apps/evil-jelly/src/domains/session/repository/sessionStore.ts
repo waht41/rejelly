@@ -8,21 +8,14 @@
 
 import fs from "node:fs";
 import type { SessionStoragePaths } from "../journal/sessionJsonlReader";
-import {
-  generateSessionId,
-  isValidSessionId,
-  resolveSessionsRoot,
-  resolveWorkspaceDir,
-  workspaceBucket,
-} from "../journal/sessionPaths";
+import { generateSessionId, isValidSessionId, resolveWorkspaceDir } from "../journal/sessionPaths";
 import type { SessionBudget, SessionMeta, SessionRecord } from "../model/sessionTypes";
 import { readLegacySession } from "./legacySessionStore";
 import { type LegacyMigrationOptions, migrateLegacySession } from "./sessionMigration";
 import { type SessionReadResult, SessionStoreReadError } from "./sessionReadResult";
 import { readV2Session, readV2SessionMetaFast, readV2SessionMetaFull } from "./sessionV2Store";
 
-export { generateSessionId, resolveSessionsRoot, resolveWorkspaceDir, workspaceBucket };
-export { SessionStoreReadError };
+export { generateSessionId };
 export type { LegacyMigrationOptions, SessionBudget, SessionMeta, SessionRecord };
 
 export type LoadSessionOptions = SessionStoragePaths;

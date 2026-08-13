@@ -9,13 +9,6 @@ export {
   detectFragmentationCandidatesFromSources,
 } from "./fragmentation";
 export {
-  buildImportGraph,
-  extractRelativeSpecifiers,
-  type FragmentationSource,
-  type ImportGraph,
-  resolveRelative,
-} from "./importGraph";
-export {
   DEFAULT_FRAGMENTATION_CONFIG,
   type FragmentationCandidateReport,
   type FragmentationCandidateStats,

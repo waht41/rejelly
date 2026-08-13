@@ -7,8 +7,6 @@ export {
   detectCloneCandidates,
   detectCloneCandidatesFromSources,
 } from "./cloneCandidates";
-export { fingerprintTokens, hashToken, kgramHashes, winnow } from "./fingerprint";
-export { tokenizeNormalized } from "./tokenize";
 export {
   type CloneCandidateReport,
   type CloneCandidateStats,

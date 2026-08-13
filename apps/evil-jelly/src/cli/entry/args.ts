@@ -20,9 +20,6 @@ import {
   unifiedSettingsOverrides,
 } from "./unified-run/args";
 
-export type { CommonParsedArgs } from "./argsSupport";
-export type { RunStartupArgs } from "./unified-run/args";
-
 export type ParsedInitArgs = CommonParsedArgs & InitCommandArgs;
 export type ParsedAuditArgs = CommonParsedArgs & AuditCommandArgs;
 export type ParsedUnifiedArgs = CommonParsedArgs & UnifiedRunCommandArgs;

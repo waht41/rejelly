@@ -10,12 +10,12 @@ import {
   readSessionEvents,
   resolveV2SessionPath,
 } from "../journal/sessionJsonlStore";
+import { resolveWorkspaceDir } from "../journal/sessionPaths";
 import { isKnownSessionEvent } from "../model/sessionEvents";
 import { openSessionRecorder } from "../recorder/sessionRecorder";
 import {
   listSessions,
   loadSession,
-  resolveWorkspaceDir,
   resumeSession,
   type SessionBudget,
   type SessionRecord,

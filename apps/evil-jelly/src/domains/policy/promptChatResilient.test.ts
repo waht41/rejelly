@@ -6,11 +6,8 @@ import {
   estimateTokens,
   IMAGE_CONTENT_TOKEN_ESTIMATE,
 } from "../../shared/model/budget/tokenEstimate";
-import {
-  sanitizeInterruptedDelta,
-  selectRecentUserMessages,
-  truncateToolOutputsToFit,
-} from "./promptChatResilient";
+import { selectRecentUserMessages, truncateToolOutputsToFit } from "./compaction";
+import { sanitizeInterruptedDelta } from "./interruptedDelta";
 
 describe("sanitizeInterruptedDelta", () => {
   it("fills missing tool outputs for interrupted tool calls", () => {

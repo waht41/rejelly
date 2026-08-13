@@ -7,7 +7,6 @@ export {
   detectComplexityCandidates,
   detectComplexityCandidatesFromSources,
 } from "./complexity";
-export { FUNCTION_KINDS, hasFunctionBody, lineSpanOf, metricsOf } from "./metrics";
 export {
   type ComplexityCandidateReport,
   type ComplexityCandidateStats,

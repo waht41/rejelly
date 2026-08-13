@@ -29,8 +29,6 @@ import { acquireSessionWriterLock, releaseSessionWriterLock } from "./sessionWri
  */
 export type {
   LocatedSessionEvent,
-  ReadSessionEventsResult,
-  SessionReadWarning,
   SessionStoragePaths,
 } from "./sessionJsonlReader";
 export {
@@ -40,12 +38,8 @@ export {
   readSessionEvents,
   readSessionMetaLine,
   resolveV2SessionPath,
-  resolveV2WorkspaceDir,
   SessionCorruptionError,
-  truncateSessionToValidTail,
 } from "./sessionJsonlReader";
-export { SessionWriterLockedError } from "./sessionWriterLock";
-
 export function createSessionMetaLine(input: {
   sessionId: string;
   workspaceRoot: string;

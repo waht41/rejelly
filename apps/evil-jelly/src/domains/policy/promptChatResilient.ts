@@ -13,12 +13,7 @@ import {
   type ToolCallLoopPolicySnapshot,
 } from "./resilientToolLoop";
 
-export type {
-  CompactionRoundInfo,
-  PromptChatCompactionConfig,
-} from "./compaction";
-export { selectRecentUserMessages, truncateToolOutputsToFit } from "./compaction";
-export { sanitizeInterruptedDelta } from "./interruptedDelta";
+export type { PromptChatCompactionConfig } from "./compaction";
 
 export interface ResilientChatPolicyResult<T = string> {
   aborted: false;
