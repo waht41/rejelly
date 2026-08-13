@@ -1,16 +1,14 @@
 import { type Instance, render } from "ink";
 import React from "react";
 import { hasActiveInterruptibleTask } from "../../shared/task-interruption/taskStack";
-import { useToolTranscriptViewStore } from "../conversation-display/tool-transcript/viewStore";
-import { pruneClearedStaticTurns, useOutputStore } from "../conversation-display/useOutputStore";
-import { createInteractiveCommandHandler } from "../entry/unified-run/interactive/orchestration/interactiveCommands";
+import { pruneClearedStaticTurns } from "../conversation-display/useOutputStore";
 import { useComposerSession } from "../message-composer/session/composerSession";
 import { requestRunAbort } from "../runtime/runControl";
-import { applyModeCommand, MODE_META, useModeStore } from "../tool-approval/approvalModeStore";
+import { useModeStore } from "../tool-approval/approvalModeStore";
 import { Dashboard } from "../ui/Dashboard";
 import type { CtrlCAbortHandler } from "../ui/useCtrlCAbort";
 import { saveClipboardImage } from "./clipboard/clipboardImage";
-import { copyTextToClipboard } from "./clipboard/clipboardText";
+import { handleLocalCommand } from "./interactiveCommandBinding";
 import { cancelCliSubmission } from "./submissionDispatcher";
 import { installWindowsVirtualTerminalInputPatch } from "./windowsVtInput";
 
@@ -43,31 +41,6 @@ const handleCtrlCAbort: CtrlCAbortHandler = ({ exit, repeated }) => {
     process.exit(130);
   }
 };
-
-const handleLocalCommand = createInteractiveCommandHandler({
-  applyMode: (text) => {
-    const mode = applyModeCommand(text);
-    return mode ? MODE_META[mode] : null;
-  },
-  listTools: () =>
-    useOutputStore
-      .getState()
-      .history.filter((turn) => turn.type === "tool")
-      .map((turn, index) => ({
-        ordinal: turn.tool.ordinal ?? index + 1,
-        toolName: turn.tool.toolName,
-        summary: turn.tool.summary,
-        args: turn.tool.args,
-        detail: turn.tool.detail,
-        fullResult: turn.tool.fullResult,
-      })),
-  getLastAssistantMessage: () =>
-    [...useOutputStore.getState().history].reverse().find((turn) => turn.type === "assistant")
-      ?.content,
-  openTranscript: () => useToolTranscriptViewStore.getState().openTranscript(),
-  copyText: copyTextToClipboard,
-  logSystem: (message) => useOutputStore.getState().logSystem(message),
-});
 
 export function mountInkApp(): Instance {
   installWindowsVirtualTerminalInputPatch();
