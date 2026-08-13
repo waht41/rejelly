@@ -1,8 +1,7 @@
 /**
- * CLI entry: parse args, dispatch headless commands, and start the interactive run loop.
+ * CLI entry: initialize process-wide configuration and dispatch user-facing run modes.
  */
 
-import { loadMockReplayFromTraceId } from "../features/replay/mock/mockFromTrace";
 import { env, exitIfMissingOpenAIKey, loadEvilJellyEnv } from "../shared/configuration/env";
 import { initSettings } from "../shared/configuration/settings";
 import { createBackgroundHostBindings } from "./bindings/backgroundBindings";
@@ -11,19 +10,8 @@ import { getCliVersion, parseCliArgs } from "./entry/args";
 import { runAudit } from "./entry/audit-run/runAudit";
 import { applyWorkspaceRootFromArgs } from "./entry/bootstrap";
 import { runInit } from "./entry/init-run/runInit";
-import { runHeadless } from "./entry/unified-run/headless/runHeadless";
-import { resolveInitialSession } from "./entry/unified-run/interactive/resume";
-import { runInteractiveLoop } from "./entry/unified-run/interactive/runLoop";
-import { loadStartupSnapshot } from "./entry/unified-run/interactive/startupSnapshot";
+import { runUnified } from "./entry/unified-run/runUnified";
 import { createOpenAIModelFromEnv } from "./model-composition/createModelFromEnv";
-import { enqueueMainInput } from "./submission-dispatch/mainInputQueue";
-
-export type { EvilJellyBindings } from "../shared/host/bindings";
-export type {
-  PromptChoiceOption,
-  PromptChoiceView,
-} from "../shared/host/inputBindings";
-export { runEvilJellyHost } from "./entry/unified-run/interactive/runSegment";
 
 async function main() {
   const args = parseCliArgs();
@@ -60,81 +48,19 @@ async function main() {
       });
       process.exit(process.exitCode ?? 0);
       break;
-    case "run":
+    case "unified":
+      await runUnified({
+        startup: args.startup,
+        headless: args.headless,
+        autoAccept: args.autoAccept,
+        review: args.review,
+        appVersion,
+        createModel: createOpenAIModelFromEnv,
+        createBackgroundBindings: createBackgroundHostBindings,
+        createInteractiveBindings: createCliHostBindings,
+      });
       break;
   }
-
-  if (args.startup.kind !== "mock") {
-    exitIfMissingOpenAIKey();
-  }
-
-  if (args.headless) {
-    const seedInput = args.startup.kind === "fresh" ? args.startup.seedInput : undefined;
-    if (!seedInput || seedInput.trim().length === 0) {
-      console.error("--headless direct UnifiedAgent mode requires --input <text>");
-      process.exit(1);
-    }
-    await runHeadless(createBackgroundHostBindings({ autoAcceptWrite: args.autoAccept }), {
-      model: createOpenAIModelFromEnv(),
-      userInput: seedInput,
-      enableReview: args.review || env.REJELLY_ENABLE_REVIEW,
-    });
-    process.exit(process.exitCode ?? 0);
-  }
-
-  const { sessionId, resumeSeed } = await resolveInitialSession({
-    resume: args.startup.kind === "resume",
-    resumeSessionId: args.startup.kind === "resume" ? args.startup.sessionId : undefined,
-    appVersion,
-  });
-
-  const { bindings, dispose } = createCliHostBindings({
-    version: appVersion,
-    seedInput: args.startup.seedInput,
-    reviewCliFlag: args.review,
-  });
-  const mockTraceId = args.startup.kind === "mock" ? args.startup.traceId : undefined;
-  const mockReplay = mockTraceId ? await loadMockReplayFromTraceId(mockTraceId) : undefined;
-  if (mockReplay) {
-    bindings.logSystemEvent(
-      `Mock replay loaded from trace ${mockTraceId} (${mockReplay.sequenceLength} model turn(s)).\n`,
-    );
-    if (args.startup.kind === "mock" && args.startup.enqueueTraceInputs) {
-      for (const input of mockReplay.inputs) {
-        enqueueMainInput({ text: input });
-      }
-      bindings.logSystemEvent(
-        mockReplay.inputs.length > 0
-          ? `Queued ${mockReplay.inputs.length} user input(s) from trace.\n`
-          : "No user inputs found in trace; falling back to manual input.\n",
-      );
-    }
-  }
-  const snapshot =
-    mockReplay?.snapshot ??
-    (await loadStartupSnapshot(
-      args.startup.kind === "snapshot" ? args.startup.traceId : undefined,
-      bindings,
-    ));
-  const model = mockReplay?.model ?? createOpenAIModelFromEnv();
-  try {
-    await runInteractiveLoop({
-      bindings,
-      model,
-      enableReview: args.review || env.REJELLY_ENABLE_REVIEW,
-      snapshot,
-      sessionId,
-      resumeSeed,
-      mockSourceTraceId: mockReplay ? mockTraceId : undefined,
-      isolateSessionState: Boolean(mockReplay),
-      sessionV2: { enabled: true, appVersion },
-    });
-  } finally {
-    dispose();
-  }
-
-  process.stdout.write("\n");
-  process.exit(0);
 }
 
 main().catch((err) => {

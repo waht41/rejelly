@@ -16,10 +16,10 @@ describe("parseCliArgs", () => {
 
   it("parses bare evil as the interactive run command", () => {
     const args = parseCliArgs(["node", "evil", "--api-key", "sk-test-key"]);
-    expect(args.kind).toBe("run");
+    expect(args.kind).toBe("unified");
     expect(args.cliApiKey).toBe("sk-test-key");
-    if (args.kind !== "run") {
-      throw new Error("expected run args");
+    if (args.kind !== "unified") {
+      throw new Error("expected unified args");
     }
     expect(args.headless).toBe(false);
     expect(args.autoAccept).toBe(false);
@@ -100,9 +100,9 @@ describe("parseCliArgs", () => {
 
   it("parses --headless --input as the direct UnifiedAgent headless mode", () => {
     const args = parseCliArgs(["node", "evil", "--headless", "--input", "hello"]);
-    expect(args.kind).toBe("run");
-    if (args.kind !== "run") {
-      throw new Error("expected run args");
+    expect(args.kind).toBe("unified");
+    if (args.kind !== "unified") {
+      throw new Error("expected unified args");
     }
     expect(args.headless).toBe(true);
     expect(args.autoAccept).toBe(false);
@@ -111,18 +111,18 @@ describe("parseCliArgs", () => {
 
   it("allows explicit --auto-accept only with --headless", () => {
     const args = parseCliArgs(["node", "evil", "--headless", "--auto-accept", "--input", "hello"]);
-    expect(args.kind).toBe("run");
-    if (args.kind !== "run") {
-      throw new Error("expected run args");
+    expect(args.kind).toBe("unified");
+    if (args.kind !== "unified") {
+      throw new Error("expected unified args");
     }
     expect(args.autoAccept).toBe(true);
   });
 
-  it("parses run --mock trace replay mode without enabling review", () => {
+  it("parses --mock trace replay mode without enabling review", () => {
     const args = parseCliArgs(["node", "evil", "--mock", "trace_123"]);
-    expect(args.kind).toBe("run");
-    if (args.kind !== "run") {
-      throw new Error("expected run args");
+    expect(args.kind).toBe("unified");
+    if (args.kind !== "unified") {
+      throw new Error("expected unified args");
     }
     expect(args.startup).toEqual({
       kind: "mock",
@@ -132,11 +132,11 @@ describe("parseCliArgs", () => {
     expect(args.review).toBe(false);
   });
 
-  it("parses run --mock with --review as an exported replay", () => {
+  it("parses --mock with --review as an exported replay", () => {
     const args = parseCliArgs(["node", "evil", "--mock", "trace_123", "--review"]);
-    expect(args.kind).toBe("run");
-    if (args.kind !== "run") {
-      throw new Error("expected run args");
+    expect(args.kind).toBe("unified");
+    if (args.kind !== "unified") {
+      throw new Error("expected unified args");
     }
     expect(args.startup).toEqual({
       kind: "mock",
@@ -146,11 +146,11 @@ describe("parseCliArgs", () => {
     expect(args.review).toBe(true);
   });
 
-  it("parses run --mock-inputs with --mock", () => {
+  it("parses --mock-inputs with --mock", () => {
     const args = parseCliArgs(["node", "evil", "--mock", "trace_123", "--mock-inputs"]);
-    expect(args.kind).toBe("run");
-    if (args.kind !== "run") {
-      throw new Error("expected run args");
+    expect(args.kind).toBe("unified");
+    if (args.kind !== "unified") {
+      throw new Error("expected unified args");
     }
     expect(args.startup).toEqual({
       kind: "mock",
@@ -159,11 +159,11 @@ describe("parseCliArgs", () => {
     });
   });
 
-  it("parses run --snapshot as a snapshot startup mode", () => {
+  it("parses --snapshot as a snapshot startup mode", () => {
     const args = parseCliArgs(["node", "evil", "--snapshot", "trace_123", "--input", "continue"]);
-    expect(args.kind).toBe("run");
-    if (args.kind !== "run") {
-      throw new Error("expected run args");
+    expect(args.kind).toBe("unified");
+    if (args.kind !== "unified") {
+      throw new Error("expected unified args");
     }
     expect(args.startup).toEqual({
       kind: "snapshot",
@@ -173,11 +173,11 @@ describe("parseCliArgs", () => {
     expect(args.review).toBe(true);
   });
 
-  it("parses run --resume as a resume startup mode", () => {
+  it("parses --resume as a resume startup mode", () => {
     const args = parseCliArgs(["node", "evil", "--resume", "session_123", "--input", "continue"]);
-    expect(args.kind).toBe("run");
-    if (args.kind !== "run") {
-      throw new Error("expected run args");
+    expect(args.kind).toBe("unified");
+    if (args.kind !== "unified") {
+      throw new Error("expected unified args");
     }
     expect(args.startup).toEqual({
       kind: "resume",

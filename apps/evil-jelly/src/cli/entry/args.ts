@@ -25,8 +25,8 @@ export type { RunStartupArgs } from "./unified-run/args";
 
 export type ParsedInitArgs = CommonParsedArgs & InitCommandArgs;
 export type ParsedAuditArgs = CommonParsedArgs & AuditCommandArgs;
-export type ParsedRunArgs = CommonParsedArgs & UnifiedRunCommandArgs;
-export type ParsedEvilJellyArgs = ParsedInitArgs | ParsedAuditArgs | ParsedRunArgs;
+export type ParsedUnifiedArgs = CommonParsedArgs & UnifiedRunCommandArgs;
+export type ParsedEvilJellyArgs = ParsedInitArgs | ParsedAuditArgs | ParsedUnifiedArgs;
 
 export function getCliVersion(): string {
   // Source lives at src/cli/entry/args.ts, while tsup bundles it into dist/cli/index.js.

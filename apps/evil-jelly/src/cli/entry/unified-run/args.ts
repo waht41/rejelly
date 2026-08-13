@@ -8,7 +8,7 @@ export type RunStartupArgs =
   | { kind: "mock"; traceId: string; enqueueTraceInputs: boolean; seedInput?: undefined };
 
 export type UnifiedRunCommandArgs = {
-  kind: "run";
+  kind: "unified";
   startup: RunStartupArgs;
   /** Run UnifiedAgent once without Ink. */
   headless: boolean;
@@ -122,7 +122,7 @@ export function parseUnifiedRunArgs(
     failArgs("--headless requires --input <text>");
   }
   return {
-    kind: "run",
+    kind: "unified",
     startup,
     headless,
     autoAccept,
