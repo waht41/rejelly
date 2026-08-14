@@ -121,6 +121,26 @@ describe("rich document compatibility transforms", () => {
     expect(deleted.cursor).toBe(1);
   });
 
+  it.each([
+    [{ type: "token" as const, kind: "file" as const, attachmentId: "file-1" }, "@src/a.ts"],
+    [{ type: "token" as const, kind: "image" as const, attachmentId: "image-1" }, "[Image #1]"],
+    [
+      { type: "token" as const, kind: "paste" as const, text: "one\ntwo\nthree\nfour\nfive\nsix" },
+      "[Pasted text +6 lines]",
+    ],
+  ])("deletes a %s token as one logical unit", (token, label) => {
+    const richDocument = replacePromptRange(textPromptDocument("ab"), 1, 1, [token]);
+    const deleted = applyProjectedTransform(
+      { document: richDocument, cursor: 2, caretAffinity: "forward" },
+      backspace,
+      "nearest",
+      (candidate) => (candidate === token ? label : defaultPromptTokenDisplayText(candidate)),
+    );
+
+    expect(projectPromptDocument(deleted.document).text).toBe("ab");
+    expect(deleted.cursor).toBe(1);
+  });
+
   it("preserves semantic tokens while legacy Image placeholders keep their atomic deletion", () => {
     const withPlaceholder = replacePromptRange(document, 3, 3, [
       { type: "text", text: "[Image #1]" },

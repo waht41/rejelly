@@ -1,101 +1,62 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef } from "react";
+import type { PastePromptToken } from "../../../../shared/model/prompt/promptDocument";
+import { promptTokens } from "../../../../shared/model/prompt/promptDocument";
 import type { TextBuffer } from "../document/textBuffer";
-import {
-  coalescePaste,
-  expandPastedTextTokens,
-  PASTE_COALESCE_MS,
-  type PasteRun,
-  pastedTextToken,
-  pastedTextTokenBefore,
-} from "./collapsedPaste";
+import { coalescePaste, PASTE_COALESCE_MS, type PasteRun } from "./collapsedPaste";
 
 const PASTE_CHUNK_MERGE_MS = 120;
 
-interface PastedText {
-  id: number;
-  text: string;
-}
-
 interface PendingPasteChunk {
-  id: number;
+  token: PastePromptToken;
   updatedAt: number;
 }
 
 export interface CollapsedPaste {
-  /** Consume a sanitized text-input fragment, inserting or collapsing it as needed. */
   handlePaste: (text: string) => boolean;
-  /** Replace every live collapsed-paste token with its original text. */
-  expand: (text: string) => string;
-  /** Forget all paste runs and token contents for a fresh draft. */
   reset: () => void;
-  /** Whether the current buffer still contains at least one collapsed-paste token. */
   hasCollapsedPaste: boolean;
 }
 
+function pasteSpanBeforeCursor(buffer: TextBuffer) {
+  return buffer.tokenSpans.find(
+    (span) => span.logicalEnd === buffer.logicalCursor && span.token.kind === "paste",
+  );
+}
+
 export function useCollapsedPaste(buffer: TextBuffer): CollapsedPaste {
-  const [pastedTexts, setPastedTexts] = useState<PastedText[]>([]);
-  const pastedTextsRef = useRef<PastedText[]>([]);
-  const nextPasteIdRef = useRef(1);
   const pendingPasteChunkRef = useRef<PendingPasteChunk | null>(null);
-  // A run of printable input arriving faster than a human types — a paste
-  // fragmented into sub-threshold events. Each fragment is inserted immediately;
-  // the run is replaced by a token only after it crosses the collapse threshold.
   const pasteRunRef = useRef<PasteRun | null>(null);
 
   const reset = useCallback(() => {
-    setPastedTexts([]);
-    pastedTextsRef.current = [];
-    nextPasteIdRef.current = 1;
     pendingPasteChunkRef.current = null;
     pasteRunRef.current = null;
   }, []);
 
-  const expand = useCallback(
-    (text: string) => expandPastedTextTokens(text, pastedTextsRef.current),
-    [],
-  );
-
   const handlePaste = useCallback(
     (text: string): boolean => {
-      const tokenBefore = pastedTextTokenBefore(buffer.text, buffer.cursor);
-      if (tokenBefore) {
-        const id = Number(tokenBefore.match(/#(\d+)/)?.[1]);
-        const pasted = pastedTextsRef.current.find((entry) => entry.id === id);
-        const pending = pendingPasteChunkRef.current;
-        const now = Date.now();
-        if (pasted && pending?.id === id && now - pending.updatedAt <= PASTE_CHUNK_MERGE_MS) {
-          const mergedText = pasted.text + text;
-          const nextToken = pastedTextToken(id, mergedText);
-          pastedTextsRef.current = pastedTextsRef.current.map((entry) =>
-            entry.id === id ? { ...entry, text: mergedText } : entry,
-          );
-          pendingPasteChunkRef.current = { id, updatedAt: now };
+      const span = pasteSpanBeforeCursor(buffer);
+      const pending = pendingPasteChunkRef.current;
+      const now = Date.now();
+      if (span?.token.kind === "paste") {
+        if (pending?.token === span.token && now - pending.updatedAt <= PASTE_CHUNK_MERGE_MS) {
+          const token: PastePromptToken = {
+            type: "token",
+            kind: "paste",
+            text: span.token.text + text,
+          };
+          buffer.replaceDisplayRange(span.start, span.end, [token]);
+          pendingPasteChunkRef.current = { token, updatedAt: now };
           pasteRunRef.current = null;
-          setPastedTexts(pastedTextsRef.current);
-          buffer.apply((state) => ({
-            text:
-              state.text.slice(0, state.cursor - tokenBefore.length) +
-              nextToken +
-              state.text.slice(state.cursor),
-            cursor: state.cursor - tokenBefore.length + nextToken.length,
-          }));
           return true;
         }
-        if (pasted?.text === text) {
-          buffer.apply((state) => ({
-            text:
-              state.text.slice(0, state.cursor - tokenBefore.length) +
-              text +
-              state.text.slice(state.cursor),
-            cursor: state.cursor - tokenBefore.length + text.length,
-          }));
+        if (span.token.text === text) {
+          buffer.replaceDisplayRange(span.start, span.end, [{ type: "text", text }]);
           pendingPasteChunkRef.current = null;
           pasteRunRef.current = null;
           return true;
         }
       }
 
-      const now = Date.now();
       const { run, collapse } = coalescePaste(pasteRunRef.current, text, now, PASTE_COALESCE_MS);
       buffer.insert(text);
       if (!collapse) {
@@ -103,34 +64,18 @@ export function useCollapsedPaste(buffer: TextBuffer): CollapsedPaste {
         return true;
       }
 
-      const accumulatedText = run.text;
-      const id = nextPasteIdRef.current++;
-      const token = pastedTextToken(id, accumulatedText);
-      pastedTextsRef.current = [...pastedTextsRef.current, { id, text: accumulatedText }];
-      pendingPasteChunkRef.current = { id, updatedAt: now };
+      const token: PastePromptToken = { type: "token", kind: "paste", text: run.text };
+      buffer.replaceTextBeforeCursor(run.text, [token]);
+      pendingPasteChunkRef.current = { token, updatedAt: now };
       pasteRunRef.current = null;
-      setPastedTexts(pastedTextsRef.current);
-      // Retroactively swap the just-inserted run for its token. A functional
-      // update composes with queued inserts from the same burst; bail if an edit
-      // moved the caret away from the end of the accumulated run.
-      buffer.apply((state) => {
-        const start = state.cursor - accumulatedText.length;
-        if (start < 0 || state.text.slice(start, state.cursor) !== accumulatedText) {
-          return state;
-        }
-        return {
-          text: state.text.slice(0, start) + token + state.text.slice(state.cursor),
-          cursor: start + token.length,
-        };
-      });
       return true;
     },
     [buffer],
   );
 
-  const hasCollapsedPaste = pastedTexts.some((entry) =>
-    buffer.text.includes(pastedTextToken(entry.id, entry.text)),
-  );
-
-  return { handlePaste, expand, reset, hasCollapsedPaste };
+  return {
+    handlePaste,
+    reset,
+    hasCollapsedPaste: promptTokens(buffer.document, "paste").length > 0,
+  };
 }

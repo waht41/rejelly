@@ -33,9 +33,12 @@ export function extractAtQuery(text: string, cursor: number): string | null {
   return token;
 }
 
-/** Paths not already referenced as `@path` anywhere in the text. */
-export function refsMissingFromText(text: string, paths: string[]): string[] {
-  return paths.filter((path) => !text.includes(`@${path}`));
+export function activeAtTrigger(
+  text: string,
+  cursor: number,
+): { start: number; end: number; query: string } | null {
+  const query = extractAtQuery(text, cursor);
+  return query === null ? null : { start: cursor - query.length - 1, end: cursor, query };
 }
 
 /**

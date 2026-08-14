@@ -33,6 +33,26 @@ describe("PromptDocument", () => {
     expect(projection.logicalToDisplay(2)).toBe(8);
   });
 
+  it("projects file, image, and paste tokens without flattening their payloads", () => {
+    const document = [
+      { type: "token" as const, kind: "file" as const, attachmentId: "file-1" },
+      { type: "text" as const, text: " " },
+      { type: "token" as const, kind: "image" as const, attachmentId: "image-1" },
+      { type: "text" as const, text: " " },
+      { type: "token" as const, kind: "paste" as const, text: "one\ntwo\nthree" },
+    ];
+    const projection = projectPromptDocument(document, (token) => {
+      if (token.kind === "file") return "@src/main.ts";
+      if (token.kind === "image") return "[Image #1]";
+      return "$unused";
+    });
+
+    expect(projection.text).toBe("@src/main.ts [Image #1] $unused");
+    expect(promptDocumentLogicalLength(document)).toBe(5);
+    expect(promptTokens(document, "paste")[0]?.text).toBe("one\ntwo\nthree");
+    expect(projection.tokenSpans).toHaveLength(3);
+  });
+
   it("snaps display offsets inside a token to a requested logical edge", () => {
     const document = replacePromptRange(textPromptDocument("ab"), 1, 1, [skill]);
     const projection = projectPromptDocument(document, displayToken);

@@ -37,7 +37,7 @@ interface MotionBinding {
 
 // Pure caret/delete motions: no prompt state, no branching action. Read top to
 // bottom like a keymap; first match wins. The caret ones go through
-// placeholderMotion so `[Image #N]` / `[Pasted text #N …]` behave as one glyph.
+// the display-to-logical projection so semantic tokens behave as one glyph.
 const MOTIONS: MotionBinding[] = [
   {
     when: (_i, k) => k.leftArrow,
@@ -68,12 +68,9 @@ export interface LineKeybindingDeps {
    */
   overlayKeys?: { current: ((input: string, key: Key) => boolean) | null };
   isAgentRunning: boolean;
-  selectedFiles: string[];
-  selectedImages: string[];
   hasInterruptibleTask: () => boolean;
   onInterrupt: () => void;
   onCycleMode: () => void;
-  removeSelectedFile: (path: string) => void;
   clearDraft: () => void;
   submit: () => void;
   attachClipboardImage: () => void;
@@ -86,12 +83,9 @@ export function useLineKeybindings(deps: LineKeybindingDeps): void {
     wrappedRows,
     overlayKeys,
     isAgentRunning,
-    selectedFiles,
-    selectedImages,
     hasInterruptibleTask,
     onInterrupt,
     onCycleMode,
-    removeSelectedFile,
     clearDraft,
     submit,
     attachClipboardImage,
@@ -139,7 +133,7 @@ export function useLineKeybindings(deps: LineKeybindingDeps): void {
       return;
     }
     if (key.escape) {
-      if (buf.text.length > 0 || selectedFiles.length > 0 || selectedImages.length > 0) {
+      if (buf.text.length > 0) {
         clearDraft();
       }
       return;
@@ -171,8 +165,8 @@ export function useLineKeybindings(deps: LineKeybindingDeps): void {
         });
         return;
       }
-      // Image tokens count as text, so trim() already covers an image-only line.
-      if (buf.text.trim().length > 0 || selectedFiles.length > 0) {
+      // Semantic token labels count as text, so trim() covers a token-only line.
+      if (buf.text.trim().length > 0) {
         submit();
       }
       return;
@@ -189,13 +183,10 @@ export function useLineKeybindings(deps: LineKeybindingDeps): void {
     // Backspace / Delete: terminals conflate these onto the Backspace key, so
     // both erase the char before the caret (Ctrl/Alt erases the word).
     if (key.backspace || key.delete) {
-      if (buf.text.length === 0 && selectedFiles.length > 0) {
-        const last = selectedFiles[selectedFiles.length - 1];
-        if (last) removeSelectedFile(last);
-      } else if (key.ctrl || key.meta) {
+      if (key.ctrl || key.meta) {
         buf.apply(deleteWordLeftAtomic);
       } else {
-        // Delete whole inline placeholders in one stroke (like cc).
+        // Display edits are expanded to a whole semantic token when they touch one.
         buf.apply(deletePlaceholderOrChar);
       }
       return;

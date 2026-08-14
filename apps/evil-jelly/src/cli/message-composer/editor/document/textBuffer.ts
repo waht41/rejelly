@@ -243,11 +243,9 @@ export function setProjectedCursor(
 }
 
 /**
- * Only the ops that are safe to fire blind are bound as actions. The char- and
- * word-wise motions and deletes above are deliberately absent: the prompt wraps
- * them in `placeholderMotion` so the caret can't come to rest inside an inline
- * `[Image #N]` / `[Pasted text #N …]` token, and a raw action here would be a
- * way to bypass that. Reach them through `apply` with a composed transform.
+ * Only the ops that are safe to fire blind are bound as actions. Character and
+ * word transforms pass through the display projection; edits touching a token
+ * are expanded to that token's single logical range.
  */
 export interface TextBufferActions {
   insert: (str: string) => void;
@@ -259,6 +257,8 @@ export interface TextBufferActions {
   apply: (fn: (s: BufferState) => BufferState, cursorBias?: ProjectionBias) => void;
   /** Replace a display-text range with rich nodes and put the caret after the insertion. */
   replaceDisplayRange: (start: number, end: number, nodes: readonly PromptNode[]) => void;
+  /** Atomically replace expected plain text immediately before the logical caret. */
+  replaceTextBeforeCursor: (expectedText: string, nodes: readonly PromptNode[]) => void;
   /** Project a display offset back to the canonical logical caret. */
   setDisplayCursor: (cursor: number, bias?: ProjectionBias, affinity?: CaretAffinity) => void;
   /** Replace the whole text; caret defaults to end. */
@@ -334,6 +334,25 @@ export function useTextBuffer(
             0,
           );
           return { document, cursor: logicalStart + insertedLength, caretAffinity: "forward" };
+        }),
+      replaceTextBeforeCursor: (expectedText, nodes) =>
+        setState((current) => {
+          const start = current.cursor - expectedText.length;
+          if (start < 0) {
+            return current;
+          }
+          const projection = projectPromptDocument(current.document, tokenDisplayTextRef.current);
+          const displayStart = projection.logicalToDisplay(start);
+          const displayEnd = projection.logicalToDisplay(current.cursor);
+          if (projection.text.slice(displayStart, displayEnd) !== expectedText) {
+            return current;
+          }
+          const document = replacePromptRange(current.document, start, current.cursor, nodes);
+          const insertedLength = nodes.reduce(
+            (length, node) => length + (node.type === "text" ? node.text.length : 1),
+            0,
+          );
+          return { document, cursor: start + insertedLength, caretAffinity: "forward" };
         }),
       setDisplayCursor: (cursor, bias = "nearest", affinity = "forward") =>
         setState((current) =>

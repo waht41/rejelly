@@ -10,7 +10,7 @@ import {
 } from "../../../../shared/model/prompt/promptDocument";
 
 export type ProjectionBias = "left" | "right" | "nearest";
-export type PromptTokenDisplayText = (token: PromptToken) => string;
+export type PromptTokenDisplayText = (token: PromptToken, document: PromptDocument) => string;
 
 export interface ProjectedTokenSpan {
   readonly start: number;
@@ -40,8 +40,10 @@ export function defaultPromptTokenDisplayText(token: PromptToken): string {
     case "skill":
       return `$${token.qualifiedName}`;
     case "paste": {
-      const extraLines = Math.max(0, token.text.split("\n").length - 1);
-      return `[Pasted text${extraLines > 0 ? ` +${extraLines} lines` : ""}]`;
+      const lines = token.text.split("\n").length;
+      return lines > 1
+        ? `[Pasted text +${lines} lines]`
+        : `[Pasted text +${token.text.length} chars]`;
     }
     case "file":
       return "[File]";
@@ -113,7 +115,7 @@ export function projectPromptDocument(
       continue;
     }
     const start = text.length;
-    const displayText = tokenDisplayText(node);
+    const displayText = tokenDisplayText(node, document);
     text += displayText;
     tokenSpans.push({
       start,
@@ -136,10 +138,11 @@ export function projectPromptDocument(
           ? displayOffset + position - logicalOffset
           : position === logicalOffset
             ? displayOffset
-            : displayOffset + tokenDisplayText(node).length;
+            : displayOffset + tokenDisplayText(node, document).length;
       }
       logicalOffset += nodeLength;
-      displayOffset += node.type === "text" ? node.text.length : tokenDisplayText(node).length;
+      displayOffset +=
+        node.type === "text" ? node.text.length : tokenDisplayText(node, document).length;
     }
     return text.length;
   };
@@ -149,7 +152,8 @@ export function projectPromptDocument(
     let logicalOffset = 0;
     let displayOffset = 0;
     for (const node of document) {
-      const displayLength = node.type === "text" ? node.text.length : tokenDisplayText(node).length;
+      const displayLength =
+        node.type === "text" ? node.text.length : tokenDisplayText(node, document).length;
       const displayEnd = displayOffset + displayLength;
       if (position <= displayEnd) {
         if (node.type === "text") {

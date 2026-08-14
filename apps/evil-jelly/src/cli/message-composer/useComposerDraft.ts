@@ -1,11 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { UserAttachment, UserSkillReference } from "../../shared/host/inputBindings";
-import type { PromptToken } from "../../shared/model/prompt/promptDocument";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { UserSkillReference } from "../../shared/host/inputBindings";
+import {
+  normalizePromptDocument,
+  type PromptDocument,
+  type PromptToken,
+  promptTokens,
+} from "../../shared/model/prompt/promptDocument";
+import type { PromptAttachment } from "../../shared/model/prompt/promptInput";
 import { defaultPromptTokenDisplayText } from "./editor/document/promptDocument";
 import type { TextBuffer } from "./editor/document/textBuffer";
 import { useTextBuffer } from "./editor/document/textBuffer";
 import { useCollapsedPaste } from "./editor/paste/useCollapsedPaste";
-import { attachedImages, imageToken, shiftImageTokens } from "./imageAttachments";
+import { hydrateLegacyAttachments, materializeLegacyPromptInput } from "./legacyPromptInput";
 import type { SkillPickerItem } from "./session/composerSession";
 import { useComposerSession } from "./session/composerSession";
 import {
@@ -17,11 +23,9 @@ import {
 export interface ComposerDraft {
   buffer: TextBuffer;
   selectedFiles: string[];
-  selectedImages: string[];
   selectedSkills: UserSkillReference[];
   availableSkills: SkillPickerItem[];
-  setSelectedFiles: (paths: string[]) => void;
-  removeSelectedFile: (path: string) => void;
+  attachFile: (path: string, start: number, end: number) => void;
   clear: () => void;
   submitText: (text: string) => void;
   attachImage: (path: string) => void;
@@ -29,19 +33,22 @@ export interface ComposerDraft {
   hasCollapsedPaste: boolean;
 }
 
-function uniquePaths(paths: string[]): string[] {
+function referencedAttachments(
+  document: PromptDocument,
+  attachments: readonly PromptAttachment[],
+): PromptAttachment[] {
+  const byId = new Map(attachments.map((attachment) => [attachment.id, attachment]));
   const seen = new Set<string>();
-  return paths.filter((path) => {
-    const normalized = path.trim();
-    if (!normalized || seen.has(normalized)) {
-      return false;
-    }
-    seen.add(normalized);
-    return true;
+  return promptTokens(document).flatMap((token) => {
+    if (token.kind !== "file" && token.kind !== "image") return [];
+    if (seen.has(token.attachmentId)) return [];
+    seen.add(token.attachmentId);
+    const attachment = byId.get(token.attachmentId);
+    return attachment ? [attachment] : [];
   });
 }
 
-/** Owns one editable draft from hydration through materialization and submission. */
+/** Owns one editable semantic draft and adapts it to the legacy submission boundary. */
 export function useComposerDraft({
   label,
   onCommand,
@@ -53,14 +60,25 @@ export function useComposerDraft({
   const availableSkills = useComposerSession((state) => state.availableSkills);
   const draftSeed = useComposerSession((state) => state.draftSeed);
   const clearDraftSeed = useComposerSession((state) => state.clearDraftSeed);
-  const [selectedFiles, setSelectedFilesState] = useState<string[]>([]);
-  const [selectedImages, setSelectedImages] = useState<string[]>([]);
+  const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
+  const nextAttachmentIdRef = useRef(1);
+  const createAttachmentId = useCallback(() => `attachment-${nextAttachmentIdRef.current++}`, []);
   const tokenDisplayText = useCallback(
-    (token: PromptToken): string =>
-      token.kind === "skill"
-        ? `$${selectedSkillReferenceName(token, availableSkills)}`
-        : defaultPromptTokenDisplayText(token),
-    [availableSkills],
+    (token: PromptToken, document: PromptDocument): string => {
+      if (token.kind === "skill") {
+        return `$${selectedSkillReferenceName(token, availableSkills)}`;
+      }
+      if (token.kind === "file") {
+        const attachment = attachments.find((candidate) => candidate.id === token.attachmentId);
+        return attachment?.kind === "file" ? `@${attachment.path}` : "[File]";
+      }
+      if (token.kind === "image") {
+        const index = promptTokens(document, "image").indexOf(token) + 1;
+        return `[Image #${Math.max(1, index)}]`;
+      }
+      return defaultPromptTokenDisplayText(token);
+    },
+    [attachments, availableSkills],
   );
   const buffer = useTextBuffer("", tokenDisplayText);
   const collapsedPaste = useCollapsedPaste(buffer);
@@ -68,122 +86,129 @@ export function useComposerDraft({
     () => skillReferencesFromDocument(buffer.document),
     [buffer.document],
   );
-
-  const setSelectedFiles = useCallback((paths: string[]) => {
-    setSelectedFilesState(uniquePaths(paths));
-  }, []);
-
-  const removeSelectedFile = useCallback((path: string) => {
-    setSelectedFilesState((files) => files.filter((selected) => selected !== path));
-  }, []);
+  const liveAttachments = useMemo(
+    () => referencedAttachments(buffer.document, attachments),
+    [attachments, buffer.document],
+  );
+  const selectedFiles = liveAttachments.flatMap((attachment) =>
+    attachment.kind === "file" ? [attachment.path] : [],
+  );
+  useEffect(() => {
+    setAttachments((current) => {
+      const referenced = referencedAttachments(buffer.document, current);
+      return referenced.length === current.length &&
+        referenced.every((attachment, index) => attachment === current[index])
+        ? current
+        : referenced;
+    });
+  }, [buffer.document]);
 
   const clear = useCallback(() => {
     buffer.reset();
-    setSelectedFilesState([]);
-    setSelectedImages([]);
+    setAttachments([]);
     collapsedPaste.reset();
+    nextAttachmentIdRef.current = 1;
   }, [buffer.reset, collapsedPaste.reset]);
 
-  const submitText = useCallback(
-    (text: string) => {
-      const expandedText = collapsedPaste.expand(text);
-      if (onCommand(expandedText.trim())) {
-        clear();
-        return;
-      }
-      const attachments: UserAttachment[] = [
-        ...selectedFiles.map((path) => ({ type: "file" as const, path })),
-        ...attachedImages(expandedText, selectedImages).map((path) => ({
-          type: "image" as const,
-          path,
-          mimeType: "image/png" as const,
-        })),
-      ];
-      submitLine({
-        text: expandedText.trim(),
-        attachments,
-        ...(selectedSkills.length > 0 ? { skills: selectedSkills } : {}),
-      });
-      clear();
+  const attachFile = useCallback(
+    (path: string, start: number, end: number) => {
+      const normalized = path.trim();
+      if (!normalized) return;
+      const id = createAttachmentId();
+      setAttachments((current) => [...current, { id, kind: "file", path: normalized }]);
+      const after = buffer.text.slice(end);
+      buffer.replaceDisplayRange(start, end, [
+        { type: "token", kind: "file", attachmentId: id },
+        ...(after.length === 0 || !/^\s/.test(after) ? [{ type: "text" as const, text: " " }] : []),
+      ]);
     },
-    [
-      clear,
-      collapsedPaste.expand,
-      onCommand,
-      selectedFiles,
-      selectedImages,
-      selectedSkills,
-      submitLine,
-    ],
+    [buffer.replaceDisplayRange, buffer.text, createAttachmentId],
   );
 
   const attachImage = useCallback(
     (path: string) => {
       const normalized = path.trim();
-      if (!normalized) {
-        return;
-      }
-      const existingIndex = selectedImages.indexOf(normalized);
-      const imageIndex = existingIndex >= 0 ? existingIndex + 1 : selectedImages.length + 1;
-      if (existingIndex < 0) {
-        setSelectedImages((images) => [...images, normalized]);
-      }
-      buffer.insert(imageToken(imageIndex));
+      if (!normalized) return;
+      const id = createAttachmentId();
+      setAttachments((current) => [
+        ...current,
+        {
+          id,
+          kind: "image",
+          path: normalized,
+          mimeType: "image/png",
+          ownership: "composer_temp",
+        },
+      ]);
+      buffer.replaceDisplayRange(buffer.cursor, buffer.cursor, [
+        { type: "token", kind: "image", attachmentId: id },
+      ]);
     },
-    [buffer.insert, selectedImages],
+    [buffer.cursor, buffer.replaceDisplayRange, createAttachmentId],
   );
 
-  // A new prompt identity starts with an empty local draft.
+  const submitText = useCallback(
+    (text: string) => {
+      if (onCommand(text.trim())) {
+        clear();
+        return;
+      }
+      const live = referencedAttachments(buffer.document, attachments);
+      const legacyInput = materializeLegacyPromptInput(
+        { document: buffer.document, attachments: live },
+        tokenDisplayText,
+      );
+      submitLine({
+        ...legacyInput,
+        text: legacyInput.text.trim(),
+        ...(selectedSkills.length > 0 ? { skills: selectedSkills } : {}),
+      });
+      clear();
+    },
+    [attachments, buffer.document, clear, onCommand, selectedSkills, submitLine, tokenDisplayText],
+  );
+
   useEffect(() => {
     clear();
   }, [label, clear]);
 
-  // Restore queued steers into the live editor exactly once.
   useEffect(() => {
-    if (!draftSeed) {
-      return;
-    }
-    const attachments = draftSeed.value.attachments ?? [];
-    const seedFiles = attachments
-      .filter((attachment) => attachment.type === "file")
-      .map((attachment) => attachment.path);
-    const seedImages = attachments
-      .filter((attachment) => attachment.type === "image")
-      .map((attachment) => attachment.path);
-    const seedText = draftSeed.value.text.trim();
-    const currentText = shiftImageTokens(buffer.text.trim(), seedImages.length);
-    const combinedText = [seedText, currentText].filter((text) => text.length > 0).join("\n");
-    const restoredSkills = [...(draftSeed.value.skills ?? []), ...selectedSkills];
-
-    buffer.setDocument(
-      hydrateSkillTokens(combinedText, restoredSkills, (reference) =>
-        selectedSkillReferenceName(reference, availableSkills),
-      ),
+    if (!draftSeed) return;
+    const seedSkills = draftSeed.value.skills ?? [];
+    const skillDocument = hydrateSkillTokens(draftSeed.value.text.trim(), seedSkills, (reference) =>
+      selectedSkillReferenceName(reference, availableSkills),
     );
-    setSelectedFiles([...seedFiles, ...selectedFiles]);
-    setSelectedImages(uniquePaths([...seedImages, ...selectedImages]));
+    const hydrated = hydrateLegacyAttachments(
+      skillDocument,
+      draftSeed.value.attachments ?? [],
+      createAttachmentId,
+    );
+    const document = normalizePromptDocument([
+      ...hydrated.document,
+      ...(hydrated.document.length > 0 && buffer.document.length > 0
+        ? [{ type: "text" as const, text: "\n" }]
+        : []),
+      ...buffer.document,
+    ]);
+    setAttachments([...hydrated.attachments, ...attachments]);
+    buffer.setDocument(document);
     clearDraftSeed(draftSeed.id);
   }, [
-    draftSeed,
-    buffer.setDocument,
-    buffer.text,
-    selectedFiles,
-    selectedImages,
-    selectedSkills,
+    attachments,
     availableSkills,
-    setSelectedFiles,
-    setSelectedImages,
+    buffer.document,
+    buffer.setDocument,
     clearDraftSeed,
+    createAttachmentId,
+    draftSeed,
   ]);
 
   return {
     buffer,
     selectedFiles,
-    selectedImages,
     selectedSkills,
     availableSkills,
-    setSelectedFiles,
-    removeSelectedFile,
+    attachFile,
     clear,
     submitText,
     attachImage,
