@@ -15,9 +15,9 @@
  */
 
 import { z } from "zod";
-import { loadDocMap, resolveSyncPairs } from "../../../services/doc-drift";
-import { PromptBuilder } from "../../../services/prompt/PromptBuilder";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
+import { PromptBuilder } from "../../../shared/model/prompt/builder";
+import { loadDocMap, resolveSyncPairs } from "../detectors/docDrift";
 import { sha256 } from "../runtime/ledger";
 import { makeSeedEvaluatorAgent } from "../seedEvaluator";
 import type {

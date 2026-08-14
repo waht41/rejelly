@@ -13,28 +13,25 @@ import {
   isAbortError,
   isToolLoopExceededError,
 } from "@rejelly/core";
-import { getBinding } from "../../services/binding/hostBindings";
-import { useStandardStreaming } from "../../services/binding/standardStreaming";
-import { promptChatResilient } from "../../services/policy/promptChatResilient";
-import { promptCompactHistory } from "../../services/policy/promptCompactHistory";
-import { shouldUseTerminalUserReplyRule } from "../../services/prompt/output-surface";
-import { buildWorkspaceRuleInstructionBlock } from "../../services/prompt/workspace-rule";
-import type { ConversationAgentProps, ConversationAgentResult } from "../../shared/AgentShared";
-import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
-import {
-  equipReadOnlyWorkspaceKit,
-  equipRunCommandKit,
-  equipWebResearchKit,
-} from "../../tools/kits";
-import { equipMcpServerKit } from "../../tools/mcpServerKit";
-import { evilJellyToolLoggerMiddleware } from "../../tools/middlewares/withToolLogger";
+import { equipMcpServerKit } from "../../domains/mcp/mcpServerKit";
+import { promptChatResilient } from "../../domains/policy/promptChatResilient";
+import { promptCompactHistory } from "../../domains/policy/promptCompactHistory";
+import { materializeMessageHistory } from "../../domains/session/repository/sessionMessageMaterializer";
+import { equipSkillKit } from "../../domains/skills/agent/equipSkillKit";
+import { equipWebResearchKit } from "../../domains/web/kit";
+import { equipReadOnlyWorkspaceKit, equipRunCommandKit } from "../../domains/workspace/kit";
+import { buildWorkspaceRuleInstructionBlock } from "../../domains/workspace/workspaceRule";
 import {
   createCreateFileTool,
   createDeleteFileTool,
   createEditFileTool,
-} from "../../tools/WriteTools";
-import { equipSkillKit } from "../skills/equipSkillKit";
+} from "../../domains/workspace/write/WriteTools";
+import { getBinding } from "../../shared/host/context";
+import { evilJellyToolLoggerMiddleware } from "../../shared/tool-observation/middleware";
 import { buildAutoCompactionConfig } from "./contextControl";
+import type { ConversationAgentProps, ConversationAgentResult } from "./conversationRun";
+import { shouldUseTerminalUserReplyRule } from "./outputSurface";
+import { useStandardStreaming } from "./standardStreaming";
 import { UNIFIED_TOOL_ARTIFACTS_KEY } from "./unifiedMemoryKeys";
 import {
   buildUnifiedInstruction,
@@ -78,10 +75,10 @@ async function useUnifiedTools(): Promise<void> {
   equipTool(deleteTool);
 }
 
-function useUnifiedPrompts(props: ConversationAgentProps): void {
+async function useUnifiedPrompts(props: ConversationAgentProps): Promise<void> {
   const [artifacts] = equipMemory<Record<string, string>>(UNIFIED_TOOL_ARTIFACTS_KEY, {});
   const artifactSummary = formatArtifactSummaryForInstruction(artifacts);
-  const workspaceRuleBlock = buildWorkspaceRuleInstructionBlock(getWorkspaceFsPolicy().getRoot());
+  const workspaceRuleBlock = await buildWorkspaceRuleInstructionBlock();
 
   equipSystem(
     buildUnifiedSystemPrompt({
@@ -104,10 +101,13 @@ async function runManualCompression(
   try {
     // Summarize the persisted history only: the synthetic "/compress" user turn must not be
     // picked up as a kept-verbatim recent user message.
+    const history = await materializeMessageHistory(
+      props.history ?? [],
+      props.sessionBlobRoot ? { blobRoot: props.sessionBlobRoot } : {},
+    );
     const compactHistory = await promptCompactHistory({
-      message: props.history ?? [],
+      message: history,
       compaction: buildAutoCompactionConfig(),
-      sessionBlobRoot: props.sessionBlobRoot,
     });
     return compactHistory
       ? { reply: "", compactHistory }
@@ -125,7 +125,7 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
   maxTurnSteps: UNIFIED_MAX_TURN_STEPS,
   handler: async (props) => {
     await useUnifiedTools();
-    useUnifiedPrompts(props);
+    await useUnifiedPrompts(props);
     equipSkillKit();
     useStandardStreaming({ textMode: "plain" });
 
@@ -134,13 +134,16 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
     }
 
     try {
+      const messages = await materializeMessageHistory(
+        [...(props.history ?? []), props.message],
+        props.sessionBlobRoot ? { blobRoot: props.sessionBlobRoot } : {},
+      );
       const result = await promptChatResilient({
-        message: [...(props.history ?? []), props.message],
+        message: messages,
         pendingUserMessages: props.pendingUserMessages,
         compaction: buildAutoCompactionConfig(),
         sessionRecorder: props.sessionRecorder,
         turnId: props.turnId,
-        sessionBlobRoot: props.sessionBlobRoot,
       });
 
       if (result.aborted) {

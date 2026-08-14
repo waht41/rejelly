@@ -9,9 +9,9 @@
  */
 
 import type { z } from "zod";
-import type { ComplexityFinding } from "../../../services/complexity";
-import { detectComplexityCandidates } from "../../../services/complexity";
-import { PromptBuilder } from "../../../services/prompt/PromptBuilder";
+import { PromptBuilder } from "../../../shared/model/prompt/builder";
+import type { ComplexityFinding } from "../detectors/complexity";
+import { detectComplexityCandidates } from "../detectors/complexity";
 import {
   createAuditSourceSnapshotReader,
   fencedCodeBlock,

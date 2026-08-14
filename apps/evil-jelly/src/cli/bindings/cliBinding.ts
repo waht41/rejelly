@@ -1,22 +1,42 @@
 /**
- * Wires Ink Dashboard UI to {@link EvilJellyHostBindings}.
+ * Wires Ink Dashboard UI to {@link EvilJellyBindings}.
  */
 
-import { resetRuntimeTaskStack } from "../../services/stop/runtimeControl";
-import { env, getReviewEndpointFromEnv } from "../../shared/config";
+import { env, getReviewEndpointFromEnv } from "../../shared/configuration/env";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
-import type { EvilJellyHostBindings, HostChoiceView } from "../../shared/types";
-import { resetModeSession, useModeStore } from "../store/useModeStore";
-import { resetOutputSession, TOOL_FULL_CAP, useOutputStore } from "../store/useOutputStore";
-import type { ActionMenuOption, TransientView } from "../store/usePromptStore";
-import { resetPromptSession, usePromptStore } from "../store/usePromptStore";
-import { resetViewSession } from "../store/useViewStore";
-import { createInkConfirmWrite } from "./confirmWrite";
-import { createInkGetInput } from "./getInput";
-import { createInkLifecycle } from "./inkLifecycle";
-import { resetPromptQueue, runPromptSession } from "./promptQueue";
+import type { EvilJellyBindings } from "../../shared/host/bindings";
+import type {
+  PromptChoiceRequest,
+  PromptChoiceView,
+  PromptInputBindings,
+} from "../../shared/host/inputBindings";
+import type { AgentModeBindings } from "../../shared/host/modeBindings";
+import type { ConversationPresentationBindings } from "../../shared/host/presentationBindings";
+import type { ToolConfirmationBindings } from "../../shared/host/toolConfirmationBindings";
+import { resetInterruptibleTaskStack } from "../../shared/task-interruption/taskStack";
+import { resetToolTranscriptViewSession } from "../conversation-display/tool-transcript/viewStore";
+import {
+  resetOutputSession,
+  TOOL_FULL_CAP,
+  useOutputStore,
+} from "../conversation-display/useOutputStore";
+import type { InteractiveRunControl } from "../entry/unified-run/interactive/runControl";
+import { createInteractiveShell } from "../interactive-shell/inkLifecycle";
+import { createInteractiveSubmission } from "../interactive-shell/submission";
+import {
+  resetComposerSession,
+  useComposerSession,
+} from "../message-composer/session/composerSession";
+import type { DecisionView } from "../operator-decision/model";
+import {
+  createOperatorDecision,
+  resetOperatorDecisionSession,
+} from "../operator-decision/operatorDecision";
+import { resetSubmissionDispatch } from "../submission-dispatch/dispatcher";
+import { resetModeSession, useModeStore } from "../tool-approval/approvalModeStore";
+import { createToolApproval } from "../tool-approval/createToolApproval";
 
-function toTransientView(view?: HostChoiceView): TransientView | undefined {
+function toDecisionView(view?: PromptChoiceView): DecisionView | undefined {
   if (view === undefined) {
     return undefined;
   }
@@ -27,48 +47,31 @@ function toTransientView(view?: HostChoiceView): TransientView | undefined {
 }
 
 function resetCliBindingSession(): void {
-  resetPromptQueue();
-  resetPromptSession();
+  resetSubmissionDispatch();
+  resetOperatorDecisionSession();
+  resetComposerSession();
   resetOutputSession();
   resetModeSession();
-  resetViewSession();
-  resetRuntimeTaskStack();
+  resetToolTranscriptViewSession();
+  resetInterruptibleTaskStack("CLI binding session reset");
 }
 
-function createInkRequestChoice(): EvilJellyHostBindings["requestChoice"] {
-  return async (
-    message: string,
-    options: ActionMenuOption[],
-    view?: HostChoiceView,
-  ): Promise<string> => {
-    return runPromptSession(async () => {
+function createInkRequestChoice(): PromptInputBindings["requestChoice"] {
+  const decision = createOperatorDecision();
+  return async (request: PromptChoiceRequest): Promise<string> => {
+    return decision.run(async (session) => {
       useOutputStore.getState().setPhase("awaiting_user", "Waiting for user choice…");
-      const selected = await usePromptStore
-        .getState()
-        .requestActionMenu(message, options, toTransientView(view));
+      const selected = await session.requestChoice({
+        ...request,
+        view: toDecisionView(request.view),
+      });
       useOutputStore.getState().resumeWork("Running…");
       return selected;
     });
   };
 }
 
-function createOutputBindings(): Pick<
-  EvilJellyHostBindings,
-  | "printOut"
-  | "logUserMessage"
-  | "logAssistantMessage"
-  | "logSystemEvent"
-  | "clearHistory"
-  | "onDetailUpdate"
-  | "onPhaseUpdate"
-  | "onTurnStart"
-  | "setAvailableSkills"
-  | "logToolRound"
-  | "logToolStart"
-  | "appendToolOutput"
-  | "logToolBlock"
-  | "hydrateHistory"
-> {
+function createOutputBindings(): ConversationPresentationBindings {
   const out = () => useOutputStore.getState();
 
   return {
@@ -113,9 +116,6 @@ function createOutputBindings(): Pick<
     onTurnStart: () => {
       out().beginTurn();
     },
-    setAvailableSkills: (skills) => {
-      usePromptStore.getState().setAvailableSkills(skills);
-    },
   };
 }
 
@@ -129,7 +129,7 @@ function showSessionBanner(version: string): void {
 }
 
 function logCliStartup(
-  logSystemEvent: EvilJellyHostBindings["logSystemEvent"],
+  logSystemEvent: ConversationPresentationBindings["logSystemEvent"],
   showBanner: () => void,
   reviewCliFlag: boolean | undefined,
 ): void {
@@ -141,18 +141,23 @@ function logCliStartup(
 }
 
 function createPromptBindings(options: {
-  seedInput: string | undefined;
+  getInput: PromptInputBindings["getInput"];
   suspendInkForExternalProcess: <T>(fn: () => Promise<T>) => Promise<T>;
-}): Pick<EvilJellyHostBindings, "getInput" | "confirmTool" | "requestChoice" | "getAgentMode"> {
-  const { seedInput, suspendInkForExternalProcess } = options;
+}): PromptInputBindings & AgentModeBindings & ToolConfirmationBindings {
+  const { getInput, suspendInkForExternalProcess } = options;
+  const decision = createOperatorDecision();
   return {
-    getInput: createInkGetInput(seedInput !== undefined ? { seedLine: seedInput } : undefined),
-    confirmTool: createInkConfirmWrite({
+    getInput,
+    confirmTool: createToolApproval({
       suspendInkForExternalProcess,
       getMode: () => useModeStore.getState().mode,
+      decision,
     }),
     getAgentMode: () => useModeStore.getState().mode,
     requestChoice: createInkRequestChoice(),
+    setAvailableSkills: (skills) => {
+      useComposerSession.getState().setAvailableSkills(skills);
+    },
   };
 }
 
@@ -163,6 +168,8 @@ export interface CreateCliHostBindingsOptions {
   seedInput?: string;
   /** When true, logs review endpoint (matches CLI `--review` only, not env-only enable). */
   reviewCliFlag?: boolean;
+  /** Per-invocation control shared by Ink, submission dispatch, and the interactive run loop. */
+  runControl: InteractiveRunControl;
 }
 
 /**
@@ -170,16 +177,26 @@ export interface CreateCliHostBindingsOptions {
  * Caller owns the run flow and must call dispose when finished.
  */
 export function createCliHostBindings(options: CreateCliHostBindingsOptions): {
-  bindings: EvilJellyHostBindings;
+  bindings: EvilJellyBindings;
   dispose: () => void;
 } {
-  const { version, seedInput, reviewCliFlag } = options;
+  const { version, seedInput, reviewCliFlag, runControl } = options;
   resetCliBindingSession();
 
-  const lifecycle = createInkLifecycle();
+  const submission = createInteractiveSubmission(
+    {
+      requestExit: () => runControl.loop.request({ type: "exit" }),
+      requestRunAbort: runControl.segment.requestAbort,
+    },
+    seedInput !== undefined ? { seedLine: seedInput } : undefined,
+  );
+  const lifecycle = createInteractiveShell({
+    requestRunAbort: runControl.segment.requestAbort,
+    cancelSubmission: submission.cancel,
+  });
   const outputBindings = createOutputBindings();
   const promptBindings = createPromptBindings({
-    seedInput,
+    getInput: submission.getInput,
     suspendInkForExternalProcess: lifecycle.suspendForExternalProcess,
   });
   const showBanner = () => showSessionBanner(version);

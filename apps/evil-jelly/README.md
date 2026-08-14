@@ -489,13 +489,14 @@ A future event-stream-driven `PulseAgent`, inspired by `jellypulse`, may reuse f
 | Path | Responsibility |
 |------|----------------|
 | `cli/index.ts` | Load the environment, mount Ink `Dashboard`, reset prompt/output sessions, and bind Zustand to `runEvilJellyHost`. |
-| `cli/store/useOutputStore.ts` | Store `<Static>` history plus transient `streamBuffer` and `status`; expose `resetOutputSession`. |
-| `cli/store/usePromptStore.ts` | Separate `view` (`diff` / `markdown` / `none`) from `prompt` (`line` / `confirm` / `idle`); expose `resetPromptSession`. |
+| `cli/conversation-display/` | Project conversation events into `<Static>` history, assistant stream, runtime status, live tool tails, and tool transcripts. |
+| `cli/message-composer/` | Own the local editable draft and bridge submitted input, available Skills, and restored steer drafts to the host session. |
+| `cli/operator-decision/` | Arbitrate and render confirmation, choice, and text decisions independently from message composition. |
 | `shared/types.ts` | Host-protocol types such as `EvilJellyHostBindings`. |
 | `shared/config.ts` | Environment, OpenAI adapter, and Review options. |
 | `cli/app/host/runHost.ts` | `runEvilJellyHost`, options, and error reporting through `logSystemEvent`. |
 | `cli/app/host/runWithReview.ts` | `runWith` and the Review exporter lifecycle. |
-| `cli/` | `Dashboard`, transient `TransientPane`, interaction area, `args`, and `io`. |
+| `cli/ui/Dashboard.tsx` | Compose the terminal frame from conversation display, operator decision, message composer, and runtime controls. |
 
 ### Host protocol
 

@@ -11,9 +11,12 @@
 
 import { createAgent, equipInstruction, equipSystem, promptAgent } from "@rejelly/core";
 import { z } from "zod";
-import { equipContextIntakeBudgetMiddleware } from "../../tools/hooks/contextIntakeBudget";
-import { equipToolLoopBudgetMiddleware } from "../../tools/hooks/toolLoopBudget";
-import { equipReadOnlyWorkspaceKit, READ_ONLY_WORKSPACE_TOOL_NAMES } from "../../tools/kits";
+import {
+  equipReadOnlyWorkspaceKit,
+  READ_ONLY_WORKSPACE_TOOL_NAMES,
+} from "../../domains/workspace/kit";
+import { equipContextIntakeBudgetMiddleware } from "../../domains/workspace/read/contextIntakeBudget";
+import { equipToolLoopBudgetMiddleware } from "./runtime/toolLoopBudget";
 import { AUDIT_DEFAULTS, type SeedVerdict } from "./types";
 
 /**

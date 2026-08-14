@@ -1,7 +1,7 @@
 /**
  * The write surface the agent loop needs from a durable session recorder.
  *
- * The concrete recorder (`services/session/sessionRecorder`) implements this plus turn/segment
+ * The concrete recorder (`domains/session/recorder/sessionRecorder`) implements this plus turn/segment
  * lifecycle, which only the shell drives. Callers below the shell — the policy layer, agent props —
  * depend on this narrow port instead, so they never reach into the session service.
  *

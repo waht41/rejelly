@@ -1,69 +1,274 @@
 {
   "nodes": {
     "@spec:tests": ["src/**/__tests__/**/*", "src/**/*.test.*"],
-    "@cli:entry": ["src/cli/index.ts"],
-    "@cli:app": ["src/cli/app/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
-    "@cli:bindings": ["src/cli/bindings/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
-    "@cli:ui": ["src/cli/ui/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
-    "@cli:prompt-editor": [
-      "src/cli/prompt-editor/**/*",
+    "@cli:entry": [
+      "src/cli/index.ts",
+      "src/cli/entry/*",
       "!src/**/__tests__/**/*",
       "!src/**/*.test.*"
     ],
-    "@cli:store": ["src/cli/store/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
-    "@shell": ["src/shell/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@cli:bindings": ["src/cli/bindings/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@cli:interactive-shell": [
+      "src/cli/interactive-shell/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@cli:conversation-display": [
+      "src/cli/conversation-display/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@cli:terminal-ui": ["src/cli/terminal-ui/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@cli:message-composer": [
+      "src/cli/message-composer/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@cli:unified-conversation": [
+      "src/cli/unified-conversation/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@cli:skill-runtime": [
+      "src/cli/skill-runtime/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@cli:runtime": ["src/cli/runtime/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@cli:submission-dispatch": [
+      "src/cli/submission-dispatch/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@cli:audit-run": [
+      "src/cli/entry/audit-run/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@cli:init-run": ["src/cli/entry/init-run/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@cli:unified-run": [
+      "src/cli/entry/unified-run/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@cli:model-composition": [
+      "src/cli/model-composition/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@cli:operator-decision": [
+      "src/cli/operator-decision/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@cli:tool-approval": [
+      "src/cli/tool-approval/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
     "@feature:[feat]": ["src/features/[feat]/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
-    "@tools": ["src/tools/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
-    "@service:[svc]": ["src/services/[svc]/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@domain:[dom]": [
+      "src/domains/[dom]/**/*",
+      "!src/domains/session/**/*",
+      "!src/domains/skills/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@domain:skills:definition": [
+      "src/domains/skills/definition/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@domain:skills:loader": [
+      "src/domains/skills/loader/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@domain:skills:catalog": [
+      "src/domains/skills/catalog/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@domain:skills:agent": [
+      "src/domains/skills/agent/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@domain:session:model": [
+      "src/domains/session/model/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@domain:session:journal": [
+      "src/domains/session/journal/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@domain:session:projection": [
+      "src/domains/session/projection/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@domain:session:repository": [
+      "src/domains/session/repository/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
+    "@domain:session:recorder": [
+      "src/domains/session/recorder/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
     "@shared": ["src/shared/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@ext:fs": "node:fs",
     "@ext:ui": ["npm:ink", "npm:react", "npm:zustand"]
   },
   "graph": {
     "runtime_arch": {
-      "cascade": [
-        ["@spec:tests"],
-        ["@cli:**"],
-        ["@shell"],
-        ["@feature:[feat]"],
-        ["@tools"],
-        ["@service:[svc]"],
-        ["@shared"],
-        ["@ext:fs"]
-      ],
+      "sequence": {
+        "test_access": [
+          ["@spec:tests"],
+          [
+            "@cli:**",
+            "@feature:[feat]",
+            "@domain:[dom]",
+            "@domain:session:*",
+            "@domain:skills:*",
+            "@shared",
+            "@ext:fs",
+            "@ext:ui"
+          ]
+        ],
+        "production_foundation": [
+          ["@cli:**", "@feature:[feat]", "@domain:[dom]", "@domain:session:*", "@domain:skills:*"],
+          ["@shared"]
+        ],
+        "direct_fs": [
+          [
+            "@shared",
+            "@cli:entry",
+            "@cli:interactive-shell",
+            "@cli:message-composer",
+            "@cli:tool-approval",
+            "@domain:skills:loader",
+            "@domain:session:journal",
+            "@domain:session:repository"
+          ],
+          ["@ext:fs"]
+        ],
+        "terminal_ui": [
+          [
+            "@cli:interactive-shell",
+            "@cli:conversation-display",
+            "@cli:terminal-ui",
+            "@cli:message-composer",
+            "@cli:operator-decision",
+            "@cli:tool-approval"
+          ],
+          ["@ext:ui"]
+        ]
+      },
       "connect": {
-        "@spec:tests": ["@ext:ui"],
-        "@cli:bindings": ["@ext:ui"],
-        "@cli:ui": ["@ext:ui"],
-        "@cli:prompt-editor": ["@ext:ui"],
-        "@cli:store": ["@ext:ui"]
+        "@cli:audit-run": ["@feature:audit"],
+        "@cli:unified-run": [
+          "@feature:unified",
+          "@feature:replay",
+          "@domain:session:repository",
+          "@domain:session:recorder",
+          "@domain:session:projection",
+          "@domain:skills:agent",
+          "@domain:skills:definition",
+          "@domain:mcp"
+        ],
+        "@cli:unified-conversation": ["@feature:unified"],
+        "@feature:unified": [
+          "@domain:workspace",
+          "@domain:web",
+          "@domain:skills:agent",
+          "@domain:session:repository",
+          "@domain:policy",
+          "@domain:mcp"
+        ],
+        "@feature:audit": ["@domain:workspace"],
+        "@cli:message-composer": [
+          "@domain:workspace",
+          "@domain:skills:agent",
+          "@domain:skills:definition"
+        ]
       }
     },
     "cli_arch": {
       "connect": {
-        "@cli:entry": ["@cli:app", "@cli:bindings"],
-        "@cli:bindings": ["@cli:ui", "@cli:store"]
-      },
-      "cascade": [["@cli:ui"], ["@cli:prompt-editor"], ["@cli:store"]]
+        "@cli:entry": [
+          "@cli:audit-run",
+          "@cli:init-run",
+          "@cli:unified-run",
+          "@cli:bindings",
+          "@cli:model-composition"
+        ],
+        "@cli:audit-run": ["@cli:runtime"],
+        "@cli:unified-run": [
+          "@cli:runtime",
+          "@cli:message-composer",
+          "@cli:submission-dispatch",
+          "@cli:skill-runtime",
+          "@cli:unified-conversation"
+        ],
+        "@cli:skill-runtime": ["@domain:skills:*"],
+        "@cli:unified-conversation": [
+          "@cli:conversation-display",
+          "@cli:message-composer",
+          "@cli:runtime",
+          "@cli:submission-dispatch",
+          "@domain:session:model",
+          "@domain:session:recorder",
+          "@domain:session:repository",
+          "@domain:skills:agent"
+        ],
+        "@cli:bindings": [
+          "@cli:unified-run",
+          "@cli:conversation-display",
+          "@cli:message-composer",
+          "@cli:interactive-shell",
+          "@cli:submission-dispatch",
+          "@cli:operator-decision",
+          "@cli:tool-approval"
+        ],
+        "@cli:interactive-shell": [
+          "@cli:conversation-display",
+          "@cli:operator-decision",
+          "@cli:tool-approval",
+          "@cli:message-composer",
+          "@cli:submission-dispatch"
+        ],
+        "@cli:conversation-display": ["@cli:terminal-ui"],
+        "@cli:message-composer": ["@cli:terminal-ui"],
+        "@cli:operator-decision": ["@cli:conversation-display", "@cli:terminal-ui"],
+        "@cli:tool-approval": ["@cli:conversation-display", "@cli:operator-decision"]
+      }
+    },
+    "session_arch": {
+      "cascade": [
+        ["@domain:session:repository", "@domain:session:recorder"],
+        ["@domain:session:journal", "@domain:session:projection"],
+        ["@domain:session:model"]
+      ]
+    },
+    "skills_arch": {
+      "cascade": [
+        ["@domain:skills:agent"],
+        ["@domain:skills:catalog"],
+        ["@domain:skills:definition"]
+      ],
+      "sequence": [["@domain:skills:loader"], ["@domain:skills:definition"]]
     }
   },
   "rules": [
     {
-      "name": "allow-unified-skill-dependency",
-      "description": "Temporary exception for UnifiedAgent Skill assembly; revisit the feature graph boundary",
-      "scope": "fallback",
-      "match": {
-        "from": "@feature:unified",
-        "to": "@feature:skills"
-      },
-      "severity": "warn",
-      "message": "UnifiedAgent currently assembles Skills directly; revisit the feature graph boundary"
-    },
-    {
       "name": "restrict-fs-access",
-      "description": "Agent tools must access filesystem via src/shared/fs-policy",
+      "description": "Workspace domain code must access filesystem via src/shared/fs-policy",
       "match": {
-        "from": "@tools",
+        "from": "@domain:workspace",
         "to": "@ext:fs"
       },
       "severity": "error",

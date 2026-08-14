@@ -13,10 +13,9 @@
  */
 
 import { createAgent } from "@rejelly/core";
-import { getBinding } from "../../services/binding/hostBindings";
+import { getSettings } from "../../shared/configuration/settings";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
-import { mapWithConcurrency } from "../../shared/lib/mapWithConcurrency";
-import { getSettings } from "../../shared/settings";
+import { getBinding } from "../../shared/host/context";
 import { cloneFamily } from "./families/clone";
 import { complexityFamily } from "./families/complexity";
 import { docDriftFamily } from "./families/docDrift";
@@ -32,6 +31,7 @@ import {
   saveAuditLedger,
   touchCurrentIdentity,
 } from "./runtime/ledger";
+import { mapWithConcurrency } from "./runtime/mapWithConcurrency";
 import { persistAuditReport, renderAuditReport, summarizeAuditReport } from "./runtime/report";
 import type { AuditSeedFamily, PreparedSeed } from "./types";
 import {

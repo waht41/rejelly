@@ -1,0 +1,799 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ToolBlock } from "./history/model";
+import { isRuntimeActive, statusTimerAnchor } from "./runtime-status/state";
+import { resetOutputSession, TOOL_FULL_CAP, useOutputStore } from "./useOutputStore";
+
+beforeEach(() => {
+  resetOutputSession();
+});
+
+afterEach(() => {
+  resetOutputSession();
+  vi.useRealTimers();
+});
+
+describe("statusTimerAnchor", () => {
+  it("counts the whole turn while one is running", () => {
+    expect(statusTimerAnchor(1_000, 5_000)).toBe(1_000);
+  });
+
+  it("falls back to the phase when no turn is anchored", () => {
+    // `/compress` runs a model call the user waits on, but it never passes the shell's
+    // initial-input point, so the turn anchor stays null. Without the fallback the line read
+    // "Compacting context 0s" for the whole operation — a stall indicator that cannot count is
+    // worse than a coarse one.
+    expect(statusTimerAnchor(null, 5_000)).toBe(5_000);
+  });
+
+  it("stays read-only so a maintenance command cannot leak an anchor into the next turn", () => {
+    // beginTurn is idempotent while the anchor is set, so writing one here would make the next
+    // real turn count from whenever /compress started.
+    const store = useOutputStore.getState();
+    store.setPhase("compacting");
+    const { turnStartedAt, phaseSince } = useOutputStore.getState().runtime;
+    statusTimerAnchor(turnStartedAt, phaseSince);
+
+    expect(useOutputStore.getState().runtime.turnStartedAt).toBeNull();
+    store.beginTurn();
+    expect(useOutputStore.getState().runtime.turnStartedAt).not.toBeNull();
+  });
+});
+
+describe("isRuntimeActive", () => {
+  it("does not treat input waits as active runtime work", () => {
+    expect(isRuntimeActive("idle", "")).toBe(false);
+    expect(isRuntimeActive("awaiting_user", "")).toBe(false);
+  });
+
+  it("treats every in-flight phase and leftover stream output as active runtime work", () => {
+    expect(isRuntimeActive("connecting", "")).toBe(true);
+    expect(isRuntimeActive("thinking", "")).toBe(true);
+    expect(isRuntimeActive("streaming", "")).toBe(true);
+    expect(isRuntimeActive("compacting", "")).toBe(true);
+    expect(isRuntimeActive("tool", "")).toBe(true);
+    expect(isRuntimeActive("working", "")).toBe(true);
+    expect(isRuntimeActive("idle", "partial output")).toBe(true);
+  });
+
+  it("ignores the status detail entirely", () => {
+    // The detail used to decide this by its "Waiting for " prefix, so every new status string
+    // was a chance to report a busy agent idle and blank the transient view mid-run.
+    useOutputStore.getState().setPhase("connecting", "Waiting for review comments…");
+    const state = useOutputStore.getState();
+    expect(isRuntimeActive(state.runtime.phase, state.streamBuffer)).toBe(true);
+  });
+});
+
+describe("setPhase", () => {
+  it("restarts the elapsed timer only when the phase actually changes", () => {
+    const store = useOutputStore.getState();
+    store.setPhase("connecting");
+    const since = useOutputStore.getState().runtime.phaseSince;
+
+    // Stream deltas re-announce the same phase dozens of times a second; if each one rebased
+    // phaseSince the counter would sit at 0s and never expose a stall.
+    store.setPhase("connecting");
+    expect(useOutputStore.getState().runtime.phaseSince).toBe(since);
+
+    store.setPhase("streaming");
+    expect(useOutputStore.getState().runtime.phaseSince).toBeGreaterThanOrEqual(since);
+    expect(useOutputStore.getState().runtime.phase).toBe("streaming");
+  });
+
+  it("carries the status detail without letting it drive the phase", () => {
+    useOutputStore.getState().setPhase("awaiting_user", "shell → workspace root");
+    expect(useOutputStore.getState().runtime.detail).toBe("shell → workspace root");
+    expect(useOutputStore.getState().runtime.phase).toBe("awaiting_user");
+
+    useOutputStore.getState().setDetail("outside read → /etc/hosts");
+    expect(useOutputStore.getState().runtime.phase).toBe("awaiting_user");
+  });
+
+  it("returns to idle at a turn boundary", () => {
+    useOutputStore.getState().setPhase("streaming");
+    useOutputStore.getState().logAssistant("done");
+    expect(useOutputStore.getState().runtime.phase).toBe("idle");
+    expect(useOutputStore.getState().runtime.detail).toBe("Ready");
+  });
+});
+
+describe("turn timing", () => {
+  it("anchors the timer on beginTurn and survives phase changes", () => {
+    const store = useOutputStore.getState();
+    store.beginTurn();
+    const startedAt = useOutputStore.getState().runtime.turnStartedAt;
+    expect(startedAt).not.toBeNull();
+
+    // Phase transitions (connecting → thinking → streaming) never move the anchor.
+    store.setPhase("connecting");
+    store.setPhase("thinking");
+    store.setPhase("streaming");
+    expect(useOutputStore.getState().runtime.turnStartedAt).toBe(startedAt);
+  });
+
+  it("is idempotent: a second beginTurn does not restart the timer", () => {
+    const store = useOutputStore.getState();
+    store.beginTurn();
+    const startedAt = useOutputStore.getState().runtime.turnStartedAt;
+
+    store.beginTurn();
+    expect(useOutputStore.getState().runtime.turnStartedAt).toBe(startedAt);
+  });
+
+  it("does not anchor the timer from setPhase or beginTool alone", () => {
+    const store = useOutputStore.getState();
+    store.setPhase("working");
+    store.beginTool({ toolName: "read_file", summary: "[Tools] read a" });
+    // A tool without an initial input (e.g. a maintenance flow) is not a turn.
+    expect(useOutputStore.getState().runtime.turnStartedAt).toBeNull();
+  });
+
+  it("does not reset the turn timer on a mid-turn confirmation wait", () => {
+    const store = useOutputStore.getState();
+    store.beginTurn();
+    const startedAt = useOutputStore.getState().runtime.turnStartedAt;
+
+    // confirmWrite pauses the same turn for the user; the timer must keep counting.
+    store.setPhase("awaiting_user", "shell → workspace root");
+    expect(useOutputStore.getState().runtime.turnStartedAt).toBe(startedAt);
+
+    store.setPhase("working", "Running…");
+    expect(useOutputStore.getState().runtime.turnStartedAt).toBe(startedAt);
+  });
+
+  it("ends the timer at the turn boundary and restarts fresh for the next turn", () => {
+    const store = useOutputStore.getState();
+    store.beginTurn();
+    store.setPhase("streaming");
+    store.logAssistant("done");
+    expect(useOutputStore.getState().runtime.turnStartedAt).toBeNull();
+
+    store.beginTurn();
+    expect(useOutputStore.getState().runtime.turnStartedAt).not.toBeNull();
+  });
+
+  it("logs the turn duration as a one-line system notice after the reply", () => {
+    const store = useOutputStore.getState();
+    store.beginTurn();
+    store.setPhase("streaming");
+    store.logAssistant("done");
+
+    const history = useOutputStore.getState().history;
+    expect(history[history.length - 2]).toMatchObject({ type: "assistant", content: "done" });
+    const timing = history[history.length - 1]!;
+    expect(timing.type).toBe("system");
+    if (timing.type === "system") {
+      expect(timing.content).toMatch(/^Worked for \d+(\.\d+)?s$/);
+      expect(timing.oneLine).toBe(true);
+    }
+  });
+
+  it("skips the timing line when no turn ran (hydrated/resumed session)", () => {
+    useOutputStore.getState().logAssistant("done");
+    expect(useOutputStore.getState().history).toEqual([
+      { id: "a_0", type: "assistant", content: "done", hidden: false },
+    ]);
+  });
+});
+
+describe("full conversation turn", () => {
+  it("drives the whole lifecycle and keeps the turn timer anchored at the initial input", () => {
+    const store = useOutputStore.getState();
+
+    // Router: waiting for the user's next message.
+    store.setPhase("awaiting_user", "Waiting for input");
+    expect(useOutputStore.getState().runtime.phase).toBe("awaiting_user");
+
+    // User sends: getInput reports "working" (UI feedback only), logUser appends the
+    // message, and only the shell's initial-input record (beginTurn) anchors the timer.
+    store.setPhase("working", "Running…");
+    expect(useOutputStore.getState().runtime.turnStartedAt).toBeNull();
+    store.logUser("Inspect the repo");
+    expect(useOutputStore.getState().runtime.turnStartedAt).toBeNull();
+    store.beginTurn();
+    const turnStart = useOutputStore.getState().runtime.turnStartedAt;
+    expect(turnStart).not.toBeNull();
+
+    // Model turn 1: connecting → thinking → streaming → working; the anchor never moves.
+    store.setPhase("connecting");
+    store.setPhase("thinking");
+    store.setPhase("streaming");
+    store.setPhase("working");
+    expect(useOutputStore.getState().runtime.turnStartedAt).toBe(turnStart);
+
+    // Tool with a confirmation pause; resumeWork restores the tool phase afterwards.
+    const tool = store.beginTool({ toolName: "run_command", summary: "[Tools] npm test" });
+    store.appendToolOutput(tool.id, "passing\n");
+    store.setPhase("awaiting_user", "shell → workspace root");
+    expect(useOutputStore.getState().runtime.phase).toBe("awaiting_user");
+    store.resumeWork("Running…");
+    expect(useOutputStore.getState().runtime.phase).toBe("tool");
+    expect(useOutputStore.getState().runtime.turnStartedAt).toBe(turnStart);
+    store.logTool({
+      id: tool.id,
+      ordinal: tool.ordinal,
+      toolName: "run_command",
+      summary: "[Tools] npm test",
+      preview: "passing",
+      fullResult: "passing",
+      ok: true,
+    });
+    expect(useOutputStore.getState().runtime.phase).toBe("working");
+
+    // A steer injected mid-turn only appends history; the timer keeps counting.
+    store.logUser("Also check the tests");
+    expect(useOutputStore.getState().runtime.turnStartedAt).toBe(turnStart);
+
+    // Model turn 2 → the final reply ends the turn.
+    store.setPhase("connecting");
+    store.setPhase("streaming");
+    store.setPhase("working");
+    store.logAssistant("Done.");
+
+    const state = useOutputStore.getState();
+    expect(state.runtime.phase).toBe("idle");
+    expect(state.runtime.turnStartedAt).toBeNull();
+    expect(state.runtime.detail).toBe("Ready");
+    expect(state.history.map((turn) => turn.type)).toEqual([
+      "user",
+      "tool",
+      "user",
+      "assistant",
+      "system",
+    ]);
+    const timing = state.history[state.history.length - 1]!;
+    expect(timing.type).toBe("system");
+    if (timing.type === "system") {
+      expect(timing.content).toMatch(/^Worked for \d+(\.\d+)?s$/);
+    }
+
+    // A fresh turn re-anchors from scratch.
+    store.beginTurn();
+    expect(useOutputStore.getState().runtime.turnStartedAt).not.toBeNull();
+  });
+
+  it("closes an interrupted turn the same way", () => {
+    const store = useOutputStore.getState();
+    store.beginTurn();
+    store.setPhase("streaming");
+
+    // The abort path also lands on logAssistant, so it must carry the timing evidence.
+    store.logAssistant("Task has been interrupted by user.");
+
+    const state = useOutputStore.getState();
+    expect(state.runtime.phase).toBe("idle");
+    expect(state.runtime.turnStartedAt).toBeNull();
+    const timing = state.history[state.history.length - 1]!;
+    expect(timing.type).toBe("system");
+    if (timing.type === "system") {
+      expect(timing.content).toMatch(/^Worked for /);
+    }
+  });
+});
+
+describe("tool phase", () => {
+  it("holds one timer across a parallel batch and releases it when the last tool ends", () => {
+    const store = useOutputStore.getState();
+    store.setPhase("working");
+    const first = store.beginTool({ toolName: "read_file", summary: "[Tools] read a" });
+    expect(useOutputStore.getState().runtime.phase).toBe("tool");
+    const batchSince = useOutputStore.getState().runtime.phaseSince;
+
+    // A second concurrent call joins the running batch; restarting here would make the counter
+    // measure the newest tool instead of how long the batch has been going.
+    const second = store.beginTool({ toolName: "read_file", summary: "[Tools] read b" });
+    expect(useOutputStore.getState().runtime.phaseSince).toBe(batchSince);
+
+    store.logTool({
+      id: first.id,
+      ordinal: first.ordinal,
+      toolName: "read_file",
+      summary: "[Tools] read a",
+      preview: "a",
+      fullResult: "a",
+      ok: true,
+    });
+    expect(useOutputStore.getState().runtime.phase).toBe("tool");
+
+    store.logTool({
+      id: second.id,
+      ordinal: second.ordinal,
+      toolName: "read_file",
+      summary: "[Tools] read b",
+      preview: "b",
+      fullResult: "b",
+      ok: true,
+    });
+    expect(useOutputStore.getState().runtime.phase).toBe("working");
+  });
+});
+
+describe("logTool", () => {
+  it("adds a tool turn to history with summary as content", () => {
+    useOutputStore.setState({ history: [], runningTools: [] });
+    const block: ToolBlock = {
+      toolName: "grep",
+      summary: '[Tools] grep "needle"',
+      preview: "src/a.ts:1:needle",
+      fullResult: "src/a.ts:1:needle\nsrc/b.ts:2:needle",
+      ok: true,
+    };
+    const store = useOutputStore.getState();
+    store.logTool(block);
+
+    const history = useOutputStore.getState().history;
+    expect(history).toHaveLength(1);
+    const turn = history[0]!;
+    expect(turn.type).toBe("tool");
+    if (turn.type === "tool") {
+      expect(turn.content).toBe('[Tools] grep "needle"');
+      expect(turn.tool.toolName).toBe("grep");
+      expect(turn.tool.fullResult).toBe("src/a.ts:1:needle\nsrc/b.ts:2:needle");
+      expect(turn.tool.ok).toBe(true);
+      expect(turn.tool.ordinal).toBe(1);
+    }
+  });
+
+  it("numbers tool turns by tool-call order", () => {
+    const store = useOutputStore.getState();
+    store.logTool({
+      toolName: "read_file",
+      summary: "[Tools] read_file -> a",
+      preview: "a",
+      fullResult: "a",
+      ok: true,
+    });
+    store.logAssistant("between");
+    store.logTool({
+      toolName: "grep",
+      summary: "[Tools] grep -> b",
+      preview: "b",
+      fullResult: "b",
+      ok: true,
+    });
+
+    const tools = useOutputStore
+      .getState()
+      .history.filter(
+        (turn): turn is Extract<typeof turn, { type: "tool" }> => turn.type === "tool",
+      );
+    expect(tools.map((turn) => turn.tool.ordinal)).toEqual([1, 2]);
+  });
+
+  it("does not clear streamBuffer", () => {
+    useOutputStore.setState({
+      history: [],
+      streamBuffer: "ongoing stream content",
+      runningTools: [],
+    });
+    const block: ToolBlock = {
+      toolName: "run_command",
+      summary: "[Tools] run_command → npm test",
+      preview: "PASS\n",
+      fullResult: "PASS\nAll tests passed.",
+      ok: true,
+    };
+    const store = useOutputStore.getState();
+    store.logTool(block);
+
+    const state = useOutputStore.getState();
+    // streamBuffer unchanged
+    expect(state.streamBuffer).toBe("ongoing stream content");
+  });
+
+  it("drops only the finished call from the live view, matching on id not summary", () => {
+    const store = useOutputStore.getState();
+    // Two calls that look identical — the old summary match would have removed
+    // whichever came first, leaving a running tool invisible.
+    const first = store.beginTool({ toolName: "read_file", summary: "[Tools] read_file -> a.ts" });
+    const second = store.beginTool({ toolName: "read_file", summary: "[Tools] read_file -> a.ts" });
+
+    store.logTool({
+      id: second.id,
+      ordinal: second.ordinal,
+      toolName: "read_file",
+      summary: "[Tools] read_file -> a.ts",
+      preview: "content",
+      fullResult: "content",
+      ok: true,
+    });
+
+    expect(useOutputStore.getState().runningTools.map((tool) => tool.id)).toEqual([first.id]);
+  });
+
+  it("numbers calls when they start, so parallel tools keep invocation order", () => {
+    const store = useOutputStore.getState();
+    const first = store.beginTool({ toolName: "run_command", summary: "[Tools] slow" });
+    const second = store.beginTool({ toolName: "run_command", summary: "[Tools] fast" });
+    expect([first.ordinal, second.ordinal]).toEqual([1, 2]);
+
+    // The second call finishes first; its block must still read #2.
+    const block = (handle: typeof first, summary: string): ToolBlock => ({
+      id: handle.id,
+      ordinal: handle.ordinal,
+      toolName: "run_command",
+      summary,
+      preview: "",
+      fullResult: "",
+      ok: true,
+    });
+    store.logTool(block(second, "[Tools] fast"));
+    store.logTool(block(first, "[Tools] slow"));
+
+    const ordinals = useOutputStore
+      .getState()
+      .history.filter(
+        (turn): turn is Extract<typeof turn, { type: "tool" }> => turn.type === "tool",
+      )
+      .map((turn) => turn.tool.ordinal);
+    expect(ordinals).toEqual([2, 1]);
+  });
+
+  it("accumulates live output into the running tool's tail", async () => {
+    const store = useOutputStore.getState();
+    const handle = store.beginTool({ toolName: "run_command", summary: "[Tools] build" });
+
+    store.appendToolOutput(handle.id, "compiling\nlinking");
+    await vi.waitFor(() => {
+      const tool = useOutputStore.getState().runningTools[0]!;
+      expect(tool.tail).toEqual(["compiling"]);
+      expect(tool.partial).toBe("linking");
+      expect(tool.lineCount).toBe(1);
+    });
+  });
+
+  it("TOOL_FULL_CAP constant is defined and positive", () => {
+    expect(TOOL_FULL_CAP).toBeGreaterThan(0);
+  });
+
+  it("resumes as 'tool' when a confirmation paused a running tool batch", () => {
+    const store = useOutputStore.getState();
+    store.beginTurn();
+    store.beginTool({ toolName: "run_command", summary: "[Tools] build" });
+
+    // confirmWrite pauses the turn for the user…
+    store.setPhase("awaiting_user", "shell → workspace root");
+    expect(useOutputStore.getState().runtime.phase).toBe("awaiting_user");
+
+    // …and resumeWork must restore the tool phase, not a generic "working".
+    store.resumeWork("Running…");
+    expect(useOutputStore.getState().runtime.phase).toBe("tool");
+  });
+
+  it("resumes as 'working' when no tool is running", () => {
+    const store = useOutputStore.getState();
+    store.resumeWork("Running…");
+    expect(useOutputStore.getState().runtime.phase).toBe("working");
+  });
+
+  it("survives a system notice logged while the tool runs", async () => {
+    // Every auto-allowed confirmation lands here, between beginTool and the
+    // first chunk. Treating it as a turn boundary retired the tool before it had
+    // printed anything, so the live view stayed empty for the whole command.
+    const store = useOutputStore.getState();
+    store.setDetail("Running…");
+    const handle = store.beginTool({ toolName: "run_command", summary: "[Tools] stream" });
+
+    store.logSystem("[Auto-allowed] declared read_only → node stream-test.js");
+
+    expect(useOutputStore.getState().runningTools.map((tool) => tool.id)).toEqual([handle.id]);
+    expect(useOutputStore.getState().runtime.detail).toBe("Running…");
+    expect(useOutputStore.getState().runtime.phase).toBe("tool");
+
+    store.appendToolOutput(handle.id, "line 1\n");
+    await vi.waitFor(() => {
+      expect(useOutputStore.getState().runningTools[0]?.tail).toEqual(["line 1"]);
+    });
+  });
+});
+
+describe("appendStream", () => {
+  it("batches stream updates into a timed flush", () => {
+    vi.useFakeTimers();
+    const store = useOutputStore.getState();
+
+    store.appendStream("hel");
+    store.appendStream("lo");
+
+    expect(useOutputStore.getState().streamBuffer).toBe("");
+    vi.advanceTimersByTime(49);
+    expect(useOutputStore.getState().streamBuffer).toBe("");
+    vi.advanceTimersByTime(1);
+    expect(useOutputStore.getState().streamBuffer).toBe("hello");
+  });
+
+  it("stamps the last output time on every flushed stream chunk", () => {
+    vi.useFakeTimers();
+    const store = useOutputStore.getState();
+    const before = useOutputStore.getState().runtime.lastOutputAt;
+
+    store.appendStream("hel");
+    vi.advanceTimersByTime(50);
+
+    // The streaming-stall check reads this: a long answer keeps refreshing it, silence does not.
+    expect(useOutputStore.getState().runtime.lastOutputAt).toBeGreaterThan(before);
+  });
+
+  it("commits completed stream lines into history and keeps the partial line transient", () => {
+    vi.useFakeTimers();
+    const store = useOutputStore.getState();
+
+    store.appendStream("hello\nwor");
+    vi.advanceTimersByTime(50);
+
+    expect(useOutputStore.getState().history).toEqual([
+      { id: "as_0", type: "assistant_stream", content: "hello\n" },
+    ]);
+    expect(useOutputStore.getState().streamBuffer).toBe("wor");
+  });
+
+  it("releases confirmed markdown tables into history once they terminate", () => {
+    vi.useFakeTimers();
+    const store = useOutputStore.getState();
+
+    store.appendStream("Intro\n| A | B |\n| --- | --- |\n| 1 | 2 |\n");
+    vi.advanceTimersByTime(50);
+
+    expect(useOutputStore.getState().history).toEqual([
+      { id: "as_0", type: "assistant_stream", content: "Intro\n" },
+    ]);
+    expect(useOutputStore.getState().streamBuffer).toBe("| A | B |\n| --- | --- |\n| 1 | 2 |\n");
+
+    store.appendStream("\nAfter\n");
+    vi.advanceTimersByTime(50);
+
+    expect(useOutputStore.getState().history).toEqual([
+      { id: "as_0", type: "assistant_stream", content: "Intro\n" },
+      {
+        id: "as_1",
+        type: "assistant_stream",
+        content: "| A | B |\n| --- | --- |\n| 1 | 2 |\n\nAfter\n",
+      },
+    ]);
+    expect(useOutputStore.getState().streamBuffer).toBe("");
+
+    store.logAssistant("Intro\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\nAfter\n");
+
+    expect(useOutputStore.getState().history).toEqual([
+      { id: "as_0", type: "assistant_stream", content: "Intro\n" },
+      {
+        id: "as_1",
+        type: "assistant_stream",
+        content: "| A | B |\n| --- | --- |\n| 1 | 2 |\n\nAfter\n",
+      },
+      {
+        id: "a_2",
+        type: "assistant",
+        content: "Intro\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\nAfter\n",
+        hidden: true,
+      },
+    ]);
+    expect(useOutputStore.getState().streamBuffer).toBe("");
+  });
+
+  it("does not let a pending stream chunk reappear after assistant finalization", () => {
+    vi.useFakeTimers();
+    const store = useOutputStore.getState();
+
+    store.appendStream("partial");
+    store.logAssistant("final");
+    vi.runOnlyPendingTimers();
+
+    const state = useOutputStore.getState();
+    expect(state.streamBuffer).toBe("");
+    expect(state.history).toEqual([
+      { id: "as_0", type: "assistant_stream", content: "final", final: true },
+      { id: "a_1", type: "assistant", content: "final", hidden: true },
+    ]);
+  });
+
+  it("logs a normal visible assistant turn when no stream preceded finalization", () => {
+    useOutputStore.getState().logAssistant("final");
+
+    expect(useOutputStore.getState().history).toEqual([
+      { id: "a_0", type: "assistant", content: "final", hidden: false },
+    ]);
+  });
+});
+
+describe("logSystem", () => {
+  // A notice fires between the model's text and the tool it announces — every auto-allowed
+  // call. It used to reset the stream controller and wipe the transient buffer without
+  // committing either, so anything the markdown holdback still owned was erased. That
+  // holdback covers trailing lists and tables, i.e. exactly the shape of the "here is my
+  // plan" text that precedes a tool batch.
+  it("commits the held-back stream tail ahead of the notice", () => {
+    vi.useFakeTimers();
+    const store = useOutputStore.getState();
+
+    store.appendStream("Checking three things:\n- the config\n- the adapter\n");
+    vi.advanceTimersByTime(50);
+    expect(useOutputStore.getState().streamBuffer).toBe("- the config\n- the adapter\n");
+
+    store.logSystem("[Auto-allowed] declared read_only → rg config", { oneLine: true });
+
+    expect(useOutputStore.getState().history).toEqual([
+      { id: "as_0", type: "assistant_stream", content: "Checking three things:\n" },
+      { id: "as_1", type: "assistant_stream", content: "- the config\n- the adapter\n" },
+      {
+        id: "s_2",
+        type: "system",
+        content: "[Auto-allowed] declared read_only → rg config",
+        oneLine: true,
+      },
+    ]);
+    expect(useOutputStore.getState().streamBuffer).toBe("");
+  });
+
+  it("commits a preamble that was held back from its first character", () => {
+    // Nothing reached history yet, so the controller's emitted prefix is empty. Draining
+    // through finalize("") would take the "the final message already covers it" branch here
+    // and drop the list — the reason drain() exists as its own operation.
+    vi.useFakeTimers();
+    const store = useOutputStore.getState();
+
+    store.appendStream("- read the config\n- find the caller\n");
+    vi.advanceTimersByTime(50);
+    expect(useOutputStore.getState().history).toEqual([]);
+
+    store.logSystem("[Auto-allowed] safe shell (read-only)", { oneLine: true });
+
+    expect(useOutputStore.getState().history[0]).toEqual({
+      id: "as_0",
+      type: "assistant_stream",
+      content: "- read the config\n- find the caller\n",
+    });
+  });
+
+  it("keeps unflushed deltas that the batch timer has not written yet", () => {
+    vi.useFakeTimers();
+    const store = useOutputStore.getState();
+
+    store.appendStream("about to run it\n");
+    store.logSystem("[Auto-allowed] shell prefix: ls", { oneLine: true });
+
+    expect(useOutputStore.getState().history.map((turn) => turn.type)).toEqual([
+      "assistant_stream",
+      "system",
+    ]);
+    expect(useOutputStore.getState().history[0]).toMatchObject({
+      content: "about to run it\n",
+    });
+  });
+
+  it("does not replay the committed tail when the turn finishes", () => {
+    vi.useFakeTimers();
+    const store = useOutputStore.getState();
+
+    store.appendStream("- step one\n");
+    vi.advanceTimersByTime(50);
+    store.logSystem("[Auto-allowed] safe shell (read-only)", { oneLine: true });
+    store.appendStream("Done.\n");
+    vi.advanceTimersByTime(50);
+    store.logAssistant("Done.");
+
+    const contents = useOutputStore
+      .getState()
+      .history.filter((turn) => turn.type === "assistant_stream")
+      .map((turn) => turn.content);
+    expect(contents).toEqual(["- step one\n", "Done.\n"]);
+  });
+});
+
+describe("logToolRound", () => {
+  it("heads the batch, after the text that introduced it", () => {
+    vi.useFakeTimers();
+    const store = useOutputStore.getState();
+
+    store.appendStream("Checking both:\n- the config\n");
+    vi.advanceTimersByTime(50);
+    store.logToolRound(2);
+
+    expect(useOutputStore.getState().history).toEqual([
+      { id: "as_0", type: "assistant_stream", content: "Checking both:\n" },
+      { id: "as_1", type: "assistant_stream", content: "- the config\n" },
+      { id: "tr_2", type: "tool_round", calls: 2 },
+    ]);
+    expect(useOutputStore.getState().streamBuffer).toBe("");
+  });
+
+  it("rebuilds the header from a resumed multi-call assistant message", () => {
+    useOutputStore.getState().hydrateHistory([
+      { id: "1:a:tool-round", type: "tool_round", turnId: "t1", seq: 1, calls: 2 },
+      {
+        id: "1:a:tool:0",
+        type: "tool",
+        turnId: "t1",
+        seq: 1,
+        toolCallId: "call_1",
+        toolName: "grep",
+        ok: true,
+      },
+    ]);
+
+    expect(useOutputStore.getState().history.map((turn) => turn.type)).toEqual([
+      "tool_round",
+      "tool",
+    ]);
+  });
+
+  it("numbers resumed tools and continues the sequence for live tools", () => {
+    useOutputStore.getState().hydrateHistory([
+      {
+        id: "1:a:tool:0",
+        type: "tool",
+        turnId: "t1",
+        seq: 1,
+        toolCallId: "call_1",
+        toolName: "grep",
+        ok: true,
+      },
+      {
+        id: "1:a:tool:1",
+        type: "tool",
+        turnId: "t1",
+        seq: 1,
+        toolCallId: "call_2",
+        toolName: "read_file",
+        ok: true,
+      },
+    ]);
+
+    const resumedOrdinals = useOutputStore
+      .getState()
+      .history.filter((turn) => turn.type === "tool")
+      .map((turn) => turn.tool.ordinal);
+    const live = useOutputStore
+      .getState()
+      .beginTool({ toolName: "shell", summary: "[Tools] shell" });
+
+    expect(resumedOrdinals).toEqual([1, 2]);
+    expect(live.ordinal).toBe(3);
+  });
+});
+
+describe("clearHistory", () => {
+  it("clears history, stream, and status", () => {
+    useOutputStore.setState({
+      history: [{ id: "a_1", type: "assistant", content: "hello" }],
+      streamBuffer: "partial",
+      runningTools: [],
+      runtime: {
+        detail: "Running…",
+        phase: "working",
+        phaseSince: Date.now(),
+        turnStartedAt: null,
+        lastOutputAt: Date.now(),
+      },
+    });
+
+    useOutputStore.getState().clearHistory();
+
+    expect(useOutputStore.getState()).toMatchObject({
+      history: [],
+      streamBuffer: "",
+      runningTools: [],
+      runtime: { detail: "Ready", phase: "idle" },
+    });
+  });
+
+  it("moves wiped turns into clearedStaticTurns and keeps post-clear ids unique", () => {
+    // Ink's <Static> counts flushed items in instance state; the combined
+    // clearedStaticTurns + history array must only grow while Ink stays mounted,
+    // or the post-clear turns (banner, token summary) are silently swallowed.
+    const store = useOutputStore.getState();
+    store.logUser("hello");
+    store.logAssistant("hi there");
+    const before = useOutputStore.getState().history;
+
+    store.clearHistory();
+    store.logBanner({ model: "m", dir: "d", version: "0.0.0" });
+    store.logSystem("Token usage: total=1");
+
+    const state = useOutputStore.getState();
+    expect(state.clearedStaticTurns).toEqual(before);
+    expect(state.history.map((turn) => turn.type)).toEqual(["banner", "system"]);
+    const allIds = [...state.clearedStaticTurns, ...state.history].map((turn) => turn.id);
+    expect(new Set(allIds).size).toBe(allIds.length);
+  });
+});

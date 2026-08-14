@@ -6,7 +6,7 @@ import fs from "node:fs";
 import fsPromises from "node:fs/promises";
 import path from "node:path";
 import ignore from "ignore";
-import { getErrnoCode } from "../lib/errors";
+import { getErrnoCode } from "../foundation/errno";
 import { isPathInside, OutsideAccessRegistry, suggestOutsideApproveDir } from "./outside-access";
 
 /**
@@ -15,7 +15,19 @@ import { isPathInside, OutsideAccessRegistry, suggestOutsideApproveDir } from ".
 export type WorkspaceDirEntry = {
   name: string;
   isDirectory: () => boolean;
+  isSymbolicLink?: () => boolean;
 };
+
+export interface WorkspaceWalkFilesOptions {
+  /** Workspace-relative files or directories to traverse. Missing and denied roots are skipped. */
+  roots?: readonly string[];
+  /** Maximum number of matching files returned. */
+  maxFiles: number;
+  /** Hard ceiling on directory entries inspected, including ignored entries. */
+  maxEntries?: number;
+  /** Domain-owned selection applied after filesystem policy checks. */
+  includeFile?: (workspaceRelativePosix: string) => boolean;
+}
 
 export type FsIntent = "inside" | "read" | "write";
 export type FsApprovalMode = "normal" | "auto";
@@ -78,6 +90,7 @@ const SAFE_ENV_TEMPLATE_SUFFIXES = new Set(["example", "sample", "template"]);
  */
 export const EVIL_JELLY_STATE_DIR = ".evil-jelly";
 export const AGENT_SCRATCH_DIR = `${EVIL_JELLY_STATE_DIR}/tmp`;
+const DEFAULT_MAX_WORKSPACE_WALK_ENTRIES = 100_000;
 
 export function toGitignorePath(relativeNormalized: string): string {
   let p = relativeNormalized.replace(/\\/g, "/");
@@ -350,6 +363,7 @@ export class WorkspaceFsPolicy {
     return raw.map((e) => ({
       name: e.name,
       isDirectory: () => e.isDirectory(),
+      isSymbolicLink: () => e.isSymbolicLink(),
     }));
   }
 
@@ -361,7 +375,119 @@ export class WorkspaceFsPolicy {
     return raw.map((e) => ({
       name: e.name,
       isDirectory: () => e.isDirectory(),
+      isSymbolicLink: () => e.isSymbolicLink(),
     }));
+  }
+
+  /**
+   * Deterministically walk workspace files without exposing raw filesystem traversal to domains.
+   * The policy owns containment, ignored/hidden entries, symlink handling and traversal bounds;
+   * callers own only semantic file selection.
+   */
+  async walkFiles(options: WorkspaceWalkFilesOptions): Promise<string[]> {
+    const { maxFiles, includeFile = () => true } = options;
+    const maxEntries = options.maxEntries ?? DEFAULT_MAX_WORKSPACE_WALK_ENTRIES;
+    if (!Number.isSafeInteger(maxFiles) || maxFiles < 0) {
+      throw new Error("maxFiles must be a non-negative safe integer");
+    }
+    if (!Number.isSafeInteger(maxEntries) || maxEntries < 0) {
+      throw new Error("maxEntries must be a non-negative safe integer");
+    }
+    if (maxFiles === 0 || maxEntries === 0) {
+      return [];
+    }
+
+    const files: string[] = [];
+    const seenFiles = new Set<string>();
+    const visitedDirectories = new Set<string>();
+    let visitedEntries = 0;
+
+    const considerFile = (resolved: ResolvedFsPath): void => {
+      if (files.length >= maxFiles || path.basename(resolved.rel).startsWith(".")) {
+        return;
+      }
+      if (this.isPathHidden(resolved.rel)) {
+        return;
+      }
+      const relPosix = toGitignorePath(resolved.rel);
+      if (seenFiles.has(relPosix) || !includeFile(relPosix)) {
+        return;
+      }
+      seenFiles.add(relPosix);
+      files.push(relPosix);
+    };
+
+    const visitDirectory = async (directory: ResolvedFsPath): Promise<void> => {
+      if (
+        files.length >= maxFiles ||
+        visitedEntries >= maxEntries ||
+        visitedDirectories.has(directory.rel)
+      ) {
+        return;
+      }
+      visitedDirectories.add(directory.rel);
+
+      let entries: WorkspaceDirEntry[];
+      try {
+        entries = await this.readdirResolved(directory, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+
+      for (const entry of entries) {
+        if (files.length >= maxFiles || visitedEntries >= maxEntries) {
+          return;
+        }
+        visitedEntries += 1;
+        if (
+          entry.name.startsWith(".") ||
+          entry.isSymbolicLink?.() ||
+          this.shouldSkipResolvedEntry(directory, entry)
+        ) {
+          continue;
+        }
+        const child = this.childResolved(directory, entry.name);
+        if (this.isPathHidden(child.rel)) {
+          continue;
+        }
+        if (entry.isDirectory()) {
+          await visitDirectory(child);
+        } else {
+          considerFile(child);
+        }
+      }
+    };
+
+    const roots = [...new Set(options.roots ?? ["."])].sort();
+    for (const root of roots) {
+      if (files.length >= maxFiles || visitedEntries >= maxEntries) {
+        break;
+      }
+      const resolved = this.tryResolve(root);
+      if (
+        !resolved.ok ||
+        resolved.outside ||
+        (resolved.rel !== "." && path.basename(resolved.rel).startsWith("."))
+      ) {
+        continue;
+      }
+      try {
+        const rootStat = await fsPromises.lstat(resolved.abs);
+        if (rootStat.isSymbolicLink()) {
+          continue;
+        }
+        if (rootStat.isDirectory()) {
+          await visitDirectory(resolved);
+        } else if (rootStat.isFile()) {
+          visitedEntries += 1;
+          considerFile(resolved);
+        }
+      } catch {
+        // Missing and unreadable roots behave like an empty traversal.
+      }
+    }
+    return files;
   }
 
   async mkdir(relativeDir: string, options?: { recursive?: boolean }): Promise<string | undefined> {

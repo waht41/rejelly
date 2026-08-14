@@ -197,6 +197,45 @@ describe("WorkspaceFsPolicy workspace root", () => {
     expect(policy.shouldSkipResolvedEntry(outside, dirEntry("node_modules"))).toBe(true);
   });
 
+  it("walks matching workspace files deterministically behind policy guards", async () => {
+    const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
+    await fsPromises.mkdir(path.join(root, "src"), { recursive: true });
+    await fsPromises.mkdir(path.join(root, "ignored"), { recursive: true });
+    await fsPromises.mkdir(path.join(root, "dist"), { recursive: true });
+    await fsPromises.mkdir(path.join(root, ".hidden"), { recursive: true });
+    await fsPromises.writeFile(path.join(root, ".gitignore"), "ignored/\n", "utf-8");
+    await Promise.all([
+      fsPromises.writeFile(path.join(root, "src", "b.ts"), "export {}\n", "utf-8"),
+      fsPromises.writeFile(path.join(root, "src", "a.ts"), "export {}\n", "utf-8"),
+      fsPromises.writeFile(path.join(root, "src", "note.md"), "note\n", "utf-8"),
+      fsPromises.writeFile(path.join(root, "ignored", "secret.ts"), "export {}\n", "utf-8"),
+      fsPromises.writeFile(path.join(root, "dist", "bundle.ts"), "export {}\n", "utf-8"),
+      fsPromises.writeFile(path.join(root, ".hidden", "private.ts"), "export {}\n", "utf-8"),
+    ]);
+    const policy = new WorkspaceFsPolicy(root);
+
+    await expect(
+      policy.walkFiles({ maxFiles: 10, includeFile: (rel) => rel.endsWith(".ts") }),
+    ).resolves.toEqual(["src/a.ts", "src/b.ts"]);
+  });
+
+  it("stops a workspace walk at both file and inspected-entry bounds", async () => {
+    const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
+    await fsPromises.mkdir(root, { recursive: true });
+    await Promise.all(
+      ["a.ts", "b.ts", "c.ts"].map((name) =>
+        fsPromises.writeFile(path.join(root, name), "export {}\n", "utf-8"),
+      ),
+    );
+    const policy = new WorkspaceFsPolicy(root);
+
+    await expect(policy.walkFiles({ maxFiles: 1 })).resolves.toEqual(["a.ts"]);
+    await expect(policy.walkFiles({ maxFiles: 10, maxEntries: 2 })).resolves.toEqual([
+      "a.ts",
+      "b.ts",
+    ]);
+  });
+
   it("creates child resolved paths without callers fabricating policy tokens", () => {
     const policy = createPolicy();
     const parent = policy.tryResolve("src");

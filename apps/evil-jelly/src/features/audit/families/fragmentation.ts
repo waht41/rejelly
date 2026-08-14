@@ -14,9 +14,9 @@
  */
 
 import type { z } from "zod";
-import type { FragmentationCluster } from "../../../services/fragmentation";
-import { detectFragmentationCandidates } from "../../../services/fragmentation";
-import { PromptBuilder } from "../../../services/prompt/PromptBuilder";
+import { PromptBuilder } from "../../../shared/model/prompt/builder";
+import type { FragmentationCluster } from "../detectors/fragmentation";
+import { detectFragmentationCandidates } from "../detectors/fragmentation";
 import { compareString, fencedCodeBlock, readCappedLineSlice } from "../familySource";
 import { sha256 } from "../runtime/ledger";
 import { makeSeedEvaluatorAgent, makeVerdictSchema } from "../seedEvaluator";

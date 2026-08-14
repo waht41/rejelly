@@ -1,0 +1,63 @@
+import { Box, Text } from "ink";
+import stringWidth from "string-width";
+import type { UserSkillListItem } from "../../../../shared/host/inputBindings";
+import type { ComposerPickerKeySink } from "../ComposerPicker";
+import { ComposerPicker } from "../ComposerPicker";
+
+type SkillPickerItem = UserSkillListItem;
+
+interface SkillPickerOverlayProps {
+  items: SkillPickerItem[];
+  getReferenceName: (skill: SkillPickerItem) => string;
+  onSelect: (skill: SkillPickerItem) => void;
+  onCancel: () => void;
+  maxVisibleRows?: number;
+  keySink?: ComposerPickerKeySink;
+}
+
+function pickerDescription(item: SkillPickerItem): string {
+  const text = (item.shortDescription ?? item.description).replace(/\s+/g, " ").trim();
+  return text.length <= 100 ? text : `${text.slice(0, 99)}…`;
+}
+
+export function SkillPickerOverlay({
+  items,
+  getReferenceName,
+  onSelect,
+  onCancel,
+  maxVisibleRows,
+  keySink,
+}: SkillPickerOverlayProps) {
+  const displayTitle = (item: SkillPickerItem) => `$${getReferenceName(item)}`;
+  const titleColumnWidth = items.reduce(
+    (width, item) => Math.max(width, stringWidth(displayTitle(item))),
+    0,
+  );
+
+  return (
+    <ComposerPicker
+      items={items}
+      getKey={(item) => item.qualifiedName}
+      onSelect={onSelect}
+      onCancel={onCancel}
+      keySink={keySink}
+      empty={<Text dimColor>No matching Skills</Text>}
+      visibleRows={maxVisibleRows}
+      renderItem={(item, { selected }) => (
+        <Box flexDirection="row">
+          <Box width={titleColumnWidth + 3} flexShrink={0}>
+            <Text color={selected ? "cyan" : undefined}>
+              {selected ? "▸ " : "  "}
+              {displayTitle(item)}
+            </Text>
+          </Box>
+          <Box flexShrink={1}>
+            <Text color={selected ? "cyan" : undefined} dimColor={!selected} wrap="truncate-end">
+              [Skill] {pickerDescription(item)}
+            </Text>
+          </Box>
+        </Box>
+      )}
+    />
+  );
+}

@@ -1,14 +1,11 @@
 import { arch, platform, release } from "node:os";
-import { getShellPath } from "../../services/cmd/executeShellCommand";
-import {
-  TERMINAL_USER_REPLY_RULE,
-  TERMINAL_USER_REPLY_RULE_TITLE,
-} from "../../services/prompt/output-surface";
-import { PromptBuilder } from "../../services/prompt/PromptBuilder";
+import { getShellPath } from "../../domains/workspace/execute/executeShellCommand";
 import {
   AGENT_SCRATCH_DIR,
   getWorkspaceFsPolicy,
 } from "../../shared/fs-policy/workspace-fs-policy";
+import { PromptBuilder } from "../../shared/model/prompt/builder";
+import { TERMINAL_USER_REPLY_RULE, TERMINAL_USER_REPLY_RULE_TITLE } from "./outputSurface";
 
 const INSTRUCTION_ARTIFACT_ITEM_MAX_CHARS = 1000;
 const INSTRUCTION_MAX_ARTIFACT_ITEMS = 8;
