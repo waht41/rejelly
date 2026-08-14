@@ -1,3 +1,10 @@
+export type {
+  PromptAttachment,
+  PromptFileAttachment,
+  PromptImageAttachment,
+  PromptInput,
+} from "../model/prompt/promptInput";
+
 export type UserFileAttachment = {
   type: "file";
   path: string;
