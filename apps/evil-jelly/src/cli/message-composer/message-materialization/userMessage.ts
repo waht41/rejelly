@@ -184,7 +184,8 @@ async function materializeImage(
 }
 
 export interface UserMessageMaterializationOptions {
-  skillContext?: (qualifiedName: string) => string;
+  /** Resolved Skill instructions, appended after the intact user-authored document. */
+  skillContext?: string;
 }
 
 /** Compile PromptInput once, in document order, without parsing any display projection. */
@@ -216,8 +217,7 @@ export async function buildUserMessage(
     }
     if (node.kind === "skill") {
       const marker = `$${node.qualifiedName}`;
-      const context = options.skillContext?.(node.qualifiedName) ?? "";
-      modelText += context ? `${marker}\n\n${context}` : marker;
+      modelText += marker;
       displayText += marker;
       continue;
     }
@@ -242,6 +242,10 @@ export async function buildUserMessage(
       imageDimensions.push(materialized.dimensions);
       attachmentDisplays.push(materialized.display);
     }
+  }
+
+  if (options.skillContext) {
+    modelText += `${modelText ? "\n\n" : ""}${options.skillContext}`;
   }
 
   const hasImages = imageDimensions.length > 0;

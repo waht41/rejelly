@@ -39,7 +39,7 @@ export function renderExplicitSkillContext(skills: readonly SkillRecord[]): stri
   });
 }
 
-/** Resolve Skill tokens, then compile all prompt nodes in document order. */
+/** Resolve Skill tokens, preserve their markers in place, then append one instruction block. */
 export async function buildSkillAwareUserMessage(
   input: PromptInput,
   snapshot: SkillRuntimeSnapshot | undefined,
@@ -48,10 +48,7 @@ export async function buildSkillAwareUserMessage(
     snapshot,
     promptTokens(input.document, "skill").map((token) => token.qualifiedName),
   );
-  const contextByName = new Map(
-    skills.map((skill) => [qualifiedSkillName(skill), renderExplicitSkillContext([skill])]),
-  );
   return buildUserMessage(input, {
-    skillContext: (qualifiedName) => contextByName.get(qualifiedName) ?? "",
+    skillContext: renderExplicitSkillContext(skills),
   });
 }

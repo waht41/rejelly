@@ -46,23 +46,55 @@ describe("explicit Skill references", () => {
     expect(output).toContain("Follow the review workflow.");
   });
 
-  it("injects instructions while keeping the user-facing display clean", async () => {
+  it("keeps the marker in place and appends instructions after the intact user request", async () => {
     const message = await buildSkillAwareUserMessage(
       {
         document: [
+          { type: "text", text: "Please " },
           { type: "token", kind: "skill", qualifiedName: "project:review" },
-          { type: "text", text: " inspect this" },
+          { type: "text", text: " inspect this." },
         ],
         attachments: [],
       },
       snapshot([record("review")]),
     );
+    const content = message.content as string;
 
-    expect(message.content).toContain("<explicit_skills");
+    expect(content).toMatch(
+      /^Please \$project:review inspect this\.\n\n<explicit_skills count="1">/,
+    );
+    expect(content.indexOf("inspect this.")).toBeLessThan(
+      content.indexOf("Follow the review workflow."),
+    );
     expect(getUserInputDisplay(message)).toEqual({
-      text: "$project:review inspect this",
+      text: "Please $project:review inspect this.",
       attachments: [],
     });
+  });
+
+  it("appends multiple Skill instructions once in first-token order", async () => {
+    const message = await buildSkillAwareUserMessage(
+      {
+        document: [
+          { type: "token", kind: "skill", qualifiedName: "user:test" },
+          { type: "text", text: " then " },
+          { type: "token", kind: "skill", qualifiedName: "project:review" },
+          { type: "text", text: " and again " },
+          { type: "token", kind: "skill", qualifiedName: "user:test" },
+        ],
+        attachments: [],
+      },
+      snapshot([record("review"), record("test", "user")]),
+    );
+    const content = message.content as string;
+
+    expect(content).toContain(
+      '$user:test then $project:review and again $user:test\n\n<explicit_skills count="2">',
+    );
+    expect(content.indexOf("Follow the test workflow.")).toBeLessThan(
+      content.indexOf("Follow the review workflow."),
+    );
+    expect(content.match(/Follow the test workflow\./g)).toHaveLength(1);
   });
 
   it("does not infer ordinary dollar-prefixed text", async () => {
