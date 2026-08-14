@@ -4,17 +4,21 @@
  * keeping its canonical caret in logical coordinates, where a token has length 1.
  */
 
-import { useMemo, useState } from "react";
-import type { CaretAffinity } from "../softWrap";
+import { useMemo, useRef, useState } from "react";
 import {
-  documentLogicalLength,
-  type ProjectedTokenSpan,
-  type ProjectionBias,
   type PromptDocument,
   type PromptNode,
+  promptDocumentLogicalLength,
+  textPromptDocument,
+} from "../../../../shared/model/prompt/promptDocument";
+import type { CaretAffinity } from "../softWrap";
+import {
+  defaultPromptTokenDisplayText,
+  type ProjectedTokenSpan,
+  type ProjectionBias,
+  type PromptTokenDisplayText,
   projectPromptDocument,
   replacePromptRange,
-  textPromptDocument,
 } from "./promptDocument";
 
 export interface BufferState {
@@ -171,8 +175,9 @@ export function applyProjectedTransform(
   state: RichBufferState,
   transform: (state: BufferState) => BufferState,
   cursorBias: ProjectionBias = "nearest",
+  tokenDisplayText: PromptTokenDisplayText = defaultPromptTokenDisplayText,
 ): RichBufferState {
-  const projection = projectPromptDocument(state.document);
+  const projection = projectPromptDocument(state.document, tokenDisplayText);
   const displayCursor = projection.logicalToDisplay(state.cursor);
   const transformed = transform({ text: projection.text, cursor: displayCursor });
 
@@ -211,7 +216,7 @@ export function applyProjectedTransform(
 
   return {
     document,
-    cursor: clamp(cursor, 0, documentLogicalLength(document)),
+    cursor: clamp(cursor, 0, promptDocumentLogicalLength(document)),
     caretAffinity: "forward",
   };
 }
@@ -222,8 +227,9 @@ export function setProjectedCursor(
   rawDisplayCursor: number,
   bias: ProjectionBias = "nearest",
   affinity: CaretAffinity = "forward",
+  tokenDisplayText: PromptTokenDisplayText = defaultPromptTokenDisplayText,
 ): RichBufferState {
-  const projection = projectPromptDocument(state.document);
+  const projection = projectPromptDocument(state.document, tokenDisplayText);
   const displayCursor = clamp(rawDisplayCursor, 0, projection.text.length);
   const cursor = projection.displayToLogical(displayCursor, bias);
   const snappedDisplayCursor = projection.logicalToDisplay(cursor);
@@ -268,7 +274,12 @@ export interface TextBuffer extends BufferState, TextBufferActions {
   readonly caretAffinity: CaretAffinity;
 }
 
-export function useTextBuffer(initial = ""): TextBuffer {
+export function useTextBuffer(
+  initial = "",
+  tokenDisplayText: PromptTokenDisplayText = defaultPromptTokenDisplayText,
+): TextBuffer {
+  const tokenDisplayTextRef = useRef(tokenDisplayText);
+  tokenDisplayTextRef.current = tokenDisplayText;
   const [state, setState] = useState<RichBufferState>({
     document: textPromptDocument(initial),
     cursor: initial.length,
@@ -287,16 +298,34 @@ export function useTextBuffer(initial = ""): TextBuffer {
           cursor: current.cursor + str.length,
           caretAffinity: "forward",
         })),
-      deleteForward: () => setState((current) => applyProjectedTransform(current, deleteForward)),
+      deleteForward: () =>
+        setState((current) =>
+          applyProjectedTransform(current, deleteForward, "nearest", tokenDisplayTextRef.current),
+        ),
       deleteToLineStart: () =>
-        setState((current) => applyProjectedTransform(current, deleteToLineStart)),
-      moveLineStart: () => setState((current) => applyProjectedTransform(current, moveLineStart)),
-      moveLineEnd: () => setState((current) => applyProjectedTransform(current, moveLineEnd)),
+        setState((current) =>
+          applyProjectedTransform(
+            current,
+            deleteToLineStart,
+            "nearest",
+            tokenDisplayTextRef.current,
+          ),
+        ),
+      moveLineStart: () =>
+        setState((current) =>
+          applyProjectedTransform(current, moveLineStart, "nearest", tokenDisplayTextRef.current),
+        ),
+      moveLineEnd: () =>
+        setState((current) =>
+          applyProjectedTransform(current, moveLineEnd, "nearest", tokenDisplayTextRef.current),
+        ),
       apply: (fn, cursorBias) =>
-        setState((current) => applyProjectedTransform(current, fn, cursorBias)),
+        setState((current) =>
+          applyProjectedTransform(current, fn, cursorBias, tokenDisplayTextRef.current),
+        ),
       replaceDisplayRange: (start, end, nodes) =>
         setState((current) => {
-          const projection = projectPromptDocument(current.document);
+          const projection = projectPromptDocument(current.document, tokenDisplayTextRef.current);
           const logicalStart = projection.displayToLogical(start, "left");
           const logicalEnd = projection.displayToLogical(end, "right");
           const document = replacePromptRange(current.document, logicalStart, logicalEnd, nodes);
@@ -307,7 +336,9 @@ export function useTextBuffer(initial = ""): TextBuffer {
           return { document, cursor: logicalStart + insertedLength, caretAffinity: "forward" };
         }),
       setDisplayCursor: (cursor, bias = "nearest", affinity = "forward") =>
-        setState((current) => setProjectedCursor(current, cursor, bias, affinity)),
+        setState((current) =>
+          setProjectedCursor(current, cursor, bias, affinity, tokenDisplayTextRef.current),
+        ),
       setText: (text, cursor) =>
         setState({
           document: textPromptDocument(text),
@@ -318,9 +349,9 @@ export function useTextBuffer(initial = ""): TextBuffer {
         setState({
           document,
           cursor: clamp(
-            cursor ?? documentLogicalLength(document),
+            cursor ?? promptDocumentLogicalLength(document),
             0,
-            documentLogicalLength(document),
+            promptDocumentLogicalLength(document),
           ),
           caretAffinity: "forward",
         }),
@@ -329,7 +360,7 @@ export function useTextBuffer(initial = ""): TextBuffer {
     [],
   );
 
-  const projection = projectPromptDocument(state.document);
+  const projection = projectPromptDocument(state.document, tokenDisplayText);
   return {
     document: state.document,
     logicalCursor: state.cursor,

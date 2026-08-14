@@ -87,3 +87,15 @@ export function promptDocumentCommandText(document: PromptDocument): string | un
   }
   return text;
 }
+
+export function promptTokens(document: PromptDocument): PromptToken[];
+export function promptTokens<Kind extends PromptToken["kind"]>(
+  document: PromptDocument,
+  kind: Kind,
+): Extract<PromptToken, { kind: Kind }>[];
+export function promptTokens(document: PromptDocument, kind?: PromptToken["kind"]): PromptToken[] {
+  return document.filter(
+    (node): node is PromptToken =>
+      node.type === "token" && (kind === undefined || node.kind === kind),
+  );
+}

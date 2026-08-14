@@ -1,28 +1,33 @@
 import { describe, expect, it } from "vitest";
 import {
-  documentLogicalLength,
-  projectedDisplayRuns,
-  projectPromptDocument,
+  promptDocumentLogicalLength,
   promptTokens,
-  replacePromptRange,
   type SkillPromptToken,
   textPromptDocument,
-} from "./promptDocument";
+} from "../../../../shared/model/prompt/promptDocument";
+import { projectedDisplayRuns, projectPromptDocument, replacePromptRange } from "./promptDocument";
 
 const skill: SkillPromptToken = {
   type: "token",
   kind: "skill",
-  id: "skill-1",
   qualifiedName: "project:review",
-  displayText: "$review",
 };
+const displayToken = () => "$review";
 
 describe("PromptDocument", () => {
+  it("derives Skill labels without changing the semantic token", () => {
+    const document = [skill];
+
+    expect(projectPromptDocument(document).text).toBe("$project:review");
+    expect(projectPromptDocument(document, displayToken).text).toBe("$review");
+    expect(document).toEqual([{ type: "token", kind: "skill", qualifiedName: "project:review" }]);
+  });
+
   it("counts a semantic token as one logical position", () => {
     const document = replacePromptRange(textPromptDocument("ab"), 1, 1, [skill]);
-    const projection = projectPromptDocument(document);
+    const projection = projectPromptDocument(document, displayToken);
 
-    expect(documentLogicalLength(document)).toBe(3);
+    expect(promptDocumentLogicalLength(document)).toBe(3);
     expect(projection.text).toBe("a$reviewb");
     expect(projection.logicalToDisplay(1)).toBe(1);
     expect(projection.logicalToDisplay(2)).toBe(8);
@@ -30,7 +35,7 @@ describe("PromptDocument", () => {
 
   it("snaps display offsets inside a token to a requested logical edge", () => {
     const document = replacePromptRange(textPromptDocument("ab"), 1, 1, [skill]);
-    const projection = projectPromptDocument(document);
+    const projection = projectPromptDocument(document, displayToken);
 
     expect(projection.displayToLogical(4, "left")).toBe(1);
     expect(projection.displayToLogical(4, "right")).toBe(2);
@@ -48,7 +53,7 @@ describe("PromptDocument", () => {
 
   it("splits a display row into dedicated token render runs", () => {
     const document = replacePromptRange(textPromptDocument("ab"), 1, 1, [skill]);
-    const projection = projectPromptDocument(document);
+    const projection = projectPromptDocument(document, displayToken);
 
     expect(projectedDisplayRuns(projection.text, 0, projection.tokenSpans)).toEqual([
       { text: "a" },

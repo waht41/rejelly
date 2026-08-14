@@ -3,12 +3,7 @@ import type { UserSkillReference } from "../../../../shared/host/inputBindings";
 import type { TextBuffer } from "../../editor/document/textBuffer";
 import type { SkillPickerItem } from "../../session/composerSession";
 import { filterSkillPickerItems } from "./skillMatching";
-import {
-  activeSkillTrigger,
-  extractSkillQuery,
-  replaceSkillToken,
-  skillReferenceName,
-} from "./skillTrigger";
+import { activeSkillTrigger, extractSkillQuery, replaceSkillToken } from "./skillTrigger";
 
 export interface SkillReferenceSuggestion {
   matches: SkillPickerItem[];
@@ -21,14 +16,12 @@ export function useSkillReferenceSuggestion({
   buffer,
   availableSkills,
   selectedSkills,
-  createTokenId,
   maxSelectedSkills,
   onNotice,
 }: {
   buffer: TextBuffer;
   availableSkills: SkillPickerItem[];
   selectedSkills: UserSkillReference[];
-  createTokenId: () => string;
   maxSelectedSkills: number;
   onNotice: (message: string) => void;
 }): SkillReferenceSuggestion {
@@ -66,21 +59,17 @@ export function useSkillReferenceSuggestion({
         {
           type: "token",
           kind: "skill",
-          id: createTokenId(),
           qualifiedName: skill.qualifiedName,
-          displayText: `$${skillReferenceName(skill, availableSkills)}`,
         },
         ...(after.length === 0 || !/^\s/.test(after) ? [{ type: "text" as const, text: " " }] : []),
       ]);
       setQuery(null);
     },
     [
-      availableSkills,
       buffer.apply,
       buffer.cursor,
       buffer.replaceDisplayRange,
       buffer.text,
-      createTokenId,
       maxSelectedSkills,
       onNotice,
       selectedSkills,

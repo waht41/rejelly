@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { UserAttachment, UserSkillReference } from "../../shared/host/inputBindings";
+import type { PromptToken } from "../../shared/model/prompt/promptDocument";
+import { defaultPromptTokenDisplayText } from "./editor/document/promptDocument";
 import type { TextBuffer } from "./editor/document/textBuffer";
 import { useTextBuffer } from "./editor/document/textBuffer";
 import { useCollapsedPaste } from "./editor/paste/useCollapsedPaste";
@@ -25,7 +27,6 @@ export interface ComposerDraft {
   attachImage: (path: string) => void;
   handleTextPaste: (text: string) => boolean;
   hasCollapsedPaste: boolean;
-  createSkillTokenId: () => string;
 }
 
 function uniquePaths(paths: string[]): string[] {
@@ -54,9 +55,15 @@ export function useComposerDraft({
   const clearDraftSeed = useComposerSession((state) => state.clearDraftSeed);
   const [selectedFiles, setSelectedFilesState] = useState<string[]>([]);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
-  const buffer = useTextBuffer();
+  const tokenDisplayText = useCallback(
+    (token: PromptToken): string =>
+      token.kind === "skill"
+        ? `$${selectedSkillReferenceName(token, availableSkills)}`
+        : defaultPromptTokenDisplayText(token),
+    [availableSkills],
+  );
+  const buffer = useTextBuffer("", tokenDisplayText);
   const collapsedPaste = useCollapsedPaste(buffer);
-  const nextSkillTokenIdRef = useRef(1);
   const selectedSkills = useMemo(
     () => skillReferencesFromDocument(buffer.document),
     [buffer.document],
@@ -70,14 +77,11 @@ export function useComposerDraft({
     setSelectedFilesState((files) => files.filter((selected) => selected !== path));
   }, []);
 
-  const createSkillTokenId = useCallback(() => `skill-${nextSkillTokenIdRef.current++}`, []);
-
   const clear = useCallback(() => {
     buffer.reset();
     setSelectedFilesState([]);
     setSelectedImages([]);
     collapsedPaste.reset();
-    nextSkillTokenIdRef.current = 1;
   }, [buffer.reset, collapsedPaste.reset]);
 
   const submitText = useCallback(
@@ -152,11 +156,8 @@ export function useComposerDraft({
     const restoredSkills = [...(draftSeed.value.skills ?? []), ...selectedSkills];
 
     buffer.setDocument(
-      hydrateSkillTokens(
-        combinedText,
-        restoredSkills,
-        (reference) => selectedSkillReferenceName(reference, availableSkills),
-        createSkillTokenId,
+      hydrateSkillTokens(combinedText, restoredSkills, (reference) =>
+        selectedSkillReferenceName(reference, availableSkills),
       ),
     );
     setSelectedFiles([...seedFiles, ...selectedFiles]);
@@ -173,7 +174,6 @@ export function useComposerDraft({
     setSelectedFiles,
     setSelectedImages,
     clearDraftSeed,
-    createSkillTokenId,
   ]);
 
   return {
@@ -189,6 +189,5 @@ export function useComposerDraft({
     attachImage,
     handleTextPaste: collapsedPaste.handlePaste,
     hasCollapsedPaste: collapsedPaste.hasCollapsedPaste,
-    createSkillTokenId,
   };
 }

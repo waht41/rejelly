@@ -4,7 +4,7 @@ import {
   type PromptDocument,
   type PromptNode,
   promptTokens,
-} from "../../editor/document/promptDocument";
+} from "../../../../shared/model/prompt/promptDocument";
 import type { BufferState } from "../../editor/document/textBuffer";
 
 const SKILL_QUERY_PATTERN = /^[a-z0-9._:-]*$/;
@@ -102,7 +102,6 @@ interface MarkerMatch {
   readonly start: number;
   readonly end: number;
   readonly reference: UserSkillReference;
-  readonly displayText: string;
 }
 
 function selectedMarkerMatches(
@@ -122,7 +121,6 @@ function selectedMarkerMatches(
           start,
           end: start + marker.length,
           reference,
-          displayText: `$${displayName}`,
         });
       }
       start = text.indexOf(marker, start + marker.length);
@@ -136,7 +134,6 @@ export function hydrateSkillTokens(
   text: string,
   references: readonly UserSkillReference[],
   getDisplayName: (reference: UserSkillReference) => string,
-  createId: () => string,
 ): PromptDocument {
   const matches = references
     .flatMap((reference) => selectedMarkerMatches(text, reference, getDisplayName(reference)))
@@ -163,9 +160,7 @@ export function hydrateSkillTokens(
     nodes.push({
       type: "token",
       kind: "skill",
-      id: createId(),
       qualifiedName: match.reference.qualifiedName,
-      displayText: match.displayText,
     });
     offset = match.end;
   }

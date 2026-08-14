@@ -126,7 +126,6 @@ export function MessageComposer({
     buffer: buf,
     availableSkills,
     selectedSkills,
-    createTokenId: draft.createSkillTokenId,
     maxSelectedSkills: MAX_SELECTED_SKILLS,
     onNotice,
   });

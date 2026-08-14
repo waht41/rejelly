@@ -81,15 +81,13 @@ describe("Skill $ trigger", () => {
   });
 
   it("hydrates semantic tokens from a restored draft and canonical references", () => {
-    let id = 0;
     const document = hydrateSkillTokens(
       "use $project:review now",
       [{ qualifiedName: "project:review" }],
       () => "review",
-      () => `skill-${++id}`,
     );
 
-    expect(projectPromptDocument(document).text).toBe("use $review now");
+    expect(projectPromptDocument(document, () => "$review").text).toBe("use $review now");
     expect(skillReferencesFromDocument(document)).toEqual([{ qualifiedName: "project:review" }]);
   });
 });

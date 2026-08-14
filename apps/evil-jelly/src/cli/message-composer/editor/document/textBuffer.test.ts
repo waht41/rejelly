@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
+import {
+  promptDocumentLogicalLength,
+  textPromptDocument,
+} from "../../../../shared/model/prompt/promptDocument";
 import { replaceAtToken } from "../../suggestions/file-reference/atTrigger";
 import { deletePlaceholderOrChar } from "../keyboard/placeholderMotion";
 import { caretCell, verticalCaretTarget, wrapRows } from "../softWrap";
 import {
-  documentLogicalLength,
+  defaultPromptTokenDisplayText,
+  type PromptTokenDisplayText,
   projectPromptDocument,
   replacePromptRange,
-  textPromptDocument,
 } from "./promptDocument";
 import {
   applyProjectedTransform,
@@ -81,10 +85,10 @@ describe("rich document compatibility transforms", () => {
   const skill = {
     type: "token" as const,
     kind: "skill" as const,
-    id: "skill-1",
     qualifiedName: "project:review",
-    displayText: "$review",
   };
+  const displayToken: PromptTokenDisplayText = (token) =>
+    token.kind === "skill" ? "$review" : defaultPromptTokenDisplayText(token);
   const document = replacePromptRange(textPromptDocument("ab"), 1, 1, [skill]);
 
   it("moves across a rich token as one logical position", () => {
@@ -92,11 +96,13 @@ describe("rich document compatibility transforms", () => {
       { document, cursor: 2, caretAffinity: "forward" },
       moveLeft,
       "left",
+      displayToken,
     );
     const movedRight = applyProjectedTransform(
       { document, cursor: 1, caretAffinity: "forward" },
       moveRight,
       "right",
+      displayToken,
     );
 
     expect(movedLeft.cursor).toBe(1);
@@ -107,6 +113,8 @@ describe("rich document compatibility transforms", () => {
     const deleted = applyProjectedTransform(
       { document, cursor: 2, caretAffinity: "forward" },
       backspace,
+      "nearest",
+      displayToken,
     );
 
     expect(projectPromptDocument(deleted.document).text).toBe("ab");
@@ -120,9 +128,11 @@ describe("rich document compatibility transforms", () => {
     const deleted = applyProjectedTransform(
       { document: withPlaceholder, cursor: 13, caretAffinity: "forward" },
       deletePlaceholderOrChar,
+      "nearest",
+      displayToken,
     );
 
-    expect(projectPromptDocument(deleted.document).text).toBe("a$reviewb");
+    expect(projectPromptDocument(deleted.document, displayToken).text).toBe("a$reviewb");
     expect(deleted.cursor).toBe(3);
   });
 
@@ -131,9 +141,11 @@ describe("rich document compatibility transforms", () => {
     const replaced = applyProjectedTransform(
       { document: withAtQuery, cursor: 7, caretAffinity: "forward" },
       (state) => replaceAtToken(state, ["src"]),
+      "nearest",
+      displayToken,
     );
 
-    expect(projectPromptDocument(replaced.document).text).toBe("a$reviewb @src ");
+    expect(projectPromptDocument(replaced.document, displayToken).text).toBe("a$reviewb @src ");
     expect(replaced.cursor).toBe(9);
   });
 
@@ -141,18 +153,19 @@ describe("rich document compatibility transforms", () => {
     const tokenRowDocument = replacePromptRange(textPromptDocument("1111111111\nxx"), 10, 10, [
       skill,
     ]);
-    const projection = projectPromptDocument(tokenRowDocument);
+    const projection = projectPromptDocument(tokenRowDocument, displayToken);
     const rows = wrapRows(projection.text, 10);
     const target = verticalCaretTarget(rows, projection.text.length, -1, null)!;
     const moved = setProjectedCursor(
       {
         document: tokenRowDocument,
-        cursor: documentLogicalLength(tokenRowDocument),
+        cursor: promptDocumentLogicalLength(tokenRowDocument),
         caretAffinity: "forward",
       },
       target.cursor,
       "nearest",
       target.affinity,
+      displayToken,
     );
     const displayCursor = projection.logicalToDisplay(moved.cursor);
 
