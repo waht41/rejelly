@@ -43,8 +43,8 @@ export interface RunInteractiveLoopParams {
   mockSourceTraceId?: string;
   /** Keep replay sessions away from durable local session state. */
   isolateSessionState?: boolean;
-  /** Session V2 writer configuration. */
-  sessionV2?: RunEvilJellyHostOptions["sessionV2"];
+  /** Durable Session writer configuration. */
+  session?: RunEvilJellyHostOptions["session"];
 }
 
 interface InteractiveSessionState {
@@ -97,16 +97,16 @@ function startNewSession(isolateSessionState: boolean): InteractiveSessionState 
 async function loadResumedSession(
   state: InteractiveSessionState,
   requestedSessionId: string,
-  sessionV2: RunEvilJellyHostOptions["sessionV2"],
+  session: RunEvilJellyHostOptions["session"],
 ): Promise<{ state: ResumedSessionState; isSameSession: boolean } | undefined> {
-  if (!sessionV2) {
-    throw new Error("Session V2 configuration is required to resume a durable session");
+  if (!session) {
+    throw new Error("Session configuration is required to resume a durable session");
   }
   const record = await resumeSession(getWorkspaceFsPolicy().getRoot(), requestedSessionId, {
     originator: "evil-jelly-cli",
-    appVersion: sessionV2.appVersion,
-    ...(sessionV2?.sessionsRoot ? { sessionsRoot: sessionV2.sessionsRoot } : {}),
-    ...(sessionV2?.blobRoot ? { blobRoot: sessionV2.blobRoot } : {}),
+    appVersion: session.appVersion,
+    ...(session.sessionsRoot ? { sessionsRoot: session.sessionsRoot } : {}),
+    ...(session.blobRoot ? { blobRoot: session.blobRoot } : {}),
   });
   if (!record) {
     return undefined;
@@ -131,7 +131,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
     enableReview,
     mockSourceTraceId,
     isolateSessionState = false,
-    sessionV2,
+    session,
   } = params;
   const initialResumeSeed = normalizeInitialResumeSeed(params);
   let state: InteractiveSessionState = {
@@ -184,7 +184,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
         skillSnapshot: skillRuntime.snapshot,
         mockSourceTraceId,
         isolateSessionState,
-        sessionV2,
+        session,
       });
 
       const intent = runControl.loop.take();
@@ -206,7 +206,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
             bindings.logSystemEvent("Resume is disabled during mock replay.\n");
             return;
           }
-          const resumed = await loadResumedSession(state, intent.sessionId, sessionV2);
+          const resumed = await loadResumedSession(state, intent.sessionId, session);
           if (!resumed) {
             bindings.logSystemEvent(`Resume failed: session ${intent.sessionId} not found.\n`);
             return;

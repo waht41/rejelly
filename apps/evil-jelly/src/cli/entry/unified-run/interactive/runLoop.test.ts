@@ -290,7 +290,7 @@ describe("runInteractiveLoop mock session isolation", () => {
       enableReview: false,
       snapshot: {} as AgentSnapshot,
       sessionId: "session_current",
-      sessionV2: { enabled: true, appVersion: "1.0.0" },
+      session: { enabled: true, appVersion: "1.0.0" },
     });
 
     expect(runHostMock).toHaveBeenCalledTimes(2);
@@ -300,7 +300,7 @@ describe("runInteractiveLoop mock session isolation", () => {
       seedContext: messages,
       seedBudget: budget,
       snapshot: undefined,
-      sessionV2: { enabled: true, appVersion: "1.0.0" },
+      session: { enabled: true, appVersion: "1.0.0" },
     });
     expect(hydrated).toHaveLength(1);
     expect(hydrated[0]?.map((item) => item.type)).toEqual(["user", "assistant"]);

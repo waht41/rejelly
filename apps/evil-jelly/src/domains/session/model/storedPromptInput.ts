@@ -180,3 +180,30 @@ export function decodeStoredPromptDocumentV1(value: unknown): PromptDocument {
 export function parseStoredPromptInputV1(value: unknown): StoredPromptInputV1 {
   return storedPromptInputV1Schema.parse(value);
 }
+
+/** Stable user-facing text projection; never inspects materialized Message text. */
+export function storedPromptInputPlainText(input: StoredPromptInputV1): string {
+  const parsed = parseStoredPromptInputV1(input);
+  const attachments = new Map(parsed.attachments.map((attachment) => [attachment.id, attachment]));
+  let imageIndex = 0;
+  return parsed.document.nodes
+    .map((node) => {
+      if (node.type === "text") return node.text;
+      switch (node.kind) {
+        case "paste":
+          return node.text;
+        case "skill":
+          return `$${node.qualifiedName}`;
+        case "file": {
+          const attachment = attachments.get(node.attachmentId);
+          return attachment?.kind === "file" ? `@${attachment.path}` : "[File]";
+        }
+        case "image":
+          imageIndex += 1;
+          return `[Image #${imageIndex}]`;
+        default:
+          throw new Error(`Unknown stored prompt node: ${JSON.stringify(node)}`);
+      }
+    })
+    .join("");
+}

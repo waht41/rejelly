@@ -6,7 +6,7 @@ import { skillOrigin } from "../../../domains/skills/definition/skillDefinition"
 import { getUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
 import { textPromptInput } from "../../../shared/model/prompt/promptInput";
 import {
-  buildSkillAwareUserMessage,
+  materializeSkillAwareUserInput,
   renderExplicitSkillContext,
   resolveExplicitSkills,
 } from "./skillAwareUserMessage";
@@ -47,7 +47,7 @@ describe("explicit Skill references", () => {
   });
 
   it("keeps the marker in place and appends instructions after the intact user request", async () => {
-    const message = await buildSkillAwareUserMessage(
+    const { message } = await materializeSkillAwareUserInput(
       {
         document: [
           { type: "text", text: "Please " },
@@ -73,7 +73,7 @@ describe("explicit Skill references", () => {
   });
 
   it("appends multiple Skill instructions once in first-token order", async () => {
-    const message = await buildSkillAwareUserMessage(
+    const { message } = await materializeSkillAwareUserInput(
       {
         document: [
           { type: "token", kind: "skill", qualifiedName: "user:test" },
@@ -98,7 +98,7 @@ describe("explicit Skill references", () => {
   });
 
   it("does not infer ordinary dollar-prefixed text", async () => {
-    const message = await buildSkillAwareUserMessage(
+    const { message } = await materializeSkillAwareUserInput(
       textPromptInput("echo $HOME and $project:review"),
       snapshot([record("review")]),
     );

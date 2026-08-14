@@ -9,7 +9,7 @@ import {
   readEventAtOffset,
   readSessionEvents,
   readSessionMetaLine,
-  resolveV2SessionPath,
+  resolveV3SessionPath,
   SessionCorruptionError,
 } from "./sessionJsonlStore";
 
@@ -50,7 +50,7 @@ describe("sessionJsonlStore", () => {
       {
         type: "message_recorded",
         turnId: "turn-1",
-        source: { kind: "user_input", inputKind: "initial" },
+        source: { kind: "agent_runtime" },
         message: { role: "user", content: "你好\nworld" },
       },
       { timestamp: 101 },
@@ -111,7 +111,7 @@ describe("sessionJsonlStore", () => {
       writer.append({
         type: "message_recorded",
         turnId: "turn-1",
-        source: { kind: "user_input", inputKind: "initial" },
+        source: { kind: "agent_runtime" },
         message: { role: "user", content: "hello" },
       }),
       writer.append({
@@ -134,7 +134,7 @@ describe("sessionJsonlStore", () => {
     const append = writer.append({
       type: "message_recorded",
       turnId: "turn-1",
-      source: { kind: "user_input", inputKind: "initial" },
+      source: { kind: "agent_runtime" },
       message: {
         role: "user",
         content: [
@@ -153,7 +153,7 @@ describe("sessionJsonlStore", () => {
   });
 
   it("reclaims a unique lock claim whose owner process no longer exists", async () => {
-    const filePath = resolveV2SessionPath(workspaceRoot, "session-1", { sessionsRoot });
+    const filePath = resolveV3SessionPath(workspaceRoot, "session-1", { sessionsRoot });
     const claimsDirectory = lockDirectory(filePath);
     await fs.mkdir(claimsDirectory, { recursive: true });
     const token = "stale-token";
@@ -174,7 +174,7 @@ describe("sessionJsonlStore", () => {
   });
 
   it("does not apply local PID stale checks to a foreign-host claim", async () => {
-    const filePath = resolveV2SessionPath(workspaceRoot, "session-1", { sessionsRoot });
+    const filePath = resolveV3SessionPath(workspaceRoot, "session-1", { sessionsRoot });
     const claimsDirectory = lockDirectory(filePath);
     await fs.mkdir(claimsDirectory, { recursive: true });
     const token = "foreign-token";
@@ -212,7 +212,7 @@ describe("sessionJsonlStore", () => {
   });
 
   it("never scans or removes session data whose name resembles the old claim prefix", async () => {
-    const filePath = resolveV2SessionPath(workspaceRoot, "session-1", { sessionsRoot });
+    const filePath = resolveV3SessionPath(workspaceRoot, "session-1", { sessionsRoot });
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     const unrelatedSession = `${filePath}.lock.crafted.jsonl`;
     const contents = "unrelated durable session data\n";
@@ -224,7 +224,7 @@ describe("sessionJsonlStore", () => {
   });
 
   it("keeps an invalid claim and fails closed", async () => {
-    const filePath = resolveV2SessionPath(workspaceRoot, "session-1", { sessionsRoot });
+    const filePath = resolveV3SessionPath(workspaceRoot, "session-1", { sessionsRoot });
     const claimsDirectory = lockDirectory(filePath);
     await fs.mkdir(claimsDirectory, { recursive: true });
     const claimPath = path.join(claimsDirectory, "invalid-token.json");
@@ -239,7 +239,7 @@ describe("sessionJsonlStore", () => {
   });
 
   it("keeps a claim whose filename and embedded token disagree", async () => {
-    const filePath = resolveV2SessionPath(workspaceRoot, "session-1", { sessionsRoot });
+    const filePath = resolveV3SessionPath(workspaceRoot, "session-1", { sessionsRoot });
     const claimsDirectory = lockDirectory(filePath);
     await fs.mkdir(claimsDirectory, { recursive: true });
     const claimPath = path.join(claimsDirectory, "filename-token.json");
@@ -262,7 +262,7 @@ describe("sessionJsonlStore", () => {
   });
 
   it("keeps an unreadable claim and fails closed", async () => {
-    const filePath = resolveV2SessionPath(workspaceRoot, "session-1", { sessionsRoot });
+    const filePath = resolveV3SessionPath(workspaceRoot, "session-1", { sessionsRoot });
     const claimsDirectory = lockDirectory(filePath);
     await fs.mkdir(claimsDirectory, { recursive: true });
     const claimPath = path.join(claimsDirectory, "unreadable-token.json");
@@ -278,7 +278,7 @@ describe("sessionJsonlStore", () => {
 
   it.each(["empty", "partial"] as const)("repairs %s metadata creation residue", async (kind) => {
     const expectedMeta = meta();
-    const filePath = resolveV2SessionPath(workspaceRoot, "session-1", { sessionsRoot });
+    const filePath = resolveV3SessionPath(workspaceRoot, "session-1", { sessionsRoot });
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, kind === "empty" ? "" : '{"type":"session_meta","schema');
 
@@ -308,7 +308,7 @@ describe("sessionJsonlStore", () => {
           ],
         },
       } as never),
-    ).rejects.toThrow("Invalid new Session V2 event");
+    ).rejects.toThrow("Invalid new Session V3 event");
     await writer.append({
       type: "turn_completed",
       turnId: "turn-1",
@@ -325,7 +325,7 @@ describe("sessionJsonlStore", () => {
     await writer.append({
       type: "message_recorded",
       turnId: "turn-1",
-      source: { kind: "user_input", inputKind: "initial" },
+      source: { kind: "agent_runtime" },
       message: { role: "user", content: "persisted" },
     });
     await writer.close();
@@ -361,7 +361,7 @@ describe("sessionJsonlStore", () => {
     await writer.append({
       type: "message_recorded",
       turnId: "turn-1",
-      source: { kind: "user_input", inputKind: "initial" },
+      source: { kind: "agent_runtime" },
       message: { role: "user", content: "persisted" },
     });
     await writer.close();
@@ -380,7 +380,7 @@ describe("sessionJsonlStore", () => {
   });
 
   it("reports corruption in a complete middle line", async () => {
-    const filePath = resolveV2SessionPath(workspaceRoot, "session-1", { sessionsRoot });
+    const filePath = resolveV3SessionPath(workspaceRoot, "session-1", { sessionsRoot });
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(
       filePath,
@@ -396,7 +396,7 @@ describe("sessionJsonlStore", () => {
   });
 
   it("preserves unknown events while enforcing contiguous seq", async () => {
-    const filePath = resolveV2SessionPath(workspaceRoot, "session-1", { sessionsRoot });
+    const filePath = resolveV3SessionPath(workspaceRoot, "session-1", { sessionsRoot });
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(
       filePath,
@@ -469,7 +469,7 @@ describe("sessionJsonlStore", () => {
     await writer.append({
       type: "message_recorded",
       turnId: "turn-1",
-      source: { kind: "user_input", inputKind: "initial" },
+      source: { kind: "agent_runtime" },
       message: {
         role: "user",
         content: [{ type: "image", image: { url: inlineUrl } }],
@@ -489,7 +489,7 @@ describe("sessionJsonlStore", () => {
     await writer.append({
       type: "message_recorded",
       turnId: "turn-1",
-      source: { kind: "user_input", inputKind: "initial" },
+      source: { kind: "agent_runtime" },
       message: { role: "user", content: "hello" },
     });
     await writer.append({
@@ -509,7 +509,7 @@ describe("sessionJsonlStore", () => {
   });
 
   it("does not loop when a malformed tail starts with a newline", async () => {
-    const filePath = resolveV2SessionPath(workspaceRoot, "session-1", { sessionsRoot });
+    const filePath = resolveV3SessionPath(workspaceRoot, "session-1", { sessionsRoot });
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, "\n");
     await expect(
@@ -522,7 +522,7 @@ describe("sessionJsonlStore", () => {
     const appended = await writer.append({
       type: "message_recorded",
       turnId: "turn-1",
-      source: { kind: "user_input", inputKind: "initial" },
+      source: { kind: "agent_runtime" },
       message: { role: "user", content: "x".repeat(96 * 1024) },
     });
     await writer.close();
@@ -536,9 +536,9 @@ describe("sessionJsonlStore", () => {
   });
 
   it("rejects unsafe session identifiers", () => {
-    expect(() => resolveV2SessionPath(workspaceRoot, "../escape", { sessionsRoot })).toThrow(
+    expect(() => resolveV3SessionPath(workspaceRoot, "../escape", { sessionsRoot })).toThrow(
       "Unsafe session id",
     );
-    expect(() => resolveV2SessionPath(workspaceRoot, "safe-id", { sessionsRoot })).not.toThrow();
+    expect(() => resolveV3SessionPath(workspaceRoot, "safe-id", { sessionsRoot })).not.toThrow();
   });
 });

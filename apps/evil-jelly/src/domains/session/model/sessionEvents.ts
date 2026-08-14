@@ -1,10 +1,27 @@
-import type { Message } from "@rejelly/core";
 import { z } from "zod";
-import { messageSourceSchema } from "../../../shared/session/messageSource";
+import {
+  messageSourceSchema,
+  nonUserMessageSourceSchema,
+} from "../../../shared/session/messageSource";
+import { sessionMessageSchema } from "./sessionMessageSchema";
+import {
+  storedPromptAttachmentV1Schema,
+  storedPromptDocumentV1Schema,
+  storedPromptInputV1Schema,
+} from "./storedPromptInput";
+import {
+  assertMatchingStoredUserInputMaterialization,
+  storedUserInputMaterializationV1Schema,
+} from "./storedUserInputMaterialization";
 
-export const SESSION_SCHEMA_VERSION = 2 as const;
+export { sessionMessageSchema } from "./sessionMessageSchema";
 
-const jsonObjectSchema = z.record(z.string(), z.unknown());
+export const SESSION_SCHEMA_VERSION = 3 as const;
+export const LEGACY_JSONL_SESSION_SCHEMA_VERSION = 2 as const;
+export type SessionSchemaVersion =
+  | typeof LEGACY_JSONL_SESSION_SCHEMA_VERSION
+  | typeof SESSION_SCHEMA_VERSION;
+
 const nonNegativeIntSchema = z.number().int().nonnegative();
 
 export const sessionBudgetSchema = z.object({
@@ -18,63 +35,34 @@ export const sessionBudgetSchema = z.object({
   lastCacheReadTokens: nonNegativeIntSchema,
 });
 
-const toolCallSchema = z
+const sessionMetaFields = {
+  type: z.literal("session_meta"),
+  sessionId: z.string(),
+  workspaceRoot: z.string(),
+  createdAt: nonNegativeIntSchema,
+  /** Product/client that first created the session file. */
+  originator: z.string().min(1),
+  appVersion: z.string().min(1),
+};
+
+export const sessionMetaLineV2Schema = z
   .object({
-    id: z.string(),
-    name: z.string(),
-    arguments: z.string(),
-    extra: jsonObjectSchema.optional(),
+    ...sessionMetaFields,
+    schemaVersion: z.literal(LEGACY_JSONL_SESSION_SCHEMA_VERSION),
   })
   .passthrough();
 
-const contentPartSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("text"), text: z.string() }).passthrough(),
-  z
-    .object({
-      type: z.literal("image"),
-      image: z
-        .object({
-          url: z.string(),
-          detail: z.enum(["auto", "low", "high"]).optional(),
-        })
-        .passthrough(),
-    })
-    .passthrough(),
-  z
-    .object({
-      type: z.literal("video"),
-      video: z.object({ url: z.string() }).passthrough(),
-    })
-    .passthrough(),
-]);
-
-export const sessionMessageSchema: z.ZodType<Message> = z
+export const sessionMetaLineV3Schema = z
   .object({
-    role: z.enum(["system", "user", "assistant", "tool"]),
-    content: z.union([z.string(), z.array(contentPartSchema)]).nullable(),
-    reasoning_content: z.string().optional(),
-    tool_calls: z.array(toolCallSchema).optional(),
-    tool_call_id: z.string().optional(),
-    name: z.string().optional(),
-    extra: jsonObjectSchema.optional(),
-  })
-  .passthrough();
-
-export const sessionMetaLineSchema = z
-  .object({
-    type: z.literal("session_meta"),
+    ...sessionMetaFields,
     schemaVersion: z.literal(SESSION_SCHEMA_VERSION),
-    sessionId: z.string(),
-    workspaceRoot: z.string(),
-    createdAt: nonNegativeIntSchema,
-    /**
-     * Product/client that first created the session file, for example "evil-jelly-cli".
-     * This is not a user, model provider, trace source, or per-resume field.
-     */
-    originator: z.string().min(1),
-    appVersion: z.string().min(1),
   })
   .passthrough();
+
+export const sessionMetaLineSchema = z.discriminatedUnion("schemaVersion", [
+  sessionMetaLineV2Schema,
+  sessionMetaLineV3Schema,
+]);
 
 const eventBaseFields = {
   seq: z.number().int().positive(),
@@ -133,6 +121,28 @@ export const messageRecordedEventSchema = z
      */
     source: messageSourceSchema,
     message: sessionMessageSchema,
+  })
+  .passthrough();
+
+const v3MessageRecordedEventSchema = z
+  .object({
+    ...eventBaseFields,
+    type: z.literal("message_recorded"),
+    turnId: z.string(),
+    source: nonUserMessageSourceSchema,
+    message: sessionMessageSchema,
+  })
+  .passthrough();
+
+export const userInputRecordedEventSchema = z
+  .object({
+    ...eventBaseFields,
+    type: z.literal("user_input_recorded"),
+    turnId: z.string(),
+    inputKind: z.enum(["initial", "steer"]),
+    document: storedPromptDocumentV1Schema,
+    attachments: z.array(storedPromptAttachmentV1Schema),
+    materialized: storedUserInputMaterializationV1Schema,
   })
   .passthrough();
 
@@ -242,6 +252,7 @@ export const knownSessionEventSchema = z.discriminatedUnion("type", [
   runSegmentStartedEventSchema,
   runSegmentEndedEventSchema,
   messageRecordedEventSchema,
+  userInputRecordedEventSchema,
   turnCompletedEventSchema,
   contextCompactedEventSchema,
   sessionStateEventSchema,
@@ -263,6 +274,7 @@ export type SessionEventBase = z.infer<typeof sessionEventEnvelopeSchema>;
 export type RunSegmentStartedEvent = z.infer<typeof runSegmentStartedEventSchema>;
 export type RunSegmentEndedEvent = z.infer<typeof runSegmentEndedEventSchema>;
 export type MessageRecordedEvent = z.infer<typeof messageRecordedEventSchema>;
+export type UserInputRecordedEvent = z.infer<typeof userInputRecordedEventSchema>;
 export type TurnCompletedEvent = z.infer<typeof turnCompletedEventSchema>;
 export type ContextCompactedEvent = z.infer<typeof contextCompactedEventSchema>;
 export type SessionStatus = z.infer<typeof sessionStatusSchema>;
@@ -276,7 +288,8 @@ export type SessionEvent = KnownSessionEvent | UnknownSessionEvent;
 const newSessionEventSchema = z.discriminatedUnion("type", [
   runSegmentStartedEventSchema.omit({ seq: true, timestamp: true }),
   runSegmentEndedEventSchema.omit({ seq: true, timestamp: true }),
-  messageRecordedEventSchema.omit({ seq: true, timestamp: true }),
+  v3MessageRecordedEventSchema.omit({ seq: true, timestamp: true }),
+  userInputRecordedEventSchema.omit({ seq: true, timestamp: true }),
   turnCompletedEventSchema.omit({ seq: true, timestamp: true }),
   contextCompactedEventSchema.omit({ seq: true, timestamp: true }),
   sessionStateEventSchema.omit({ seq: true, timestamp: true }),
@@ -302,15 +315,18 @@ export class SessionSchemaError extends Error {
 export function parseSessionMetaLine(value: unknown): SessionMetaLine {
   const parsed = sessionMetaLineSchema.safeParse(value);
   if (!parsed.success) {
-    throw new SessionSchemaError("Invalid Session V2 metadata line", parsed.error);
+    throw new SessionSchemaError("Invalid Session metadata line", parsed.error);
   }
   return parsed.data;
 }
 
-export function parseSessionEvent(value: unknown): SessionEvent {
+export function parseSessionEvent(
+  value: unknown,
+  schemaVersion: SessionSchemaVersion = SESSION_SCHEMA_VERSION,
+): SessionEvent {
   const envelope = sessionEventEnvelopeSchema.safeParse(value);
   if (!envelope.success) {
-    throw new SessionSchemaError("Invalid Session V2 event envelope", envelope.error);
+    throw new SessionSchemaError("Invalid Session event envelope", envelope.error);
   }
   if (envelope.data.type === "session_meta") {
     throw new SessionSchemaError("session_meta may only appear as the first JSONL line");
@@ -322,6 +338,39 @@ export function parseSessionEvent(value: unknown): SessionEvent {
   if (!parsed.success) {
     throw new SessionSchemaError(`Invalid ${envelope.data.type} event`, parsed.error);
   }
+  if (
+    schemaVersion === LEGACY_JSONL_SESSION_SCHEMA_VERSION &&
+    parsed.data.type === "user_input_recorded"
+  ) {
+    throw new SessionSchemaError("Session V2 cannot contain user_input_recorded events");
+  }
+  if (
+    schemaVersion === SESSION_SCHEMA_VERSION &&
+    parsed.data.type === "message_recorded" &&
+    parsed.data.source.kind === "user_input"
+  ) {
+    throw new SessionSchemaError("Session V3 user input must use user_input_recorded");
+  }
+  if (parsed.data.type === "user_input_recorded") {
+    const input = storedPromptInputV1Schema.safeParse({
+      document: parsed.data.document,
+      attachments: parsed.data.attachments,
+    });
+    if (!input.success) {
+      throw new SessionSchemaError(
+        "Invalid stored PromptInput in user_input_recorded",
+        input.error,
+      );
+    }
+    try {
+      assertMatchingStoredUserInputMaterialization(input.data, parsed.data.materialized);
+    } catch (error) {
+      throw new SessionSchemaError(
+        "Stored materialization does not match user_input_recorded document",
+        error,
+      );
+    }
+  }
   assertValidCompactionTurnAssociation(parsed.data);
   return parsed.data;
 }
@@ -329,7 +378,27 @@ export function parseSessionEvent(value: unknown): SessionEvent {
 export function parseNewSessionEvent(value: unknown): NewSessionEvent {
   const parsed = newSessionEventSchema.safeParse(value);
   if (!parsed.success) {
-    throw new SessionSchemaError("Invalid new Session V2 event", parsed.error);
+    throw new SessionSchemaError("Invalid new Session V3 event", parsed.error);
+  }
+  if (parsed.data.type === "user_input_recorded") {
+    const input = storedPromptInputV1Schema.safeParse({
+      document: parsed.data.document,
+      attachments: parsed.data.attachments,
+    });
+    if (!input.success) {
+      throw new SessionSchemaError(
+        "Invalid stored PromptInput in user_input_recorded",
+        input.error,
+      );
+    }
+    try {
+      assertMatchingStoredUserInputMaterialization(input.data, parsed.data.materialized);
+    } catch (error) {
+      throw new SessionSchemaError(
+        "Stored materialization does not match user_input_recorded document",
+        error,
+      );
+    }
   }
   assertValidCompactionTurnAssociation(parsed.data);
   return parsed.data;

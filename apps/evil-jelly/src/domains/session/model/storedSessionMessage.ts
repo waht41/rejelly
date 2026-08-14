@@ -5,7 +5,7 @@ import {
   sessionBlobRefSchema,
   sessionImageBlobMetadataMapSchema,
 } from "../../../shared/session/blobContract";
-import { sessionMessageSchema } from "./sessionEvents";
+import { sessionMessageSchema } from "./sessionMessageSchema";
 
 export type SessionImageBlobMap = Record<string, SessionBlobMetadata>;
 

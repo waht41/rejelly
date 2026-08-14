@@ -95,7 +95,7 @@ describe("runEvilJellyHost session teardown", () => {
       model: { id: "test-model" } as ModelAdapter,
       sessionId: "idle-session",
       sessionStartMode: "resumed",
-      sessionV2: { enabled: true, appVersion: "1.0.0", sessionsRoot: "/sessions" },
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot: "/sessions" },
     });
 
     expect(endSegment).toHaveBeenCalledOnce();
@@ -136,7 +136,7 @@ describe("runEvilJellyHost session teardown", () => {
       model: { id: "test-model" } as ModelAdapter,
       sessionId: "new-idle-session",
       sessionStartMode: "new",
-      sessionV2: { enabled: true, appVersion: "1.0.0", sessionsRoot: "/sessions" },
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot: "/sessions" },
     });
 
     expect(mocks.openSessionRecorder).not.toHaveBeenCalled();

@@ -29,7 +29,6 @@ import { countConversationTurns } from "../../shared/conversation/compactionMess
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../shared/host/bindings";
 import { getBinding, setBinding } from "../../shared/host/context";
-import { getUserInputDisplay } from "../../shared/model/message/userInputMetadata";
 import {
   isPromptInputSemanticallyEmpty,
   type PromptInput,
@@ -41,7 +40,8 @@ import {
   formatSessionStatus,
   formatTokenUsageLine,
 } from "../conversation-display/session-summary/format";
-import { buildSkillAwareUserMessage } from "../message-composer/message-materialization/skillAwareUserMessage";
+import { releaseConsumedPromptResources } from "../message-composer/message-materialization/promptResourceLifecycle";
+import { materializeSkillAwareUserInput } from "../message-composer/message-materialization/skillAwareUserMessage";
 import { withAbort } from "../runtime/withAbort";
 import { drainSteers } from "../submission-dispatch/steerQueue";
 import { combineSessionBudget } from "./budget";
@@ -128,7 +128,7 @@ export interface MainCliAgentProps extends EvilJellyBindings {
   seedBudget?: SessionBudget;
   /** Replay-only mode: do not read from or write to durable local sessions. */
   isolateSessionState?: boolean;
-  /** Session V2 writer. Undefined only for ephemeral or isolated runs. */
+  /** Session V3 writer. Undefined only for ephemeral or isolated runs. */
   sessionRecorder?: SessionRecorder;
 }
 
@@ -250,17 +250,33 @@ async function handleCompress(runtime: RouterRuntime): Promise<void> {
   );
 }
 
-function displayPreparedUserMessage(message: Message, fallback: string): string {
-  const display = getUserInputDisplay(message);
-  return display ? formatUserInputDisplay(display) : fallback;
-}
-
-async function drainAndPrepareSteerMessages(runtime: RouterRuntime): Promise<Message[]> {
+async function drainAndPrepareSteerMessages(
+  runtime: RouterRuntime,
+  turnId: string,
+): Promise<Message[]> {
   const messages: Message[] = [];
-  for (const input of drainSteers()) {
-    const message = await buildSkillAwareUserMessage(input, runtime.skillSnapshot);
-    runtime.host.logUserMessage(displayPreparedUserMessage(message, promptInputPlainText(input)));
-    messages.push(message);
+  const inputs = drainSteers();
+  try {
+    for (const input of inputs) {
+      const materialization = await materializeSkillAwareUserInput(
+        input,
+        runtime.skillSnapshot,
+      ).finally(() =>
+        releaseConsumedPromptResources(input).catch((error) =>
+          runtime.host.logSystemEvent(
+            `Prompt resource cleanup failed: ${formatPersistenceError(error)}\n`,
+          ),
+        ),
+      );
+      runtime.host.logUserMessage(formatUserInputDisplay(materialization.display));
+      await runtime.props.sessionRecorder?.recordUserInput(turnId, "steer", input, materialization);
+      messages.push(materialization.message);
+    }
+  } catch (error) {
+    await Promise.all(
+      inputs.map((input) => releaseConsumedPromptResources(input).catch(() => undefined)),
+    );
+    throw error;
   }
   return messages;
 }
@@ -318,23 +334,34 @@ async function runConversationTurn(
   let turnClosureAttempted = false;
 
   try {
-    submittedUserMessage = await buildSkillAwareUserMessage(promptInput, runtime.skillSnapshot);
-    runtime.host.logUserMessage(displayPreparedUserMessage(submittedUserMessage, userInput));
+    const materialization = await materializeSkillAwareUserInput(
+      promptInput,
+      runtime.skillSnapshot,
+    ).finally(() =>
+      releaseConsumedPromptResources(promptInput).catch((error) =>
+        runtime.host.logSystemEvent(
+          `Prompt resource cleanup failed: ${formatPersistenceError(error)}\n`,
+        ),
+      ),
+    );
+    submittedUserMessage = materialization.message;
+    runtime.host.logUserMessage(formatUserInputDisplay(materialization.display));
     activeTurnId = createTurnId();
     // The session layer marks the turn start here (inputKind: "initial"); the status line's
     // timer must anchor at exactly this point so steers and maintenance commands never
     // start (or restart) a turn.
     runtime.host.onTurnStart?.();
-    await runtime.props.sessionRecorder?.recordMessage(
+    await runtime.props.sessionRecorder?.recordUserInput(
       activeTurnId,
-      { kind: "user_input", inputKind: "initial" },
-      submittedUserMessage,
+      "initial",
+      promptInput,
+      materialization,
     );
 
     const result = await UnifiedAgentWithAbort({
       message: submittedUserMessage,
       history: runtime.history,
-      pendingUserMessages: () => drainAndPrepareSteerMessages(runtime),
+      pendingUserMessages: () => drainAndPrepareSteerMessages(runtime, activeTurnId!),
       sessionBlobRoot: runtime.props.sessionBlobRoot,
       sessionRecorder: runtime.props.sessionRecorder,
       turnId: activeTurnId,

@@ -1,3 +1,4 @@
+import { createUserInputMetadata } from "../../../shared/model/message/userInputMetadata";
 import {
   type BudgetUpdatedEvent,
   type ContextCompactedEvent,
@@ -9,11 +10,18 @@ import {
   type SessionEvent,
   type SessionStateEvent,
   type TurnCompletedEvent,
+  type UserInputRecordedEvent,
 } from "../model/sessionEvents";
+import { parseStoredPromptInputV1 } from "../model/storedPromptInput";
 import {
   parseStoredSessionMessage,
   type StoredSessionMessage,
 } from "../model/storedSessionMessage";
+import {
+  parseStoredUserInputMaterializationV1,
+  type StoredUserInputMaterializationV1,
+  storedMaterializationImageBlobs,
+} from "../model/storedUserInputMaterialization";
 
 declare const preparedSessionReplayBrand: unique symbol;
 
@@ -31,10 +39,16 @@ export type PreparedLegacySnapshotImportedEvent = LegacySnapshotImportedEvent & 
   messages: StoredSessionMessage[];
 };
 
+export type PreparedUserInputRecordedEvent = UserInputRecordedEvent & {
+  materialized: StoredUserInputMaterializationV1;
+  runtimeMessage: StoredSessionMessage;
+};
+
 export type PreparedSessionEvent =
   | RunSegmentStartedEvent
   | RunSegmentEndedEvent
   | PreparedMessageRecordedEvent
+  | PreparedUserInputRecordedEvent
   | TurnCompletedEvent
   | PreparedContextCompactedEvent
   | SessionStateEvent
@@ -84,6 +98,26 @@ export function prepareSessionReplay(events: readonly SessionEvent[]): PreparedS
           message: parseStoredSessionMessage(event.message),
         });
         break;
+      case "user_input_recorded": {
+        parseStoredPromptInputV1({
+          document: event.document,
+          attachments: event.attachments,
+        });
+        const materialized = parseStoredUserInputMaterializationV1(event.materialized);
+        const imageBlobs = storedMaterializationImageBlobs(materialized);
+        const runtimeMessage = parseStoredSessionMessage({
+          ...materialized.message,
+          extra: {
+            ...materialized.message.extra,
+            rejelly: {
+              ...createUserInputMetadata(materialized.display),
+              ...(Object.keys(imageBlobs).length > 0 ? { imageBlobs } : {}),
+            },
+          },
+        });
+        prepared.push({ ...event, materialized, runtimeMessage });
+        break;
+      }
       case "context_compacted":
         prepared.push({
           ...event,

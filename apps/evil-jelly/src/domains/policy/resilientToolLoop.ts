@@ -173,13 +173,6 @@ export async function runResilientToolCallLoopPolicy<T = unknown>(
       const pendingMessages = (await snapshot.pendingUserMessages?.()) ?? [];
       for (const message of pendingMessages) {
         deltaMessages.push(message);
-        if (snapshot.sessionRecorder && snapshot.turnId) {
-          await snapshot.sessionRecorder.recordMessage(
-            snapshot.turnId,
-            { kind: "user_input", inputKind: "steer" },
-            message,
-          );
-        }
       }
 
       await compaction.maybeCompact(deltaMessages);

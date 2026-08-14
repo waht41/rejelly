@@ -8,7 +8,7 @@ const fileLocatorSchema = z.discriminatedUnion("scope", [
   z.object({ scope: z.literal("absolute"), path: z.string() }),
 ]);
 
-const userInputAttachmentDisplaySchema = z.object({
+export const userInputAttachmentDisplaySchema = z.object({
   type: z.enum(["file", "image"]),
   label: z.string(),
   action: z.enum(["read", "list", "attach"]),
@@ -17,7 +17,7 @@ const userInputAttachmentDisplaySchema = z.object({
   locator: fileLocatorSchema.optional(),
 });
 
-const userInputDisplaySchema = z.object({
+export const userInputDisplaySchema = z.object({
   text: z.string(),
   attachments: z.array(userInputAttachmentDisplaySchema),
 });

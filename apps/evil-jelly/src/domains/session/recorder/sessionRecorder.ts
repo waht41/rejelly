@@ -1,5 +1,8 @@
 import type { Message } from "@rejelly/core";
-import type { MessageSource } from "../../../shared/session/messageSource";
+import type { PromptInput } from "../../../shared/model/prompt/promptInput";
+import { promptInputPlainText } from "../../../shared/model/prompt/promptInput";
+import type { UserInputMaterializationV1 } from "../../../shared/model/prompt/userInputMaterialization";
+import type { NonUserMessageSource } from "../../../shared/session/messageSource";
 import type {
   SessionCompactionRecord,
   SessionMessageSink,
@@ -12,6 +15,7 @@ import {
   type SessionStoragePaths,
   type SessionWriter,
 } from "../journal/sessionJsonlStore";
+import { prepareUserInputForStorage } from "../journal/userInputStorage";
 import type { NewSessionEvent, SessionEvent, SessionStatus } from "../model/sessionEvents";
 import { isKnownSessionEvent } from "../model/sessionEvents";
 import type { SessionBudget } from "../model/sessionTypes";
@@ -22,10 +26,10 @@ import {
   UNKNOWN_TOOL_OUTCOME_CONTENT,
 } from "../projection/sessionRecovery";
 import { prepareSessionReplay } from "../projection/sessionReplay";
-import { deriveSessionTitle } from "../projection/sessionTitle";
+import { deriveSessionTitleFromText } from "../projection/sessionTitle";
 
 /**
- * Runtime write-side coordinator for Session V2.
+ * Runtime write-side coordinator for Session V3.
  *
  * The JSONL writer owns byte ordering and locking; this recorder adds conversation semantics:
  * durable item/round boundaries, turn/segment closure, and incremental `session_state`
@@ -44,6 +48,12 @@ export interface SessionRecorder extends SessionMessageSink {
   readonly sessionId: string;
   readonly traceId: string;
   readonly ended: boolean;
+  recordUserInput(
+    turnId: string,
+    inputKind: "initial" | "steer",
+    input: PromptInput,
+    materialization: UserInputMaterializationV1,
+  ): Promise<void>;
   completeTurn(
     turnId: string,
     status: "completed" | "interrupted" | "error",
@@ -99,6 +109,7 @@ class JsonlSessionRecorder implements SessionRecorder {
   constructor(
     private readonly writer: SessionWriter,
     events: SessionEvent[],
+    private readonly storagePaths: SessionStoragePaths,
   ) {
     this.sessionId = writer.meta.sessionId;
     // Bootstrap the incremental accumulator once from the authoritative replay. The newly appended
@@ -165,13 +176,42 @@ class JsonlSessionRecorder implements SessionRecorder {
     });
   }
 
-  async recordMessage(turnId: string, source: MessageSource, message: Message): Promise<void> {
+  async recordUserInput(
+    turnId: string,
+    inputKind: "initial" | "steer",
+    input: PromptInput,
+    materialization: UserInputMaterializationV1,
+  ): Promise<void> {
+    const stored = await prepareUserInputForStorage(input, materialization, this.storagePaths);
+    await this.#append({
+      type: "user_input_recorded",
+      turnId,
+      inputKind,
+      document: stored.document,
+      attachments: stored.attachments,
+      materialized: stored.materialized,
+    });
+    if (inputKind === "initial" && !this.#newUserTurnIds.has(turnId)) {
+      this.#newUserTurnIds.add(turnId);
+      this.#userTurns += 1;
+      if (this.#title === "(untitled)") {
+        this.#title = deriveSessionTitleFromText(promptInputPlainText(input)) ?? this.#title;
+      }
+    }
+    await this.writer.flush();
+  }
+
+  async recordMessage(
+    turnId: string,
+    source: NonUserMessageSource,
+    message: Message,
+  ): Promise<void> {
     await this.recordMessages(turnId, [{ source, message }]);
   }
 
   async recordMessages(
     turnId: string,
-    entries: readonly { source: MessageSource; message: Message }[],
+    entries: readonly { source: NonUserMessageSource; message: Message }[],
   ): Promise<void> {
     // A model validation round may contain more than one stable message. Append the whole batch in
     // order, then flush once; no streaming snapshot is admitted through this API.
@@ -182,17 +222,6 @@ class JsonlSessionRecorder implements SessionRecorder {
         source: entry.source,
         message: entry.message,
       });
-      if (
-        entry.source.kind === "user_input" &&
-        entry.source.inputKind === "initial" &&
-        !this.#newUserTurnIds.has(turnId)
-      ) {
-        this.#newUserTurnIds.add(turnId);
-        this.#userTurns += 1;
-        if (this.#title === "(untitled)") {
-          this.#title = deriveSessionTitle(entry.message) ?? this.#title;
-        }
-      }
     }
     if (entries.length > 0) {
       await this.writer.flush();
@@ -303,7 +332,8 @@ export async function openSessionRecorder(
   // prefix. The file may be newly initialized, in which case the replay is simply empty.
   const writer = await openSessionWriter(meta, { ...options, traceId: options.traceId });
   try {
-    const stored = await readSessionEvents(options.workspaceRoot, options.sessionId, options);
+    const v3Paths = { ...options, journalVersion: 3 as const };
+    const stored = await readSessionEvents(options.workspaceRoot, options.sessionId, v3Paths);
     const events = [...stored.events];
     const recoveries = findIncompleteTurnRecoveries(events);
     const hasPriorSegment = events.some(
@@ -321,7 +351,7 @@ export async function openSessionRecorder(
     });
     events.push(started.event);
     await writer.flush();
-    const recorder = new JsonlSessionRecorder(writer, events);
+    const recorder = new JsonlSessionRecorder(writer, events, v3Paths);
     await recorder.recoverInterruptedTurns(recoveries);
     return recorder;
   } catch (error) {

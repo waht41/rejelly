@@ -5,7 +5,7 @@ import { UnifiedAgent } from "../../../../features/unified/UnifiedAgent";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 import { setBinding } from "../../../../shared/host/context";
 import { textPromptInput } from "../../../../shared/model/prompt/promptInput";
-import { buildSkillAwareUserMessage } from "../../../message-composer/message-materialization/skillAwareUserMessage";
+import { materializeSkillAwareUserInput } from "../../../message-composer/message-materialization/skillAwareUserMessage";
 import { runWithReview } from "../../../runtime/runWithReview";
 import { generateTraceId } from "../../../runtime/traceId";
 import { withAbort } from "../../../runtime/withAbort";
@@ -39,7 +39,7 @@ export async function runHeadless(
       enableReview: options.enableReview,
       run: async () => {
         await setBinding(bindings);
-        const message = await buildSkillAwareUserMessage(
+        const { message } = await materializeSkillAwareUserInput(
           textPromptInput(userInput),
           skillRuntime.snapshot,
         );

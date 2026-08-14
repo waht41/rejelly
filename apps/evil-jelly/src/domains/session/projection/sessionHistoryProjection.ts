@@ -8,6 +8,7 @@ import { getUserInputDisplay } from "../../../shared/model/message/userInputMeta
 import { SESSION_BLOB_SCHEME, sessionBlobRefSchema } from "../../../shared/session/blobContract";
 import type { TranscriptImage, TranscriptItem } from "../../../shared/session/transcript";
 import type { SessionBudgetData } from "../model/sessionEvents";
+import { storedPromptInputPlainText } from "../model/storedPromptInput";
 import {
   getStoredSessionRejellyMetadata,
   type StoredSessionMessage,
@@ -79,6 +80,12 @@ export function buildStoredActiveContext(replay: PreparedSessionReplay): StoredS
       case "message_recorded":
         messages.push(event.message);
         if (event.source.kind === "user_input" && event.source.inputKind === "initial") {
+          openTurns.add(event.turnId);
+        }
+        break;
+      case "user_input_recorded":
+        messages.push(event.runtimeMessage);
+        if (event.inputKind === "initial") {
           openTurns.add(event.turnId);
         }
         break;
@@ -292,6 +299,28 @@ export function buildTranscript(
         { seq: event.seq, turnId: event.turnId, suffix: "event", legacy: false },
         event.source.kind === "user_input" ? event.source.inputKind : undefined,
       );
+      continue;
+    }
+    if (event.type === "user_input_recorded") {
+      const content = storedPromptInputPlainText({
+        document: event.document,
+        attachments: event.attachments,
+      });
+      if (content) {
+        const images = transcriptImages(event.runtimeMessage);
+        items.push({
+          id: `${event.seq}:event:user`,
+          type: "user",
+          turnId: event.turnId,
+          seq: event.seq,
+          content,
+          inputKind: event.inputKind,
+          ...(event.materialized.display.attachments.length > 0
+            ? { attachments: event.materialized.display.attachments }
+            : {}),
+          ...(images ? { images } : {}),
+        });
+      }
       continue;
     }
     if (event.type === "context_compacted" && options.includeCompactionBoundaries) {

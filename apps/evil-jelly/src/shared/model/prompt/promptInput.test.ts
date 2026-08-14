@@ -81,7 +81,7 @@ describe("prompt input contract", () => {
   });
 
   it("keeps plain and copy fallback projections explicit and lossy", () => {
-    const expected = "review $project:review\npasted\nbody @src/main.ts [Image]";
+    const expected = "review $project:review\npasted\nbody @src/main.ts [Image #1]";
 
     expect(promptInputPlainText(richInput)).toBe(expected);
     expect(promptInputCopyText(richInput)).toBe(expected);

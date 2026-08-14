@@ -10,7 +10,7 @@
  */
 
 import type { Message } from "@rejelly/core";
-import type { MessageSource } from "./messageSource";
+import type { NonUserMessageSource } from "./messageSource";
 
 export interface SessionCompactionRecord {
   trigger: "auto" | "manual";
@@ -24,10 +24,10 @@ export interface SessionCompactionRecord {
 }
 
 export interface SessionMessageSink {
-  recordMessage(turnId: string, source: MessageSource, message: Message): Promise<void>;
+  recordMessage(turnId: string, source: NonUserMessageSource, message: Message): Promise<void>;
   recordMessages(
     turnId: string,
-    entries: readonly { source: MessageSource; message: Message }[],
+    entries: readonly { source: NonUserMessageSource; message: Message }[],
   ): Promise<void>;
   /** Mid-loop auto-compaction records itself here; manual `/compress` goes through the shell. */
   recordCompaction(record: SessionCompactionRecord): Promise<void>;

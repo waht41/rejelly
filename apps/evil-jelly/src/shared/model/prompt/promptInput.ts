@@ -199,6 +199,7 @@ function assertValidPromptNode(node: PromptNode): void {
 
 function promptInputTextProjection(input: PromptInput): string {
   const attachments = new Map(input.attachments.map((attachment) => [attachment.id, attachment]));
+  let imageIndex = 0;
   return input.document
     .map((node) => {
       if (node.type === "text") {
@@ -214,7 +215,8 @@ function promptInputTextProjection(input: PromptInput): string {
           return attachment?.kind === "file" ? `@${attachment.path}` : "[File]";
         }
         case "image":
-          return "[Image]";
+          imageIndex += 1;
+          return `[Image #${imageIndex}]`;
         default:
           return assertNever(node);
       }

@@ -1,7 +1,7 @@
 import type { Message } from "@rejelly/core";
 import type { PromptContext } from "@rejelly/core/policy";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { MessageSource } from "../../shared/session/messageSource";
+import type { NonUserMessageSource } from "../../shared/session/messageSource";
 import type { SessionRecorder } from "../session/recorder/sessionRecorder";
 
 const policyMocks = vi.hoisted(() => ({
@@ -54,7 +54,7 @@ describe("runResilientToolCallLoopPolicy session recorder", () => {
     const recorder = {
       recordMessage,
       recordMessages: vi.fn(
-        async (_turnId, entries: readonly { source: MessageSource; message: Message }[]) => {
+        async (_turnId, entries: readonly { source: NonUserMessageSource; message: Message }[]) => {
           recorded.push(
             entries.map((entry) => `${entry.source.kind}:${entry.message.role}`).join(","),
           );
@@ -83,15 +83,10 @@ describe("runResilientToolCallLoopPolicy session recorder", () => {
     });
 
     expect(result).toMatchObject({ aborted: false, data: "done" });
-    expect(recordMessage.mock.calls[0]?.[2]).toBe(pendingUserMessage);
+    expect(recordMessage).not.toHaveBeenCalled();
     expect(policyMocks.executeValidatedLoopTurn.mock.calls[0]?.[0].runtime.messages[0]).toBe(
       pendingUserMessage,
     );
-    expect(recorded).toEqual([
-      "user_input:user",
-      "model:assistant",
-      "tool:tool",
-      "model:assistant",
-    ]);
+    expect(recorded).toEqual(["model:assistant", "tool:tool", "model:assistant"]);
   });
 });

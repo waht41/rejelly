@@ -7,12 +7,13 @@ import {
   parseSessionStateEvent,
   type SessionEvent,
   type SessionMetaLine,
+  type SessionSchemaVersion,
   type SessionStateEvent,
 } from "../model/sessionEvents";
 import { assertSessionId, resolveSessionsRoot, workspaceBucket } from "./sessionPaths";
 
 /**
- * Session V2 has two deliberately different read paths:
+ * Session JSONL has two deliberately different read paths for both V2 and V3:
  *
  * - `readSessionEvents` performs a strict, whole-file diagnostic replay. It validates every
  *   sequence number and is appropriate for resume, repair, and projection.
@@ -30,6 +31,8 @@ export interface SessionStoragePaths {
   sessionsRoot?: string;
   /** Content-addressed payload root; overridden alongside sessionsRoot by isolated tests/hosts. */
   blobRoot?: string;
+  /** Internal format route. Direct V2 compatibility readers omit this and remain on V2. */
+  journalVersion?: SessionSchemaVersion;
 }
 
 export interface SessionReadWarning {
@@ -109,6 +112,29 @@ export function resolveV2SessionPath(
   return path.join(resolveV2WorkspaceDir(workspaceRoot, paths), `${sessionId}.jsonl`);
 }
 
+export function resolveV3SessionPath(
+  workspaceRoot: string,
+  sessionId: string,
+  paths: SessionStoragePaths = {},
+): string {
+  assertSessionId(sessionId);
+  return path.join(resolveV2WorkspaceDir(workspaceRoot, paths), `${sessionId}.v3.jsonl`);
+}
+
+function journalVersion(paths: SessionStoragePaths): SessionSchemaVersion {
+  return paths.journalVersion ?? 3;
+}
+
+function resolveJournalPath(
+  workspaceRoot: string,
+  sessionId: string,
+  paths: SessionStoragePaths,
+): string {
+  return journalVersion(paths) === 3
+    ? resolveV3SessionPath(workspaceRoot, sessionId, paths)
+    : resolveV2SessionPath(workspaceRoot, sessionId, paths);
+}
+
 function parseJsonLine(bytes: Buffer, filePath: string, line: number, offset: number): unknown {
   const normalized =
     bytes.length > 0 && bytes[bytes.length - 1] === 0x0d ? bytes.subarray(0, -1) : bytes;
@@ -154,12 +180,16 @@ function completeLines(
   };
 }
 
-function parseSessionBuffer(buffer: Buffer, filePath: string): ReadSessionEventsResult {
+function parseSessionBuffer(
+  buffer: Buffer,
+  filePath: string,
+  expectedVersion: SessionSchemaVersion,
+): ReadSessionEventsResult {
   const parsed = completeLines(buffer, filePath);
   const first = parsed.lines[0];
   if (!first || first.line !== 1 || first.offset !== 0) {
     throw new SessionCorruptionError(
-      "Session V2 file must start with session_meta",
+      "Session file must start with session_meta",
       filePath,
       first?.line ?? 1,
       first?.offset ?? 0,
@@ -172,16 +202,24 @@ function parseSessionBuffer(buffer: Buffer, filePath: string): ReadSessionEvents
   } catch (error) {
     throw new SessionCorruptionError("Invalid session_meta", filePath, 1, 0, error);
   }
+  if (meta.schemaVersion !== expectedVersion) {
+    throw new SessionCorruptionError(
+      `Session schema mismatch: expected V${expectedVersion}, received V${meta.schemaVersion}`,
+      filePath,
+      1,
+      0,
+    );
+  }
 
   const events: SessionEvent[] = [];
   let expectedSeq = 1;
   for (const entry of parsed.lines.slice(1)) {
     let event: SessionEvent;
     try {
-      event = parseSessionEvent(entry.value);
+      event = parseSessionEvent(entry.value, meta.schemaVersion);
     } catch (error) {
       throw new SessionCorruptionError(
-        "Invalid Session V2 event",
+        "Invalid Session event",
         filePath,
         entry.line,
         entry.offset,
@@ -304,8 +342,8 @@ export async function readSessionEvents(
 ): Promise<ReadSessionEventsResult> {
   // Intentionally O(file size): this is the authoritative validation/replay path, not a session
   // picker or writer-open fast path. In particular, it detects corruption in the middle of a log.
-  const filePath = resolveV2SessionPath(workspaceRoot, sessionId, paths);
-  const result = parseSessionBuffer(await readFile(filePath), filePath);
+  const filePath = resolveJournalPath(workspaceRoot, sessionId, paths);
+  const result = parseSessionBuffer(await readFile(filePath), filePath, journalVersion(paths));
   verifyFileIdentity(result.meta, workspaceRoot, sessionId, filePath);
   return result;
 }
@@ -315,7 +353,7 @@ export async function readSessionMetaLine(
   sessionId: string,
   paths: SessionStoragePaths = {},
 ): Promise<SessionMetaLine> {
-  const filePath = resolveV2SessionPath(workspaceRoot, sessionId, paths);
+  const filePath = resolveJournalPath(workspaceRoot, sessionId, paths);
   const handle = await open(filePath, "r");
   try {
     const line = await readLineAt(handle, filePath, 0, MAX_META_LINE_BYTES);
@@ -336,6 +374,14 @@ export async function readSessionMetaLine(
       }
       throw new SessionCorruptionError("Invalid session_meta", filePath, 1, 0, error);
     }
+    if (meta.schemaVersion !== journalVersion(paths)) {
+      throw new SessionCorruptionError(
+        `Session schema mismatch: expected V${journalVersion(paths)}, received V${meta.schemaVersion}`,
+        filePath,
+        1,
+        0,
+      );
+    }
     verifyFileIdentity(meta, workspaceRoot, sessionId, filePath);
     return meta;
   } finally {
@@ -349,7 +395,7 @@ export async function findLastEvent(
   paths: SessionStoragePaths = {},
 ): Promise<SessionEvent | undefined> {
   const meta = await readSessionMetaLine(workspaceRoot, sessionId, paths);
-  const filePath = resolveV2SessionPath(workspaceRoot, sessionId, paths);
+  const filePath = resolveJournalPath(workspaceRoot, sessionId, paths);
   const handle = await open(filePath, "r");
   try {
     const inspected = await inspectSessionForAppend(handle, filePath, meta);
@@ -393,15 +439,18 @@ export async function inspectSessionForAppend(
     throw new SessionCorruptionError("Invalid session_meta", filePath, 1, 0, error);
   }
   verifyFileIdentity(meta, expectedMeta.workspaceRoot, expectedMeta.sessionId, filePath);
-
-  const lastNewline = await findPreviousNewline(handle, fileStat.size);
-  if (lastNewline < 0) {
+  if (meta.schemaVersion !== expectedMeta.schemaVersion) {
     throw new SessionCorruptionError(
-      "Session V2 file has no complete metadata line",
+      `Session schema mismatch: expected V${expectedMeta.schemaVersion}, received V${meta.schemaVersion}`,
       filePath,
       1,
       0,
     );
+  }
+
+  const lastNewline = await findPreviousNewline(handle, fileStat.size);
+  if (lastNewline < 0) {
+    throw new SessionCorruptionError("Session file has no complete metadata line", filePath, 1, 0);
   }
   const validBytes = lastNewline + 1;
   const trailingBytes = fileStat.size - validBytes;
@@ -432,10 +481,13 @@ export async function inspectSessionForAppend(
     }
     let event: SessionEvent;
     try {
-      event = parseSessionEvent(parseJsonLine(normalized, filePath, 0, lineStart));
+      event = parseSessionEvent(
+        parseJsonLine(normalized, filePath, 0, lineStart),
+        expectedMeta.schemaVersion,
+      );
     } catch (error) {
       throw new SessionCorruptionError(
-        "Invalid final Session V2 event",
+        "Invalid final Session event",
         filePath,
         0,
         lineStart,
@@ -467,7 +519,7 @@ export async function readEventAtOffset(
   if (!Number.isInteger(offset) || offset < 0) {
     throw new Error(`Invalid event offset: ${offset}`);
   }
-  const filePath = resolveV2SessionPath(workspaceRoot, sessionId, paths);
+  const filePath = resolveJournalPath(workspaceRoot, sessionId, paths);
   const handle = await open(filePath, "r");
   try {
     if (offset > 0) {
@@ -492,7 +544,10 @@ export async function readEventAtOffset(
       );
     }
     return {
-      event: parseSessionEvent(parseJsonLine(line.bytes, filePath, 0, offset)),
+      event: parseSessionEvent(
+        parseJsonLine(line.bytes, filePath, 0, offset),
+        journalVersion(paths),
+      ),
       offset,
       byteLength: line.byteLength,
     };
@@ -508,7 +563,7 @@ export async function findLatestSessionStateFromTail(
 ): Promise<LocatedSessionEvent<SessionStateEvent> | undefined> {
   // This is only a checkpoint fast path. `undefined` can mean no checkpoint, a checkpoint outside
   // the bounded window, or an invalid checkpoint; callers must fall back to authoritative replay.
-  const filePath = resolveV2SessionPath(workspaceRoot, sessionId, options);
+  const filePath = resolveJournalPath(workspaceRoot, sessionId, options);
   const fileStat = await stat(filePath);
   const maxBytes = options.maxBytes ?? DEFAULT_TAIL_BYTES;
   if (!Number.isInteger(maxBytes) || maxBytes <= 0) {

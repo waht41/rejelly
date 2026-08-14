@@ -98,7 +98,7 @@ export async function runUnified(options: RunUnifiedOptions): Promise<void> {
       resumeSeed,
       mockSourceTraceId: mockReplay ? mockTraceId : undefined,
       isolateSessionState: Boolean(mockReplay),
-      sessionV2: { enabled: true, appVersion },
+      session: { enabled: true, appVersion },
     });
   } finally {
     dispose();

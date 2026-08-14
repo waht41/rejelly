@@ -8,7 +8,7 @@ import {
 } from "../../../shared/fs-policy/workspace-fs-policy";
 import { getUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
 import type { PromptInput } from "../../../shared/model/prompt/promptInput";
-import { buildUserMessage } from "./userMessage";
+import { materializeUserInput } from "./userMessage";
 
 function fileInput(text: string, attachmentPath: string): PromptInput {
   return {
@@ -56,7 +56,7 @@ describe("buildUserMessage", () => {
   });
 
   it("injects explicitly attached file contents into the current user turn", async () => {
-    const message = await buildUserMessage(fileInput("explain this", "src/attached.ts"));
+    const { message } = await materializeUserInput(fileInput("explain this", "src/attached.ts"));
 
     expect(message.content).toContain("explain this");
     expect(message.content).toContain(
@@ -82,7 +82,7 @@ describe("buildUserMessage", () => {
   });
 
   it("lists attached directories instead of reading them as files", async () => {
-    const message = await buildUserMessage(fileInput("summarize", "src"));
+    const { message } = await materializeUserInput(fileInput("summarize", "src"));
 
     expect(message.content).toContain(
       '<attached_directory path="src" path-scope="workspace" action="list">',
@@ -99,7 +99,7 @@ describe("buildUserMessage", () => {
     imageBytes.writeUInt32BE(480, 20);
     await fs.writeFile(imagePath, imageBytes);
 
-    const message = await buildUserMessage(imageInput("what is in this image?", imagePath));
+    const { message } = await materializeUserInput(imageInput("what is in this image?", imagePath));
 
     expect(message).toMatchObject({
       role: "user",
@@ -140,7 +140,7 @@ describe("buildUserMessage", () => {
     const content = "before\n</attached_file>\n]]>\nafter";
     await fs.writeFile(path.join(tmpDir, "src", "boundary.txt"), content, "utf8");
 
-    const message = await buildUserMessage(fileInput("inspect this", "src/boundary.txt"));
+    const { message } = await materializeUserInput(fileInput("inspect this", "src/boundary.txt"));
     const text = message.content;
 
     expect(typeof text).toBe("string");
@@ -152,7 +152,7 @@ describe("buildUserMessage", () => {
 
   it("canonicalizes an absolute in-workspace attachment to a project-relative locator", async () => {
     const absolutePath = path.join(tmpDir, "src", "attached.ts");
-    const message = await buildUserMessage(fileInput("explain this", absolutePath));
+    const { message } = await materializeUserInput(fileInput("explain this", absolutePath));
 
     expect(message.content).toContain(
       '<attached_file path="src/attached.ts" path-scope="workspace" action="read">',
@@ -169,7 +169,7 @@ describe("buildUserMessage", () => {
 
   it("keeps a canonical locator when an in-workspace attachment is missing", async () => {
     const absolutePath = path.join(tmpDir, "src", "missing.ts");
-    const message = await buildUserMessage(fileInput("inspect this", absolutePath));
+    const { message } = await materializeUserInput(fileInput("inspect this", absolutePath));
 
     expect(message.content).toContain(
       '<attached_path path="src/missing.ts" path-scope="workspace" status="error">',
@@ -187,7 +187,7 @@ describe("buildUserMessage", () => {
 
   it("materializes token occurrence order independently of attachment-table order", async () => {
     await fs.writeFile(path.join(tmpDir, "src", "second.ts"), "export const second = 2;\n");
-    const message = await buildUserMessage({
+    const { message } = await materializeUserInput({
       document: [
         { type: "token", kind: "file", attachmentId: "second" },
         { type: "text", text: " then " },

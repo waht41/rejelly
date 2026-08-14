@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { ContentPart, Message } from "@rejelly/core";
@@ -20,6 +21,10 @@ import {
   type PromptInput,
 } from "../../../shared/model/prompt/promptInput";
 import { renderPseudoXmlElement } from "../../../shared/model/prompt/pseudoXml";
+import type {
+  TokenResolutionV1,
+  UserInputMaterializationV1,
+} from "../../../shared/model/prompt/userInputMaterialization";
 
 const MAX_ATTACHMENT_BYTES_PER_FILE = 80 * 1024;
 const MAX_ATTACHMENT_BYTES_TOTAL = 100 * 1024;
@@ -33,6 +38,7 @@ interface FileMaterializationBudget {
 interface MaterializedFile {
   context: string;
   display: UserInputAttachmentDisplay;
+  status: "resolved" | "error";
 }
 
 async function materializeFile(
@@ -53,6 +59,7 @@ async function materializeFile(
         action: "attach",
         status: "error",
       },
+      status: "error",
     };
   }
 
@@ -76,6 +83,7 @@ async function materializeFile(
           action: "list",
         }),
         display: { type: "file", label: locator.path, action: "list", locator },
+        status: "resolved",
       };
     }
 
@@ -93,6 +101,7 @@ async function materializeFile(
           status: "error",
           locator,
         },
+        status: "error",
       };
     }
     if (budget.totalBytes + stat.size > MAX_ATTACHMENT_BYTES_TOTAL) {
@@ -109,6 +118,7 @@ async function materializeFile(
           status: "error",
           locator,
         },
+        status: "error",
       };
     }
 
@@ -120,6 +130,7 @@ async function materializeFile(
         action: "read",
       }),
       display: { type: "file", label: locator.path, action: "read", locator },
+      status: "resolved",
     };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
@@ -136,20 +147,20 @@ async function materializeFile(
         status: "error",
         locator,
       },
+      status: "error",
     };
   }
 }
 
 interface MaterializedImage {
   part: ContentPart;
+  sha256: string;
+  byteLength: number;
   dimensions: { width: number; height: number } | null;
-  display: UserInputAttachmentDisplay;
+  display: Omit<UserInputAttachmentDisplay, "label">;
 }
 
-async function materializeImage(
-  attachment: PromptImageAttachment,
-  imageIndex: number,
-): Promise<MaterializedImage> {
+async function materializeImage(attachment: PromptImageAttachment): Promise<MaterializedImage> {
   const policy = getWorkspaceFsPolicy();
   const absPath = path.isAbsolute(attachment.path)
     ? attachment.path
@@ -173,10 +184,11 @@ async function materializeImage(
         detail: attachment.detail ?? "auto",
       },
     },
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+    byteLength: bytes.length,
     dimensions,
     display: {
       type: "image",
-      label: `[Image #${imageIndex}]`,
       action: "attach",
       locator: fileLocatorFromUserPath(policy.getRoot(), attachment.path),
     },
@@ -186,19 +198,26 @@ async function materializeImage(
 export interface UserMessageMaterializationOptions {
   /** Resolved Skill instructions, appended after the intact user-authored document. */
   skillContext?: string;
+  skillResolution?: (qualifiedName: string) => {
+    status: "resolved" | "unavailable";
+    context?: string;
+  };
 }
 
 /** Compile PromptInput once, in document order, without parsing any display projection. */
-export async function buildUserMessage(
+export async function materializeUserInput(
   input: PromptInput,
   options: UserMessageMaterializationOptions = {},
-): Promise<Message> {
+): Promise<UserInputMaterializationV1> {
   assertValidPromptInput(input);
   const attachments = new Map(input.attachments.map((attachment) => [attachment.id, attachment]));
   const contentParts: ContentPart[] = [];
   const attachmentDisplays: UserInputAttachmentDisplay[] = [];
   const imageDimensions: Array<{ width: number; height: number } | null> = [];
+  const resolutions: TokenResolutionV1[] = [];
   const fileBudget: FileMaterializationBudget = { totalBytes: 0 };
+  const fileCache = new Map<string, Promise<MaterializedFile>>();
+  const imageCache = new Map<string, Promise<MaterializedImage>>();
   let modelText = "";
   let displayText = "";
   let imageIndex = 0;
@@ -209,7 +228,7 @@ export async function buildUserMessage(
     modelText = "";
   };
 
-  for (const node of input.document) {
+  for (const [nodeOrdinal, node] of input.document.entries()) {
     if (node.type === "text" || node.kind === "paste") {
       modelText += node.text;
       displayText += node.text;
@@ -219,28 +238,68 @@ export async function buildUserMessage(
       const marker = `$${node.qualifiedName}`;
       modelText += marker;
       displayText += marker;
+      const resolution = options.skillResolution?.(node.qualifiedName) ?? {
+        status: "unavailable" as const,
+      };
+      resolutions.push({
+        version: 1,
+        nodeOrdinal,
+        kind: "skill",
+        qualifiedName: node.qualifiedName,
+        ...resolution,
+      });
       continue;
     }
 
     const attachment = attachments.get(node.attachmentId)!;
     if (node.kind === "file" && attachment.kind === "file") {
       const marker = `@${attachment.path}`;
-      const materialized = await materializeFile(attachment, fileBudget);
+      let pending = fileCache.get(attachment.id);
+      if (!pending) {
+        pending = materializeFile(attachment, fileBudget);
+        fileCache.set(attachment.id, pending);
+      }
+      const materialized = await pending;
       modelText += `${marker}\n\n${materialized.context}`;
       displayText += marker;
       attachmentDisplays.push(materialized.display);
+      resolutions.push({
+        version: 1,
+        nodeOrdinal,
+        kind: "file",
+        attachmentId: node.attachmentId,
+        status: materialized.status,
+        context: materialized.context,
+      });
       continue;
     }
     if (node.kind === "image" && attachment.kind === "image") {
       imageIndex += 1;
       const marker = `[Image #${imageIndex}]`;
-      const materialized = await materializeImage(attachment, imageIndex);
+      let pending = imageCache.get(attachment.id);
+      if (!pending) {
+        pending = materializeImage(attachment);
+        imageCache.set(attachment.id, pending);
+      }
+      const materialized = await pending;
       modelText += marker;
       displayText += marker;
       flushModelText();
       contentParts.push(materialized.part);
       imageDimensions.push(materialized.dimensions);
-      attachmentDisplays.push(materialized.display);
+      attachmentDisplays.push({ ...materialized.display, label: marker });
+      resolutions.push({
+        version: 1,
+        nodeOrdinal,
+        kind: "image",
+        attachmentId: node.attachmentId,
+        status: "resolved",
+        mediaType: attachment.mimeType,
+        sha256: materialized.sha256,
+        byteLength: materialized.byteLength,
+        dimensions: materialized.dimensions,
+        detail: attachment.detail ?? "auto",
+      });
     }
   }
 
@@ -253,10 +312,15 @@ export async function buildUserMessage(
   const content: Message["content"] = hasImages ? contentParts : modelText;
   const display = { text: displayText, attachments: attachmentDisplays } satisfies UserInputDisplay;
   return {
-    role: "user",
-    content,
-    extra: {
-      rejelly: createUserInputMetadata(display, imageDimensions),
+    version: 1,
+    message: {
+      role: "user",
+      content,
+      extra: {
+        rejelly: createUserInputMetadata(display, imageDimensions),
+      },
     },
+    display,
+    resolutions,
   };
 }

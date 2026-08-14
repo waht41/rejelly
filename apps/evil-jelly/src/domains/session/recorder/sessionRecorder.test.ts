@@ -2,6 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { textPromptInput } from "../../../shared/model/prompt/promptInput";
+import { recordInitialTextInput, textMaterialization } from "../__tests__/sessionTestInput";
 import { readSessionEvents } from "../journal/sessionJsonlStore";
 import { buildStoredActiveContext, buildTranscript } from "../projection/sessionHistoryProjection";
 import { prepareSessionReplay } from "../projection/sessionReplay";
@@ -47,11 +49,7 @@ describe("sessionRecorder", () => {
       sessionsRoot,
     });
 
-    await recorder.recordMessage(
-      "turn-1",
-      { kind: "user_input", inputKind: "initial" },
-      { role: "user", content: "inspect the store" },
-    );
+    await recordInitialTextInput(recorder, "turn-1", "inspect the store");
     await recorder.recordMessage(
       "turn-1",
       { kind: "model" },
@@ -80,7 +78,7 @@ describe("sessionRecorder", () => {
 
     expect(stored.events.map((event) => event.type)).toEqual([
       "run_segment_started",
-      "message_recorded",
+      "user_input_recorded",
       "message_recorded",
       "context_compacted",
       "session_state",
@@ -91,6 +89,18 @@ describe("sessionRecorder", () => {
       "run_segment_ended",
       "session_state",
     ]);
+    expect(stored.events[1]).toMatchObject({
+      type: "user_input_recorded",
+      inputKind: "initial",
+      document: { version: 1, nodes: [{ type: "text", text: "inspect the store" }] },
+      attachments: [],
+      materialized: {
+        version: 1,
+        message: { role: "user", content: "inspect the store" },
+        display: { text: "inspect the store", attachments: [] },
+        resolutions: [],
+      },
+    });
     expect(
       buildTranscript(replay).flatMap((item) =>
         item.type === "user" || item.type === "assistant" ? [item.content] : [],
@@ -150,5 +160,43 @@ describe("sessionRecorder", () => {
       type: "session_state",
       traceIds: ["trace-1", "trace-2"],
     });
+  });
+
+  it("records initial and steer exactly once through the dedicated V3 event", async () => {
+    const recorder = await openSessionRecorder({
+      workspaceRoot,
+      sessionId: "session-steer",
+      traceId: "trace-1",
+      originator: "evil-jelly-cli",
+      appVersion: "0.1.0",
+      modelId: "model-a",
+      cwd: workspaceRoot,
+      sessionsRoot,
+    });
+    await recordInitialTextInput(recorder, "turn-1", "initial");
+    await recorder.recordUserInput(
+      "turn-1",
+      "steer",
+      textPromptInput("steer"),
+      textMaterialization("steer"),
+    );
+    await recorder.completeTurn("turn-1", "completed");
+    await recorder.close();
+
+    const stored = await readSessionEvents(workspaceRoot, "session-steer", { sessionsRoot });
+    expect(
+      stored.events
+        .filter((event) => event.type === "user_input_recorded")
+        .map((event) => event.inputKind),
+    ).toEqual(["initial", "steer"]);
+    const replay = prepareSessionReplay(stored.events);
+    expect(
+      buildTranscript(replay).flatMap((item) =>
+        item.type === "user" ? [{ content: item.content, inputKind: item.inputKind }] : [],
+      ),
+    ).toEqual([
+      { content: "initial", inputKind: "initial" },
+      { content: "steer", inputKind: "steer" },
+    ]);
   });
 });

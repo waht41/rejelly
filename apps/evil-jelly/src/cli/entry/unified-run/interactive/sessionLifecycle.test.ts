@@ -4,9 +4,10 @@ import path from "node:path";
 import type { Message } from "@rejelly/core";
 import { createMockModel } from "@rejelly/core/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { recordInitialTextInput } from "../../../../domains/session/__tests__/sessionTestInput";
 import {
   readSessionEvents,
-  resolveV2SessionPath,
+  resolveV3SessionPath,
 } from "../../../../domains/session/journal/sessionJsonlStore";
 import { isKnownSessionEvent } from "../../../../domains/session/model/sessionEvents";
 import { openSessionRecorder } from "../../../../domains/session/recorder/sessionRecorder";
@@ -89,12 +90,12 @@ describe("non-TTY session lifecycle", () => {
       model: model.adapter,
       sessionId: "untouched",
       sessionStartMode: "new",
-      sessionV2: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
     });
 
     expect(model.calls.count()).toBe(0);
     await expect(
-      fs.access(resolveV2SessionPath(workspaceRoot, "untouched", { sessionsRoot })),
+      fs.access(resolveV3SessionPath(workspaceRoot, "untouched", { sessionsRoot })),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
@@ -144,7 +145,7 @@ describe("non-TTY session lifecycle", () => {
       model: firstModel.adapter,
       sessionId: "lifecycle",
       sessionStartMode: "new",
-      sessionV2: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
     });
 
     const firstResume = await resumeSession(workspaceRoot, "lifecycle", {
@@ -175,7 +176,7 @@ describe("non-TTY session lifecycle", () => {
       sessionStartMode: "resumed",
       seedContext: firstResume?.messages,
       seedBudget: firstResume?.meta.budget,
-      sessionV2: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
     });
 
     const finalResume = await resumeSession(workspaceRoot, "lifecycle", {
@@ -242,8 +243,8 @@ describe("non-TTY session lifecycle", () => {
     expect(stored.events.slice(0, 2)).toMatchObject([
       { type: "run_segment_started", kind: "created" },
       {
-        type: "message_recorded",
-        source: { kind: "user_input", inputKind: "initial" },
+        type: "user_input_recorded",
+        inputKind: "initial",
       },
     ]);
     const starts = stored.events.filter((event) => event.type === "run_segment_started");
@@ -293,7 +294,7 @@ describe("non-TTY session lifecycle", () => {
       model: model.adapter,
       sessionId: "auto-compact",
       sessionStartMode: "new",
-      sessionV2: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
     });
 
     const resumed = await resumeSession(workspaceRoot, "auto-compact", {
@@ -351,9 +352,8 @@ describe("non-TTY session lifecycle", () => {
     const initialUser = stored.events.find(
       (event) =>
         isKnownSessionEvent(event) &&
-        event.type === "message_recorded" &&
-        event.source.kind === "user_input" &&
-        event.source.inputKind === "initial",
+        event.type === "user_input_recorded" &&
+        event.inputKind === "initial",
     );
     const completed = stored.events.find(
       (event) => isKnownSessionEvent(event) && event.type === "turn_completed",
@@ -377,11 +377,7 @@ describe("non-TTY session lifecycle", () => {
       cwd: workspaceRoot,
       sessionsRoot,
     });
-    await crashed.recordMessage(
-      "incomplete-turn",
-      { kind: "user_input", inputKind: "initial" },
-      { role: "user", content: "do not replay this automatically" },
-    );
+    await recordInitialTextInput(crashed, "incomplete-turn", "do not replay this automatically");
     await crashed.close();
 
     const seed = await resumeSession(workspaceRoot, "user-only-crash", {
@@ -389,7 +385,9 @@ describe("non-TTY session lifecycle", () => {
       appVersion: "1.0.0",
       sessionsRoot,
     });
-    expect(seed?.messages).toEqual([{ role: "user", content: "do not replay this automatically" }]);
+    expect(seed?.messages).toEqual([
+      expect.objectContaining({ role: "user", content: "do not replay this automatically" }),
+    ]);
 
     const model = createMockModel();
     await runEvilJellyHost(createMemoryBindings(["/exit"]), {
@@ -399,7 +397,7 @@ describe("non-TTY session lifecycle", () => {
       sessionStartMode: "resumed",
       seedContext: seed?.messages,
       seedBudget: seed?.meta.budget,
-      sessionV2: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
     });
 
     expect(model.calls.count()).toBe(0);
@@ -476,7 +474,7 @@ describe("non-TTY session lifecycle", () => {
         model: firstModel.adapter,
         sessionId: "image-lifecycle",
         sessionStartMode: "new",
-        sessionV2: {
+        session: {
           enabled: true,
           appVersion: "1.0.0",
           sessionsRoot,
@@ -485,6 +483,20 @@ describe("non-TTY session lifecycle", () => {
       },
     );
     await Promise.all(sourcePaths.map((sourcePath) => fs.unlink(sourcePath)));
+
+    const beforeResume = await readSessionEvents(workspaceRoot, "image-lifecycle", {
+      sessionsRoot,
+    });
+    const storedInitialInput = beforeResume.events.find(
+      (event) => isKnownSessionEvent(event) && event.type === "user_input_recorded",
+    );
+    expect(
+      storedInitialInput &&
+        isKnownSessionEvent(storedInitialInput) &&
+        storedInitialInput.type === "user_input_recorded"
+        ? imageUrls([storedInitialInput.materialized.message])
+        : [],
+    ).toHaveLength(5);
 
     const firstResume = await resumeSession(workspaceRoot, "image-lifecycle", {
       originator: "evil-jelly-cli",
@@ -534,7 +546,7 @@ describe("non-TTY session lifecycle", () => {
         sessionStartMode: "resumed",
         seedContext: firstResume?.messages,
         seedBudget: firstResume?.meta.budget,
-        sessionV2: {
+        session: {
           enabled: true,
           appVersion: "1.0.0",
           sessionsRoot,
@@ -568,9 +580,8 @@ describe("non-TTY session lifecycle", () => {
     const initialUser = stored.events.find(
       (event) =>
         isKnownSessionEvent(event) &&
-        event.type === "message_recorded" &&
-        event.source.kind === "user_input" &&
-        event.source.inputKind === "initial",
+        event.type === "user_input_recorded" &&
+        event.inputKind === "initial",
     );
     const compact = stored.events.find(
       (event) => isKnownSessionEvent(event) && event.type === "context_compacted",
@@ -580,8 +591,8 @@ describe("non-TTY session lifecycle", () => {
         ? compact.replacementHistory
         : [];
     const initialUserMessage: Message | undefined =
-      initialUser && isKnownSessionEvent(initialUser) && initialUser.type === "message_recorded"
-        ? initialUser.message
+      initialUser && isKnownSessionEvent(initialUser) && initialUser.type === "user_input_recorded"
+        ? initialUser.materialized.message
         : undefined;
     expect(imageUrls(initialUserMessage ? [initialUserMessage] : [])).toHaveLength(5);
     expect(imageUrls(compactHistory).length).toBeLessThan(5);
@@ -590,7 +601,7 @@ describe("non-TTY session lifecycle", () => {
     expect(blobs).toHaveLength(1);
     await expect(fs.readFile(path.join(blobRoot, blobs[0]!))).resolves.toEqual(imageBytes);
     const rawSession = await fs.readFile(
-      resolveV2SessionPath(workspaceRoot, "image-lifecycle", { sessionsRoot }),
+      resolveV3SessionPath(workspaceRoot, "image-lifecycle", { sessionsRoot }),
       "utf8",
     );
     expect(rawSession).toContain("rejelly-blob://");

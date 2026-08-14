@@ -5,7 +5,7 @@ import {
   findLatestSessionStateFromTail,
   readSessionEvents,
   readSessionMetaLine,
-  resolveV2SessionPath,
+  resolveV3SessionPath,
   type SessionStoragePaths,
 } from "../journal/sessionJsonlStore";
 import { isKnownSessionEvent } from "../model/sessionEvents";
@@ -19,9 +19,9 @@ import {
 import { prepareSessionReplay } from "../projection/sessionReplay";
 import { readFailure, type SessionReadResult } from "./sessionReadResult";
 
-const v2Paths = (paths: SessionStoragePaths): SessionStoragePaths => ({
+const v3Paths = (paths: SessionStoragePaths): SessionStoragePaths => ({
   ...paths,
-  journalVersion: 2,
+  journalVersion: 3,
 });
 
 function sessionMetaFromSummary(summary: SessionSummary): SessionMeta {
@@ -37,29 +37,20 @@ function sessionMetaFromSummary(summary: SessionSummary): SessionMeta {
   };
 }
 
-/**
- * Read only the immutable header and bounded tail for picker metadata.
- *
- * `needs_full_replay` means there is no current checkpoint; it is deliberately distinct from a
- * missing file. A state checkpoint is current only when it is also the final complete event, so
- * durable suffix events cannot be hidden from the picker.
- */
-export async function readV2SessionMetaFast(
+export async function readV3SessionMetaFast(
   workspaceRoot: string,
   sessionId: string,
   paths: SessionStoragePaths,
 ): Promise<SessionReadResult<SessionMeta> | { kind: "needs_full_replay" }> {
-  const routed = v2Paths(paths);
+  const routed = v3Paths(paths);
   try {
     const [meta, state, lastEvent, fileStat] = await Promise.all([
       readSessionMetaLine(workspaceRoot, sessionId, routed),
       findLatestSessionStateFromTail(workspaceRoot, sessionId, routed),
       findLastEvent(workspaceRoot, sessionId, routed),
-      fs.promises.stat(resolveV2SessionPath(workspaceRoot, sessionId, paths)),
+      fs.promises.stat(resolveV3SessionPath(workspaceRoot, sessionId, routed)),
     ]);
-    if (!state || lastEvent?.seq !== state.event.seq) {
-      return { kind: "needs_full_replay" };
-    }
+    if (!state || lastEvent?.seq !== state.event.seq) return { kind: "needs_full_replay" };
     return {
       kind: "found",
       value: sessionMetaFromSummary(
@@ -71,17 +62,16 @@ export async function readV2SessionMetaFast(
   }
 }
 
-/** Full summary replay used when a V2 file has no current bounded state checkpoint. */
-export async function readV2SessionMetaFull(
+export async function readV3SessionMetaFull(
   workspaceRoot: string,
   sessionId: string,
   paths: SessionStoragePaths,
 ): Promise<SessionReadResult<SessionMeta>> {
-  const routed = v2Paths(paths);
+  const routed = v3Paths(paths);
   try {
     const stored = await readSessionEvents(workspaceRoot, sessionId, routed);
     const replay = prepareSessionReplay(stored.events);
-    const fileStat = await fs.promises.stat(resolveV2SessionPath(workspaceRoot, sessionId, paths));
+    const fileStat = await fs.promises.stat(resolveV3SessionPath(workspaceRoot, sessionId, routed));
     return {
       kind: "found",
       value: sessionMetaFromSummary(
@@ -93,17 +83,16 @@ export async function readV2SessionMetaFull(
   }
 }
 
-/** Strict full V2 load for resume, including active-context and transcript projections. */
-export async function readV2Session(
+export async function readV3Session(
   workspaceRoot: string,
   sessionId: string,
   paths: SessionStoragePaths = {},
 ): Promise<SessionReadResult<SessionRecord>> {
-  const routed = v2Paths(paths);
+  const routed = v3Paths(paths);
   try {
     const stored = await readSessionEvents(workspaceRoot, sessionId, routed);
     const replay = prepareSessionReplay(stored.events);
-    const fileStat = await fs.promises.stat(resolveV2SessionPath(workspaceRoot, sessionId, paths));
+    const fileStat = await fs.promises.stat(resolveV3SessionPath(workspaceRoot, sessionId, routed));
     const summary = projectSessionSummary(stored.meta, replay, { mtimeMs: fileStat.mtimeMs });
     const warnings = stored.events.some(
       (event) =>
