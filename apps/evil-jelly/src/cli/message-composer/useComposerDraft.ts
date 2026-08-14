@@ -7,10 +7,12 @@ import {
   promptTokens,
   type SkillPromptToken,
 } from "../../shared/model/prompt/promptDocument";
-import type { PromptAttachment } from "../../shared/model/prompt/promptInput";
 import {
   concatenatePromptInputs,
+  type PromptAttachment,
+  type PromptInput,
   promptInputCommandText,
+  textPromptInput,
 } from "../../shared/model/prompt/promptInput";
 import { defaultPromptTokenDisplayText } from "./editor/document/promptDocument";
 import type { TextBuffer } from "./editor/document/textBuffer";
@@ -50,6 +52,18 @@ function referencedAttachments(
     const attachment = byId.get(token.attachmentId);
     return attachment ? [attachment] : [];
   });
+}
+
+/** Route a palette selection through the same local-or-router boundary as typed commands. */
+export function dispatchSelectedCommand(
+  command: string,
+  onCommand: (text: string) => boolean,
+  submitLine: (input: PromptInput) => void,
+): "handled" | "submitted" {
+  const normalized = command.trim();
+  if (onCommand(normalized)) return "handled";
+  submitLine(textPromptInput(normalized));
+  return "submitted";
 }
 
 /** Owns one editable semantic draft and transfers its PromptInput atomically on submit. */
@@ -190,11 +204,13 @@ export function useComposerDraft({
 
   const submitCommand = useCallback(
     (command: string) => {
-      if (onCommand(command.trim())) {
+      if (dispatchSelectedCommand(command, onCommand, submitLine) === "handled") {
         clear();
+        return;
       }
+      resetAfterTransfer();
     },
-    [clear, onCommand],
+    [clear, onCommand, resetAfterTransfer, submitLine],
   );
 
   useEffect(() => {
