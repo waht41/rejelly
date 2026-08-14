@@ -2,6 +2,7 @@ import type { ModelAdapter } from "@rejelly/core";
 import { loadMockReplayFromTraceId } from "../../../features/replay/mock/mockFromTrace";
 import { env, exitIfMissingOpenAIKey } from "../../../shared/configuration/env";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
+import { textPromptInput } from "../../../shared/model/prompt/promptInput";
 import { enqueueMainInput } from "../../submission-dispatch/mainInputQueue";
 import type { RunStartupArgs } from "./args";
 import { runHeadless } from "./headless/runHeadless";
@@ -70,7 +71,7 @@ export async function runUnified(options: RunUnifiedOptions): Promise<void> {
     );
     if (startup.kind === "mock" && startup.enqueueTraceInputs) {
       for (const input of mockReplay.inputs) {
-        enqueueMainInput({ text: input });
+        enqueueMainInput(textPromptInput(input));
       }
       bindings.logSystemEvent(
         mockReplay.inputs.length > 0

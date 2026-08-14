@@ -4,6 +4,7 @@ import { SKILL_RUNTIME_PROVIDER_KEY } from "../../../../domains/skills/agent/ski
 import { UnifiedAgent } from "../../../../features/unified/UnifiedAgent";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 import { setBinding } from "../../../../shared/host/context";
+import { textPromptInput } from "../../../../shared/model/prompt/promptInput";
 import { buildSkillAwareUserMessage } from "../../../message-composer/message-materialization/skillAwareUserMessage";
 import { runWithReview } from "../../../runtime/runWithReview";
 import { generateTraceId } from "../../../runtime/traceId";
@@ -39,7 +40,7 @@ export async function runHeadless(
       run: async () => {
         await setBinding(bindings);
         const message = await buildSkillAwareUserMessage(
-          { text: userInput },
+          textPromptInput(userInput),
           skillRuntime.snapshot,
         );
         bindings.logUserMessage(userInput);

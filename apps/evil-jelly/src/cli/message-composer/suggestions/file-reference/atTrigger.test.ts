@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeAtTrigger, extractAtQuery, replaceAtToken } from "./atTrigger";
+import { activeAtTrigger, extractAtQuery, removeActiveAtTrigger } from "./atTrigger";
 
 describe("extractAtQuery", () => {
   it("returns the token being typed at the caret", () => {
@@ -31,23 +31,9 @@ describe("extractAtQuery", () => {
   });
 });
 
-describe("replaceAtToken", () => {
-  it("replaces the active token with a closed @ref and trailing space", () => {
-    expect(replaceAtToken({ text: "see @src/fo", cursor: 11 }, ["src/foo.ts"])).toEqual({
-      text: "see @src/foo.ts ",
-      cursor: 16,
-    });
-  });
-
-  it("keeps following text and does not double the separator", () => {
-    expect(replaceAtToken({ text: "@a end", cursor: 2 }, ["x.ts"])).toEqual({
-      text: "@x.ts end",
-      cursor: 5,
-    });
-  });
-
-  it("removes the token when given no paths", () => {
-    expect(replaceAtToken({ text: "hi @foo", cursor: 7 }, [])).toEqual({
+describe("removeActiveAtTrigger", () => {
+  it("removes the unfinished text trigger", () => {
+    expect(removeActiveAtTrigger({ text: "hi @foo", cursor: 7 })).toEqual({
       text: "hi ",
       cursor: 3,
     });

@@ -1,14 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { UserSkillListItem } from "../../../../shared/host/inputBindings";
-import { projectPromptDocument } from "../../editor/document/promptDocument";
 import {
   activeSkillTrigger,
   extractSkillQuery,
-  hydrateSkillTokens,
-  replaceSkillToken,
+  removeActiveSkillTrigger,
   skillReferenceName,
-  skillReferencesFromDocument,
-  skillReferencesPresentInText,
+  skillTokensFromDocument,
 } from "./skillTrigger";
 
 const catalog: UserSkillListItem[] = [
@@ -65,29 +62,21 @@ describe("Skill $ trigger", () => {
     expect(skillReferenceName(duplicate, [...catalog, duplicate])).toBe("user:review");
   });
 
-  it("replaces the active token with a visible qualified marker", () => {
-    expect(replaceSkillToken({ text: "use $rev", cursor: 8 }, ["project:review"])).toEqual({
-      text: "use $project:review ",
-      cursor: 20,
+  it("removes an unfinished text trigger without creating a fake Skill marker", () => {
+    expect(removeActiveSkillTrigger({ text: "use $rev", cursor: 8 })).toEqual({
+      text: "use ",
+      cursor: 4,
     });
   });
 
-  it("reconciles only references that were already selected", () => {
-    const selected = [{ qualifiedName: "project:review" }, { qualifiedName: "user:test" }];
-    expect(
-      skillReferencesPresentInText("$project:review inspect $HOME and $unknown", selected),
-    ).toEqual([{ qualifiedName: "project:review" }]);
-    expect(skillReferencesPresentInText("$project:reviewer", selected)).toEqual([]);
-  });
-
-  it("hydrates semantic tokens from a restored draft and canonical references", () => {
-    const document = hydrateSkillTokens(
-      "use $project:review now",
-      [{ qualifiedName: "project:review" }],
-      () => "review",
-    );
-
-    expect(projectPromptDocument(document, () => "$review").text).toBe("use $review now");
-    expect(skillReferencesFromDocument(document)).toEqual([{ qualifiedName: "project:review" }]);
+  it("derives unique selected Skill tokens directly from the document", () => {
+    const token = {
+      type: "token" as const,
+      kind: "skill" as const,
+      qualifiedName: "project:review",
+    };
+    expect(skillTokensFromDocument([token, { type: "text", text: " $HOME " }, token])).toEqual([
+      token,
+    ]);
   });
 });

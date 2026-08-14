@@ -13,6 +13,7 @@ import { COMPACTION_STREAM_CHANNEL } from "../../domains/policy/compactionChanne
 import type { EvilJellyBindings } from "../../shared/host/bindings";
 import { setBinding } from "../../shared/host/context";
 import type { RuntimePhase } from "../../shared/host/presentationBindings";
+import { textPromptInput } from "../../shared/model/prompt/promptInput";
 import {
   phaseForStreamEvent,
   type StreamTurnProgress,
@@ -25,7 +26,7 @@ function createTestBindings(
   rounds: number[] = [],
 ): EvilJellyBindings {
   return {
-    getInput: async () => ({ text: "" }),
+    getInput: async () => textPromptInput(""),
     printOut: (message) => output.push(message),
     logUserMessage: () => {},
     logAssistantMessage: () => {},

@@ -15,6 +15,7 @@ import { isCompactionBridgeMessage } from "../../../../shared/conversation/compa
 import { setWorkspaceRoot } from "../../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 import { messageContentToText } from "../../../../shared/model/message/content";
+import { textPromptInput } from "../../../../shared/model/prompt/promptInput";
 import type { TranscriptItem } from "../../../../shared/session/transcript";
 import { createInteractiveRunControl } from "./runControl";
 import { runEvilJellyHost } from "./runSegment";
@@ -38,7 +39,7 @@ function createMemoryBindings(inputs: Array<string | MemoryInput>): EvilJellyBin
   return {
     getInput: async () => {
       const input = queue.shift() ?? "/exit";
-      return typeof input === "string" ? { text: input, attachments: [] } : input;
+      return typeof input === "string" ? textPromptInput(input) : input;
     },
     printOut: () => undefined,
     logUserMessage: () => undefined,
@@ -448,12 +449,24 @@ describe("non-TTY session lifecycle", () => {
     await runEvilJellyHost(
       createMemoryBindings([
         {
-          text: "Compare these screenshots",
-          attachments: sourcePaths.map((sourcePath) => ({
-            type: "image" as const,
+          document: [
+            { type: "text" as const, text: "Compare these screenshots " },
+            ...sourcePaths.flatMap((_, index) => [
+              ...(index > 0 ? [{ type: "text" as const, text: " " }] : []),
+              {
+                type: "token" as const,
+                kind: "image" as const,
+                attachmentId: `image-${index + 1}`,
+              },
+            ]),
+          ],
+          attachments: sourcePaths.map((sourcePath, index) => ({
+            id: `image-${index + 1}`,
+            kind: "image" as const,
             path: sourcePath,
             mimeType: "image/png" as const,
             detail: "auto" as const,
+            ownership: "borrowed" as const,
           })),
         },
         "/exit",
@@ -489,7 +502,7 @@ describe("non-TTY session lifecycle", () => {
     );
     expect(firstTranscriptUser).toMatchObject({
       type: "user",
-      content: "Compare these screenshots",
+      content: "Compare these screenshots [Image #1] [Image #2] [Image #3] [Image #4] [Image #5]",
       images: [
         { blobRef: expect.stringMatching(/^rejelly-blob:\/\/[a-f0-9]{64}$/) },
         { blobRef: expect.stringMatching(/^rejelly-blob:\/\/[a-f0-9]{64}$/) },

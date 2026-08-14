@@ -1,33 +1,36 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { UserSkillReference } from "../../shared/host/inputBindings";
+import { randomUUID } from "node:crypto";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  normalizePromptDocument,
   type PromptDocument,
   type PromptToken,
   promptTokens,
+  type SkillPromptToken,
 } from "../../shared/model/prompt/promptDocument";
 import type { PromptAttachment } from "../../shared/model/prompt/promptInput";
+import {
+  concatenatePromptInputs,
+  promptInputCommandText,
+} from "../../shared/model/prompt/promptInput";
 import { defaultPromptTokenDisplayText } from "./editor/document/promptDocument";
 import type { TextBuffer } from "./editor/document/textBuffer";
 import { useTextBuffer } from "./editor/document/textBuffer";
 import { useCollapsedPaste } from "./editor/paste/useCollapsedPaste";
-import { hydrateLegacyAttachments, materializeLegacyPromptInput } from "./legacyPromptInput";
 import type { SkillPickerItem } from "./session/composerSession";
 import { useComposerSession } from "./session/composerSession";
 import {
-  hydrateSkillTokens,
   selectedSkillReferenceName,
-  skillReferencesFromDocument,
+  skillTokensFromDocument,
 } from "./suggestions/skill-reference/skillTrigger";
 
 export interface ComposerDraft {
   buffer: TextBuffer;
   selectedFiles: string[];
-  selectedSkills: UserSkillReference[];
+  selectedSkills: SkillPromptToken[];
   availableSkills: SkillPickerItem[];
   attachFile: (path: string, start: number, end: number) => void;
   clear: () => void;
-  submitText: (text: string) => void;
+  submit: () => void;
+  submitCommand: (command: string) => void;
   attachImage: (path: string) => void;
   handleTextPaste: (text: string) => boolean;
   hasCollapsedPaste: boolean;
@@ -61,8 +64,7 @@ export function useComposerDraft({
   const draftSeed = useComposerSession((state) => state.draftSeed);
   const clearDraftSeed = useComposerSession((state) => state.clearDraftSeed);
   const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
-  const nextAttachmentIdRef = useRef(1);
-  const createAttachmentId = useCallback(() => `attachment-${nextAttachmentIdRef.current++}`, []);
+  const createAttachmentId = useCallback(() => `attachment-${randomUUID()}`, []);
   const tokenDisplayText = useCallback(
     (token: PromptToken, document: PromptDocument): string => {
       if (token.kind === "skill") {
@@ -82,10 +84,7 @@ export function useComposerDraft({
   );
   const buffer = useTextBuffer("", tokenDisplayText);
   const collapsedPaste = useCollapsedPaste(buffer);
-  const selectedSkills = useMemo(
-    () => skillReferencesFromDocument(buffer.document),
-    [buffer.document],
-  );
+  const selectedSkills = useMemo(() => skillTokensFromDocument(buffer.document), [buffer.document]);
   const liveAttachments = useMemo(
     () => referencedAttachments(buffer.document, attachments),
     [attachments, buffer.document],
@@ -107,7 +106,6 @@ export function useComposerDraft({
     buffer.reset();
     setAttachments([]);
     collapsedPaste.reset();
-    nextAttachmentIdRef.current = 1;
   }, [buffer.reset, collapsedPaste.reset]);
 
   const attachFile = useCallback(
@@ -147,25 +145,26 @@ export function useComposerDraft({
     [buffer.cursor, buffer.replaceDisplayRange, createAttachmentId],
   );
 
-  const submitText = useCallback(
-    (text: string) => {
-      if (onCommand(text.trim())) {
-        clear();
-        return;
-      }
-      const live = referencedAttachments(buffer.document, attachments);
-      const legacyInput = materializeLegacyPromptInput(
-        { document: buffer.document, attachments: live },
-        tokenDisplayText,
-      );
-      submitLine({
-        ...legacyInput,
-        text: legacyInput.text.trim(),
-        ...(selectedSkills.length > 0 ? { skills: selectedSkills } : {}),
-      });
+  const submit = useCallback(() => {
+    const command = promptInputCommandText({
+      document: buffer.document,
+      attachments: liveAttachments,
+    })?.trim();
+    if (command && onCommand(command)) {
       clear();
+      return;
+    }
+    submitLine({ document: buffer.document, attachments: liveAttachments });
+    clear();
+  }, [buffer.document, clear, liveAttachments, onCommand, submitLine]);
+
+  const submitCommand = useCallback(
+    (command: string) => {
+      if (onCommand(command.trim())) {
+        clear();
+      }
     },
-    [attachments, buffer.document, clear, onCommand, selectedSkills, submitLine, tokenDisplayText],
+    [clear, onCommand],
   );
 
   useEffect(() => {
@@ -174,34 +173,17 @@ export function useComposerDraft({
 
   useEffect(() => {
     if (!draftSeed) return;
-    const seedSkills = draftSeed.value.skills ?? [];
-    const skillDocument = hydrateSkillTokens(draftSeed.value.text.trim(), seedSkills, (reference) =>
-      selectedSkillReferenceName(reference, availableSkills),
-    );
-    const hydrated = hydrateLegacyAttachments(
-      skillDocument,
-      draftSeed.value.attachments ?? [],
-      createAttachmentId,
-    );
-    const document = normalizePromptDocument([
-      ...hydrated.document,
-      ...(hydrated.document.length > 0 && buffer.document.length > 0
-        ? [{ type: "text" as const, text: "\n" }]
-        : []),
-      ...buffer.document,
+    const merged = concatenatePromptInputs([
+      draftSeed.value,
+      {
+        document: buffer.document,
+        attachments: referencedAttachments(buffer.document, attachments),
+      },
     ]);
-    setAttachments([...hydrated.attachments, ...attachments]);
-    buffer.setDocument(document);
+    setAttachments([...merged.attachments]);
+    buffer.setDocument(merged.document);
     clearDraftSeed(draftSeed.id);
-  }, [
-    attachments,
-    availableSkills,
-    buffer.document,
-    buffer.setDocument,
-    clearDraftSeed,
-    createAttachmentId,
-    draftSeed,
-  ]);
+  }, [attachments, buffer.document, buffer.setDocument, clearDraftSeed, draftSeed]);
 
   return {
     buffer,
@@ -210,7 +192,8 @@ export function useComposerDraft({
     availableSkills,
     attachFile,
     clear,
-    submitText,
+    submit,
+    submitCommand,
     attachImage,
     handleTextPaste: collapsedPaste.handlePaste,
     hasCollapsedPaste: collapsedPaste.hasCollapsedPaste,

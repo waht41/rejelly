@@ -4,6 +4,7 @@ import { createSkillCatalog } from "../../../domains/skills/catalog/skillCatalog
 import type { SkillRecord } from "../../../domains/skills/definition/skillDefinition";
 import { skillOrigin } from "../../../domains/skills/definition/skillDefinition";
 import { getUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
+import { textPromptInput } from "../../../shared/model/prompt/promptInput";
 import {
   buildSkillAwareUserMessage,
   renderExplicitSkillContext,
@@ -34,12 +35,7 @@ describe("explicit Skill references", () => {
     const runtime = snapshot([review, test]);
 
     expect(
-      resolveExplicitSkills(runtime, [
-        { qualifiedName: "user:test" },
-        { qualifiedName: "project:review" },
-        { qualifiedName: "user:test" },
-        { qualifiedName: "missing" },
-      ]),
+      resolveExplicitSkills(runtime, ["user:test", "project:review", "user:test", "missing"]),
     ).toEqual([test, review]);
   });
 
@@ -53,8 +49,11 @@ describe("explicit Skill references", () => {
   it("injects instructions while keeping the user-facing display clean", async () => {
     const message = await buildSkillAwareUserMessage(
       {
-        text: "$project:review inspect this",
-        skills: [{ qualifiedName: "project:review" }],
+        document: [
+          { type: "token", kind: "skill", qualifiedName: "project:review" },
+          { type: "text", text: " inspect this" },
+        ],
+        attachments: [],
       },
       snapshot([record("review")]),
     );
@@ -68,7 +67,7 @@ describe("explicit Skill references", () => {
 
   it("does not infer ordinary dollar-prefixed text", async () => {
     const message = await buildSkillAwareUserMessage(
-      { text: "echo $HOME and $project:review" },
+      textPromptInput("echo $HOME and $project:review"),
       snapshot([record("review")]),
     );
     expect(message.content).toBe("echo $HOME and $project:review");

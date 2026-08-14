@@ -54,6 +54,62 @@ export function normalizePromptInput(input: PromptInput): PromptInput {
   return { document: normalizePromptDocument(input.document), attachments: input.attachments };
 }
 
+/** Snapshot immutable prompt data when ownership crosses an async queue/store boundary. */
+export function copyPromptInput(input: PromptInput): PromptInput {
+  assertValidPromptInput(input);
+  return {
+    document: input.document.map((node) => ({ ...node })),
+    attachments: input.attachments.map((attachment) => ({ ...attachment })),
+  };
+}
+
+function uniqueAttachmentId(id: string, inputIndex: number, used: Set<string>): string {
+  if (!used.has(id)) return id;
+  let suffix = 1;
+  let candidate = `${id}:${inputIndex}:${suffix}`;
+  while (used.has(candidate)) {
+    suffix += 1;
+    candidate = `${id}:${inputIndex}:${suffix}`;
+  }
+  return candidate;
+}
+
+/** Concatenate rich inputs while preserving node order and repairing attachment-id collisions. */
+export function concatenatePromptInputs(
+  inputs: readonly PromptInput[],
+  separator = "\n",
+): PromptInput {
+  const nodes: PromptNode[] = [];
+  const attachments: PromptAttachment[] = [];
+  const usedIds = new Set<string>();
+
+  for (const [inputIndex, input] of inputs.entries()) {
+    assertValidPromptInput(input);
+    const remappedIds = new Map<string, string>();
+    for (const attachment of input.attachments) {
+      const id = uniqueAttachmentId(attachment.id, inputIndex, usedIds);
+      usedIds.add(id);
+      remappedIds.set(attachment.id, id);
+      attachments.push({ ...attachment, id });
+    }
+    if (nodes.length > 0 && input.document.length > 0 && separator) {
+      nodes.push({ type: "text", text: separator });
+    }
+    nodes.push(
+      ...input.document.map((node): PromptNode => {
+        if (node.type !== "token" || (node.kind !== "file" && node.kind !== "image")) {
+          return { ...node };
+        }
+        return { ...node, attachmentId: remappedIds.get(node.attachmentId) ?? node.attachmentId };
+      }),
+    );
+  }
+
+  const merged = { document: normalizePromptDocument(nodes), attachments };
+  assertValidPromptInput(merged);
+  return merged;
+}
+
 export function isPromptInputSemanticallyEmpty(input: PromptInput): boolean {
   return isPromptDocumentSemanticallyEmpty(input.document);
 }

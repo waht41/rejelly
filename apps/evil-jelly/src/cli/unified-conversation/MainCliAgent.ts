@@ -29,8 +29,13 @@ import { countConversationTurns } from "../../shared/conversation/compactionMess
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../shared/host/bindings";
 import { getBinding, setBinding } from "../../shared/host/context";
-import type { LineInputValue } from "../../shared/host/inputBindings";
 import { getUserInputDisplay } from "../../shared/model/message/userInputMetadata";
+import {
+  isPromptInputSemanticallyEmpty,
+  type PromptInput,
+  promptInputCommandText,
+  promptInputPlainText,
+} from "../../shared/model/prompt/promptInput";
 import { formatUserInputDisplay } from "../conversation-display/history/userInputDisplay";
 import {
   formatSessionStatus,
@@ -134,7 +139,7 @@ type RouterIntent =
   | { kind: "status" }
   | { kind: "compress" }
   | { kind: "resume"; rawInput: string }
-  | { kind: "message"; lineInput: LineInputValue; userInput: string };
+  | { kind: "message"; promptInput: PromptInput; userInput: string };
 
 interface RouterRuntime {
   props: MainCliAgentProps;
@@ -151,12 +156,12 @@ function createTurnId(): string {
   return randomBytes(12).toString("base64url");
 }
 
-function classifyRouterIntent(lineInput: LineInputValue): RouterIntent {
-  const userInput = lineInput.text.trim();
-  if (!userInput) {
+function classifyRouterIntent(promptInput: PromptInput): RouterIntent {
+  if (isPromptInputSemanticallyEmpty(promptInput)) {
     return { kind: "empty" };
   }
-  const normalized = userInput.toLowerCase();
+  const commandText = promptInputCommandText(promptInput)?.trim();
+  const normalized = commandText?.toLowerCase();
   if (normalized === "/exit" || normalized === "exit") {
     return { kind: "exit" };
   }
@@ -169,10 +174,10 @@ function classifyRouterIntent(lineInput: LineInputValue): RouterIntent {
   if (normalized === "/compress") {
     return { kind: "compress" };
   }
-  if (normalized === "/resume" || normalized.startsWith("/resume ")) {
-    return { kind: "resume", rawInput: userInput };
+  if (normalized === "/resume" || normalized?.startsWith("/resume ")) {
+    return { kind: "resume", rawInput: commandText! };
   }
-  return { kind: "message", lineInput, userInput };
+  return { kind: "message", promptInput, userInput: promptInputPlainText(promptInput).trim() };
 }
 
 async function handleExit(runtime: RouterRuntime): Promise<void> {
@@ -254,7 +259,7 @@ async function drainAndPrepareSteerMessages(runtime: RouterRuntime): Promise<Mes
   const messages: Message[] = [];
   for (const input of drainSteers()) {
     const message = await buildSkillAwareUserMessage(input, runtime.skillSnapshot);
-    runtime.host.logUserMessage(displayPreparedUserMessage(message, input.text));
+    runtime.host.logUserMessage(displayPreparedUserMessage(message, promptInputPlainText(input)));
     messages.push(message);
   }
   return messages;
@@ -304,7 +309,7 @@ async function closeTurnAfterFailure(
 
 async function runConversationTurn(
   runtime: RouterRuntime,
-  lineInput: LineInputValue,
+  promptInput: PromptInput,
   userInput: string,
 ): Promise<void> {
   let submittedUserMessage: Message | undefined;
@@ -313,7 +318,7 @@ async function runConversationTurn(
   let turnClosureAttempted = false;
 
   try {
-    submittedUserMessage = await buildSkillAwareUserMessage(lineInput, runtime.skillSnapshot);
+    submittedUserMessage = await buildSkillAwareUserMessage(promptInput, runtime.skillSnapshot);
     runtime.host.logUserMessage(displayPreparedUserMessage(submittedUserMessage, userInput));
     activeTurnId = createTurnId();
     // The session layer marks the turn start here (inputKind: "initial"); the status line's
@@ -478,7 +483,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
           }
           return reborn();
         case "message":
-          await runConversationTurn(runtime, intent.lineInput, intent.userInput);
+          await runConversationTurn(runtime, intent.promptInput, intent.userInput);
           return reborn();
       }
     } catch (error) {

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import type { LineInputValue } from "../../shared/host/inputBindings";
+import { type PromptInput, textPromptInput } from "../../shared/model/prompt/promptInput";
 import {
   createSubmissionDispatcher,
   resetSubmissionDispatch,
@@ -8,7 +8,7 @@ import {
 import { enqueueSteer } from "./steerQueue";
 
 function createPorts() {
-  const restored: LineInputValue[] = [];
+  const restored: PromptInput[] = [];
   const logs: string[] = [];
   const phases: string[] = [];
   const exits: string[] = [];
@@ -35,35 +35,29 @@ describe("submission dispatcher", () => {
     const dispatcher = createSubmissionDispatcher(ports);
     const pending = dispatcher.getInput();
 
-    dispatcher.submit({ text: "hello", attachments: [] });
+    dispatcher.submit(textPromptInput("hello"));
 
-    await expect(pending).resolves.toEqual({ text: "hello", attachments: [] });
+    await expect(pending).resolves.toEqual(textPromptInput("hello"));
   });
 
   it("buffers working submissions as ordered steers and carries them into main input", async () => {
     const { ports } = createPorts();
     const dispatcher = createSubmissionDispatcher(ports);
-    dispatcher.submit({ text: "first steer", attachments: [] });
-    dispatcher.submit({ text: "second steer", attachments: [] });
+    dispatcher.submit(textPromptInput("first steer"));
+    dispatcher.submit(textPromptInput("second steer"));
 
-    await expect(dispatcher.getInput()).resolves.toEqual({
-      text: "first steer",
-      attachments: [],
-    });
-    await expect(dispatcher.getInput()).resolves.toEqual({
-      text: "second steer",
-      attachments: [],
-    });
+    await expect(dispatcher.getInput()).resolves.toEqual(textPromptInput("first steer"));
+    await expect(dispatcher.getInput()).resolves.toEqual(textPromptInput("second steer"));
   });
 
   it("restores buffered steers and interrupts on stop", () => {
     const { ports, restored, logs } = createPorts();
     const dispatcher = createSubmissionDispatcher(ports);
-    enqueueSteer({ text: "queued steer" });
+    enqueueSteer(textPromptInput("queued steer"));
 
-    dispatcher.submit({ text: "/stop" });
+    dispatcher.submit(textPromptInput("/stop"));
 
-    expect(restored).toEqual([{ text: "queued steer", attachments: [] }]);
+    expect(restored).toEqual([textPromptInput("queued steer")]);
     expect(logs).toEqual(["interrupted"]);
   });
 
@@ -71,20 +65,78 @@ describe("submission dispatcher", () => {
     const { ports, exits, aborts } = createPorts();
     const dispatcher = createSubmissionDispatcher(ports);
 
-    dispatcher.submit({ text: "/exit" });
+    dispatcher.submit(textPromptInput("/exit"));
 
     expect(exits).toEqual(["exit"]);
     expect(aborts).toEqual(["Stopped by user (exit)"]);
+  });
+
+  it("does not route a rich document as a local command", async () => {
+    const { ports, logs } = createPorts();
+    const dispatcher = createSubmissionDispatcher(ports);
+    const rich: PromptInput = {
+      document: [
+        { type: "text", text: "/stop " },
+        { type: "token", kind: "paste", text: "payload" },
+      ],
+      attachments: [],
+    };
+
+    dispatcher.submit(rich);
+
+    await expect(dispatcher.getInput()).resolves.toEqual(rich);
+    expect(logs).toEqual([]);
   });
 
   it("cancels a pending input and restores queued steers", async () => {
     const { ports, restored } = createPorts();
     const dispatcher = createSubmissionDispatcher(ports);
     const pending = dispatcher.getInput();
-    enqueueSteer({ text: "queued steer" });
+    enqueueSteer(textPromptInput("queued steer"));
 
     expect(dispatcher.cancel("cancelled")).toBe(true);
     await expect(pending).rejects.toMatchObject({ name: "AbortError", message: "cancelled" });
-    expect(restored).toEqual([{ text: "queued steer", attachments: [] }]);
+    expect(restored).toEqual([textPromptInput("queued steer")]);
+  });
+
+  it("restores queued rich inputs without flattening paste or attachment tokens", () => {
+    const { ports, restored } = createPorts();
+    const dispatcher = createSubmissionDispatcher(ports);
+    const rich: PromptInput = {
+      document: [
+        { type: "token", kind: "paste", text: "one\ntwo\nthree\nfour\nfive\nsix" },
+        { type: "text", text: " " },
+        { type: "token", kind: "file", attachmentId: "file-1" },
+      ],
+      attachments: [{ id: "file-1", kind: "file", path: "src/a.ts" }],
+    };
+    enqueueSteer(rich);
+
+    dispatcher.submit(textPromptInput("/stop"));
+
+    expect(restored).toEqual([rich]);
+  });
+
+  it("remaps colliding attachment ids when multiple rich steers become one draft", () => {
+    const { ports, restored } = createPorts();
+    const dispatcher = createSubmissionDispatcher(ports);
+    const steer = (path: string): PromptInput => ({
+      document: [{ type: "token", kind: "file", attachmentId: "file-1" }],
+      attachments: [{ id: "file-1", kind: "file", path }],
+    });
+    enqueueSteer(steer("src/a.ts"));
+    enqueueSteer(steer("src/b.ts"));
+
+    dispatcher.submit(textPromptInput("/stop"));
+
+    expect(restored[0]?.document).toEqual([
+      { type: "token", kind: "file", attachmentId: "file-1" },
+      { type: "text", text: "\n" },
+      { type: "token", kind: "file", attachmentId: "file-1:1:1" },
+    ]);
+    expect(restored[0]?.attachments.map((attachment) => attachment.id)).toEqual([
+      "file-1",
+      "file-1:1:1",
+    ]);
   });
 });

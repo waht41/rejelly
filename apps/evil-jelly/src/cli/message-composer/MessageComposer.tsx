@@ -30,6 +30,7 @@
 
 import { Box, Text, useStdout } from "ink";
 import { useEffect, useRef, useState } from "react";
+import { promptDocumentCommandText } from "../../shared/model/prompt/promptDocument";
 import { BufferView } from "./editor/BufferView";
 import { useLineKeybindings } from "./editor/keyboard/useLineKeybindings";
 import { usePromptLayout } from "./editor/usePromptLayout";
@@ -99,16 +100,17 @@ export function MessageComposer({
     draft.clear();
   };
 
-  const submitText = (text: string) => {
+  const submitCommand = (text: string) => {
     setClipboardImageStatus(null);
-    draft.submitText(text);
+    draft.submitCommand(text);
   };
 
+  const commandText = promptDocumentCommandText(buf.document);
   const commandSuggestion = useCommandSuggestion({
-    text: buf.text,
-    cursor: buf.cursor,
-    isMultiline,
-    onSelect: submitText,
+    text: commandText ?? "",
+    cursor: commandText === undefined ? 0 : buf.cursor,
+    isMultiline: commandText === undefined || isMultiline,
+    onSelect: submitCommand,
   });
   const fileSuggestion = useFileReferenceSuggestion({
     buffer: buf,
@@ -127,7 +129,10 @@ export function MessageComposer({
     setClipboardImageStatus(null);
   }, [label]);
 
-  const submit = () => submitText(buf.text);
+  const submit = () => {
+    setClipboardImageStatus(null);
+    draft.submit();
+  };
 
   const attachClipboardImage = () => {
     setClipboardImageStatus("Reading clipboard image...");

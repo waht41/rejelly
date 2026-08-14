@@ -3,8 +3,7 @@ import {
   promptDocumentLogicalLength,
   textPromptDocument,
 } from "../../../../shared/model/prompt/promptDocument";
-import { replaceAtToken } from "../../suggestions/file-reference/atTrigger";
-import { deletePlaceholderOrChar } from "../keyboard/placeholderMotion";
+import { removeActiveAtTrigger } from "../../suggestions/file-reference/atTrigger";
 import { caretCell, verticalCaretTarget, wrapRows } from "../softWrap";
 import {
   defaultPromptTokenDisplayText,
@@ -141,32 +140,17 @@ describe("rich document compatibility transforms", () => {
     expect(deleted.cursor).toBe(1);
   });
 
-  it("preserves semantic tokens while legacy Image placeholders keep their atomic deletion", () => {
-    const withPlaceholder = replacePromptRange(document, 3, 3, [
-      { type: "text", text: "[Image #1]" },
-    ]);
-    const deleted = applyProjectedTransform(
-      { document: withPlaceholder, cursor: 13, caretAffinity: "forward" },
-      deletePlaceholderOrChar,
-      "nearest",
-      displayToken,
-    );
-
-    expect(projectPromptDocument(deleted.document, displayToken).text).toBe("a$reviewb");
-    expect(deleted.cursor).toBe(3);
-  });
-
   it("preserves semantic tokens when a legacy text trigger edits a later range", () => {
     const withAtQuery = replacePromptRange(document, 3, 3, [{ type: "text", text: " @sr" }]);
     const replaced = applyProjectedTransform(
       { document: withAtQuery, cursor: 7, caretAffinity: "forward" },
-      (state) => replaceAtToken(state, ["src"]),
+      removeActiveAtTrigger,
       "nearest",
       displayToken,
     );
 
-    expect(projectPromptDocument(replaced.document, displayToken).text).toBe("a$reviewb @src ");
-    expect(replaced.cursor).toBe(9);
+    expect(projectPromptDocument(replaced.document, displayToken).text).toBe("a$reviewb ");
+    expect(replaced.cursor).toBe(4);
   });
 
   it("keeps a vertical token snap on the target side of a soft-wrap boundary", () => {

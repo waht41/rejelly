@@ -4,30 +4,27 @@ import type { SkillRuntimeSnapshot } from "../../../domains/skills/agent/skillRu
 import { renderSkillToolResult } from "../../../domains/skills/agent/skillToolOutput";
 import type { SkillRecord } from "../../../domains/skills/definition/skillDefinition";
 import { qualifiedSkillName } from "../../../domains/skills/definition/skillDefinition";
-import type { LineInputValue, UserSkillReference } from "../../../shared/host/inputBindings";
-import { appendMessageContentSuffix } from "../../../shared/model/message/content";
+import { promptTokens } from "../../../shared/model/prompt/promptDocument";
+import type { PromptInput } from "../../../shared/model/prompt/promptInput";
 import { renderPseudoXmlElement } from "../../../shared/model/prompt/pseudoXml";
 import { buildUserMessage } from "./userMessage";
 
-/** Resolve only structured, qualified picker selections against the enabled process snapshot. */
+/** Resolve semantic Skill tokens against the enabled process snapshot. */
 export function resolveExplicitSkills(
   snapshot: SkillRuntimeSnapshot | undefined,
-  references: readonly UserSkillReference[] = [],
+  qualifiedNames: readonly string[] = [],
 ): readonly SkillRecord[] {
-  if (!snapshot || references.length === 0) {
-    return [];
-  }
+  if (!snapshot || qualifiedNames.length === 0) return [];
   const seen = new Set<string>();
   const resolved: SkillRecord[] = [];
-  for (const reference of references.slice(0, SKILL_AGENT_LIMITS.explicitSkillsPerTurn)) {
-    const qualifiedName = reference.qualifiedName.trim();
-    if (!qualifiedName.includes(":") || seen.has(qualifiedName)) {
-      continue;
-    }
+  for (const rawQualifiedName of qualifiedNames.slice(
+    0,
+    SKILL_AGENT_LIMITS.explicitSkillsPerTurn,
+  )) {
+    const qualifiedName = rawQualifiedName.trim();
+    if (!qualifiedName.includes(":") || seen.has(qualifiedName)) continue;
     const result = snapshot.catalog.resolve(qualifiedName);
-    if (!result.ok || qualifiedSkillName(result.skill) !== qualifiedName) {
-      continue;
-    }
+    if (!result.ok || qualifiedSkillName(result.skill) !== qualifiedName) continue;
     seen.add(qualifiedName);
     resolved.push(result.skill);
   }
@@ -36,26 +33,25 @@ export function resolveExplicitSkills(
 
 /** Render the Skills that the user explicitly selected for this turn. */
 export function renderExplicitSkillContext(skills: readonly SkillRecord[]): string {
-  if (skills.length === 0) {
-    return "";
-  }
+  if (skills.length === 0) return "";
   return renderPseudoXmlElement("explicit_skills", skills.map(renderSkillToolResult).join("\n"), {
     count: String(skills.length),
   });
 }
 
-/** Build a durable user message whose display stays clean while model context contains the Skills. */
+/** Resolve Skill tokens, then compile all prompt nodes in document order. */
 export async function buildSkillAwareUserMessage(
-  input: Pick<LineInputValue, "text" | "attachments" | "skills">,
+  input: PromptInput,
   snapshot: SkillRuntimeSnapshot | undefined,
 ): Promise<Message> {
-  const skills = resolveExplicitSkills(snapshot, input.skills);
-  const message = await buildUserMessage({
-    userInput: input.text,
-    attachments: input.attachments,
+  const skills = resolveExplicitSkills(
+    snapshot,
+    promptTokens(input.document, "skill").map((token) => token.qualifiedName),
+  );
+  const contextByName = new Map(
+    skills.map((skill) => [qualifiedSkillName(skill), renderExplicitSkillContext([skill])]),
+  );
+  return buildUserMessage(input, {
+    skillContext: (qualifiedName) => contextByName.get(qualifiedName) ?? "",
   });
-  const context = renderExplicitSkillContext(skills);
-  return context
-    ? { ...message, content: appendMessageContentSuffix(message.content, context) }
-    : message;
 }

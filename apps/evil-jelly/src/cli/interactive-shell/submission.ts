@@ -1,4 +1,4 @@
-import type { LineInputValue } from "../../shared/host/inputBindings";
+import type { PromptInput } from "../../shared/model/prompt/promptInput";
 import {
   interruptActiveTask,
   type TaskInterruptionResult,
@@ -29,7 +29,7 @@ export function createInteractiveSubmission(
       interruptTask: (reason) => formatTaskInterruption(interruptActiveTask(reason)),
       requestExit: control.requestExit,
       requestRunAbort: control.requestRunAbort,
-      restoreDraft: (draft: LineInputValue) => useComposerSession.getState().seedDraft(draft),
+      restoreDraft: (draft: PromptInput) => useComposerSession.getState().seedDraft(draft),
       logSystem: (message) => useOutputStore.getState().logSystem(message),
       setInputPhase: (phase) =>
         phase === "awaiting"

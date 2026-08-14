@@ -8,9 +8,12 @@ describe("composer session bridge", () => {
     const received: unknown[] = [];
     useComposerSession.getState().setBackgroundLineHandler((value) => received.push(value));
     const input = {
-      text: "inspect this",
-      attachments: [{ type: "file" as const, path: "src/a.ts" }],
-      skills: [{ qualifiedName: "project:review" }],
+      document: [
+        { type: "token" as const, kind: "skill" as const, qualifiedName: "project:review" },
+        { type: "text" as const, text: " inspect " },
+        { type: "token" as const, kind: "file" as const, attachmentId: "file-1" },
+      ],
+      attachments: [{ id: "file-1", kind: "file" as const, path: "src/a.ts" }],
     };
 
     useComposerSession.getState().submitLine(input);

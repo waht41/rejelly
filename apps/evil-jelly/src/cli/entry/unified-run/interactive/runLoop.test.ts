@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { connectMcpProviders } from "../../../../domains/mcp/mcpServerKit";
 import * as sessionStore from "../../../../domains/session/repository/sessionStore";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
+import { textPromptInput } from "../../../../shared/model/prompt/promptInput";
 import { createInteractiveRunControl, type InteractiveRunControl } from "./runControl";
 import { runInteractiveLoop } from "./runLoop";
 import { runEvilJellyHost } from "./runSegment";
@@ -43,7 +44,7 @@ let runControl: InteractiveRunControl;
 function createBindings() {
   const systemEvents: string[] = [];
   const bindings: EvilJellyBindings = {
-    getInput: async () => ({ text: "", attachments: [] }),
+    getInput: async () => textPromptInput(""),
     printOut: () => {},
     logUserMessage: () => {},
     logAssistantMessage: () => {},

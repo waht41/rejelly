@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { TextBuffer } from "../../editor/document/textBuffer";
-import { activeAtTrigger, extractAtQuery, replaceAtToken } from "./atTrigger";
+import { activeAtTrigger, extractAtQuery, removeActiveAtTrigger } from "./atTrigger";
 
 export interface FileReferenceSuggestion {
   query: string | null;
@@ -35,7 +35,7 @@ export function useFileReferenceSuggestion({
     [attachFile, buffer.cursor, buffer.text],
   );
   const dismiss = useCallback(() => {
-    buffer.apply((state) => replaceAtToken(state, []));
+    buffer.apply(removeActiveAtTrigger);
     setQuery(null);
   }, [buffer.apply]);
 

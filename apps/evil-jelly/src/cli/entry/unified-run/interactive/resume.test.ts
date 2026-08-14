@@ -1,6 +1,7 @@
 import type { Message } from "@rejelly/core";
 import { describe, expect, it } from "vitest";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
+import { textPromptInput } from "../../../../shared/model/prompt/promptInput";
 import { buildLegacyResumeSeed, hydrateResumeSeed } from "./resume";
 
 function createBindings() {
@@ -16,7 +17,7 @@ function createBindings() {
     tools: [],
   };
   const bindings: EvilJellyBindings = {
-    getInput: async () => ({ text: "", attachments: [] }),
+    getInput: async () => textPromptInput(""),
     printOut: () => {},
     logUserMessage: (message) => calls.users.push(message),
     logAssistantMessage: (message) => calls.assistants.push(message),

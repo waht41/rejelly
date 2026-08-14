@@ -1,4 +1,11 @@
-import type { LineInputValue } from "../../shared/host/inputBindings";
+import {
+  assertValidPromptInput,
+  isPromptInputSemanticallyEmpty,
+  normalizePromptInput,
+  type PromptInput,
+  promptInputCommandText,
+  textPromptInput,
+} from "../../shared/model/prompt/promptInput";
 import {
   dequeueMainInput,
   enqueueMainInput,
@@ -14,14 +21,14 @@ export interface SubmissionDispatchPorts {
   interruptTask: (reason: string) => string;
   requestExit: () => void;
   requestRunAbort: (reason: string) => boolean;
-  restoreDraft: (draft: LineInputValue) => void;
+  restoreDraft: (draft: PromptInput) => void;
   logSystem: (message: string) => void;
   setInputPhase: (phase: "awaiting" | "working") => void;
 }
 
 export interface SubmissionDispatcher {
-  submit: (input: LineInputValue) => void;
-  getInput: () => Promise<LineInputValue>;
+  submit: (input: PromptInput) => void;
+  getInput: () => Promise<PromptInput>;
   cancel: (reason: string) => boolean;
 }
 
@@ -38,12 +45,10 @@ function abortError(reason: string): Error {
   return error;
 }
 
-function normalizedInput(input: LineInputValue): LineInputValue {
-  return {
-    text: input.text.trim(),
-    attachments: input.attachments,
-    ...(input.skills?.length ? { skills: input.skills } : {}),
-  };
+function normalizedInput(input: PromptInput): PromptInput {
+  const normalized = normalizePromptInput(input);
+  assertValidPromptInput(normalized);
+  return normalized;
 }
 
 function restoreSteers(ports: SubmissionDispatchPorts): number {
@@ -69,10 +74,11 @@ export function createSubmissionDispatcher(
   return {
     submit: (rawInput) => {
       const input = normalizedInput(rawInput);
-      if (!input.text) return;
+      if (isPromptInputSemanticallyEmpty(input)) return;
 
-      const normalized = input.text.toLowerCase();
-      if (normalized === "/stop") {
+      const commandText = promptInputCommandText(input)?.trim();
+      const command = commandText?.toLowerCase();
+      if (command === "/stop") {
         restoreSteers(ports);
         ports.logSystem(ports.interruptTask(USER_STOP_REASON));
         rejectPendingLineInput(abortError(USER_STOP_REASON));
@@ -82,7 +88,7 @@ export function createSubmissionDispatcher(
         enqueueMainInput(input);
         return;
       }
-      if (normalized === "/exit" || normalized === "exit") {
+      if (command === "/exit" || command === "exit") {
         ports.requestExit();
         ports.logSystem("Goodbye.");
         const reason = "Stopped by user (exit)";
@@ -90,8 +96,8 @@ export function createSubmissionDispatcher(
         rejectPendingLineInput(abortError(reason));
         return;
       }
-      if (input.text.startsWith("/")) {
-        ports.logSystem(`${input.text} is not available while the agent is running.`);
+      if (commandText?.startsWith("/")) {
+        ports.logSystem(`${commandText} is not available while the agent is running.`);
         return;
       }
       enqueueSteer(input);
@@ -101,7 +107,7 @@ export function createSubmissionDispatcher(
       if (pendingSeed) {
         pendingSeed = false;
         ports.setInputPhase("working");
-        return { text: (options?.seedLine ?? "").trim() };
+        return textPromptInput((options?.seedLine ?? "").trim());
       }
       const pendingSteers = drainSteers();
       if (pendingSteers.length > 0) {

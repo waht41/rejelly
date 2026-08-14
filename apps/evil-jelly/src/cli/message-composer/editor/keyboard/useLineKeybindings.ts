@@ -14,17 +14,17 @@
 import { type Key, useInput } from "ink";
 import { useRef } from "react";
 import { normalizeNewlines } from "../../../../shared/foundation/string";
-import { cursorRowCol, type TextBuffer } from "../document/textBuffer";
-import { verticalCaretTarget, type WrappedRow } from "../softWrap";
 import {
-  caretLeft,
-  caretRight,
-  caretWordLeft,
-  caretWordRight,
-  deletePlaceholderOrChar,
-  deleteWordLeftAtomic,
-  snapCaretOutOfPlaceholder,
-} from "./placeholderMotion";
+  backspace,
+  cursorRowCol,
+  deleteWordLeft,
+  moveLeft,
+  moveRight,
+  moveWordLeft,
+  moveWordRight,
+  type TextBuffer,
+} from "../document/textBuffer";
+import { verticalCaretTarget, type WrappedRow } from "../softWrap";
 import { looksBinary, stripControlChars } from "./textInput";
 
 // Tab inserts spaces up to the next multiple of this; see the key.tab handler.
@@ -41,18 +41,18 @@ interface MotionBinding {
 const MOTIONS: MotionBinding[] = [
   {
     when: (_i, k) => k.leftArrow,
-    run: (b, k) => b.apply(k.ctrl || k.meta ? caretWordLeft : caretLeft, "left"),
+    run: (b, k) => b.apply(k.ctrl || k.meta ? moveWordLeft : moveLeft, "left"),
   },
   {
     when: (_i, k) => k.rightArrow,
-    run: (b, k) => b.apply(k.ctrl || k.meta ? caretWordRight : caretRight, "right"),
+    run: (b, k) => b.apply(k.ctrl || k.meta ? moveWordRight : moveRight, "right"),
   },
   { when: (_i, k) => k.home, run: (b) => b.moveLineStart() },
   { when: (_i, k) => k.end, run: (b) => b.moveLineEnd() },
   { when: (i, k) => k.ctrl && (i === "a" || i === "A"), run: (b) => b.moveLineStart() },
   { when: (i, k) => k.ctrl && (i === "e" || i === "E"), run: (b) => b.moveLineEnd() },
   { when: (i, k) => k.ctrl && (i === "u" || i === "U"), run: (b) => b.deleteToLineStart() },
-  { when: (i, k) => k.ctrl && (i === "w" || i === "W"), run: (b) => b.apply(deleteWordLeftAtomic) },
+  { when: (i, k) => k.ctrl && (i === "w" || i === "W"), run: (b) => b.apply(deleteWordLeft) },
 ];
 
 export interface LineKeybindingDeps {
@@ -111,17 +111,7 @@ export function useLineKeybindings(deps: LineKeybindingDeps): void {
       );
       if (target) {
         preferredColumnRef.current = target.preferredColumn;
-        const snapped = snapCaretOutOfPlaceholder(
-          { text: buf.text, cursor: target.cursor },
-          "nearest",
-        );
-        const snappedAffinity =
-          snapped.cursor < target.cursor
-            ? "forward"
-            : snapped.cursor > target.cursor
-              ? "backward"
-              : target.affinity;
-        buf.setDisplayCursor(snapped.cursor, "nearest", snappedAffinity);
+        buf.setDisplayCursor(target.cursor, "nearest", target.affinity);
       }
       return;
     }
@@ -184,10 +174,10 @@ export function useLineKeybindings(deps: LineKeybindingDeps): void {
     // both erase the char before the caret (Ctrl/Alt erases the word).
     if (key.backspace || key.delete) {
       if (key.ctrl || key.meta) {
-        buf.apply(deleteWordLeftAtomic);
+        buf.apply(deleteWordLeft);
       } else {
         // Display edits are expanded to a whole semantic token when they touch one.
-        buf.apply(deletePlaceholderOrChar);
+        buf.apply(backspace);
       }
       return;
     }
@@ -207,7 +197,7 @@ export function useLineKeybindings(deps: LineKeybindingDeps): void {
       const normalized = normalizeNewlines(input);
       // Pasting an image (Ctrl+V) dumps garbage bytes here rather than text.
       // Don't corrupt the buffer with it — pull the real image off the OS
-      // clipboard and attach it as an [Image #N] placeholder instead.
+      // clipboard and attach it as an image token instead.
       if (looksBinary(normalized)) {
         attachClipboardImage();
         return;

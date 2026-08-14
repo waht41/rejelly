@@ -8,6 +8,7 @@ import {
 } from "./promptDocument";
 import {
   assertValidPromptInput,
+  copyPromptInput,
   isPromptInputSemanticallyEmpty,
   normalizePromptInput,
   type PromptInput,
@@ -142,5 +143,15 @@ describe("prompt input contract", () => {
       { type: "token", kind: "file", attachmentId: "file-1" },
     ]);
     expect(normalized.attachments).toBe(attachments);
+  });
+
+  it("copies rich input at asynchronous ownership boundaries", () => {
+    const copied = copyPromptInput(richInput);
+
+    expect(copied).toEqual(richInput);
+    expect(copied.document).not.toBe(richInput.document);
+    expect(copied.document[1]).not.toBe(richInput.document[1]);
+    expect(copied.attachments).not.toBe(richInput.attachments);
+    expect(copied.attachments[0]).not.toBe(richInput.attachments[0]);
   });
 });

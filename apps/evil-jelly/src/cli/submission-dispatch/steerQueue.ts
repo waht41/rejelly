@@ -1,14 +1,14 @@
-import type { LineInputValue } from "../../shared/host/inputBindings";
+import {
+  copyPromptInput,
+  isPromptInputSemanticallyEmpty,
+  type PromptInput,
+} from "../../shared/model/prompt/promptInput";
 
-let queuedSteers: LineInputValue[] = [];
-let subscribers: Array<(values: LineInputValue[]) => void> = [];
+let queuedSteers: PromptInput[] = [];
+let subscribers: Array<(values: PromptInput[]) => void> = [];
 
-function snapshot(): LineInputValue[] {
-  return queuedSteers.map((value) => ({
-    text: value.text,
-    attachments: value.attachments ? [...value.attachments] : undefined,
-    ...(value.skills?.length ? { skills: [...value.skills] } : {}),
-  }));
+function snapshot(): PromptInput[] {
+  return queuedSteers.map(copyPromptInput);
 }
 
 function notifySubscribers(): void {
@@ -18,20 +18,13 @@ function notifySubscribers(): void {
   }
 }
 
-export function enqueueSteer(value: LineInputValue): void {
-  const text = value.text.trim();
-  if (!text && (!value.attachments || value.attachments.length === 0)) {
-    return;
-  }
-  queuedSteers.push({
-    text,
-    attachments: value.attachments,
-    ...(value.skills?.length ? { skills: value.skills } : {}),
-  });
+export function enqueueSteer(value: PromptInput): void {
+  if (isPromptInputSemanticallyEmpty(value)) return;
+  queuedSteers.push(copyPromptInput(value));
   notifySubscribers();
 }
 
-export function drainSteers(): LineInputValue[] {
+export function drainSteers(): PromptInput[] {
   const values = queuedSteers;
   queuedSteers = [];
   notifySubscribers();
@@ -43,11 +36,11 @@ export function clearSteers(): void {
   notifySubscribers();
 }
 
-export function getQueuedSteers(): LineInputValue[] {
+export function getQueuedSteers(): PromptInput[] {
   return snapshot();
 }
 
-export function subscribeSteers(subscriber: (values: LineInputValue[]) => void): () => void {
+export function subscribeSteers(subscriber: (values: PromptInput[]) => void): () => void {
   subscribers.push(subscriber);
   subscriber(snapshot());
   return () => {
