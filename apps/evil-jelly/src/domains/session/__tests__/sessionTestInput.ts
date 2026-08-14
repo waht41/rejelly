@@ -1,4 +1,3 @@
-import { createUserInputMetadata } from "../../../shared/model/message/userInputMetadata";
 import { textPromptInput } from "../../../shared/model/prompt/promptInput";
 import type { UserInputMaterializationV1 } from "../../../shared/model/prompt/userInputMaterialization";
 import type { SessionRecorder } from "../recorder/sessionRecorder";
@@ -7,11 +6,7 @@ export function textMaterialization(text: string): UserInputMaterializationV1 {
   const display = { text, attachments: [] };
   return {
     version: 1,
-    message: {
-      role: "user",
-      content: text,
-      extra: { rejelly: createUserInputMetadata(display) },
-    },
+    message: { role: "user", content: text },
     display,
     resolutions: [],
   };

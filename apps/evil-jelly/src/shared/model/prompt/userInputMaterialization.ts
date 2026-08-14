@@ -1,10 +1,5 @@
-import { isDeepStrictEqual } from "node:util";
 import type { Message } from "@rejelly/core";
-import {
-  getUserInputDisplay,
-  type UserInputDisplay,
-  type UserInputImageDimensions,
-} from "../message/userInputMetadata";
+import type { UserInputDisplay, UserInputImageDimensions } from "../message/userInputMetadata";
 import {
   assertValidPromptInput,
   type PromptImageDetail,
@@ -66,8 +61,13 @@ export function assertMatchingUserInputMaterialization(
   if (materialization.display.text !== promptInputPlainText(input)) {
     throw new Error("Materialized display text does not match PromptInput document");
   }
-  if (!isDeepStrictEqual(getUserInputDisplay(materialization.message), materialization.display)) {
-    throw new Error("Materialized Message display metadata does not match materialization.display");
+  const rejelly = materialization.message.extra?.rejelly;
+  if (
+    typeof rejelly === "object" &&
+    rejelly !== null &&
+    ["kind", "display", "imageDimensions", "imageBlobs"].some((key) => key in rejelly)
+  ) {
+    throw new Error("Runtime user Message must not carry user-input metadata in extra.rejelly");
   }
 
   const byOrdinal = new Map(materialization.resolutions.map((item) => [item.nodeOrdinal, item]));

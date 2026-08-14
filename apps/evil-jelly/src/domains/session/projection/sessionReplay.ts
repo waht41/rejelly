@@ -1,4 +1,4 @@
-import { createUserInputMetadata } from "../../../shared/model/message/userInputMetadata";
+import { registerRuntimeUserInputMetadata } from "../../../shared/model/message/userInputMetadata";
 import {
   type BudgetUpdatedEvent,
   type ContextCompactedEvent,
@@ -105,29 +105,32 @@ export function prepareSessionReplay(events: readonly SessionEvent[]): PreparedS
         });
         const materialized = parseStoredUserInputMaterializationV1(event.materialized);
         const imageBlobs = storedMaterializationImageBlobs(materialized);
-        const runtimeMessage = parseStoredSessionMessage({
-          ...materialized.message,
-          extra: {
-            ...materialized.message.extra,
-            rejelly: {
-              ...createUserInputMetadata(materialized.display),
-              ...(Object.keys(imageBlobs).length > 0 ? { imageBlobs } : {}),
-            },
-          },
-        });
+        const runtimeMessage = parseStoredSessionMessage(materialized.message, { imageBlobs });
+        const imageDimensions = Array.isArray(runtimeMessage.content)
+          ? runtimeMessage.content.flatMap((part) => {
+              if (part.type !== "image") return [];
+              const blob = imageBlobs[part.image.url];
+              return [
+                blob?.width && blob.height ? { width: blob.width, height: blob.height } : null,
+              ];
+            })
+          : [];
+        registerRuntimeUserInputMetadata(runtimeMessage, materialized.display, imageDimensions);
         prepared.push({ ...event, materialized, runtimeMessage });
         break;
       }
       case "context_compacted":
         prepared.push({
           ...event,
-          replacementHistory: event.replacementHistory.map(parseStoredSessionMessage),
+          replacementHistory: event.replacementHistory.map((message) =>
+            parseStoredSessionMessage(message),
+          ),
         });
         break;
       case "legacy_snapshot":
         prepared.push({
           ...event,
-          messages: event.messages.map(parseStoredSessionMessage),
+          messages: event.messages.map((message) => parseStoredSessionMessage(message)),
         });
         break;
       default:

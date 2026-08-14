@@ -7,8 +7,7 @@
  * the terminal sends them) or by ending the line with a backslash before Enter.
  * Short pasted text keeps its own newlines, so a pasted block never submits early.
  * Long pasted text is stored in a semantic paste token and rendered as a
- * compact `[Pasted text +X lines]` label. The full body is restored at the
- * legacy submission boundary.
+ * compact `[Pasted text +X lines]` label while the full body stays in the semantic document.
  *
  * @-trigger: typing @ opens a fuzzy file picker; selecting a file inserts an
  * semantic file token at the caret and adds its path to this turn.

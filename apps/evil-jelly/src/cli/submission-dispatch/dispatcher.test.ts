@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type PromptInput, textPromptInput } from "../../shared/model/prompt/promptInput";
 import {
   createSubmissionDispatcher,
@@ -28,7 +31,12 @@ function createPorts() {
 }
 
 describe("submission dispatcher", () => {
+  const roots: string[] = [];
   beforeEach(() => resetSubmissionDispatch());
+  afterEach(async () => {
+    resetSubmissionDispatch();
+    await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
+  });
 
   it("delivers an idle submission as the awaited main input", async () => {
     const { ports } = createPorts();
@@ -138,5 +146,30 @@ describe("submission dispatcher", () => {
       "file-1",
       "file-1:1:1",
     ]);
+  });
+
+  it("releases composer-owned images when an unconsumed queue is reset", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "evil-dispatch-cleanup-"));
+    roots.push(root);
+    const imagePath = path.join(root, "clipboard.png");
+    await fs.writeFile(imagePath, "image");
+    enqueueSteer({
+      document: [{ type: "token", kind: "image", attachmentId: "image-1" }],
+      attachments: [
+        {
+          id: "image-1",
+          kind: "image",
+          path: imagePath,
+          mimeType: "image/png",
+          ownership: "composer_temp",
+        },
+      ],
+    });
+
+    resetSubmissionDispatch();
+
+    await vi.waitFor(async () => {
+      await expect(fs.access(imagePath)).rejects.toMatchObject({ code: "ENOENT" });
+    });
   });
 });

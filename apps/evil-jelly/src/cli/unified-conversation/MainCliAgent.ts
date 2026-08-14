@@ -29,6 +29,7 @@ import { countConversationTurns } from "../../shared/conversation/compactionMess
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../shared/host/bindings";
 import { getBinding, setBinding } from "../../shared/host/context";
+import { releasePromptResources } from "../../shared/host/promptResourceLifecycle";
 import {
   isPromptInputSemanticallyEmpty,
   type PromptInput,
@@ -40,7 +41,6 @@ import {
   formatSessionStatus,
   formatTokenUsageLine,
 } from "../conversation-display/session-summary/format";
-import { releaseConsumedPromptResources } from "../message-composer/message-materialization/promptResourceLifecycle";
 import { materializeSkillAwareUserInput } from "../message-composer/message-materialization/skillAwareUserMessage";
 import { withAbort } from "../runtime/withAbort";
 import { drainSteers } from "../submission-dispatch/steerQueue";
@@ -122,8 +122,6 @@ export interface MainCliAgentProps extends EvilJellyBindings {
   seedContext?: Message[];
   /** Session image store consulted only when a model policy materializes durable locators. */
   sessionBlobRoot?: string;
-  /** @deprecated Compatibility alias; new callers should pass seedContext. */
-  seedHistory?: Message[];
   /** Cumulative usage carried back from a resumed session, used as the /status base. */
   seedBudget?: SessionBudget;
   /** Replay-only mode: do not read from or write to durable local sessions. */
@@ -262,7 +260,7 @@ async function drainAndPrepareSteerMessages(
         input,
         runtime.skillSnapshot,
       ).finally(() =>
-        releaseConsumedPromptResources(input).catch((error) =>
+        releasePromptResources(input).catch((error) =>
           runtime.host.logSystemEvent(
             `Prompt resource cleanup failed: ${formatPersistenceError(error)}\n`,
           ),
@@ -273,9 +271,7 @@ async function drainAndPrepareSteerMessages(
       messages.push(materialization.message);
     }
   } catch (error) {
-    await Promise.all(
-      inputs.map((input) => releaseConsumedPromptResources(input).catch(() => undefined)),
-    );
+    await Promise.all(inputs.map((input) => releasePromptResources(input).catch(() => undefined)));
     throw error;
   }
   return messages;
@@ -338,7 +334,7 @@ async function runConversationTurn(
       promptInput,
       runtime.skillSnapshot,
     ).finally(() =>
-      releaseConsumedPromptResources(promptInput).catch((error) =>
+      releasePromptResources(promptInput).catch((error) =>
         runtime.host.logSystemEvent(
           `Prompt resource cleanup failed: ${formatPersistenceError(error)}\n`,
         ),
@@ -427,7 +423,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
     const host = getBinding();
     const [history, setHistory] = equipMemory<Message[]>(
       "message_history",
-      props.seedContext ?? props.seedHistory ?? [],
+      props.seedContext ?? [],
     );
     // Approx live context-window size: the most recent model call's input tokens (and its cached
     // subset). Kept in memory so they survive reborn (each turn re-runs this handler); seeded from

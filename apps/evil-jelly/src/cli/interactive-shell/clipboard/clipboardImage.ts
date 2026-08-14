@@ -1,14 +1,56 @@
 import { execFile } from "node:child_process";
+import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+const CLIPBOARD_IMAGE_DIRECTORY = path.join(os.tmpdir(), "evil-jelly-clipboard-images");
+const CLIPBOARD_IMAGE_NAME_PATTERN = /^clipboard-.*\.png$/;
+const DEFAULT_ORPHAN_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const MAX_ORPHAN_SCAN_ENTRIES = 1024;
 
 export type ClipboardImageResult =
   | { ok: true; path: string }
   | { ok: false; reason: "unsupported" | "empty" | "failed"; message: string };
+
+export interface ClipboardImageCleanupOptions {
+  directory?: string;
+  now?: number;
+  maxAgeMs?: number;
+  maxEntries?: number;
+}
+
+/** Bounded cleanup of stale files from this application's dedicated clipboard-image directory. */
+export async function cleanupStaleClipboardImages(
+  options: ClipboardImageCleanupOptions = {},
+): Promise<number> {
+  const directory = options.directory ?? CLIPBOARD_IMAGE_DIRECTORY;
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return 0;
+    throw error;
+  }
+  const now = options.now ?? Date.now();
+  const maxAgeMs = options.maxAgeMs ?? DEFAULT_ORPHAN_MAX_AGE_MS;
+  const maxEntries = options.maxEntries ?? MAX_ORPHAN_SCAN_ENTRIES;
+  let removed = 0;
+  for (const entry of entries
+    .filter((candidate) => candidate.isFile() && CLIPBOARD_IMAGE_NAME_PATTERN.test(candidate.name))
+    .slice(0, maxEntries)) {
+    const filePath = path.join(directory, entry.name);
+    const stat = await fs.stat(filePath);
+    if (now - stat.mtimeMs < maxAgeMs) continue;
+    await fs.unlink(filePath).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    });
+    removed += 1;
+  }
+  return removed;
+}
 
 function timestampSlug(): string {
   return new Date().toISOString().replace(/[:.]/g, "-");
@@ -114,7 +156,7 @@ return "OK"
 }
 
 export async function saveClipboardImage(): Promise<ClipboardImageResult> {
-  const dir = path.join(os.tmpdir(), "evil-jelly-clipboard-images");
+  const dir = CLIPBOARD_IMAGE_DIRECTORY;
   const imagePath = path.join(dir, `clipboard-${timestampSlug()}.png`);
 
   const command =
@@ -146,6 +188,7 @@ export async function saveClipboardImage(): Promise<ClipboardImageResult> {
     }
     return { ok: true, path: imagePath };
   } catch (error: unknown) {
+    await fs.unlink(imagePath).catch(() => undefined);
     const maybe = error as { code?: number; stderr?: string; stdout?: string; message?: string };
     if (maybe.code === 2 || maybe.stdout?.includes("EMPTY")) {
       return { ok: false, reason: "empty", message: "Clipboard does not contain an image." };

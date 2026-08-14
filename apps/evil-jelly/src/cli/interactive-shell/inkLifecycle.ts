@@ -1,6 +1,7 @@
 import { type Instance, render } from "ink";
 import React from "react";
 import { pruneClearedStaticTurns } from "../conversation-display/useOutputStore";
+import { cleanupStaleClipboardImages } from "./clipboard/clipboardImage";
 import { Dashboard } from "./Dashboard";
 import type { CtrlCAbortHandler } from "./useCtrlCAbort";
 import { installWindowsVirtualTerminalInputPatch } from "./windowsVtInput";
@@ -63,6 +64,11 @@ export function createInteractiveShell(control: InteractiveShellControl): {
   clearScreen: () => void;
   dispose: () => void;
 } {
+  void cleanupStaleClipboardImages().catch((error) => {
+    console.warn(
+      `[evil-jelly] Clipboard temp cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  });
   let ink: Instance = mountInkApp(control);
 
   /** Unmount Ink and drop raw mode before handing the TTY to vim / an external editor. */

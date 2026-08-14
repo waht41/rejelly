@@ -1,11 +1,13 @@
 import fs from "node:fs/promises";
-import { getErrnoCode } from "../../../shared/foundation/errno";
-import type { PromptInput } from "../../../shared/model/prompt/promptInput";
+import { getErrnoCode } from "../foundation/errno";
+import type { PromptAttachment, PromptInput } from "../model/prompt/promptInput";
 
-/** Release only files explicitly owned by the submitted composer input. Safe to call repeatedly. */
-export async function releaseConsumedPromptResources(input: PromptInput): Promise<void> {
+/** Release only files explicitly owned by these attachment records. Safe to call repeatedly. */
+export async function releasePromptAttachments(
+  attachments: readonly PromptAttachment[],
+): Promise<void> {
   const paths = new Set(
-    input.attachments.flatMap((attachment) =>
+    attachments.flatMap((attachment) =>
       attachment.kind === "image" && attachment.ownership === "composer_temp"
         ? [attachment.path]
         : [],
@@ -22,4 +24,8 @@ export async function releaseConsumedPromptResources(input: PromptInput): Promis
   if (failures.length > 0) {
     throw new AggregateError(failures, "Failed to release composer temporary attachments");
   }
+}
+
+export function releasePromptResources(input: PromptInput): Promise<void> {
+  return releasePromptAttachments(input.attachments);
 }

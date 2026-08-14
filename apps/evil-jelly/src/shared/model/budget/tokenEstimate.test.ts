@@ -1,5 +1,6 @@
 import type { Message } from "@rejelly/core";
 import { describe, expect, it } from "vitest";
+import { registerRuntimeUserInputMetadata } from "../message/userInputMetadata";
 import {
   estimateMessagesTokens,
   IMAGE_CONTENT_TOKEN_ESTIMATE,
@@ -12,20 +13,16 @@ function imageMessage(options: {
   height?: number;
 }): Message {
   const { width, height, detail } = options;
-  return {
+  const message: Message = {
     role: "user",
     content: [{ type: "image", image: { url: "data:image/png;base64,x", detail } }],
-    ...(width !== undefined && height !== undefined
-      ? {
-          extra: {
-            rejelly: {
-              kind: "user_input",
-              imageDimensions: [{ width, height }],
-            },
-          },
-        }
-      : {}),
   };
+  if (width !== undefined && height !== undefined) {
+    registerRuntimeUserInputMetadata(message, { text: "[Image #1]", attachments: [] }, [
+      { width, height },
+    ]);
+  }
+  return message;
 }
 
 describe("image token estimation", () => {

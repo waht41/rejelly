@@ -1,23 +1,16 @@
-import type { AgentSnapshot, Message, ModelAdapter } from "@rejelly/core";
+import type { AgentSnapshot, ModelAdapter } from "@rejelly/core";
 import { connectMcpProviders } from "../../../../domains/mcp/mcpServerKit";
 import {
   generateSessionId,
   resumeSession,
-  type SessionBudget,
 } from "../../../../domains/session/repository/sessionStore";
 import { qualifiedSkillName } from "../../../../domains/skills/definition/skillDefinition";
 import { getSettings } from "../../../../shared/configuration/settings";
 import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
-import type { TranscriptItem } from "../../../../shared/session/transcript";
 import { buildConfiguredSkillRuntimeSnapshot } from "../../../skill-runtime/configuredRuntime";
 import { formatSkillRuntimeStartupSummary } from "../../../skill-runtime/startupSummary";
-import {
-  buildLegacyResumeSeed,
-  buildSessionResumeSeed,
-  hydrateResumeSeed,
-  type SessionResumeSeed,
-} from "./resume";
+import { buildSessionResumeSeed, hydrateResumeSeed, type SessionResumeSeed } from "./resume";
 import type { InteractiveRunControl } from "./runControl";
 import { type RunEvilJellyHostOptions, runEvilJellyHost } from "./runSegment";
 
@@ -29,16 +22,6 @@ export interface RunInteractiveLoopParams {
   snapshot: AgentSnapshot | undefined;
   sessionId?: string;
   resumeSeed?: SessionResumeSeed;
-  /** @deprecated Compatibility fields; prefer resumeSeed. */
-  seedContext?: Message[];
-  /** @deprecated Compatibility alias; prefer resumeSeed. */
-  seedHistory?: Message[];
-  /** @deprecated Compatibility field; prefer resumeSeed. */
-  seedTranscript?: TranscriptItem[];
-  /** @deprecated Compatibility field; prefer resumeSeed. */
-  seedTranscriptTotalTurns?: number;
-  /** @deprecated Compatibility field; prefer resumeSeed. */
-  seedBudget?: SessionBudget;
   /** Source trace id when the run replays a mock model (--mock); tags trace attributes. */
   mockSourceTraceId?: string;
   /** Keep replay sessions away from durable local session state. */
@@ -58,30 +41,6 @@ interface ResumedSessionState extends InteractiveSessionState {
   sessionId: string;
   snapshot: undefined;
   resumeSeed: SessionResumeSeed;
-}
-
-function normalizeInitialResumeSeed(
-  params: RunInteractiveLoopParams,
-): SessionResumeSeed | undefined {
-  if (params.resumeSeed) {
-    return params.resumeSeed;
-  }
-  const activeContext = params.seedContext ?? params.seedHistory;
-  if (
-    activeContext === undefined &&
-    params.seedTranscript === undefined &&
-    params.seedBudget === undefined
-  ) {
-    return undefined;
-  }
-  const legacySeed = buildLegacyResumeSeed(activeContext ?? [], {
-    totalTurns: params.seedTranscriptTotalTurns,
-    budget: params.seedBudget,
-  });
-  return {
-    ...legacySeed,
-    ...(params.seedTranscript ? { transcript: params.seedTranscript } : {}),
-  };
 }
 
 function startNewSession(isolateSessionState: boolean): InteractiveSessionState {
@@ -133,17 +92,14 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
     isolateSessionState = false,
     session,
   } = params;
-  const initialResumeSeed = normalizeInitialResumeSeed(params);
   let state: InteractiveSessionState = {
     sessionId: params.sessionId,
     snapshot: params.snapshot,
-    resumeSeed: initialResumeSeed,
-    sessionStartMode: initialResumeSeed ? "resumed" : "new",
+    resumeSeed: params.resumeSeed,
+    sessionStartMode: params.resumeSeed ? "resumed" : "new",
   };
 
-  // Legacy callers historically hydrated the view themselves unless they supplied
-  // seedTranscript. The new resumeSeed contract owns both context and display hydration.
-  if (state.resumeSeed && (params.resumeSeed || params.seedTranscript)) {
+  if (state.resumeSeed) {
     hydrateResumeSeed(bindings, state.sessionId ?? "(ephemeral)", state.resumeSeed);
   }
 

@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { SKILL_AGENT_LIMITS } from "../../../domains/skills/agent/limits";
 import type { UserSkillListItem } from "../../../shared/host/inputBindings";
+import { releasePromptResources } from "../../../shared/host/promptResourceLifecycle";
 import { copyPromptInput, type PromptInput } from "../../../shared/model/prompt/promptInput";
 
 export type SkillPickerItem = UserSkillListItem;
@@ -35,13 +36,16 @@ export const useComposerSession = create<ComposerSessionState>((set, get) => ({
         left.qualifiedName.localeCompare(right.qualifiedName, "en"),
       ),
     }),
-  seedDraft: (value) =>
+  seedDraft: (value) => {
+    const replaced = get().draftSeed;
     set({
       draftSeed: {
         id: ++draftSeedId,
         value: copyPromptInput(value),
       },
-    }),
+    });
+    if (replaced) void releasePromptResources(replaced.value).catch(() => undefined);
+  },
   clearDraftSeed: (id) =>
     set((state) => (state.draftSeed?.id === id ? { draftSeed: null } : state)),
   setBackgroundLineHandler: (handler) => set({ backgroundLineHandler: handler }),
@@ -49,9 +53,11 @@ export const useComposerSession = create<ComposerSessionState>((set, get) => ({
 
 /** Reset the external bridge for a new CLI session. */
 export function resetComposerSession(): void {
+  const discarded = useComposerSession.getState().draftSeed;
   useComposerSession.setState({
     availableSkills: [],
     draftSeed: null,
     backgroundLineHandler: null,
   });
+  if (discarded) void releasePromptResources(discarded.value).catch(() => undefined);
 }

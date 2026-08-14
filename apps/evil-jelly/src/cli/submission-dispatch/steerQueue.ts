@@ -1,3 +1,4 @@
+import { releasePromptResources } from "../../shared/host/promptResourceLifecycle";
 import {
   copyPromptInput,
   isPromptInputSemanticallyEmpty,
@@ -32,8 +33,10 @@ export function drainSteers(): PromptInput[] {
 }
 
 export function clearSteers(): void {
+  const discarded = queuedSteers;
   queuedSteers = [];
   notifySubscribers();
+  void Promise.all(discarded.map((input) => releasePromptResources(input))).catch(() => undefined);
 }
 
 export function getQueuedSteers(): PromptInput[] {

@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { releasePromptResources } from "../../../shared/host/promptResourceLifecycle";
 import type { PromptInput } from "../../../shared/model/prompt/promptInput";
-import { releaseConsumedPromptResources } from "./promptResourceLifecycle";
 
 describe("submitted prompt resource lifecycle", () => {
   const roots: string[] = [];
@@ -40,8 +40,8 @@ describe("submitted prompt resource lifecycle", () => {
       ],
     };
 
-    await releaseConsumedPromptResources(input);
-    await releaseConsumedPromptResources(input);
+    await releasePromptResources(input);
+    await releasePromptResources(input);
 
     await expect(fs.access(temporary)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(fs.readFile(borrowed, "utf8")).resolves.toBe("user");

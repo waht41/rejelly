@@ -144,8 +144,6 @@ describe("runInteractiveLoop mock session isolation", () => {
       enableReview: false,
       snapshot: undefined,
       sessionId: "session_real",
-      seedHistory: undefined,
-      seedBudget: undefined,
       mockSourceTraceId: "trace_mock",
       isolateSessionState: true,
     });
@@ -185,8 +183,6 @@ describe("runInteractiveLoop mock session isolation", () => {
       enableReview: false,
       snapshot: undefined,
       sessionId: "session_mock",
-      seedHistory: undefined,
-      seedBudget: undefined,
       mockSourceTraceId: "trace_mock",
       isolateSessionState: true,
     });

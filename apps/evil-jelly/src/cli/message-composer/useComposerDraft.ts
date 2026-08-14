@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { releasePromptAttachments } from "../../shared/host/promptResourceLifecycle";
 import {
   type PromptDocument,
   type PromptToken,
@@ -51,7 +52,7 @@ function referencedAttachments(
   });
 }
 
-/** Owns one editable semantic draft and adapts it to the legacy submission boundary. */
+/** Owns one editable semantic draft and transfers its PromptInput atomically on submit. */
 export function useComposerDraft({
   label,
   onCommand,
@@ -64,6 +65,8 @@ export function useComposerDraft({
   const draftSeed = useComposerSession((state) => state.draftSeed);
   const clearDraftSeed = useComposerSession((state) => state.clearDraftSeed);
   const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
+  const attachmentsRef = useRef<PromptAttachment[]>(attachments);
+  attachmentsRef.current = attachments;
   const createAttachmentId = useCallback(() => `attachment-${randomUUID()}`, []);
   const tokenDisplayText = useCallback(
     (token: PromptToken, document: PromptDocument): string => {
@@ -95,18 +98,45 @@ export function useComposerDraft({
   useEffect(() => {
     setAttachments((current) => {
       const referenced = referencedAttachments(buffer.document, current);
-      return referenced.length === current.length &&
+      const unchanged =
+        referenced.length === current.length &&
         referenced.every((attachment, index) => attachment === current[index])
-        ? current
-        : referenced;
+          ? current
+          : referenced;
+      if (unchanged === current) return current;
+      const retainedIds = new Set(referenced.map((attachment) => attachment.id));
+      void releasePromptAttachments(
+        current.filter((attachment) => !retainedIds.has(attachment.id)),
+      );
+      attachmentsRef.current = referenced;
+      return referenced;
     });
   }, [buffer.document]);
 
   const clear = useCallback(() => {
+    const discarded = attachmentsRef.current;
+    attachmentsRef.current = [];
+    buffer.reset();
+    setAttachments([]);
+    collapsedPaste.reset();
+    void releasePromptAttachments(discarded);
+  }, [buffer.reset, collapsedPaste.reset]);
+
+  const resetAfterTransfer = useCallback(() => {
+    attachmentsRef.current = [];
     buffer.reset();
     setAttachments([]);
     collapsedPaste.reset();
   }, [buffer.reset, collapsedPaste.reset]);
+
+  useEffect(
+    () => () => {
+      const discarded = attachmentsRef.current;
+      attachmentsRef.current = [];
+      void releasePromptAttachments(discarded);
+    },
+    [],
+  );
 
   const attachFile = useCallback(
     (path: string, start: number, end: number) => {
@@ -155,8 +185,8 @@ export function useComposerDraft({
       return;
     }
     submitLine({ document: buffer.document, attachments: liveAttachments });
-    clear();
-  }, [buffer.document, clear, liveAttachments, onCommand, submitLine]);
+    resetAfterTransfer();
+  }, [buffer.document, clear, liveAttachments, onCommand, resetAfterTransfer, submitLine]);
 
   const submitCommand = useCallback(
     (command: string) => {

@@ -6,6 +6,7 @@ import {
   estimateTokens,
   IMAGE_CONTENT_TOKEN_ESTIMATE,
 } from "../../shared/model/budget/tokenEstimate";
+import { registerRuntimeUserInputMetadata } from "../../shared/model/message/userInputMetadata";
 import { selectRecentUserMessages, truncateToolOutputsToFit } from "./compaction";
 import { sanitizeInterruptedDelta } from "./interruptedDelta";
 
@@ -141,29 +142,24 @@ describe("selectRecentUserMessages", () => {
           image: { url: "data:image/png;base64,very-large-payload", detail: "auto" },
         },
       ],
-      extra: {
-        rejelly: {
-          kind: "user_input",
-          display: {
-            text: "inspect this",
-            attachments: [
-              {
-                type: "file",
-                label: "src/secret.txt",
-                action: "read",
-                locator: { scope: "workspace", path: "src/secret.txt" },
-              },
-              {
-                type: "image",
-                label: "[Image #1]",
-                action: "attach",
-                locator: { scope: "absolute", path: "C:/Temp/clipboard.png" },
-              },
-            ],
-          },
-        },
-      },
     };
+    registerRuntimeUserInputMetadata(message, {
+      text: "inspect this",
+      attachments: [
+        {
+          type: "file",
+          label: "src/secret.txt",
+          action: "read",
+          locator: { scope: "workspace", path: "src/secret.txt" },
+        },
+        {
+          type: "image",
+          label: "[Image #1]",
+          action: "attach",
+          locator: { scope: "absolute", path: "C:/Temp/clipboard.png" },
+        },
+      ],
+    });
 
     const kept = selectRecentUserMessages([message], IMAGE_CONTENT_TOKEN_ESTIMATE + 1000);
 
@@ -258,12 +254,10 @@ describe("selectRecentUserMessages", () => {
           image: { url: "data:image/png;base64,not-a-real-header", detail: "auto" },
         },
       ],
-      extra: {
-        rejelly: {
-          imageDimensions: [{ width: 512, height: 512 }],
-        },
-      },
     };
+    registerRuntimeUserInputMetadata(message, { text: "", attachments: [] }, [
+      { width: 512, height: 512 },
+    ]);
 
     expect(selectRecentUserMessages([message], 1024)).toEqual([message]);
   });

@@ -3,7 +3,6 @@ import type { SkillRuntimeSnapshot } from "../../../domains/skills/agent/skillRu
 import { createSkillCatalog } from "../../../domains/skills/catalog/skillCatalog";
 import type { SkillRecord } from "../../../domains/skills/definition/skillDefinition";
 import { skillOrigin } from "../../../domains/skills/definition/skillDefinition";
-import { getUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
 import { textPromptInput } from "../../../shared/model/prompt/promptInput";
 import {
   materializeSkillAwareUserInput,
@@ -47,7 +46,7 @@ describe("explicit Skill references", () => {
   });
 
   it("keeps the marker in place and appends instructions after the intact user request", async () => {
-    const { message } = await materializeSkillAwareUserInput(
+    const { message, display } = await materializeSkillAwareUserInput(
       {
         document: [
           { type: "text", text: "Please " },
@@ -66,7 +65,7 @@ describe("explicit Skill references", () => {
     expect(content.indexOf("inspect this.")).toBeLessThan(
       content.indexOf("Follow the review workflow."),
     );
-    expect(getUserInputDisplay(message)).toEqual({
+    expect(display).toEqual({
       text: "Please $project:review inspect this.",
       attachments: [],
     });

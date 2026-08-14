@@ -1,3 +1,4 @@
+import { releasePromptResources } from "../../shared/host/promptResourceLifecycle";
 import { copyPromptInput, type PromptInput } from "../../shared/model/prompt/promptInput";
 
 let queuedLineInputs: PromptInput[] = [];
@@ -7,10 +8,12 @@ let awaitingMainInput = false;
 
 /** Reset pending main input for a fresh CLI session. */
 export function resetMainInputQueue(): void {
+  const discarded = queuedLineInputs;
   queuedLineInputs = [];
   pendingLineResolver = null;
   pendingLineRejecter = null;
   awaitingMainInput = false;
+  void Promise.all(discarded.map((input) => releasePromptResources(input))).catch(() => undefined);
 }
 
 export function enqueueMainInput(value: PromptInput): void {

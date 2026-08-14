@@ -4,7 +4,7 @@ import {
   unwrapPriorUserMessageText,
 } from "../../../shared/conversation/compactionMessages";
 import { messageContentToText } from "../../../shared/model/message/content";
-import { getUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
+import { getLegacyUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
 
 const SESSION_TITLE_MAX_CHARS = 80;
 
@@ -30,7 +30,7 @@ export function deriveSessionTitle(
   if (message.role !== "user" || isCompactionBridgeMessage(message)) {
     return undefined;
   }
-  const display = getUserInputDisplay(message);
+  const display = getLegacyUserInputDisplay(message);
   const fallback = messageContentToText(message.content);
   const raw = display
     ? display.text

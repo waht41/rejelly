@@ -10,7 +10,7 @@ import {
 } from "../../../shared/fs-policy/file-locator";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
 import {
-  createUserInputMetadata,
+  registerRuntimeUserInputMetadata,
   type UserInputAttachmentDisplay,
   type UserInputDisplay,
 } from "../../../shared/model/message/userInputMetadata";
@@ -311,15 +311,17 @@ export async function materializeUserInput(
   if (hasImages) flushModelText();
   const content: Message["content"] = hasImages ? contentParts : modelText;
   const display = { text: displayText, attachments: attachmentDisplays } satisfies UserInputDisplay;
-  return {
-    version: 1,
-    message: {
+  const message = registerRuntimeUserInputMetadata(
+    {
       role: "user",
       content,
-      extra: {
-        rejelly: createUserInputMetadata(display, imageDimensions),
-      },
     },
+    display,
+    imageDimensions,
+  );
+  return {
+    version: 1,
+    message,
     display,
     resolutions,
   };

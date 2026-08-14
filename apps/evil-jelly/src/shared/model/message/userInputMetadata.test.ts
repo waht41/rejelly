@@ -1,8 +1,10 @@
+import type { Message } from "@rejelly/core";
 import { describe, expect, it } from "vitest";
 import {
-  createUserInputMetadata,
-  getUserInputDisplay,
-  getUserInputImageDimensions,
+  getLegacyUserInputDisplay,
+  getRuntimeUserInputDisplay,
+  getRuntimeUserInputImageDimensions,
+  registerRuntimeUserInputMetadata,
 } from "./userInputMetadata";
 
 describe("user input metadata", () => {
@@ -11,21 +13,23 @@ describe("user input metadata", () => {
       text: "inspect this",
       attachments: [{ type: "image" as const, label: "[Image #1]", action: "attach" as const }],
     };
-    const message = {
-      role: "user" as const,
+    const message: Message = {
+      role: "user",
       content: "inspect this",
-      extra: {
-        rejelly: createUserInputMetadata(display, [{ width: 640, height: 480 }, null]),
-      },
     };
+    registerRuntimeUserInputMetadata(message, display, [{ width: 640, height: 480 }, null]);
 
-    expect(getUserInputDisplay(message)).toEqual(display);
-    expect(getUserInputImageDimensions(message)).toEqual([{ width: 640, height: 480 }, undefined]);
+    expect(message.extra).toBeUndefined();
+    expect(getRuntimeUserInputDisplay(message)).toEqual(display);
+    expect(getRuntimeUserInputImageDimensions(message)).toEqual([
+      { width: 640, height: 480 },
+      undefined,
+    ]);
   });
 
   it("rejects malformed persisted display metadata", () => {
     expect(
-      getUserInputDisplay({
+      getLegacyUserInputDisplay({
         role: "user",
         content: "raw fallback",
         extra: {

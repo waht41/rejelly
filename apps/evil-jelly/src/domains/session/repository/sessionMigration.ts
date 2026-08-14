@@ -4,7 +4,7 @@ import path from "node:path";
 import type { Message } from "@rejelly/core";
 import { getErrnoCode } from "../../../shared/foundation/errno";
 import { messageContentToText } from "../../../shared/model/message/content";
-import { getUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
+import { getLegacyUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
 import {
   createSessionMetaLine,
   openSessionWriter,
@@ -188,7 +188,7 @@ function migrateV2UserInputEvent(event: MessageRecordedEvent): NewSessionEvent {
   if (event.source.kind !== "user_input") {
     throw new Error("Expected a V2 user_input message event");
   }
-  const display = getUserInputDisplay(event.message);
+  const display = getLegacyUserInputDisplay(event.message);
   const text = display?.text ?? messageContentToText(event.message.content).trim();
   const imageBlobs = getSessionImageBlobMetadata(event.message);
   const resolutions = Array.isArray(event.message.content)
@@ -248,9 +248,10 @@ function comparableMessage(message: Message): Message {
     ...rejelly
   } = message.extra.rejelly as Record<string, unknown>;
   const { rejelly: _oldRejelly, ...extra } = message.extra;
+  const cleanedExtra = { ...extra, ...(Object.keys(rejelly).length > 0 ? { rejelly } : {}) };
   return {
     ...message,
-    extra: { ...extra, ...(Object.keys(rejelly).length > 0 ? { rejelly } : {}) },
+    ...(Object.keys(cleanedExtra).length > 0 ? { extra: cleanedExtra } : { extra: undefined }),
   };
 }
 

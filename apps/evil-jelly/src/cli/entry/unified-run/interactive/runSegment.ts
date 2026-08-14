@@ -7,6 +7,7 @@ import {
   openSessionRecorder,
   type SessionRecorder,
 } from "../../../../domains/session/recorder/sessionRecorder";
+import { materializeMessageHistory } from "../../../../domains/session/repository/sessionMessageMaterializer";
 import type { SessionBudget } from "../../../../domains/session/repository/sessionStore";
 import {
   SKILL_RUNTIME_PROVIDER_KEY,
@@ -42,8 +43,6 @@ export interface RunEvilJellyHostOptions {
   sessionStartMode?: "new" | "resumed";
   /** Restored active model context seeded into the agent on resume. */
   seedContext?: Message[];
-  /** @deprecated Compatibility alias; new callers should pass seedContext. */
-  seedHistory?: Message[];
   /** Cumulative usage carried back from a resumed session, used as the /status base. */
   seedBudget?: SessionBudget;
   /**
@@ -161,7 +160,6 @@ export async function runEvilJellyHost(
     enableSnapshot: enableSnapshotOpt,
     sessionId,
     seedContext,
-    seedHistory,
     seedBudget,
   } = options;
   const enableSnapshot = enableSnapshotOpt ?? (snapshot != null ? true : undefined);
@@ -182,6 +180,12 @@ export async function runEvilJellyHost(
     }
   });
   try {
+    const preparedSeedContext = seedContext
+      ? await materializeMessageHistory(
+          seedContext,
+          options.session?.blobRoot ? { blobRoot: options.session.blobRoot } : {},
+        )
+      : undefined;
     await runWithReview({
       model,
       enableReview: options.enableReview,
@@ -193,8 +197,7 @@ export async function runEvilJellyHost(
           runLoopControl: options.runControl.loop,
           sessionId,
           traceId,
-          seedContext,
-          seedHistory,
+          seedContext: preparedSeedContext,
           seedBudget,
           sessionBlobRoot: options.session?.blobRoot,
           isolateSessionState: options.isolateSessionState,

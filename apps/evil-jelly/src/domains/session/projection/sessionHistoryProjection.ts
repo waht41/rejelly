@@ -4,13 +4,13 @@ import {
   unwrapPriorUserMessageText,
 } from "../../../shared/conversation/compactionMessages";
 import { messageContentToText } from "../../../shared/model/message/content";
-import { getUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
+import { getLegacyUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
 import { SESSION_BLOB_SCHEME, sessionBlobRefSchema } from "../../../shared/session/blobContract";
 import type { TranscriptImage, TranscriptItem } from "../../../shared/session/transcript";
 import type { SessionBudgetData } from "../model/sessionEvents";
 import { storedPromptInputPlainText } from "../model/storedPromptInput";
 import {
-  getStoredSessionRejellyMetadata,
+  getSessionImageBlobMetadata,
   type StoredSessionMessage,
 } from "../model/storedSessionMessage";
 import { UNKNOWN_TOOL_OUTCOME_CONTENT } from "./sessionRecovery";
@@ -119,7 +119,7 @@ function assistantDisplayText(text: string): string {
 }
 
 function userTranscriptText(message: Message, legacy: boolean): string {
-  const display = getUserInputDisplay(message);
+  const display = getLegacyUserInputDisplay(message);
   if (display) {
     return display.text;
   }
@@ -131,7 +131,7 @@ function transcriptImages(message: Message): TranscriptImage[] | undefined {
   if (!Array.isArray(message.content)) {
     return undefined;
   }
-  const metadata = getStoredSessionRejellyMetadata(message)?.imageBlobs ?? {};
+  const metadata = getSessionImageBlobMetadata(message);
   const images: TranscriptImage[] = [];
   for (const part of message.content) {
     if (part.type !== "image" || !part.image.url.startsWith(SESSION_BLOB_SCHEME)) {
@@ -164,7 +164,7 @@ function appendTranscriptMessage(
   if (message.role === "user") {
     const content = userTranscriptText(message, identity.legacy);
     if (content) {
-      const display = getUserInputDisplay(message);
+      const display = getLegacyUserInputDisplay(message);
       const images = identity.legacy ? undefined : transcriptImages(message);
       items.push({
         id: `${identity.seq}:${identity.suffix}:user`,
