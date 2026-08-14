@@ -125,14 +125,35 @@
   },
   "graph": {
     "runtime_arch": {
-      "cascade": [["@spec:tests"], ["@cli:**"], ["@feature:[feat]"], ["@shared"], ["@ext:fs"]],
       "sequence": {
-        "domain_foundation": [
-          ["@domain:[dom]", "@domain:session:*", "@domain:skills:*"],
+        "test_access": [
+          ["@spec:tests"],
+          [
+            "@cli:**",
+            "@feature:[feat]",
+            "@domain:[dom]",
+            "@domain:session:*",
+            "@domain:skills:*",
+            "@shared",
+            "@ext:fs",
+            "@ext:ui"
+          ]
+        ],
+        "production_foundation": [
+          ["@cli:**", "@feature:[feat]", "@domain:[dom]", "@domain:session:*", "@domain:skills:*"],
           ["@shared"]
         ],
         "direct_fs": [
-          ["@domain:skills:loader", "@domain:session:journal", "@domain:session:repository"],
+          [
+            "@shared",
+            "@cli:entry",
+            "@cli:interactive-shell",
+            "@cli:message-composer",
+            "@cli:tool-approval",
+            "@domain:skills:loader",
+            "@domain:session:journal",
+            "@domain:session:repository"
+          ],
           ["@ext:fs"]
         ],
         "terminal_ui": [
@@ -148,8 +169,10 @@
         ]
       },
       "connect": {
-        "@spec:tests": ["@domain:[dom]", "@domain:session:*", "@domain:skills:*", "@ext:ui"],
+        "@cli:audit-run": ["@feature:audit"],
         "@cli:unified-run": [
+          "@feature:unified",
+          "@feature:replay",
           "@domain:session:repository",
           "@domain:session:recorder",
           "@domain:session:projection",
@@ -157,6 +180,7 @@
           "@domain:skills:definition",
           "@domain:mcp"
         ],
+        "@cli:unified-conversation": ["@feature:unified"],
         "@feature:unified": [
           "@domain:workspace",
           "@domain:web",
