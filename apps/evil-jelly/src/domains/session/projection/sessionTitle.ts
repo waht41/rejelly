@@ -4,7 +4,7 @@ import {
   unwrapPriorUserMessageText,
 } from "../../../shared/conversation/compactionMessages";
 import { messageContentToText } from "../../../shared/model/message/content";
-import { getLegacyUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
+import { getLegacyUserInputDisplay } from "../model/frozenUserInput";
 
 const SESSION_TITLE_MAX_CHARS = 80;
 

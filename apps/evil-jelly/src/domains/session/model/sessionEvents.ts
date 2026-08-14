@@ -3,16 +3,8 @@ import {
   messageSourceSchema,
   nonUserMessageSourceSchema,
 } from "../../../shared/session/messageSource";
+import { frozenUserInputV1Schema } from "./frozenUserInput";
 import { sessionMessageSchema } from "./sessionMessageSchema";
-import {
-  storedPromptAttachmentV1Schema,
-  storedPromptDocumentV1Schema,
-  storedPromptInputV1Schema,
-} from "./storedPromptInput";
-import {
-  assertMatchingStoredUserInputMaterialization,
-  storedUserInputMaterializationV1Schema,
-} from "./storedUserInputMaterialization";
 
 export { sessionMessageSchema } from "./sessionMessageSchema";
 
@@ -140,9 +132,7 @@ export const userInputRecordedEventSchema = z
     type: z.literal("user_input_recorded"),
     turnId: z.string(),
     inputKind: z.enum(["initial", "steer"]),
-    document: storedPromptDocumentV1Schema,
-    attachments: z.array(storedPromptAttachmentV1Schema),
-    materialized: storedUserInputMaterializationV1Schema,
+    input: frozenUserInputV1Schema,
   })
   .passthrough();
 
@@ -351,26 +341,6 @@ export function parseSessionEvent(
   ) {
     throw new SessionSchemaError("Session V3 user input must use user_input_recorded");
   }
-  if (parsed.data.type === "user_input_recorded") {
-    const input = storedPromptInputV1Schema.safeParse({
-      document: parsed.data.document,
-      attachments: parsed.data.attachments,
-    });
-    if (!input.success) {
-      throw new SessionSchemaError(
-        "Invalid stored PromptInput in user_input_recorded",
-        input.error,
-      );
-    }
-    try {
-      assertMatchingStoredUserInputMaterialization(input.data, parsed.data.materialized);
-    } catch (error) {
-      throw new SessionSchemaError(
-        "Stored materialization does not match user_input_recorded document",
-        error,
-      );
-    }
-  }
   assertValidCompactionTurnAssociation(parsed.data);
   return parsed.data;
 }
@@ -379,26 +349,6 @@ export function parseNewSessionEvent(value: unknown): NewSessionEvent {
   const parsed = newSessionEventSchema.safeParse(value);
   if (!parsed.success) {
     throw new SessionSchemaError("Invalid new Session V3 event", parsed.error);
-  }
-  if (parsed.data.type === "user_input_recorded") {
-    const input = storedPromptInputV1Schema.safeParse({
-      document: parsed.data.document,
-      attachments: parsed.data.attachments,
-    });
-    if (!input.success) {
-      throw new SessionSchemaError(
-        "Invalid stored PromptInput in user_input_recorded",
-        input.error,
-      );
-    }
-    try {
-      assertMatchingStoredUserInputMaterialization(input.data, parsed.data.materialized);
-    } catch (error) {
-      throw new SessionSchemaError(
-        "Stored materialization does not match user_input_recorded document",
-        error,
-      );
-    }
   }
   assertValidCompactionTurnAssociation(parsed.data);
   return parsed.data;

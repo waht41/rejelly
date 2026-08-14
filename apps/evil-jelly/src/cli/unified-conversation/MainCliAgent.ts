@@ -20,6 +20,10 @@ import {
   type SessionBudget,
 } from "../../domains/session/repository/sessionStore";
 import {
+  commitResolvedUserInput,
+  materializeFrozenUserInputMessage,
+} from "../../domains/session/repository/userInputRepository";
+import {
   SKILL_RUNTIME_PROVIDER_KEY,
   type SkillRuntimeSnapshot,
 } from "../../domains/skills/agent/skillRuntime";
@@ -30,6 +34,10 @@ import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy
 import type { EvilJellyBindings } from "../../shared/host/bindings";
 import { getBinding, setBinding } from "../../shared/host/context";
 import { releasePromptResources } from "../../shared/host/promptResourceLifecycle";
+import {
+  projectFrozenUserInputDisplay,
+  type ResolvedUserInputV1,
+} from "../../shared/model/prompt/frozenUserInput";
 import {
   isPromptInputSemanticallyEmpty,
   type PromptInput,
@@ -256,25 +264,36 @@ async function drainAndPrepareSteerMessages(
   const inputs = drainSteers();
   try {
     for (const input of inputs) {
-      const materialization = await materializeSkillAwareUserInput(
-        input,
-        runtime.skillSnapshot,
-      ).finally(() =>
-        releasePromptResources(input).catch((error) =>
-          runtime.host.logSystemEvent(
-            `Prompt resource cleanup failed: ${formatPersistenceError(error)}\n`,
+      const resolved = await materializeSkillAwareUserInput(input, runtime.skillSnapshot).finally(
+        () =>
+          releasePromptResources(input).catch((error) =>
+            runtime.host.logSystemEvent(
+              `Prompt resource cleanup failed: ${formatPersistenceError(error)}\n`,
+            ),
           ),
-        ),
       );
-      runtime.host.logUserMessage(formatUserInputDisplay(materialization.display));
-      await runtime.props.sessionRecorder?.recordUserInput(turnId, "steer", input, materialization);
-      messages.push(materialization.message);
+      messages.push(await commitUserInput(runtime, turnId, "steer", resolved));
     }
   } catch (error) {
     await Promise.all(inputs.map((input) => releasePromptResources(input).catch(() => undefined)));
     throw error;
   }
   return messages;
+}
+
+async function commitUserInput(
+  runtime: RouterRuntime,
+  turnId: string,
+  inputKind: "initial" | "steer",
+  resolved: ResolvedUserInputV1,
+): Promise<Message> {
+  const frozen = runtime.props.sessionRecorder
+    ? await runtime.props.sessionRecorder.recordUserInput(turnId, inputKind, resolved)
+    : await commitResolvedUserInput(resolved, { blobRoot: runtime.props.sessionBlobRoot });
+  runtime.host.logUserMessage(formatUserInputDisplay(projectFrozenUserInputDisplay(frozen)));
+  return materializeFrozenUserInputMessage(frozen, {
+    blobRoot: runtime.props.sessionBlobRoot,
+  });
 }
 
 async function handleResume(runtime: RouterRuntime, rawInput: string): Promise<boolean> {
@@ -330,7 +349,7 @@ async function runConversationTurn(
   let turnClosureAttempted = false;
 
   try {
-    const materialization = await materializeSkillAwareUserInput(
+    const resolved = await materializeSkillAwareUserInput(
       promptInput,
       runtime.skillSnapshot,
     ).finally(() =>
@@ -340,19 +359,12 @@ async function runConversationTurn(
         ),
       ),
     );
-    submittedUserMessage = materialization.message;
-    runtime.host.logUserMessage(formatUserInputDisplay(materialization.display));
     activeTurnId = createTurnId();
     // The session layer marks the turn start here (inputKind: "initial"); the status line's
     // timer must anchor at exactly this point so steers and maintenance commands never
     // start (or restart) a turn.
     runtime.host.onTurnStart?.();
-    await runtime.props.sessionRecorder?.recordUserInput(
-      activeTurnId,
-      "initial",
-      promptInput,
-      materialization,
-    );
+    submittedUserMessage = await commitUserInput(runtime, activeTurnId, "initial", resolved);
 
     const result = await UnifiedAgentWithAbort({
       message: submittedUserMessage,

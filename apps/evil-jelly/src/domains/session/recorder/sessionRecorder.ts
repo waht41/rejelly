@@ -1,7 +1,9 @@
 import type { Message } from "@rejelly/core";
-import type { PromptInput } from "../../../shared/model/prompt/promptInput";
-import { promptInputPlainText } from "../../../shared/model/prompt/promptInput";
-import type { UserInputMaterializationV1 } from "../../../shared/model/prompt/userInputMaterialization";
+import {
+  type FrozenUserInputV1,
+  projectFrozenUserInputPlainText,
+  type ResolvedUserInputV1,
+} from "../../../shared/model/prompt/frozenUserInput";
 import type { NonUserMessageSource } from "../../../shared/session/messageSource";
 import type {
   SessionCompactionRecord,
@@ -15,7 +17,7 @@ import {
   type SessionStoragePaths,
   type SessionWriter,
 } from "../journal/sessionJsonlStore";
-import { prepareUserInputForStorage } from "../journal/userInputStorage";
+import { freezeResolvedUserInput } from "../journal/userInputStorage";
 import type { NewSessionEvent, SessionEvent, SessionStatus } from "../model/sessionEvents";
 import { isKnownSessionEvent } from "../model/sessionEvents";
 import type { SessionBudget } from "../model/sessionTypes";
@@ -51,9 +53,8 @@ export interface SessionRecorder extends SessionMessageSink {
   recordUserInput(
     turnId: string,
     inputKind: "initial" | "steer",
-    input: PromptInput,
-    materialization: UserInputMaterializationV1,
-  ): Promise<void>;
+    input: ResolvedUserInputV1,
+  ): Promise<FrozenUserInputV1>;
   completeTurn(
     turnId: string,
     status: "completed" | "interrupted" | "error",
@@ -179,26 +180,25 @@ class JsonlSessionRecorder implements SessionRecorder {
   async recordUserInput(
     turnId: string,
     inputKind: "initial" | "steer",
-    input: PromptInput,
-    materialization: UserInputMaterializationV1,
-  ): Promise<void> {
-    const stored = await prepareUserInputForStorage(input, materialization, this.storagePaths);
+    input: ResolvedUserInputV1,
+  ): Promise<FrozenUserInputV1> {
+    const frozen = await freezeResolvedUserInput(input, this.storagePaths);
     await this.#append({
       type: "user_input_recorded",
       turnId,
       inputKind,
-      document: stored.document,
-      attachments: stored.attachments,
-      materialized: stored.materialized,
+      input: frozen,
     });
     if (inputKind === "initial" && !this.#newUserTurnIds.has(turnId)) {
       this.#newUserTurnIds.add(turnId);
       this.#userTurns += 1;
       if (this.#title === "(untitled)") {
-        this.#title = deriveSessionTitleFromText(promptInputPlainText(input)) ?? this.#title;
+        this.#title =
+          deriveSessionTitleFromText(projectFrozenUserInputPlainText(frozen)) ?? this.#title;
       }
     }
     await this.writer.flush();
+    return frozen;
   }
 
   async recordMessage(

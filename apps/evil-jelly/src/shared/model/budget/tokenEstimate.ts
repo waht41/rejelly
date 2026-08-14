@@ -8,7 +8,10 @@
 
 import type { ImageContent, Message, MessageContent } from "@rejelly/core";
 import { type ImageDimensions, readImageDimensions } from "../../foundation/media/imageDimensions";
-import { getRuntimeUserInputImageDimensions } from "../message/userInputMetadata";
+import {
+  frozenUserInputImageDimensions,
+  getFrozenUserInputOrigin,
+} from "../prompt/frozenUserInput";
 
 /** Rough chars-per-token for non-CJK text (code/ASCII); on the cheap side so we under-charge slightly. */
 const NON_CJK_CHARS_PER_TOKEN = 4;
@@ -125,9 +128,10 @@ export function estimateMessageContentTokens(
 export function estimateMessagesTokens(messages: readonly Message[]): number {
   let total = 0;
   for (const message of messages) {
+    const frozenInput = getFrozenUserInputOrigin(message);
     total += estimateMessageContentTokens(
       message.content,
-      getRuntimeUserInputImageDimensions(message),
+      frozenInput ? frozenUserInputImageDimensions(frozenInput) : [],
     );
     for (const call of message.tool_calls ?? []) {
       total += estimateTokens(JSON.stringify(call));

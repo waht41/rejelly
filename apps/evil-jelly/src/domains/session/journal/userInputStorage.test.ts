@@ -7,8 +7,9 @@ import {
   getWorkspaceFsPolicy,
   setWorkspaceRoot,
 } from "../../../shared/fs-policy/workspace-fs-policy";
+import { projectFrozenUserInputMessage } from "../../../shared/model/prompt/frozenUserInput";
 import type { PromptInput } from "../../../shared/model/prompt/promptInput";
-import { prepareUserInputForStorage } from "./userInputStorage";
+import { freezeResolvedUserInput } from "./userInputStorage";
 
 describe("V3 user-input storage preparation", () => {
   let previousRoot: string;
@@ -45,35 +46,33 @@ describe("V3 user-input storage preparation", () => {
         },
       ],
     };
-    const materialization = await materializeUserInput(input);
-    const stored = await prepareUserInputForStorage(input, materialization, {
+    const resolved = await materializeUserInput(input);
+    const frozen = await freezeResolvedUserInput(resolved, {
       blobRoot: path.join(tmpDir, "blobs"),
     });
 
-    expect(stored.materialized.message.content).toEqual([
+    expect(projectFrozenUserInputMessage(frozen).content).toEqual([
       { type: "text", text: "[Image #1]" },
       expect.objectContaining({
         type: "image",
         image: expect.objectContaining({ url: expect.stringMatching(/^rejelly-blob:\/\//) }),
       }),
     ]);
-    expect(stored.materialized.message.extra?.rejelly).toBeUndefined();
-    expect(stored.attachments).toEqual([
-      expect.objectContaining({
-        kind: "image",
-        blobRef: expect.stringMatching(/^rejelly-blob:\/\//),
-      }),
-    ]);
+    expect(frozen).toMatchObject({
+      kind: "resolved",
+      nodes: [{ kind: "image", blob: { blobRef: expect.stringMatching(/^rejelly-blob:\/\//) } }],
+    });
   });
 
-  it("rejects a materialization paired with a different document", async () => {
-    const input: PromptInput = { document: [{ type: "text", text: "one" }], attachments: [] };
-    const materialization = await materializeUserInput(input);
-    await expect(
-      prepareUserInputForStorage(
-        { document: [{ type: "text", text: "two" }], attachments: [] },
-        materialization,
-      ),
-    ).rejects.toThrow(/does not match/);
+  it("keeps authored text directly in the frozen canonical record", async () => {
+    const resolved = await materializeUserInput({
+      document: [{ type: "text", text: "one" }],
+      attachments: [],
+    });
+    await expect(freezeResolvedUserInput(resolved)).resolves.toEqual({
+      version: 1,
+      kind: "resolved",
+      nodes: [{ kind: "text", text: "one" }],
+    });
   });
 });

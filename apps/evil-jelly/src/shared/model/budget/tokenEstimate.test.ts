@@ -1,6 +1,9 @@
 import type { Message } from "@rejelly/core";
 import { describe, expect, it } from "vitest";
-import { registerRuntimeUserInputMetadata } from "../message/userInputMetadata";
+import {
+  type FrozenResolvedUserInputV1,
+  registerFrozenUserInputOrigin,
+} from "../prompt/frozenUserInput";
 import {
   estimateMessagesTokens,
   IMAGE_CONTENT_TOKEN_ESTIMATE,
@@ -18,9 +21,25 @@ function imageMessage(options: {
     content: [{ type: "image", image: { url: "data:image/png;base64,x", detail } }],
   };
   if (width !== undefined && height !== undefined) {
-    registerRuntimeUserInputMetadata(message, { text: "[Image #1]", attachments: [] }, [
-      { width, height },
-    ]);
+    const input: FrozenResolvedUserInputV1 = {
+      version: 1,
+      kind: "resolved",
+      nodes: [
+        {
+          kind: "image",
+          detail: detail ?? "auto",
+          blob: {
+            blobRef: `rejelly-blob://${"a".repeat(64)}` as never,
+            sha256: "a".repeat(64),
+            mediaType: "image/png",
+            byteLength: 1,
+            width,
+            height,
+          },
+        },
+      ],
+    };
+    registerFrozenUserInputOrigin(message, input);
   }
   return message;
 }

@@ -1,26 +1,17 @@
-import { textPromptInput } from "../../../shared/model/prompt/promptInput";
-import type { UserInputMaterializationV1 } from "../../../shared/model/prompt/userInputMaterialization";
+import type {
+  FrozenUserInputV1,
+  ResolvedUserInputV1,
+} from "../../../shared/model/prompt/frozenUserInput";
 import type { SessionRecorder } from "../recorder/sessionRecorder";
 
-export function textMaterialization(text: string): UserInputMaterializationV1 {
-  const display = { text, attachments: [] };
-  return {
-    version: 1,
-    message: { role: "user", content: text },
-    display,
-    resolutions: [],
-  };
+export function resolvedTextInput(text: string): ResolvedUserInputV1 {
+  return { version: 1, nodes: text ? [{ kind: "text", text }] : [] };
 }
 
 export function recordInitialTextInput(
   recorder: SessionRecorder,
   turnId: string,
   text: string,
-): Promise<void> {
-  return recorder.recordUserInput(
-    turnId,
-    "initial",
-    textPromptInput(text),
-    textMaterialization(text),
-  );
+): Promise<FrozenUserInputV1> {
+  return recorder.recordUserInput(turnId, "initial", resolvedTextInput(text));
 }

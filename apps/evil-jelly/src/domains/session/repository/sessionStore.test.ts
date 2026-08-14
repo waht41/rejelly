@@ -257,12 +257,12 @@ describe("mixed-format session store", () => {
     expect(v3.meta.schemaVersion).toBe(3);
     expect(v3.events[1]).toMatchObject({
       type: "user_input_recorded",
-      document: {
+      input: {
         version: 1,
-        nodes: [{ type: "text", text: "review @src/a.ts" }],
+        kind: "legacy",
+        display: { text: "review @src/a.ts" },
+        message: { content: "frozen V2 model input" },
       },
-      attachments: [],
-      materialized: { message: { content: "frozen V2 model input" } },
     });
 
     await fs.writeFile(source.filePath, "{corrupt V2", "utf8");
@@ -310,7 +310,7 @@ describe("mixed-format session store", () => {
     }
   });
 
-  it("moves V2 image metadata beside the frozen V3 materialization", async () => {
+  it("moves V2 image metadata into one frozen V3 legacy record", async () => {
     await writeV2Image("v2-image");
     const blobRoot = path.join(tmpDir, "blobs");
 
@@ -332,24 +332,27 @@ describe("mixed-format session store", () => {
     const v3 = await readSessionEvents(workspaceRoot, "v2-image", { sessionsRoot });
     expect(v3.events[1]).toMatchObject({
       type: "user_input_recorded",
-      document: { nodes: [{ type: "text", text: "[Image #1]" }] },
-      attachments: [],
-      materialized: {
-        resolutions: [
-          {
-            kind: "legacy_image",
-            contentPartIndex: 1,
-            blob: { blobRef: expect.stringMatching(/^rejelly-blob:\/\//) },
-          },
-        ],
+      input: {
+        kind: "legacy",
+        display: { text: "[Image #1]" },
       },
     });
     const migratedInput = v3.events[1];
     expect(
       migratedInput &&
         isKnownSessionEvent(migratedInput) &&
+        migratedInput.type === "user_input_recorded" &&
+        migratedInput.input.kind === "legacy"
+        ? Object.values(migratedInput.input.imageBlobs)
+        : [],
+    ).toEqual([expect.objectContaining({ blobRef: expect.stringMatching(/^rejelly-blob:\/\//) })]);
+    expect(
+      migratedInput &&
+        isKnownSessionEvent(migratedInput) &&
         migratedInput.type === "user_input_recorded"
-        ? migratedInput.materialized.message.extra?.rejelly
+        ? migratedInput.input.kind === "legacy"
+          ? migratedInput.input.message.extra?.rejelly
+          : "wrong input kind"
         : "missing event",
     ).toBeUndefined();
   });

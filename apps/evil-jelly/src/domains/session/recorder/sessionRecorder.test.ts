@@ -2,8 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { textPromptInput } from "../../../shared/model/prompt/promptInput";
-import { recordInitialTextInput, textMaterialization } from "../__tests__/sessionTestInput";
+import { recordInitialTextInput, resolvedTextInput } from "../__tests__/sessionTestInput";
 import { readSessionEvents } from "../journal/sessionJsonlStore";
 import { buildStoredActiveContext, buildTranscript } from "../projection/sessionHistoryProjection";
 import { prepareSessionReplay } from "../projection/sessionReplay";
@@ -92,13 +91,10 @@ describe("sessionRecorder", () => {
     expect(stored.events[1]).toMatchObject({
       type: "user_input_recorded",
       inputKind: "initial",
-      document: { version: 1, nodes: [{ type: "text", text: "inspect the store" }] },
-      attachments: [],
-      materialized: {
+      input: {
         version: 1,
-        message: { role: "user", content: "inspect the store" },
-        display: { text: "inspect the store", attachments: [] },
-        resolutions: [],
+        kind: "resolved",
+        nodes: [{ kind: "text", text: "inspect the store" }],
       },
     });
     expect(
@@ -174,12 +170,7 @@ describe("sessionRecorder", () => {
       sessionsRoot,
     });
     await recordInitialTextInput(recorder, "turn-1", "initial");
-    await recorder.recordUserInput(
-      "turn-1",
-      "steer",
-      textPromptInput("steer"),
-      textMaterialization("steer"),
-    );
+    await recorder.recordUserInput("turn-1", "steer", resolvedTextInput("steer"));
     await recorder.completeTurn("turn-1", "completed");
     await recorder.close();
 

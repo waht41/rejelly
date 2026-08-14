@@ -1,7 +1,7 @@
 import path from "node:path";
+import { projectFrozenUserInputPlainText } from "../../../shared/model/prompt/frozenUserInput";
 import type { SessionMetaLine, SessionStateEvent, SessionStatus } from "../model/sessionEvents";
 import type { SessionBudget } from "../model/sessionTypes";
-import { storedPromptInputPlainText } from "../model/storedPromptInput";
 import type { PreparedSessionReplay } from "./sessionReplay";
 import { deriveSessionTitle, deriveSessionTitleFromText } from "./sessionTitle";
 
@@ -86,12 +86,7 @@ export function projectSessionSummary(
           userTurns += 1;
           title =
             title === "(untitled)"
-              ? (deriveSessionTitleFromText(
-                  storedPromptInputPlainText({
-                    document: event.document,
-                    attachments: event.attachments,
-                  }),
-                ) ?? title)
+              ? (deriveSessionTitleFromText(projectFrozenUserInputPlainText(event.input)) ?? title)
               : title;
         }
         break;

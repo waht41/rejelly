@@ -92,24 +92,20 @@ describe("sessionEvents", () => {
     ).toThrow(SessionSchemaError);
   });
 
-  it("records V3 user input as a document plus frozen materialization", () => {
+  it("records V3 user input as one frozen canonical record", () => {
     const event = parseNewSessionEvent({
       type: "user_input_recorded",
       turnId: "turn-1",
       inputKind: "initial",
-      document: { version: 1, nodes: [{ type: "text", text: "inspect it" }] },
-      attachments: [],
-      materialized: {
+      input: {
         version: 1,
-        message: { role: "user", content: "inspect it" },
-        display: { text: "inspect it", attachments: [] },
-        resolutions: [],
+        kind: "resolved",
+        nodes: [{ kind: "text", text: "inspect it" }],
       },
     });
     expect(event).toMatchObject({
       type: "user_input_recorded",
-      document: { version: 1 },
-      materialized: { version: 1 },
+      input: { version: 1, kind: "resolved" },
     });
 
     expect(() =>
@@ -126,16 +122,14 @@ describe("sessionEvents", () => {
         type: "user_input_recorded",
         turnId: "turn-1",
         inputKind: "initial",
-        document: { version: 1, nodes: [{ type: "text", text: "canonical" }] },
+        document: { version: 1, nodes: [{ type: "text", text: "obsolete shape" }] },
         attachments: [],
         materialized: {
           version: 1,
-          message: { role: "user", content: "frozen" },
-          display: { text: "second fact", attachments: [] },
-          resolutions: [],
+          message: { role: "user", content: "obsolete shape" },
         },
       }),
-    ).toThrow(/does not match/);
+    ).toThrow(SessionSchemaError);
   });
 
   it("uses created/resumed for run starts instead of encoding the caller path", () => {

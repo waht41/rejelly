@@ -1,14 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
+import { freezeResolvedUserInput } from "../../../domains/session/journal/userInputStorage";
 import type { SkillRuntimeSnapshot } from "../../../domains/skills/agent/skillRuntime";
 import { createSkillCatalog } from "../../../domains/skills/catalog/skillCatalog";
 import type { SkillRecord } from "../../../domains/skills/definition/skillDefinition";
 import { skillOrigin } from "../../../domains/skills/definition/skillDefinition";
-import { textPromptInput } from "../../../shared/model/prompt/promptInput";
 import {
-  materializeSkillAwareUserInput,
-  renderExplicitSkillContext,
-  resolveExplicitSkills,
-} from "./skillAwareUserMessage";
+  projectFrozenUserInputDisplay,
+  projectFrozenUserInputMessage,
+} from "../../../shared/model/prompt/frozenUserInput";
+import { textPromptInput } from "../../../shared/model/prompt/promptInput";
+import { materializeSkillAwareUserInput, resolveExplicitSkills } from "./skillAwareUserMessage";
 
 function record(name: string, scope: "user" | "project" = "project"): SkillRecord {
   return Object.freeze({
@@ -27,6 +28,19 @@ function snapshot(records: readonly SkillRecord[]): SkillRuntimeSnapshot {
   });
 }
 
+async function compile(
+  input: Parameters<typeof materializeSkillAwareUserInput>[0],
+  runtime: SkillRuntimeSnapshot,
+) {
+  const frozen = await freezeResolvedUserInput(
+    await materializeSkillAwareUserInput(input, runtime),
+  );
+  return {
+    message: projectFrozenUserInputMessage(frozen),
+    display: projectFrozenUserInputDisplay(frozen),
+  };
+}
+
 describe("explicit Skill references", () => {
   it("resolves qualified structured selections, preserves order, and de-duplicates", () => {
     const review = record("review");
@@ -38,15 +52,8 @@ describe("explicit Skill references", () => {
     ).toEqual([test, review]);
   });
 
-  it("renders selected instructions inside an explicit wrapper", () => {
-    const output = renderExplicitSkillContext([record("review")]);
-    expect(output).toContain('<explicit_skills count="1">');
-    expect(output).toContain('qualified-name="project:review"');
-    expect(output).toContain("Follow the review workflow.");
-  });
-
   it("keeps the marker in place and appends instructions after the intact user request", async () => {
-    const { message, display } = await materializeSkillAwareUserInput(
+    const { message, display } = await compile(
       {
         document: [
           { type: "text", text: "Please " },
@@ -72,7 +79,7 @@ describe("explicit Skill references", () => {
   });
 
   it("appends multiple Skill instructions once in first-token order", async () => {
-    const { message } = await materializeSkillAwareUserInput(
+    const { message } = await compile(
       {
         document: [
           { type: "token", kind: "skill", qualifiedName: "user:test" },
@@ -97,7 +104,7 @@ describe("explicit Skill references", () => {
   });
 
   it("does not infer ordinary dollar-prefixed text", async () => {
-    const { message } = await materializeSkillAwareUserInput(
+    const { message } = await compile(
       textPromptInput("echo $HOME and $project:review"),
       snapshot([record("review")]),
     );

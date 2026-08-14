@@ -4,7 +4,6 @@ import path from "node:path";
 import type { Message } from "@rejelly/core";
 import { getErrnoCode } from "../../../shared/foundation/errno";
 import { messageContentToText } from "../../../shared/model/message/content";
-import { getLegacyUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
 import {
   createSessionMetaLine,
   openSessionWriter,
@@ -20,6 +19,7 @@ import {
   releaseSessionWriterLock,
   SessionWriterLockedError,
 } from "../journal/sessionWriterLock";
+import { getLegacyUserInputDisplay, parseFrozenUserInputV1 } from "../model/frozenUserInput";
 import {
   isKnownSessionEvent,
   type MessageRecordedEvent,
@@ -28,7 +28,6 @@ import {
 } from "../model/sessionEvents";
 import type { SessionRecord } from "../model/sessionTypes";
 import { getSessionImageBlobMetadata } from "../model/storedSessionMessage";
-import { parseStoredUserInputMaterializationV1 } from "../model/storedUserInputMaterialization";
 import { readFailure, type SessionReadResult } from "./sessionReadResult";
 import { readV2Session } from "./sessionV2Store";
 import { readV3Session } from "./sessionV3Store";
@@ -191,37 +190,25 @@ function migrateV2UserInputEvent(event: MessageRecordedEvent): NewSessionEvent {
   const display = getLegacyUserInputDisplay(event.message);
   const text = display?.text ?? messageContentToText(event.message.content).trim();
   const imageBlobs = getSessionImageBlobMetadata(event.message);
-  const resolutions = Array.isArray(event.message.content)
-    ? event.message.content.flatMap((part, contentPartIndex) => {
-        if (part.type !== "image") return [];
-        const blob = imageBlobs[part.image.url];
-        if (!blob) {
-          throw new Error(`V2 user image has no durable metadata: ${part.image.url}`);
-        }
-        return [
-          {
-            version: 1 as const,
-            kind: "legacy_image" as const,
-            contentPartIndex,
-            ...(part.image.detail ? { detail: part.image.detail } : {}),
-            blob,
-          },
-        ];
-      })
-    : [];
-  const materialized = parseStoredUserInputMaterializationV1({
+  if (Array.isArray(event.message.content)) {
+    for (const part of event.message.content) {
+      if (part.type === "image" && !imageBlobs[part.image.url]) {
+        throw new Error(`V2 user image has no durable metadata: ${part.image.url}`);
+      }
+    }
+  }
+  const input = parseFrozenUserInputV1({
     version: 1,
+    kind: "legacy",
     message: removeV2UserMetadata(event.message),
     display: display ?? { text, attachments: [] },
-    resolutions,
+    imageBlobs,
   });
   return {
     type: "user_input_recorded",
     turnId: event.turnId,
     inputKind: event.source.inputKind,
-    document: { version: 1, nodes: text ? [{ type: "text", text }] : [] },
-    attachments: [],
-    materialized,
+    input,
   };
 }
 

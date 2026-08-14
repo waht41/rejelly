@@ -1,4 +1,5 @@
-import { registerRuntimeUserInputMetadata } from "../../../shared/model/message/userInputMetadata";
+import type { FrozenUserInputV1 } from "../../../shared/model/prompt/frozenUserInput";
+import { parseFrozenUserInputV1 } from "../model/frozenUserInput";
 import {
   type BudgetUpdatedEvent,
   type ContextCompactedEvent,
@@ -12,16 +13,11 @@ import {
   type TurnCompletedEvent,
   type UserInputRecordedEvent,
 } from "../model/sessionEvents";
-import { parseStoredPromptInputV1 } from "../model/storedPromptInput";
 import {
   parseStoredSessionMessage,
   type StoredSessionMessage,
 } from "../model/storedSessionMessage";
-import {
-  parseStoredUserInputMaterializationV1,
-  type StoredUserInputMaterializationV1,
-  storedMaterializationImageBlobs,
-} from "../model/storedUserInputMaterialization";
+import { projectFrozenUserInputRuntimeMessage } from "./frozenUserInputProjection";
 
 declare const preparedSessionReplayBrand: unique symbol;
 
@@ -40,7 +36,7 @@ export type PreparedLegacySnapshotImportedEvent = LegacySnapshotImportedEvent & 
 };
 
 export type PreparedUserInputRecordedEvent = UserInputRecordedEvent & {
-  materialized: StoredUserInputMaterializationV1;
+  input: FrozenUserInputV1;
   runtimeMessage: StoredSessionMessage;
 };
 
@@ -99,24 +95,9 @@ export function prepareSessionReplay(events: readonly SessionEvent[]): PreparedS
         });
         break;
       case "user_input_recorded": {
-        parseStoredPromptInputV1({
-          document: event.document,
-          attachments: event.attachments,
-        });
-        const materialized = parseStoredUserInputMaterializationV1(event.materialized);
-        const imageBlobs = storedMaterializationImageBlobs(materialized);
-        const runtimeMessage = parseStoredSessionMessage(materialized.message, { imageBlobs });
-        const imageDimensions = Array.isArray(runtimeMessage.content)
-          ? runtimeMessage.content.flatMap((part) => {
-              if (part.type !== "image") return [];
-              const blob = imageBlobs[part.image.url];
-              return [
-                blob?.width && blob.height ? { width: blob.width, height: blob.height } : null,
-              ];
-            })
-          : [];
-        registerRuntimeUserInputMetadata(runtimeMessage, materialized.display, imageDimensions);
-        prepared.push({ ...event, materialized, runtimeMessage });
+        const input = parseFrozenUserInputV1(event.input);
+        const runtimeMessage = projectFrozenUserInputRuntimeMessage(input);
+        prepared.push({ ...event, input, runtimeMessage });
         break;
       }
       case "context_compacted":

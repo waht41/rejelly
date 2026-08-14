@@ -59,8 +59,8 @@ export class LazySessionRecorder implements SessionRecorder {
     await (await this.#ensureOpen()).recordMessage(...args);
   }
 
-  async recordUserInput(...args: Parameters<SessionRecorder["recordUserInput"]>): Promise<void> {
-    await (await this.#ensureOpen()).recordUserInput(...args);
+  async recordUserInput(...args: Parameters<SessionRecorder["recordUserInput"]>) {
+    return (await this.#ensureOpen()).recordUserInput(...args);
   }
 
   async recordMessages(...args: Parameters<SessionRecorder["recordMessages"]>): Promise<void> {

@@ -17,10 +17,11 @@ import {
 } from "../../shared/model/budget/tokenEstimate";
 import { messageContentToText } from "../../shared/model/message/content";
 import {
-  copyRuntimeUserInputMetadata,
-  getRuntimeUserInputDisplay,
+  copyFrozenUserInputOrigin,
+  getFrozenUserInputOrigin,
+  projectFrozenUserInputDisplay,
   type UserInputAttachmentDisplay,
-} from "../../shared/model/message/userInputMetadata";
+} from "../../shared/model/prompt/frozenUserInput";
 import {
   renderPseudoXmlElement,
   renderPseudoXmlEmptyElement,
@@ -222,7 +223,8 @@ function projectUserMessageForCompaction(message: Message): UserCompactionProjec
   const images = Array.isArray(message.content)
     ? message.content.filter((part): part is ContentPart => part.type === "image")
     : [];
-  const display = getRuntimeUserInputDisplay(message);
+  const origin = getFrozenUserInputOrigin(message);
+  const display = origin ? projectFrozenUserInputDisplay(origin) : undefined;
   if (display) {
     const visible = display.attachments.slice(0, MAX_COMPACT_ATTACHMENT_REFS);
     const references = visible.map(compactAttachmentReference);
@@ -270,7 +272,7 @@ function projectionTokenCost(
   content: Message["content"],
 ): number {
   return estimateMessagesTokens([
-    copyRuntimeUserInputMetadata(projection.message, { ...projection.message, content }),
+    copyFrozenUserInputOrigin(projection.message, { ...projection.message, content }),
   ]);
 }
 
@@ -340,7 +342,7 @@ function fitUserProjection(
   }
   const complete = projectionContent(projection.text, projection.references, projection.images);
   if (projectionTokenCost(projection, complete) <= maxTokens) {
-    return copyRuntimeUserInputMetadata(projection.message, {
+    return copyFrozenUserInputOrigin(projection.message, {
       ...projection.message,
       content: complete,
     });
@@ -351,7 +353,7 @@ function fitUserProjection(
   const { text, references } = fitTextAndReferences(projection, maxTokens);
   const fitted = fitImagesAfterText(projection, text, references, maxTokens);
   return fitted.length > 0
-    ? copyRuntimeUserInputMetadata(projection.message, {
+    ? copyFrozenUserInputOrigin(projection.message, {
         ...projection.message,
         content: fitted,
       })
@@ -379,7 +381,7 @@ export function selectRecentUserMessages(messages: Message[], maxTokens: number)
     const cost = Math.max(1, projectionTokenCost(users[index], complete));
     if (cost <= remaining) {
       picked.push(
-        copyRuntimeUserInputMetadata(users[index].message, {
+        copyFrozenUserInputOrigin(users[index].message, {
           ...users[index].message,
           content: complete,
         }),
@@ -406,7 +408,7 @@ function wrapPriorUserMessage(message: Message): Message {
   const images = Array.isArray(message.content)
     ? message.content.filter((part): part is ContentPart => part.type === "image")
     : [];
-  return copyRuntimeUserInputMetadata(message, {
+  return copyFrozenUserInputOrigin(message, {
     ...message,
     content: projectionContent(renderPseudoXmlElement(PRIOR_USER_MESSAGE_TAG, text), [], images),
   });

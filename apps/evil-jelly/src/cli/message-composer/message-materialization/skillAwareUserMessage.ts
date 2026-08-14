@@ -3,10 +3,9 @@ import type { SkillRuntimeSnapshot } from "../../../domains/skills/agent/skillRu
 import { renderSkillToolResult } from "../../../domains/skills/agent/skillToolOutput";
 import type { SkillRecord } from "../../../domains/skills/definition/skillDefinition";
 import { qualifiedSkillName } from "../../../domains/skills/definition/skillDefinition";
+import type { ResolvedUserInputV1 } from "../../../shared/model/prompt/frozenUserInput";
 import { promptTokens } from "../../../shared/model/prompt/promptDocument";
 import type { PromptInput } from "../../../shared/model/prompt/promptInput";
-import { renderPseudoXmlElement } from "../../../shared/model/prompt/pseudoXml";
-import type { UserInputMaterializationV1 } from "../../../shared/model/prompt/userInputMaterialization";
 import { materializeUserInput } from "./userMessage";
 
 /** Resolve semantic Skill tokens against the enabled process snapshot. */
@@ -31,19 +30,11 @@ export function resolveExplicitSkills(
   return resolved;
 }
 
-/** Render the Skills that the user explicitly selected for this turn. */
-export function renderExplicitSkillContext(skills: readonly SkillRecord[]): string {
-  if (skills.length === 0) return "";
-  return renderPseudoXmlElement("explicit_skills", skills.map(renderSkillToolResult).join("\n"), {
-    count: String(skills.length),
-  });
-}
-
 /** Resolve Skill tokens, preserve their markers in place, then append one instruction block. */
 export async function materializeSkillAwareUserInput(
   input: PromptInput,
   snapshot: SkillRuntimeSnapshot | undefined,
-): Promise<UserInputMaterializationV1> {
+): Promise<ResolvedUserInputV1> {
   const skills = resolveExplicitSkills(
     snapshot,
     promptTokens(input.document, "skill").map((token) => token.qualifiedName),
@@ -55,7 +46,6 @@ export async function materializeSkillAwareUserInput(
     ]),
   );
   return materializeUserInput(input, {
-    skillContext: renderExplicitSkillContext(skills),
     skillResolution: (qualifiedName) => {
       return skillByName.get(qualifiedName) ?? { status: "unavailable" };
     },

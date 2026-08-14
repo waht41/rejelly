@@ -16,6 +16,7 @@ import { isCompactionBridgeMessage } from "../../../../shared/conversation/compa
 import { setWorkspaceRoot } from "../../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 import { messageContentToText } from "../../../../shared/model/message/content";
+import { projectFrozenUserInputMessage } from "../../../../shared/model/prompt/frozenUserInput";
 import { textPromptInput } from "../../../../shared/model/prompt/promptInput";
 import type { TranscriptItem } from "../../../../shared/session/transcript";
 import { createInteractiveRunControl } from "./runControl";
@@ -494,7 +495,7 @@ describe("non-TTY session lifecycle", () => {
       storedInitialInput &&
         isKnownSessionEvent(storedInitialInput) &&
         storedInitialInput.type === "user_input_recorded"
-        ? imageUrls([storedInitialInput.materialized.message])
+        ? imageUrls([projectFrozenUserInputMessage(storedInitialInput.input)])
         : [],
     ).toHaveLength(5);
 
@@ -592,7 +593,7 @@ describe("non-TTY session lifecycle", () => {
         : [];
     const initialUserMessage: Message | undefined =
       initialUser && isKnownSessionEvent(initialUser) && initialUser.type === "user_input_recorded"
-        ? initialUser.materialized.message
+        ? projectFrozenUserInputMessage(initialUser.input)
         : undefined;
     expect(imageUrls(initialUserMessage ? [initialUserMessage] : [])).toHaveLength(5);
     expect(imageUrls(compactHistory).length).toBeLessThan(5);

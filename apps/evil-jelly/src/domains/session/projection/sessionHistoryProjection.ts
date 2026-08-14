@@ -4,11 +4,14 @@ import {
   unwrapPriorUserMessageText,
 } from "../../../shared/conversation/compactionMessages";
 import { messageContentToText } from "../../../shared/model/message/content";
-import { getLegacyUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
+import {
+  projectFrozenUserInputDisplay,
+  projectFrozenUserInputPlainText,
+} from "../../../shared/model/prompt/frozenUserInput";
 import { SESSION_BLOB_SCHEME, sessionBlobRefSchema } from "../../../shared/session/blobContract";
 import type { TranscriptImage, TranscriptItem } from "../../../shared/session/transcript";
+import { getLegacyUserInputDisplay } from "../model/frozenUserInput";
 import type { SessionBudgetData } from "../model/sessionEvents";
-import { storedPromptInputPlainText } from "../model/storedPromptInput";
 import {
   getSessionImageBlobMetadata,
   type StoredSessionMessage,
@@ -173,7 +176,7 @@ function appendTranscriptMessage(
         seq: identity.seq,
         content,
         ...(inputKind ? { inputKind } : {}),
-        ...(display?.attachments.length ? { attachments: display.attachments } : {}),
+        ...(display?.attachments.length ? { attachments: [...display.attachments] } : {}),
         ...(images ? { images } : {}),
       });
     }
@@ -302,12 +305,10 @@ export function buildTranscript(
       continue;
     }
     if (event.type === "user_input_recorded") {
-      const content = storedPromptInputPlainText({
-        document: event.document,
-        attachments: event.attachments,
-      });
+      const content = projectFrozenUserInputPlainText(event.input);
       if (content) {
         const images = transcriptImages(event.runtimeMessage);
+        const display = projectFrozenUserInputDisplay(event.input);
         items.push({
           id: `${event.seq}:event:user`,
           type: "user",
@@ -315,9 +316,7 @@ export function buildTranscript(
           seq: event.seq,
           content,
           inputKind: event.inputKind,
-          ...(event.materialized.display.attachments.length > 0
-            ? { attachments: event.materialized.display.attachments }
-            : {}),
+          ...(display.attachments.length > 0 ? { attachments: [...display.attachments] } : {}),
           ...(images ? { images } : {}),
         });
       }

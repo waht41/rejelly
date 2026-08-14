@@ -2,13 +2,29 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { freezeResolvedUserInput } from "../../../domains/session/journal/userInputStorage";
 import {
   getWorkspaceFsPolicy,
   setWorkspaceRoot,
 } from "../../../shared/fs-policy/workspace-fs-policy";
-import { getRuntimeUserInputImageDimensions } from "../../../shared/model/message/userInputMetadata";
+import {
+  frozenUserInputImageDimensions,
+  projectFrozenUserInputDisplay,
+  projectFrozenUserInputMessage,
+} from "../../../shared/model/prompt/frozenUserInput";
 import type { PromptInput } from "../../../shared/model/prompt/promptInput";
-import { materializeUserInput } from "./userMessage";
+import { materializeUserInput as resolveUserInput } from "./userMessage";
+
+let blobRoot = "";
+
+async function materializeUserInput(input: PromptInput) {
+  const frozen = await freezeResolvedUserInput(await resolveUserInput(input), { blobRoot });
+  return {
+    frozen,
+    message: projectFrozenUserInputMessage(frozen),
+    display: projectFrozenUserInputDisplay(frozen),
+  };
+}
 
 function fileInput(text: string, attachmentPath: string): PromptInput {
   return {
@@ -45,6 +61,7 @@ describe("materializeUserInput", () => {
   beforeEach(async () => {
     prevRoot = getWorkspaceFsPolicy().getRoot();
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "evil-jelly-attachments-"));
+    blobRoot = path.join(tmpDir, "blobs");
     await fs.mkdir(path.join(tmpDir, "src"), { recursive: true });
     await fs.writeFile(path.join(tmpDir, "src", "attached.ts"), "export const probe = 1;\n");
     setWorkspaceRoot(tmpDir);
@@ -108,14 +125,20 @@ describe("materializeUserInput", () => {
         {
           type: "image",
           image: {
-            url: `data:image/png;base64,${imageBytes.toString("base64")}`,
+            url: expect.stringMatching(/^rejelly-blob:\/\//),
             detail: "auto",
           },
         },
       ],
     });
     expect(message.extra).toBeUndefined();
-    expect(getRuntimeUserInputImageDimensions(message)).toEqual([{ width: 640, height: 480 }]);
+    const frozen = await freezeResolvedUserInput(
+      await resolveUserInput(imageInput("x", imagePath)),
+      {
+        blobRoot,
+      },
+    );
+    expect(frozenUserInputImageDimensions(frozen)).toEqual([{ width: 640, height: 480 }]);
     expect(display).toEqual({
       text: "what is in this image? [Image #1]",
       attachments: [
@@ -123,7 +146,6 @@ describe("materializeUserInput", () => {
           type: "image",
           label: "[Image #1]",
           action: "attach",
-          locator: { scope: "workspace", path: "clipboard.png" },
         },
       ],
     });
