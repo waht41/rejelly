@@ -1,7 +1,7 @@
 import type {
   UserInputAttachmentDisplay,
   UserInputDisplay,
-} from "../../../shared/model/message/userInputMetadata";
+} from "../../../shared/model/prompt/frozenUserInput";
 
 function formatAttachmentDisplay(display: UserInputAttachmentDisplay): string {
   return `${display.action} ${display.label}${display.status === "error" ? " failed" : ""}`;

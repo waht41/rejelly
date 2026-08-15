@@ -4,12 +4,16 @@ import {
   unwrapPriorUserMessageText,
 } from "../../../shared/conversation/compactionMessages";
 import { messageContentToText } from "../../../shared/model/message/content";
-import { getUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
+import {
+  projectFrozenUserInputDisplay,
+  projectFrozenUserInputPlainText,
+} from "../../../shared/model/prompt/frozenUserInput";
 import { SESSION_BLOB_SCHEME, sessionBlobRefSchema } from "../../../shared/session/blobContract";
 import type { TranscriptImage, TranscriptItem } from "../../../shared/session/transcript";
+import { getLegacyUserInputDisplay } from "../model/frozenUserInput";
 import type { SessionBudgetData } from "../model/sessionEvents";
 import {
-  getStoredSessionRejellyMetadata,
+  getSessionImageBlobMetadata,
   type StoredSessionMessage,
 } from "../model/storedSessionMessage";
 import { UNKNOWN_TOOL_OUTCOME_CONTENT } from "./sessionRecovery";
@@ -82,6 +86,12 @@ export function buildStoredActiveContext(replay: PreparedSessionReplay): StoredS
           openTurns.add(event.turnId);
         }
         break;
+      case "user_input_recorded":
+        messages.push(event.runtimeMessage);
+        if (event.inputKind === "initial") {
+          openTurns.add(event.turnId);
+        }
+        break;
       case "context_compacted":
         messages = [...event.replacementHistory];
         break;
@@ -112,7 +122,7 @@ function assistantDisplayText(text: string): string {
 }
 
 function userTranscriptText(message: Message, legacy: boolean): string {
-  const display = getUserInputDisplay(message);
+  const display = getLegacyUserInputDisplay(message);
   if (display) {
     return display.text;
   }
@@ -124,7 +134,7 @@ function transcriptImages(message: Message): TranscriptImage[] | undefined {
   if (!Array.isArray(message.content)) {
     return undefined;
   }
-  const metadata = getStoredSessionRejellyMetadata(message)?.imageBlobs ?? {};
+  const metadata = getSessionImageBlobMetadata(message);
   const images: TranscriptImage[] = [];
   for (const part of message.content) {
     if (part.type !== "image" || !part.image.url.startsWith(SESSION_BLOB_SCHEME)) {
@@ -157,7 +167,7 @@ function appendTranscriptMessage(
   if (message.role === "user") {
     const content = userTranscriptText(message, identity.legacy);
     if (content) {
-      const display = getUserInputDisplay(message);
+      const display = getLegacyUserInputDisplay(message);
       const images = identity.legacy ? undefined : transcriptImages(message);
       items.push({
         id: `${identity.seq}:${identity.suffix}:user`,
@@ -166,7 +176,7 @@ function appendTranscriptMessage(
         seq: identity.seq,
         content,
         ...(inputKind ? { inputKind } : {}),
-        ...(display?.attachments.length ? { attachments: display.attachments } : {}),
+        ...(display?.attachments.length ? { attachments: [...display.attachments] } : {}),
         ...(images ? { images } : {}),
       });
     }
@@ -292,6 +302,24 @@ export function buildTranscript(
         { seq: event.seq, turnId: event.turnId, suffix: "event", legacy: false },
         event.source.kind === "user_input" ? event.source.inputKind : undefined,
       );
+      continue;
+    }
+    if (event.type === "user_input_recorded") {
+      const content = projectFrozenUserInputPlainText(event.input);
+      if (content) {
+        const images = transcriptImages(event.runtimeMessage);
+        const display = projectFrozenUserInputDisplay(event.input);
+        items.push({
+          id: `${event.seq}:event:user`,
+          type: "user",
+          turnId: event.turnId,
+          seq: event.seq,
+          content,
+          inputKind: event.inputKind,
+          ...(display.attachments.length > 0 ? { attachments: [...display.attachments] } : {}),
+          ...(images ? { images } : {}),
+        });
+      }
       continue;
     }
     if (event.type === "context_compacted" && options.includeCompactionBoundaries) {

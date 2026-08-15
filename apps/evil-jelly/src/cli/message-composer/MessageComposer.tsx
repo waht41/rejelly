@@ -6,19 +6,19 @@
  * Submit: Enter submits. Insert a newline with Alt+Enter / Shift+Enter (where
  * the terminal sends them) or by ending the line with a backslash before Enter.
  * Short pasted text keeps its own newlines, so a pasted block never submits early.
- * Long pasted text is collapsed into a `[Pasted text #N +X lines]` token and
- * expanded again before submit.
+ * Long pasted text is stored in a semantic paste token and rendered as a
+ * compact `[Pasted text +X lines]` label while the full body stays in the semantic document.
  *
  * @-trigger: typing @ opens a fuzzy file picker; selecting a file inserts an
- * `@path` ref at the caret and attaches it to this turn (single-select).
+ * semantic file token at the caret and adds its path to this turn.
  *
  * $-trigger: typing $ opens the enabled Skill picker; selecting one inserts a semantic token
  * whose display name is qualified only when the catalog is ambiguous.
  *
  * Clipboard image: Alt+V (or Ctrl+V, which arrives as garbage bytes and is
  * detected) attaches an image from the OS clipboard. It drops an `[Image #N]`
- * token into the line at the caret — editable/deletable like any other text;
- * deleting the token drops the image from the submitted turn.
+ * token into the line at the caret. The token is one logical editing unit;
+ * deleting it drops the image from the submitted turn.
  *
  * Rendering: the prompt soft-wraps the buffer itself (see
  * ./editor/softWrap) rather than handing Ink a long line to wrap.
@@ -29,6 +29,7 @@
 
 import { Box, Text, useStdout } from "ink";
 import { useEffect, useRef, useState } from "react";
+import { promptDocumentCommandText } from "../../shared/model/prompt/promptDocument";
 import { BufferView } from "./editor/BufferView";
 import { useLineKeybindings } from "./editor/keyboard/useLineKeybindings";
 import { usePromptLayout } from "./editor/usePromptLayout";
@@ -71,15 +72,7 @@ export function MessageComposer({
   const [terminalRows, setTerminalRows] = useState(stdout.rows || 24);
   const [clipboardImageStatus, setClipboardImageStatus] = useState<string | null>(null);
   const draft = useComposerDraft({ label, onCommand });
-  const {
-    buffer: buf,
-    selectedFiles,
-    selectedImages,
-    selectedSkills,
-    availableSkills,
-    setSelectedFiles,
-    removeSelectedFile,
-  } = draft;
+  const { buffer: buf, selectedFiles, selectedSkills, availableSkills } = draft;
   // Key-claim slot shared with whichever picker overlay is mounted: the picker
   // publishes its handler here and the line keybindings offer it each key first.
   const overlayKeysRef = useRef<ComposerPickerKeyHandler | null>(null);
@@ -106,27 +99,26 @@ export function MessageComposer({
     draft.clear();
   };
 
-  const submitText = (text: string) => {
+  const submitCommand = (text: string) => {
     setClipboardImageStatus(null);
-    draft.submitText(text);
+    draft.submitCommand(text);
   };
 
+  const commandText = promptDocumentCommandText(buf.document);
   const commandSuggestion = useCommandSuggestion({
-    text: buf.text,
-    cursor: buf.cursor,
-    isMultiline,
-    onSelect: submitText,
+    text: commandText ?? "",
+    cursor: commandText === undefined ? 0 : buf.cursor,
+    isMultiline: commandText === undefined || isMultiline,
+    onSelect: submitCommand,
   });
   const fileSuggestion = useFileReferenceSuggestion({
     buffer: buf,
-    selectedFiles,
-    setSelectedFiles,
+    attachFile: draft.attachFile,
   });
   const skillSuggestion = useSkillReferenceSuggestion({
     buffer: buf,
     availableSkills,
     selectedSkills,
-    createTokenId: draft.createSkillTokenId,
     maxSelectedSkills: MAX_SELECTED_SKILLS,
     onNotice,
   });
@@ -136,7 +128,10 @@ export function MessageComposer({
     setClipboardImageStatus(null);
   }, [label]);
 
-  const submit = () => submitText(buf.text);
+  const submit = () => {
+    setClipboardImageStatus(null);
+    draft.submit();
+  };
 
   const attachClipboardImage = () => {
     setClipboardImageStatus("Reading clipboard image...");
@@ -163,9 +158,6 @@ export function MessageComposer({
     hasInterruptibleTask,
     onInterrupt,
     onCycleMode,
-    selectedFiles,
-    selectedImages,
-    removeSelectedFile,
     clearDraft,
     submit,
     attachClipboardImage,
@@ -177,8 +169,8 @@ export function MessageComposer({
   const selectedAttachmentList =
     selectedFiles.length > 0 ? (
       <Box flexDirection="column" marginBottom={1}>
-        {selectedFiles.map((file) => (
-          <Box key={file} flexDirection="row">
+        {selectedFiles.map((file, index) => (
+          <Box key={`${file}:${index}`} flexDirection="row">
             <Text color="green">+ </Text>
             <Text>{file}</Text>
           </Box>

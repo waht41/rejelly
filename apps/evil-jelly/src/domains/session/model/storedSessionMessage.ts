@@ -5,9 +5,11 @@ import {
   sessionBlobRefSchema,
   sessionImageBlobMetadataMapSchema,
 } from "../../../shared/session/blobContract";
-import { sessionMessageSchema } from "./sessionEvents";
+import { sessionMessageSchema } from "./sessionMessageSchema";
 
 export type SessionImageBlobMap = Record<string, SessionBlobMetadata>;
+
+const runtimeSessionImageBlobs = new WeakMap<Message, SessionImageBlobMap>();
 
 export interface SessionRejellyMetadata extends Record<string, unknown> {
   imageBlobs?: SessionImageBlobMap;
@@ -33,6 +35,8 @@ export function getStoredSessionRejellyMetadata(
 }
 
 export function getSessionImageBlobMetadata(message: Message): Record<string, SessionBlobMetadata> {
+  const runtime = runtimeSessionImageBlobs.get(message);
+  if (runtime) return runtime;
   const value = getStoredSessionRejellyMetadata(message)?.imageBlobs;
   if (value === undefined) {
     return {};
@@ -52,17 +56,31 @@ export function getSessionImageBlobMetadata(message: Message): Record<string, Se
   return parsed.data;
 }
 
+/** Register V3 blob metadata beside a runtime Message without changing its provider wire shape. */
+export function registerRuntimeSessionImageBlobs(
+  message: Message,
+  imageBlobs: SessionImageBlobMap,
+): Message {
+  if (Object.keys(imageBlobs).length > 0) {
+    runtimeSessionImageBlobs.set(message, imageBlobs);
+  }
+  return message;
+}
+
 /**
- * The sole narrowing boundary between a Core Message and its durable Session V2 form.
+ * The sole narrowing boundary between a Core Message and its durable Session form.
  * Provider-facing code must materialize the returned message before use.
  */
-export function parseStoredSessionMessage(message: Message): StoredSessionMessage {
+export function parseStoredSessionMessage(
+  message: Message,
+  options: { imageBlobs?: SessionImageBlobMap } = {},
+): StoredSessionMessage {
   const parsedMessage = sessionMessageSchema.safeParse(message);
   if (!parsedMessage.success) {
     throw new Error("Invalid stored session message", { cause: parsedMessage.error });
   }
 
-  const imageBlobs = getSessionImageBlobMetadata(parsedMessage.data);
+  const imageBlobs = options.imageBlobs ?? getSessionImageBlobMetadata(parsedMessage.data);
 
   if (Array.isArray(parsedMessage.data.content)) {
     for (const part of parsedMessage.data.content) {
@@ -70,7 +88,7 @@ export function parseStoredSessionMessage(message: Message): StoredSessionMessag
         continue;
       }
       if (part.image.url.startsWith("data:image/")) {
-        throw new Error("Stored Session V2 messages cannot contain inline image data URLs");
+        throw new Error("Stored Session messages cannot contain inline image data URLs");
       }
       if (!part.image.url.startsWith(SESSION_BLOB_SCHEME)) {
         continue;
@@ -82,5 +100,7 @@ export function parseStoredSessionMessage(message: Message): StoredSessionMessag
     }
   }
 
-  return parsedMessage.data as StoredSessionMessage;
+  const stored = parsedMessage.data as StoredSessionMessage;
+  registerRuntimeSessionImageBlobs(stored, imageBlobs);
+  return stored;
 }

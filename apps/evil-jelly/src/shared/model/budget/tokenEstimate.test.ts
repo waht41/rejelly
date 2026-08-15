@@ -1,6 +1,10 @@
 import type { Message } from "@rejelly/core";
 import { describe, expect, it } from "vitest";
 import {
+  type FrozenResolvedUserInputV1,
+  registerFrozenUserInputOrigin,
+} from "../prompt/frozenUserInput";
+import {
   estimateMessagesTokens,
   IMAGE_CONTENT_TOKEN_ESTIMATE,
   LOW_DETAIL_IMAGE_TOKEN_ESTIMATE,
@@ -12,20 +16,32 @@ function imageMessage(options: {
   height?: number;
 }): Message {
   const { width, height, detail } = options;
-  return {
+  const message: Message = {
     role: "user",
     content: [{ type: "image", image: { url: "data:image/png;base64,x", detail } }],
-    ...(width !== undefined && height !== undefined
-      ? {
-          extra: {
-            rejelly: {
-              kind: "user_input",
-              imageDimensions: [{ width, height }],
-            },
-          },
-        }
-      : {}),
   };
+  if (width !== undefined && height !== undefined) {
+    const input: FrozenResolvedUserInputV1 = {
+      version: 1,
+      kind: "resolved",
+      nodes: [
+        {
+          kind: "image",
+          detail: detail ?? "auto",
+          blob: {
+            blobRef: `rejelly-blob://${"a".repeat(64)}` as never,
+            sha256: "a".repeat(64),
+            mediaType: "image/png",
+            byteLength: 1,
+            width,
+            height,
+          },
+        },
+      ],
+    };
+    registerFrozenUserInputOrigin(message, input);
+  }
+  return message;
 }
 
 describe("image token estimation", () => {

@@ -6,6 +6,7 @@ import {
   estimateTokens,
   IMAGE_CONTENT_TOKEN_ESTIMATE,
 } from "../../shared/model/budget/tokenEstimate";
+import { registerFrozenUserInputOrigin } from "../../shared/model/prompt/frozenUserInput";
 import { selectRecentUserMessages, truncateToolOutputsToFit } from "./compaction";
 import { sanitizeInterruptedDelta } from "./interruptedDelta";
 
@@ -141,29 +142,32 @@ describe("selectRecentUserMessages", () => {
           image: { url: "data:image/png;base64,very-large-payload", detail: "auto" },
         },
       ],
-      extra: {
-        rejelly: {
-          kind: "user_input",
-          display: {
-            text: "inspect this",
-            attachments: [
-              {
-                type: "file",
-                label: "src/secret.txt",
-                action: "read",
-                locator: { scope: "workspace", path: "src/secret.txt" },
-              },
-              {
-                type: "image",
-                label: "[Image #1]",
-                action: "attach",
-                locator: { scope: "absolute", path: "C:/Temp/clipboard.png" },
-              },
-            ],
+    };
+    registerFrozenUserInputOrigin(message, {
+      version: 1,
+      kind: "resolved",
+      nodes: [
+        { kind: "text", text: "inspect this" },
+        {
+          kind: "file",
+          path: "src/secret.txt",
+          action: "read",
+          status: "resolved",
+          context: "large private file body",
+          locator: { scope: "workspace", path: "src/secret.txt" },
+        },
+        {
+          kind: "image",
+          detail: "auto",
+          blob: {
+            blobRef: `rejelly-blob://${"a".repeat(64)}` as never,
+            sha256: "a".repeat(64),
+            mediaType: "image/png",
+            byteLength: 1,
           },
         },
-      },
-    };
+      ],
+    });
 
     const kept = selectRecentUserMessages([message], IMAGE_CONTENT_TOKEN_ESTIMATE + 1000);
 
@@ -179,7 +183,7 @@ describe("selectRecentUserMessages", () => {
       '<attached_file_ref action="read" path="src/secret.txt" path-scope="workspace" />',
     );
     expect(keptText).toContain(
-      '<attached_image_ref action="attach" path="C:/Temp/clipboard.png" path-scope="absolute" />',
+      '<attached_image_ref action="attach" label="[Image #1]" locator-status="unavailable" />',
     );
     expect(keptText).not.toContain("large private file body");
     expect(kept[0].content).toContainEqual({
@@ -258,14 +262,31 @@ describe("selectRecentUserMessages", () => {
           image: { url: "data:image/png;base64,not-a-real-header", detail: "auto" },
         },
       ],
-      extra: {
-        rejelly: {
-          imageDimensions: [{ width: 512, height: 512 }],
-        },
-      },
     };
+    registerFrozenUserInputOrigin(message, {
+      version: 1,
+      kind: "resolved",
+      nodes: [
+        {
+          kind: "image",
+          detail: "auto",
+          blob: {
+            blobRef: `rejelly-blob://${"b".repeat(64)}` as never,
+            sha256: "b".repeat(64),
+            mediaType: "image/png",
+            byteLength: 1,
+            width: 512,
+            height: 512,
+          },
+        },
+      ],
+    });
 
-    expect(selectRecentUserMessages([message], 1024)).toEqual([message]);
+    const kept = selectRecentUserMessages([message], 1200);
+    expect(kept).toHaveLength(1);
+    expect(
+      Array.isArray(kept[0].content) ? kept[0].content.filter((part) => part.type === "image") : [],
+    ).toHaveLength(1);
   });
 
   it("preserves user text before image payloads when a message crosses the budget", () => {

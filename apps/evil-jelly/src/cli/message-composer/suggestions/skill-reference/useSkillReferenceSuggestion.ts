@@ -1,14 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import type { UserSkillReference } from "../../../../shared/host/inputBindings";
+import type { SkillPromptToken } from "../../../../shared/model/prompt/promptDocument";
 import type { TextBuffer } from "../../editor/document/textBuffer";
 import type { SkillPickerItem } from "../../session/composerSession";
 import { filterSkillPickerItems } from "./skillMatching";
-import {
-  activeSkillTrigger,
-  extractSkillQuery,
-  replaceSkillToken,
-  skillReferenceName,
-} from "./skillTrigger";
+import { activeSkillTrigger, extractSkillQuery, removeActiveSkillTrigger } from "./skillTrigger";
 
 export interface SkillReferenceSuggestion {
   matches: SkillPickerItem[];
@@ -21,14 +16,12 @@ export function useSkillReferenceSuggestion({
   buffer,
   availableSkills,
   selectedSkills,
-  createTokenId,
   maxSelectedSkills,
   onNotice,
 }: {
   buffer: TextBuffer;
   availableSkills: SkillPickerItem[];
-  selectedSkills: UserSkillReference[];
-  createTokenId: () => string;
+  selectedSkills: SkillPromptToken[];
   maxSelectedSkills: number;
   onNotice: (message: string) => void;
 }): SkillReferenceSuggestion {
@@ -42,7 +35,7 @@ export function useSkillReferenceSuggestion({
   }, [buffer.text, buffer.cursor, buffer.tokenSpans]);
 
   const dismiss = useCallback(() => {
-    buffer.apply((state) => replaceSkillToken(state, []));
+    buffer.apply(removeActiveSkillTrigger);
     setQuery(null);
   }, [buffer.apply]);
   const select = useCallback(
@@ -52,7 +45,7 @@ export function useSkillReferenceSuggestion({
         !selectedSkills.some((selected) => selected.qualifiedName === skill.qualifiedName)
       ) {
         onNotice(`At most ${maxSelectedSkills} Skills can be selected for one input.`);
-        buffer.apply((state) => replaceSkillToken(state, []));
+        buffer.apply(removeActiveSkillTrigger);
         setQuery(null);
         return;
       }
@@ -66,21 +59,17 @@ export function useSkillReferenceSuggestion({
         {
           type: "token",
           kind: "skill",
-          id: createTokenId(),
           qualifiedName: skill.qualifiedName,
-          displayText: `$${skillReferenceName(skill, availableSkills)}`,
         },
         ...(after.length === 0 || !/^\s/.test(after) ? [{ type: "text" as const, text: " " }] : []),
       ]);
       setQuery(null);
     },
     [
-      availableSkills,
       buffer.apply,
       buffer.cursor,
       buffer.replaceDisplayRange,
       buffer.text,
-      createTokenId,
       maxSelectedSkills,
       onNotice,
       selectedSkills,

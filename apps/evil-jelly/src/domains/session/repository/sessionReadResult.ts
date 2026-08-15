@@ -9,7 +9,7 @@ export type SessionReadResult<T> =
 export class SessionStoreReadError extends Error {
   constructor(
     readonly kind: Exclude<SessionReadFailureKind, "missing">,
-    readonly format: "v1" | "v2" | "store",
+    readonly format: "v1" | "v2" | "v3" | "store",
     readonly sessionId: string,
     readonly cause: unknown,
   ) {

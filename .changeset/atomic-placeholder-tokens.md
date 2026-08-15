@@ -2,4 +2,8 @@
 "@rejelly/evil-jelly": patch
 ---
 
-Treat the prompt's inline `[Image #N]` and `[Pasted text #N +X lines]` placeholders as single units. They read as one glyph but live in the buffer as ordinary characters, and only backspace-at-the-token's-end handled them as a whole, so arrow keys walked the caret into a placeholder and the next keystroke corrupted it. A corrupted token stops matching its pattern, which meant the pasted body was never expanded and the attached image was never sent — the content disappeared on submit with nothing to signal it. Caret motions now step over a placeholder in one press and snap back out to the nearer edge if they land inside one, while backspace and delete-word-left remove a whole placeholder instead of shearing its tail (Ctrl+Backspace at the end of `[Image #1]` used to take only `#1]`, because word motion stops at the space inside the token).
+Replace display-text placeholders and parallel attachment state with a semantic prompt document. Skill, paste, file, and image tokens now keep their identity and order through editing, queueing, steers, and draft restoration; display labels are projections, and clipboard image resources follow the structured input lifecycle instead of regex matches.
+
+Persist submitted rich input in Session V3 as one frozen canonical record. Model messages, resumed context, history display, transcripts, titles, token estimates, and compaction are derived from that record, while images use durable content-addressed blobs and Skill content is injected once inside an explicit XML boundary. Existing V1 and V2 sessions migrate conservatively without inferring tokens from message or display text.
+
+Slash-command palette selections that belong to the application router, including `/exit`, `/status`, `/clear`, `/compress`, and `/resume`, are submitted normally instead of being dropped when the composer-local command handler declines them.

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { TextBuffer } from "../../editor/document/textBuffer";
-import { extractAtQuery, refsMissingFromText, replaceAtToken } from "./atTrigger";
+import { activeAtTrigger, extractAtQuery, removeActiveAtTrigger } from "./atTrigger";
 
 export interface FileReferenceSuggestion {
   query: string | null;
@@ -11,29 +11,31 @@ export interface FileReferenceSuggestion {
 
 export function useFileReferenceSuggestion({
   buffer,
-  selectedFiles,
-  setSelectedFiles,
+  attachFile,
 }: {
   buffer: TextBuffer;
-  selectedFiles: string[];
-  setSelectedFiles: (paths: string[]) => void;
+  attachFile: (path: string, start: number, end: number) => void;
 }): FileReferenceSuggestion {
   const [query, setQuery] = useState<string | null>(null);
 
   useEffect(() => {
-    setQuery(extractAtQuery(buffer.text, buffer.cursor));
-  }, [buffer.text, buffer.cursor]);
+    const followsSemanticToken = buffer.tokenSpans.some(
+      (span) => span.start < buffer.cursor && buffer.cursor <= span.end,
+    );
+    setQuery(followsSemanticToken ? null : extractAtQuery(buffer.text, buffer.cursor));
+  }, [buffer.text, buffer.cursor, buffer.tokenSpans]);
 
   const select = useCallback(
     (path: string) => {
-      setSelectedFiles([...selectedFiles, path]);
-      buffer.apply((state) => replaceAtToken(state, refsMissingFromText(state.text, [path])));
+      const trigger = activeAtTrigger(buffer.text, buffer.cursor);
+      if (!trigger) return;
+      attachFile(path, trigger.start, trigger.end);
       setQuery(null);
     },
-    [buffer.apply, selectedFiles, setSelectedFiles],
+    [attachFile, buffer.cursor, buffer.text],
   );
   const dismiss = useCallback(() => {
-    buffer.apply((state) => replaceAtToken(state, []));
+    buffer.apply(removeActiveAtTrigger);
     setQuery(null);
   }, [buffer.apply]);
 

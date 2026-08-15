@@ -3,6 +3,7 @@
  */
 
 import type { EvilJellyBindings } from "../../shared/host/bindings";
+import { textPromptInput } from "../../shared/model/prompt/promptInput";
 import { classifyShellCommand } from "../tool-approval/shellCommandPolicy";
 
 export interface BackgroundBindingsOptions {
@@ -25,7 +26,7 @@ function createStubHostBindings(
   } = options;
   const inputQueue = [...scriptedInputs];
   return {
-    getInput: async () => ({ text: inputQueue.shift() ?? "" }),
+    getInput: async () => textPromptInput(inputQueue.shift() ?? ""),
     printOut: (message: string) => {
       process.stdout.write(message);
     },

@@ -9,7 +9,7 @@ import {
 } from "./sessionEvents";
 
 describe("sessionEvents", () => {
-  it("validates the immutable V2 metadata header", () => {
+  it("validates the immutable V3 metadata header", () => {
     expect(
       parseSessionMetaLine({
         type: "session_meta",
@@ -20,14 +20,14 @@ describe("sessionEvents", () => {
         originator: "evil-jelly",
         appVersion: "0.1.0",
       }),
-    ).toMatchObject({ sessionId: "session-1", schemaVersion: 2 });
+    ).toMatchObject({ sessionId: "session-1", schemaVersion: 3 });
   });
 
   it("rejects unsupported schema versions", () => {
     expect(() =>
       parseSessionMetaLine({
         type: "session_meta",
-        schemaVersion: 3,
+        schemaVersion: 4,
         sessionId: "session-1",
         workspaceRoot: "/work",
         createdAt: 1,
@@ -62,26 +62,72 @@ describe("sessionEvents", () => {
 
   it("requires user input to distinguish an initial request from a steer", () => {
     expect(
-      parseSessionEvent({
-        type: "message_recorded",
-        seq: 1,
-        timestamp: 2,
-        turnId: "turn-1",
-        source: { kind: "user_input", inputKind: "steer" },
-        message: { role: "user", content: "Please also check the tests." },
-      }),
+      parseSessionEvent(
+        {
+          type: "message_recorded",
+          seq: 1,
+          timestamp: 2,
+          turnId: "turn-1",
+          source: { kind: "user_input", inputKind: "steer" },
+          message: { role: "user", content: "Please also check the tests." },
+        },
+        2,
+      ),
     ).toMatchObject({
       source: { kind: "user_input", inputKind: "steer" },
     });
 
     expect(() =>
-      parseSessionEvent({
+      parseSessionEvent(
+        {
+          type: "message_recorded",
+          seq: 1,
+          timestamp: 2,
+          turnId: "turn-1",
+          source: { kind: "user_input" },
+          message: { role: "user", content: "Ambiguous user input" },
+        },
+        2,
+      ),
+    ).toThrow(SessionSchemaError);
+  });
+
+  it("records V3 user input as one frozen canonical record", () => {
+    const event = parseNewSessionEvent({
+      type: "user_input_recorded",
+      turnId: "turn-1",
+      inputKind: "initial",
+      input: {
+        version: 1,
+        kind: "resolved",
+        nodes: [{ kind: "text", text: "inspect it" }],
+      },
+    });
+    expect(event).toMatchObject({
+      type: "user_input_recorded",
+      input: { version: 1, kind: "resolved" },
+    });
+
+    expect(() =>
+      parseNewSessionEvent({
         type: "message_recorded",
-        seq: 1,
-        timestamp: 2,
         turnId: "turn-1",
-        source: { kind: "user_input" },
-        message: { role: "user", content: "Ambiguous user input" },
+        source: { kind: "user_input", inputKind: "initial" },
+        message: { role: "user", content: "legacy shape" },
+      }),
+    ).toThrow(SessionSchemaError);
+
+    expect(() =>
+      parseNewSessionEvent({
+        type: "user_input_recorded",
+        turnId: "turn-1",
+        inputKind: "initial",
+        document: { version: 1, nodes: [{ type: "text", text: "obsolete shape" }] },
+        attachments: [],
+        materialized: {
+          version: 1,
+          message: { role: "user", content: "obsolete shape" },
+        },
       }),
     ).toThrow(SessionSchemaError);
   });

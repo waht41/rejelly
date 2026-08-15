@@ -7,6 +7,7 @@ import {
   openSessionRecorder,
   type SessionRecorder,
 } from "../../../../domains/session/recorder/sessionRecorder";
+import { materializeMessageHistory } from "../../../../domains/session/repository/sessionMessageMaterializer";
 import type { SessionBudget } from "../../../../domains/session/repository/sessionStore";
 import {
   SKILL_RUNTIME_PROVIDER_KEY,
@@ -42,8 +43,6 @@ export interface RunEvilJellyHostOptions {
   sessionStartMode?: "new" | "resumed";
   /** Restored active model context seeded into the agent on resume. */
   seedContext?: Message[];
-  /** @deprecated Compatibility alias; new callers should pass seedContext. */
-  seedHistory?: Message[];
   /** Cumulative usage carried back from a resumed session, used as the /status base. */
   seedBudget?: SessionBudget;
   /**
@@ -61,8 +60,8 @@ export interface RunEvilJellyHostOptions {
   mockSourceTraceId?: string;
   /** Disable durable session reads/writes for replay-only runs. */
   isolateSessionState?: boolean;
-  /** Session V2 writer configuration. Required whenever a durable sessionId is supplied. */
-  sessionV2?: {
+  /** Durable Session writer configuration. Required whenever a durable sessionId is supplied. */
+  session?: {
     enabled: true;
     appVersion: string;
     sessionsRoot?: string;
@@ -86,12 +85,12 @@ async function openRunSessionRecorder(
   options: RunEvilJellyHostOptions,
   traceId: string,
 ): Promise<SessionRecorder | undefined> {
-  const { model, sessionId, sessionV2 } = options;
+  const { model, sessionId, session } = options;
   if (!sessionId || options.isolateSessionState) {
     return undefined;
   }
-  if (!sessionV2?.enabled) {
-    throw new Error("Session V2 configuration is required for durable session execution");
+  if (!session?.enabled) {
+    throw new Error("Session configuration is required for durable session execution");
   }
   if (!options.sessionStartMode) {
     throw new Error("Session start mode is required for durable session execution");
@@ -101,12 +100,12 @@ async function openRunSessionRecorder(
     sessionId,
     traceId,
     originator: "evil-jelly-cli",
-    appVersion: sessionV2.appVersion,
+    appVersion: session.appVersion,
     modelId: model.id,
     ...(model.provider ? { provider: model.provider } : {}),
     cwd: process.cwd(),
-    ...(sessionV2.sessionsRoot ? { sessionsRoot: sessionV2.sessionsRoot } : {}),
-    ...(sessionV2.blobRoot ? { blobRoot: sessionV2.blobRoot } : {}),
+    ...(session.sessionsRoot ? { sessionsRoot: session.sessionsRoot } : {}),
+    ...(session.blobRoot ? { blobRoot: session.blobRoot } : {}),
   };
   const openRecorder = () => openSessionRecorder(recorderOptions);
   return options.sessionStartMode === "new"
@@ -161,7 +160,6 @@ export async function runEvilJellyHost(
     enableSnapshot: enableSnapshotOpt,
     sessionId,
     seedContext,
-    seedHistory,
     seedBudget,
   } = options;
   const enableSnapshot = enableSnapshotOpt ?? (snapshot != null ? true : undefined);
@@ -182,6 +180,12 @@ export async function runEvilJellyHost(
     }
   });
   try {
+    const preparedSeedContext = seedContext
+      ? await materializeMessageHistory(
+          seedContext,
+          options.session?.blobRoot ? { blobRoot: options.session.blobRoot } : {},
+        )
+      : undefined;
     await runWithReview({
       model,
       enableReview: options.enableReview,
@@ -193,10 +197,9 @@ export async function runEvilJellyHost(
           runLoopControl: options.runControl.loop,
           sessionId,
           traceId,
-          seedContext,
-          seedHistory,
+          seedContext: preparedSeedContext,
           seedBudget,
-          sessionBlobRoot: options.sessionV2?.blobRoot,
+          sessionBlobRoot: options.session?.blobRoot,
           isolateSessionState: options.isolateSessionState,
           sessionRecorder: recorder,
         }),

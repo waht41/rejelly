@@ -14,17 +14,17 @@
 import { type Key, useInput } from "ink";
 import { useRef } from "react";
 import { normalizeNewlines } from "../../../../shared/foundation/string";
-import { cursorRowCol, type TextBuffer } from "../document/textBuffer";
-import { verticalCaretTarget, type WrappedRow } from "../softWrap";
 import {
-  caretLeft,
-  caretRight,
-  caretWordLeft,
-  caretWordRight,
-  deletePlaceholderOrChar,
-  deleteWordLeftAtomic,
-  snapCaretOutOfPlaceholder,
-} from "./placeholderMotion";
+  backspace,
+  cursorRowCol,
+  deleteWordLeft,
+  moveLeft,
+  moveRight,
+  moveWordLeft,
+  moveWordRight,
+  type TextBuffer,
+} from "../document/textBuffer";
+import { verticalCaretTarget, type WrappedRow } from "../softWrap";
 import { looksBinary, stripControlChars } from "./textInput";
 
 // Tab inserts spaces up to the next multiple of this; see the key.tab handler.
@@ -37,22 +37,22 @@ interface MotionBinding {
 
 // Pure caret/delete motions: no prompt state, no branching action. Read top to
 // bottom like a keymap; first match wins. The caret ones go through
-// placeholderMotion so `[Image #N]` / `[Pasted text #N …]` behave as one glyph.
+// the display-to-logical projection so semantic tokens behave as one glyph.
 const MOTIONS: MotionBinding[] = [
   {
     when: (_i, k) => k.leftArrow,
-    run: (b, k) => b.apply(k.ctrl || k.meta ? caretWordLeft : caretLeft, "left"),
+    run: (b, k) => b.apply(k.ctrl || k.meta ? moveWordLeft : moveLeft, "left"),
   },
   {
     when: (_i, k) => k.rightArrow,
-    run: (b, k) => b.apply(k.ctrl || k.meta ? caretWordRight : caretRight, "right"),
+    run: (b, k) => b.apply(k.ctrl || k.meta ? moveWordRight : moveRight, "right"),
   },
   { when: (_i, k) => k.home, run: (b) => b.moveLineStart() },
   { when: (_i, k) => k.end, run: (b) => b.moveLineEnd() },
   { when: (i, k) => k.ctrl && (i === "a" || i === "A"), run: (b) => b.moveLineStart() },
   { when: (i, k) => k.ctrl && (i === "e" || i === "E"), run: (b) => b.moveLineEnd() },
   { when: (i, k) => k.ctrl && (i === "u" || i === "U"), run: (b) => b.deleteToLineStart() },
-  { when: (i, k) => k.ctrl && (i === "w" || i === "W"), run: (b) => b.apply(deleteWordLeftAtomic) },
+  { when: (i, k) => k.ctrl && (i === "w" || i === "W"), run: (b) => b.apply(deleteWordLeft) },
 ];
 
 export interface LineKeybindingDeps {
@@ -68,12 +68,9 @@ export interface LineKeybindingDeps {
    */
   overlayKeys?: { current: ((input: string, key: Key) => boolean) | null };
   isAgentRunning: boolean;
-  selectedFiles: string[];
-  selectedImages: string[];
   hasInterruptibleTask: () => boolean;
   onInterrupt: () => void;
   onCycleMode: () => void;
-  removeSelectedFile: (path: string) => void;
   clearDraft: () => void;
   submit: () => void;
   attachClipboardImage: () => void;
@@ -86,12 +83,9 @@ export function useLineKeybindings(deps: LineKeybindingDeps): void {
     wrappedRows,
     overlayKeys,
     isAgentRunning,
-    selectedFiles,
-    selectedImages,
     hasInterruptibleTask,
     onInterrupt,
     onCycleMode,
-    removeSelectedFile,
     clearDraft,
     submit,
     attachClipboardImage,
@@ -117,17 +111,7 @@ export function useLineKeybindings(deps: LineKeybindingDeps): void {
       );
       if (target) {
         preferredColumnRef.current = target.preferredColumn;
-        const snapped = snapCaretOutOfPlaceholder(
-          { text: buf.text, cursor: target.cursor },
-          "nearest",
-        );
-        const snappedAffinity =
-          snapped.cursor < target.cursor
-            ? "forward"
-            : snapped.cursor > target.cursor
-              ? "backward"
-              : target.affinity;
-        buf.setDisplayCursor(snapped.cursor, "nearest", snappedAffinity);
+        buf.setDisplayCursor(target.cursor, "nearest", target.affinity);
       }
       return;
     }
@@ -139,7 +123,7 @@ export function useLineKeybindings(deps: LineKeybindingDeps): void {
       return;
     }
     if (key.escape) {
-      if (buf.text.length > 0 || selectedFiles.length > 0 || selectedImages.length > 0) {
+      if (buf.text.length > 0) {
         clearDraft();
       }
       return;
@@ -171,8 +155,8 @@ export function useLineKeybindings(deps: LineKeybindingDeps): void {
         });
         return;
       }
-      // Image tokens count as text, so trim() already covers an image-only line.
-      if (buf.text.trim().length > 0 || selectedFiles.length > 0) {
+      // Semantic token labels count as text, so trim() covers a token-only line.
+      if (buf.text.trim().length > 0) {
         submit();
       }
       return;
@@ -189,14 +173,11 @@ export function useLineKeybindings(deps: LineKeybindingDeps): void {
     // Backspace / Delete: terminals conflate these onto the Backspace key, so
     // both erase the char before the caret (Ctrl/Alt erases the word).
     if (key.backspace || key.delete) {
-      if (buf.text.length === 0 && selectedFiles.length > 0) {
-        const last = selectedFiles[selectedFiles.length - 1];
-        if (last) removeSelectedFile(last);
-      } else if (key.ctrl || key.meta) {
-        buf.apply(deleteWordLeftAtomic);
+      if (key.ctrl || key.meta) {
+        buf.apply(deleteWordLeft);
       } else {
-        // Delete whole inline placeholders in one stroke (like cc).
-        buf.apply(deletePlaceholderOrChar);
+        // Display edits are expanded to a whole semantic token when they touch one.
+        buf.apply(backspace);
       }
       return;
     }
@@ -216,7 +197,7 @@ export function useLineKeybindings(deps: LineKeybindingDeps): void {
       const normalized = normalizeNewlines(input);
       // Pasting an image (Ctrl+V) dumps garbage bytes here rather than text.
       // Don't corrupt the buffer with it — pull the real image off the OS
-      // clipboard and attach it as an [Image #N] placeholder instead.
+      // clipboard and attach it as an image token instead.
       if (looksBinary(normalized)) {
         attachClipboardImage();
         return;

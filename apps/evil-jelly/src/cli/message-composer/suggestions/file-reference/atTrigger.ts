@@ -1,8 +1,8 @@
 /**
  * `@`-trigger parsing for the file picker, caret-aware: the active token is the
  * `@word` immediately to the left of the caret. A token is only "active" while
- * it is still being typed — once whitespace follows (e.g. an inserted `@path`
- * ref), it is finalized and must not re-open the picker on itself.
+ * it is still being typed. A committed selection becomes a semantic file token,
+ * so this parser never reconstructs file identity from display text.
  */
 
 import type { BufferState } from "../../editor/document/textBuffer";
@@ -33,18 +33,16 @@ export function extractAtQuery(text: string, cursor: number): string | null {
   return token;
 }
 
-/** Paths not already referenced as `@path` anywhere in the text. */
-export function refsMissingFromText(text: string, paths: string[]): string[] {
-  return paths.filter((path) => !text.includes(`@${path}`));
+export function activeAtTrigger(
+  text: string,
+  cursor: number,
+): { start: number; end: number; query: string } | null {
+  const query = extractAtQuery(text, cursor);
+  return query === null ? null : { start: cursor - query.length - 1, end: cursor, query };
 }
 
-/**
- * Replace the active `@token` (the one ending at the caret) with `@path` refs and
- * return the new buffer state. A trailing space is kept so the inserted ref is a
- * closed token and the caret is ready for more typing. With no paths the token is
- * simply removed (used to dismiss the picker).
- */
-export function replaceAtToken(state: BufferState, paths: string[]): BufferState {
+/** Remove the unfinished text trigger when the picker is dismissed. */
+export function removeActiveAtTrigger(state: BufferState): BufferState {
   const { text, cursor } = state;
   const left = text.slice(0, cursor);
   const at = left.lastIndexOf("@");
@@ -53,11 +51,5 @@ export function replaceAtToken(state: BufferState, paths: string[]): BufferState
   }
   const before = text.slice(0, at);
   const after = text.slice(cursor);
-  const refs = paths.map((path) => `@${path}`).join(" ");
-  if (!refs) {
-    return { text: before + after, cursor: before.length };
-  }
-  const needsSpace = after.length === 0 || !/^\s/.test(after);
-  const insert = needsSpace ? `${refs} ` : refs;
-  return { text: before + insert + after, cursor: before.length + insert.length };
+  return { text: before + after, cursor: before.length };
 }

@@ -20,6 +20,10 @@ import {
   type SessionBudget,
 } from "../../domains/session/repository/sessionStore";
 import {
+  commitResolvedUserInput,
+  materializeFrozenUserInputMessage,
+} from "../../domains/session/repository/userInputRepository";
+import {
   SKILL_RUNTIME_PROVIDER_KEY,
   type SkillRuntimeSnapshot,
 } from "../../domains/skills/agent/skillRuntime";
@@ -29,14 +33,23 @@ import { countConversationTurns } from "../../shared/conversation/compactionMess
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../shared/host/bindings";
 import { getBinding, setBinding } from "../../shared/host/context";
-import type { LineInputValue } from "../../shared/host/inputBindings";
-import { getUserInputDisplay } from "../../shared/model/message/userInputMetadata";
+import { releasePromptResources } from "../../shared/host/promptResourceLifecycle";
+import {
+  projectFrozenUserInputDisplay,
+  type ResolvedUserInputV1,
+} from "../../shared/model/prompt/frozenUserInput";
+import {
+  isPromptInputSemanticallyEmpty,
+  type PromptInput,
+  promptInputCommandText,
+  promptInputPlainText,
+} from "../../shared/model/prompt/promptInput";
 import { formatUserInputDisplay } from "../conversation-display/history/userInputDisplay";
 import {
   formatSessionStatus,
   formatTokenUsageLine,
 } from "../conversation-display/session-summary/format";
-import { buildSkillAwareUserMessage } from "../message-composer/message-materialization/skillAwareUserMessage";
+import { materializeSkillAwareUserInput } from "../message-composer/message-materialization/skillAwareUserMessage";
 import { withAbort } from "../runtime/withAbort";
 import { drainSteers } from "../submission-dispatch/steerQueue";
 import { combineSessionBudget } from "./budget";
@@ -117,13 +130,11 @@ export interface MainCliAgentProps extends EvilJellyBindings {
   seedContext?: Message[];
   /** Session image store consulted only when a model policy materializes durable locators. */
   sessionBlobRoot?: string;
-  /** @deprecated Compatibility alias; new callers should pass seedContext. */
-  seedHistory?: Message[];
   /** Cumulative usage carried back from a resumed session, used as the /status base. */
   seedBudget?: SessionBudget;
   /** Replay-only mode: do not read from or write to durable local sessions. */
   isolateSessionState?: boolean;
-  /** Session V2 writer. Undefined only for ephemeral or isolated runs. */
+  /** Session V3 writer. Undefined only for ephemeral or isolated runs. */
   sessionRecorder?: SessionRecorder;
 }
 
@@ -134,7 +145,7 @@ type RouterIntent =
   | { kind: "status" }
   | { kind: "compress" }
   | { kind: "resume"; rawInput: string }
-  | { kind: "message"; lineInput: LineInputValue; userInput: string };
+  | { kind: "message"; promptInput: PromptInput; userInput: string };
 
 interface RouterRuntime {
   props: MainCliAgentProps;
@@ -151,12 +162,12 @@ function createTurnId(): string {
   return randomBytes(12).toString("base64url");
 }
 
-function classifyRouterIntent(lineInput: LineInputValue): RouterIntent {
-  const userInput = lineInput.text.trim();
-  if (!userInput) {
+function classifyRouterIntent(promptInput: PromptInput): RouterIntent {
+  if (isPromptInputSemanticallyEmpty(promptInput)) {
     return { kind: "empty" };
   }
-  const normalized = userInput.toLowerCase();
+  const commandText = promptInputCommandText(promptInput)?.trim();
+  const normalized = commandText?.toLowerCase();
   if (normalized === "/exit" || normalized === "exit") {
     return { kind: "exit" };
   }
@@ -169,10 +180,10 @@ function classifyRouterIntent(lineInput: LineInputValue): RouterIntent {
   if (normalized === "/compress") {
     return { kind: "compress" };
   }
-  if (normalized === "/resume" || normalized.startsWith("/resume ")) {
-    return { kind: "resume", rawInput: userInput };
+  if (normalized === "/resume" || normalized?.startsWith("/resume ")) {
+    return { kind: "resume", rawInput: commandText! };
   }
-  return { kind: "message", lineInput, userInput };
+  return { kind: "message", promptInput, userInput: promptInputPlainText(promptInput).trim() };
 }
 
 async function handleExit(runtime: RouterRuntime): Promise<void> {
@@ -245,19 +256,44 @@ async function handleCompress(runtime: RouterRuntime): Promise<void> {
   );
 }
 
-function displayPreparedUserMessage(message: Message, fallback: string): string {
-  const display = getUserInputDisplay(message);
-  return display ? formatUserInputDisplay(display) : fallback;
-}
-
-async function drainAndPrepareSteerMessages(runtime: RouterRuntime): Promise<Message[]> {
+async function drainAndPrepareSteerMessages(
+  runtime: RouterRuntime,
+  turnId: string,
+): Promise<Message[]> {
   const messages: Message[] = [];
-  for (const input of drainSteers()) {
-    const message = await buildSkillAwareUserMessage(input, runtime.skillSnapshot);
-    runtime.host.logUserMessage(displayPreparedUserMessage(message, input.text));
-    messages.push(message);
+  const inputs = drainSteers();
+  try {
+    for (const input of inputs) {
+      const resolved = await materializeSkillAwareUserInput(input, runtime.skillSnapshot).finally(
+        () =>
+          releasePromptResources(input).catch((error) =>
+            runtime.host.logSystemEvent(
+              `Prompt resource cleanup failed: ${formatPersistenceError(error)}\n`,
+            ),
+          ),
+      );
+      messages.push(await commitUserInput(runtime, turnId, "steer", resolved));
+    }
+  } catch (error) {
+    await Promise.all(inputs.map((input) => releasePromptResources(input).catch(() => undefined)));
+    throw error;
   }
   return messages;
+}
+
+async function commitUserInput(
+  runtime: RouterRuntime,
+  turnId: string,
+  inputKind: "initial" | "steer",
+  resolved: ResolvedUserInputV1,
+): Promise<Message> {
+  const frozen = runtime.props.sessionRecorder
+    ? await runtime.props.sessionRecorder.recordUserInput(turnId, inputKind, resolved)
+    : await commitResolvedUserInput(resolved, { blobRoot: runtime.props.sessionBlobRoot });
+  runtime.host.logUserMessage(formatUserInputDisplay(projectFrozenUserInputDisplay(frozen)));
+  return materializeFrozenUserInputMessage(frozen, {
+    blobRoot: runtime.props.sessionBlobRoot,
+  });
 }
 
 async function handleResume(runtime: RouterRuntime, rawInput: string): Promise<boolean> {
@@ -304,7 +340,7 @@ async function closeTurnAfterFailure(
 
 async function runConversationTurn(
   runtime: RouterRuntime,
-  lineInput: LineInputValue,
+  promptInput: PromptInput,
   userInput: string,
 ): Promise<void> {
   let submittedUserMessage: Message | undefined;
@@ -313,23 +349,27 @@ async function runConversationTurn(
   let turnClosureAttempted = false;
 
   try {
-    submittedUserMessage = await buildSkillAwareUserMessage(lineInput, runtime.skillSnapshot);
-    runtime.host.logUserMessage(displayPreparedUserMessage(submittedUserMessage, userInput));
+    const resolved = await materializeSkillAwareUserInput(
+      promptInput,
+      runtime.skillSnapshot,
+    ).finally(() =>
+      releasePromptResources(promptInput).catch((error) =>
+        runtime.host.logSystemEvent(
+          `Prompt resource cleanup failed: ${formatPersistenceError(error)}\n`,
+        ),
+      ),
+    );
     activeTurnId = createTurnId();
     // The session layer marks the turn start here (inputKind: "initial"); the status line's
     // timer must anchor at exactly this point so steers and maintenance commands never
     // start (or restart) a turn.
     runtime.host.onTurnStart?.();
-    await runtime.props.sessionRecorder?.recordMessage(
-      activeTurnId,
-      { kind: "user_input", inputKind: "initial" },
-      submittedUserMessage,
-    );
+    submittedUserMessage = await commitUserInput(runtime, activeTurnId, "initial", resolved);
 
     const result = await UnifiedAgentWithAbort({
       message: submittedUserMessage,
       history: runtime.history,
-      pendingUserMessages: () => drainAndPrepareSteerMessages(runtime),
+      pendingUserMessages: () => drainAndPrepareSteerMessages(runtime, activeTurnId!),
       sessionBlobRoot: runtime.props.sessionBlobRoot,
       sessionRecorder: runtime.props.sessionRecorder,
       turnId: activeTurnId,
@@ -395,7 +435,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
     const host = getBinding();
     const [history, setHistory] = equipMemory<Message[]>(
       "message_history",
-      props.seedContext ?? props.seedHistory ?? [],
+      props.seedContext ?? [],
     );
     // Approx live context-window size: the most recent model call's input tokens (and its cached
     // subset). Kept in memory so they survive reborn (each turn re-runs this handler); seeded from
@@ -478,7 +518,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
           }
           return reborn();
         case "message":
-          await runConversationTurn(runtime, intent.lineInput, intent.userInput);
+          await runConversationTurn(runtime, intent.promptInput, intent.userInput);
           return reborn();
       }
     } catch (error) {

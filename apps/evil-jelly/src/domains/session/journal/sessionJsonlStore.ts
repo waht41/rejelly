@@ -14,7 +14,7 @@ import {
   inspectSessionForAppend,
   type LocatedSessionEvent,
   MAX_EVENT_LINE_BYTES,
-  resolveV2SessionPath,
+  resolveV3SessionPath,
   type SessionAppendPosition,
   type SessionStoragePaths,
 } from "./sessionJsonlReader";
@@ -38,6 +38,7 @@ export {
   readSessionEvents,
   readSessionMetaLine,
   resolveV2SessionPath,
+  resolveV3SessionPath,
   SessionCorruptionError,
 } from "./sessionJsonlReader";
 export function createSessionMetaLine(input: {
@@ -50,7 +51,7 @@ export function createSessionMetaLine(input: {
   assertSessionId(input.sessionId);
   return parseSessionMetaLine({
     type: "session_meta",
-    schemaVersion: 2,
+    schemaVersion: 3,
     sessionId: input.sessionId,
     workspaceRoot: path.resolve(input.workspaceRoot),
     createdAt: input.createdAt ?? Date.now(),
@@ -160,7 +161,11 @@ export async function openSessionWriter(
 ): Promise<SessionWriter> {
   const meta = parseSessionMetaLine(metaInput);
   assertSessionId(meta.sessionId);
-  const filePath = resolveV2SessionPath(meta.workspaceRoot, meta.sessionId, options);
+  if (meta.schemaVersion !== 3) {
+    throw new Error("Session runtime writer only accepts V3 metadata");
+  }
+  const writerPaths = { ...options, journalVersion: 3 as const };
+  const filePath = resolveV3SessionPath(meta.workspaceRoot, meta.sessionId, writerPaths);
   await fs.promises.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
   const lock = await acquireSessionWriterLock(filePath, options.traceId);
 
@@ -227,12 +232,15 @@ export async function openSessionWriter(
           }
 
           const validatedEvent = parseNewSessionEvent(event);
-          const storedEvent = await prepareEventForStorage(validatedEvent, options);
-          const complete = parseSessionEvent({
-            ...storedEvent,
-            seq,
-            timestamp: appendOptions?.timestamp ?? Date.now(),
-          });
+          const storedEvent = await prepareEventForStorage(validatedEvent, writerPaths);
+          const complete = parseSessionEvent(
+            {
+              ...storedEvent,
+              seq,
+              timestamp: appendOptions?.timestamp ?? Date.now(),
+            },
+            3,
+          );
           const bytes = Buffer.from(`${JSON.stringify(complete)}\n`, "utf8");
           if (bytes.length > MAX_EVENT_LINE_BYTES) {
             throw new Error(`Session event exceeds ${MAX_EVENT_LINE_BYTES} bytes`);

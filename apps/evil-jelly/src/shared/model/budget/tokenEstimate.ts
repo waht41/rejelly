@@ -8,6 +8,10 @@
 
 import type { ImageContent, Message, MessageContent } from "@rejelly/core";
 import { type ImageDimensions, readImageDimensions } from "../../foundation/media/imageDimensions";
+import {
+  frozenUserInputImageDimensions,
+  getFrozenUserInputOrigin,
+} from "../prompt/frozenUserInput";
 
 /** Rough chars-per-token for non-CJK text (code/ASCII); on the cheap side so we under-charge slightly. */
 const NON_CJK_CHARS_PER_TOKEN = 4;
@@ -91,31 +95,6 @@ function estimateImageTokens(
   return IMAGE_CONTENT_TOKEN_ESTIMATE;
 }
 
-function dimensionsFromMessageExtra(message: Message): Array<ImageDimensions | undefined> {
-  const rejelly = message.extra?.rejelly;
-  if (typeof rejelly !== "object" || rejelly === null) {
-    return [];
-  }
-  const raw = (rejelly as Record<string, unknown>).imageDimensions;
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-  return raw.map((value) => {
-    if (typeof value !== "object" || value === null) {
-      return undefined;
-    }
-    const { width, height } = value as Record<string, unknown>;
-    return typeof width === "number" &&
-      Number.isInteger(width) &&
-      width > 0 &&
-      typeof height === "number" &&
-      Number.isInteger(height) &&
-      height > 0
-      ? { width, height }
-      : undefined;
-  });
-}
-
 export function estimateMessageContentTokens(
   content: MessageContent | null,
   imageDimensions: readonly (ImageDimensions | undefined)[] = [],
@@ -149,7 +128,11 @@ export function estimateMessageContentTokens(
 export function estimateMessagesTokens(messages: readonly Message[]): number {
   let total = 0;
   for (const message of messages) {
-    total += estimateMessageContentTokens(message.content, dimensionsFromMessageExtra(message));
+    const frozenInput = getFrozenUserInputOrigin(message);
+    total += estimateMessageContentTokens(
+      message.content,
+      frozenInput ? frozenUserInputImageDimensions(frozenInput) : [],
+    );
     for (const call of message.tool_calls ?? []) {
       total += estimateTokens(JSON.stringify(call));
     }

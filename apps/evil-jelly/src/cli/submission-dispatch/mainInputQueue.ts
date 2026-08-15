@@ -1,27 +1,31 @@
-import type { LineInputValue } from "../../shared/host/inputBindings";
+import { releasePromptResources } from "../../shared/host/promptResourceLifecycle";
+import { copyPromptInput, type PromptInput } from "../../shared/model/prompt/promptInput";
 
-let queuedLineInputs: LineInputValue[] = [];
-let pendingLineResolver: ((value: LineInputValue) => void) | null = null;
+let queuedLineInputs: PromptInput[] = [];
+let pendingLineResolver: ((value: PromptInput) => void) | null = null;
 let pendingLineRejecter: ((reason: Error) => void) | null = null;
 let awaitingMainInput = false;
 
 /** Reset pending main input for a fresh CLI session. */
 export function resetMainInputQueue(): void {
+  const discarded = queuedLineInputs;
   queuedLineInputs = [];
   pendingLineResolver = null;
   pendingLineRejecter = null;
   awaitingMainInput = false;
+  void Promise.all(discarded.map((input) => releasePromptResources(input))).catch(() => undefined);
 }
 
-export function enqueueMainInput(value: LineInputValue): void {
+export function enqueueMainInput(value: PromptInput): void {
+  const snapshot = copyPromptInput(value);
   if (pendingLineResolver) {
     const resolve = pendingLineResolver;
     pendingLineResolver = null;
     pendingLineRejecter = null;
-    resolve(value);
+    resolve(snapshot);
     return;
   }
-  queuedLineInputs.push(value);
+  queuedLineInputs.push(snapshot);
 }
 
 /**
@@ -40,7 +44,7 @@ export function rejectPendingLineInput(reason: Error): boolean {
   return false;
 }
 
-export function dequeueMainInput(): Promise<LineInputValue> {
+export function dequeueMainInput(): Promise<PromptInput> {
   const next = queuedLineInputs.shift();
   if (next !== undefined) {
     return Promise.resolve(next);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractAtQuery, refsMissingFromText, replaceAtToken } from "./atTrigger";
+import { activeAtTrigger, extractAtQuery, removeActiveAtTrigger } from "./atTrigger";
 
 describe("extractAtQuery", () => {
   it("returns the token being typed at the caret", () => {
@@ -31,31 +31,22 @@ describe("extractAtQuery", () => {
   });
 });
 
-describe("replaceAtToken", () => {
-  it("replaces the active token with a closed @ref and trailing space", () => {
-    expect(replaceAtToken({ text: "see @src/fo", cursor: 11 }, ["src/foo.ts"])).toEqual({
-      text: "see @src/foo.ts ",
-      cursor: 16,
-    });
-  });
-
-  it("keeps following text and does not double the separator", () => {
-    expect(replaceAtToken({ text: "@a end", cursor: 2 }, ["x.ts"])).toEqual({
-      text: "@x.ts end",
-      cursor: 5,
-    });
-  });
-
-  it("removes the token when given no paths", () => {
-    expect(replaceAtToken({ text: "hi @foo", cursor: 7 }, [])).toEqual({
+describe("removeActiveAtTrigger", () => {
+  it("removes the unfinished text trigger", () => {
+    expect(removeActiveAtTrigger({ text: "hi @foo", cursor: 7 })).toEqual({
       text: "hi ",
       cursor: 3,
     });
   });
 });
 
-describe("refsMissingFromText", () => {
-  it("filters out paths already referenced", () => {
-    expect(refsMissingFromText("see @a.ts", ["a.ts", "b.ts"])).toEqual(["b.ts"]);
+describe("activeAtTrigger", () => {
+  it("returns the display range that should become a semantic file token", () => {
+    expect(activeAtTrigger("see @src/ma", 11)).toEqual({
+      start: 4,
+      end: 11,
+      query: "src/ma",
+    });
+    expect(activeAtTrigger("see @src/main.ts done", 21)).toBeNull();
   });
 });

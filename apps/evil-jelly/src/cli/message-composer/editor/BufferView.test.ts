@@ -9,16 +9,17 @@ import { projectPromptDocument } from "./document/promptDocument";
 describe("BufferView", () => {
   it("renders the label and the exact pre-wrapped rows", () => {
     const text = "ask $review";
-    const projection = projectPromptDocument([
-      { type: "text", text: "ask " },
-      {
-        type: "token",
-        kind: "skill",
-        id: "skill-1",
-        qualifiedName: "project:review",
-        displayText: "$review",
-      },
-    ]);
+    const projection = projectPromptDocument(
+      [
+        { type: "text", text: "ask " },
+        {
+          type: "token",
+          kind: "skill",
+          qualifiedName: "project:review",
+        },
+      ],
+      () => "$review",
+    );
     const output = stripAnsi(
       renderToString(
         createElement(BufferView, {

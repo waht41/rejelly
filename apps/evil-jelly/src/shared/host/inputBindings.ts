@@ -1,21 +1,4 @@
-export type UserFileAttachment = {
-  type: "file";
-  path: string;
-};
-
-export type UserImageAttachment = {
-  type: "image";
-  path: string;
-  mimeType?: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
-  detail?: "auto" | "low" | "high";
-};
-
-export type UserAttachment = UserFileAttachment | UserImageAttachment;
-
-/** A Skill explicitly selected by the user for one input turn. */
-export interface UserSkillReference {
-  qualifiedName: string;
-}
+import type { PromptInput } from "../model/prompt/promptInput";
 
 /** Path-free Skill metadata a host may expose in an explicit-selection UI. */
 export interface UserSkillListItem {
@@ -24,13 +7,6 @@ export interface UserSkillListItem {
   scope: "user" | "project";
   description: string;
   shortDescription?: string;
-}
-
-export interface LineInputValue {
-  text: string;
-  attachments?: UserAttachment[];
-  /** Structured picker selections; ordinary `$text` in the prompt is never inferred as a Skill. */
-  skills?: UserSkillReference[];
 }
 
 /** One row in a driver-provided action menu (hotkey plus arbitrary value). */
@@ -56,7 +32,7 @@ export interface PromptChoiceRequest {
 
 /** User input, picker inventory, and general prompt choices supplied to the agent runtime. */
 export interface PromptInputBindings {
-  getInput: () => Promise<LineInputValue>;
+  getInput: () => Promise<PromptInput>;
   setAvailableSkills?: (skills: UserSkillListItem[]) => void;
   requestChoice: (request: PromptChoiceRequest) => Promise<string>;
 }

@@ -1,8 +1,9 @@
 import path from "node:path";
+import { projectFrozenUserInputPlainText } from "../../../shared/model/prompt/frozenUserInput";
 import type { SessionMetaLine, SessionStateEvent, SessionStatus } from "../model/sessionEvents";
 import type { SessionBudget } from "../model/sessionTypes";
 import type { PreparedSessionReplay } from "./sessionReplay";
-import { deriveSessionTitle } from "./sessionTitle";
+import { deriveSessionTitle, deriveSessionTitleFromText } from "./sessionTitle";
 
 /**
  * Picker/status projection.
@@ -77,6 +78,16 @@ export function projectSessionSummary(
           userTurnIds.add(event.turnId);
           userTurns += 1;
           title = title === "(untitled)" ? (deriveSessionTitle(event.message) ?? title) : title;
+        }
+        break;
+      case "user_input_recorded":
+        if (event.inputKind === "initial" && !userTurnIds.has(event.turnId)) {
+          userTurnIds.add(event.turnId);
+          userTurns += 1;
+          title =
+            title === "(untitled)"
+              ? (deriveSessionTitleFromText(projectFrozenUserInputPlainText(event.input)) ?? title)
+              : title;
         }
         break;
       case "turn_completed":

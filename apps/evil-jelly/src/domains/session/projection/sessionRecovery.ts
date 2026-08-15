@@ -27,6 +27,16 @@ export function findIncompleteTurnRecoveries(
       turns.delete(event.turnId);
       continue;
     }
+    if (event.type === "user_input_recorded") {
+      turns.set(
+        event.turnId,
+        turns.get(event.turnId) ?? {
+          turnId: event.turnId,
+          missingToolCalls: [],
+        },
+      );
+      continue;
+    }
     if (event.type !== "message_recorded") {
       continue;
     }

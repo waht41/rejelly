@@ -3,16 +3,25 @@ import os from "node:os";
 import path from "node:path";
 import type { Message } from "@rejelly/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { recordInitialTextInput } from "../__tests__/sessionTestInput";
+import { persistSessionBlob } from "../journal/sessionBlobStore";
 import {
   createSessionMetaLine,
   findLatestSessionStateFromTail,
   openSessionWriter,
   readSessionEvents,
   resolveV2SessionPath,
+  resolveV3SessionPath,
 } from "../journal/sessionJsonlStore";
 import { resolveWorkspaceDir } from "../journal/sessionPaths";
+import {
+  acquireSessionWriterLock,
+  releaseSessionWriterLock,
+  SessionWriterLockedError,
+} from "../journal/sessionWriterLock";
 import { isKnownSessionEvent } from "../model/sessionEvents";
 import { openSessionRecorder } from "../recorder/sessionRecorder";
+import { materializeMessageHistory } from "./sessionMessageMaterializer";
 import {
   listSessions,
   loadSession,
@@ -72,6 +81,281 @@ describe("mixed-format session store", () => {
     await fs.writeFile(filePath, JSON.stringify(record), "utf8");
     return filePath;
   }
+
+  async function writeV2(id: string): Promise<{ filePath: string; bytes: string }> {
+    const filePath = resolveV2SessionPath(workspaceRoot, id, { sessionsRoot });
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    const lines = [
+      {
+        type: "session_meta",
+        schemaVersion: 2,
+        sessionId: id,
+        workspaceRoot,
+        createdAt: 10,
+        originator: "v2-test",
+        appVersion: "0.9.0",
+      },
+      {
+        type: "run_segment_started",
+        seq: 1,
+        timestamp: 11,
+        kind: "created",
+        traceId: "v2-trace",
+        modelId: "old-model",
+        cwd: workspaceRoot,
+      },
+      {
+        type: "message_recorded",
+        seq: 2,
+        timestamp: 12,
+        turnId: "turn-1",
+        source: { kind: "user_input", inputKind: "initial" },
+        message: {
+          role: "user",
+          content: "frozen V2 model input",
+          extra: {
+            rejelly: {
+              kind: "user_input",
+              display: {
+                text: "review @src/a.ts",
+                attachments: [
+                  {
+                    type: "file",
+                    label: "src/a.ts",
+                    action: "read",
+                    locator: { scope: "workspace", path: "src/a.ts" },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+      {
+        type: "message_recorded",
+        seq: 3,
+        timestamp: 13,
+        turnId: "turn-1",
+        source: { kind: "model" },
+        message: { role: "assistant", content: "done" },
+      },
+      {
+        type: "turn_completed",
+        seq: 4,
+        timestamp: 14,
+        turnId: "turn-1",
+        status: "completed",
+      },
+      {
+        type: "session_state",
+        seq: 5,
+        timestamp: 15,
+        coveredThroughSeq: 4,
+        userTurns: 1,
+        title: "review @src/a.ts",
+        traceIds: ["v2-trace"],
+        status: "active",
+      },
+    ];
+    const bytes = `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`;
+    await fs.writeFile(filePath, bytes, "utf8");
+    return { filePath, bytes };
+  }
+
+  async function writeV2Image(id: string): Promise<void> {
+    const bytes = Buffer.from("legacy-image-bytes");
+    const blobRoot = path.join(tmpDir, "blobs");
+    const blob = await persistSessionBlob(bytes, "image/png", { blobRoot });
+    const filePath = resolveV2SessionPath(workspaceRoot, id, { sessionsRoot });
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    const lines = [
+      {
+        type: "session_meta",
+        schemaVersion: 2,
+        sessionId: id,
+        workspaceRoot,
+        createdAt: 10,
+        originator: "v2-test",
+        appVersion: "0.9.0",
+      },
+      {
+        type: "run_segment_started",
+        seq: 1,
+        timestamp: 11,
+        kind: "created",
+        traceId: "v2-image-trace",
+        modelId: "old-model",
+        cwd: workspaceRoot,
+      },
+      {
+        type: "message_recorded",
+        seq: 2,
+        timestamp: 12,
+        turnId: "turn-1",
+        source: { kind: "user_input", inputKind: "initial" },
+        message: {
+          role: "user",
+          content: [
+            { type: "text", text: "[Image #1]" },
+            { type: "image", image: { url: blob.blobRef, detail: "high" } },
+          ],
+          extra: {
+            rejelly: {
+              kind: "user_input",
+              display: { text: "[Image #1]", attachments: [] },
+              imageBlobs: { [blob.blobRef]: blob },
+            },
+          },
+        },
+      },
+      {
+        type: "turn_completed",
+        seq: 3,
+        timestamp: 13,
+        turnId: "turn-1",
+        status: "completed",
+      },
+      {
+        type: "session_state",
+        seq: 4,
+        timestamp: 14,
+        coveredThroughSeq: 3,
+        userTurns: 1,
+        title: "[Image #1]",
+        traceIds: ["v2-image-trace"],
+        status: "active",
+      },
+    ];
+    await fs.writeFile(
+      filePath,
+      `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`,
+      "utf8",
+    );
+  }
+
+  it("migrates V2 to a separate V3 journal without inferring semantic tokens", async () => {
+    const source = await writeV2("v2-rich-display");
+
+    const resumed = await resumeSession(workspaceRoot, "v2-rich-display", {
+      sessionsRoot,
+      originator: "test",
+      appVersion: "1.0.0",
+    });
+
+    expect(resumed).toMatchObject({
+      meta: { title: "review @src/a.ts", turns: 1, traceIds: ["v2-trace"] },
+      messages: [
+        { role: "user", content: "frozen V2 model input" },
+        { role: "assistant", content: "done" },
+      ],
+    });
+    expect(await fs.readFile(source.filePath, "utf8")).toBe(source.bytes);
+    await expect(
+      fs.stat(resolveV3SessionPath(workspaceRoot, "v2-rich-display", { sessionsRoot })),
+    ).resolves.toBeDefined();
+    const v3 = await readSessionEvents(workspaceRoot, "v2-rich-display", { sessionsRoot });
+    expect(v3.meta.schemaVersion).toBe(3);
+    expect(v3.events[1]).toMatchObject({
+      type: "user_input_recorded",
+      input: {
+        version: 1,
+        kind: "legacy",
+        display: { text: "review @src/a.ts" },
+        message: { content: "frozen V2 model input" },
+      },
+    });
+
+    await fs.writeFile(source.filePath, "{corrupt V2", "utf8");
+    await expect(
+      loadSession(workspaceRoot, "v2-rich-display", { sessionsRoot }),
+    ).resolves.toMatchObject({
+      meta: { title: "review @src/a.ts" },
+    });
+  });
+
+  it("publishes one winning V3 journal when V2 migrations race", async () => {
+    const source = await writeV2("v2-race");
+    const options = { sessionsRoot, originator: "test", appVersion: "1.0.0" };
+
+    const [first, second] = await Promise.all([
+      resumeSession(workspaceRoot, "v2-race", options),
+      resumeSession(workspaceRoot, "v2-race", options),
+    ]);
+
+    expect(first?.meta.title).toBe("review @src/a.ts");
+    expect(second?.meta.title).toBe("review @src/a.ts");
+    expect(await fs.readFile(source.filePath, "utf8")).toBe(source.bytes);
+    const v3 = await readSessionEvents(workspaceRoot, "v2-race", { sessionsRoot });
+    expect(v3.meta.schemaVersion).toBe(3);
+    expect(v3.events.filter((event) => event.type === "user_input_recorded")).toHaveLength(1);
+  });
+
+  it("refuses to migrate while a real V2 writer owns the source journal", async () => {
+    await writeV2("v2-active-writer");
+    const v2Path = resolveV2SessionPath(workspaceRoot, "v2-active-writer", { sessionsRoot });
+    const lock = await acquireSessionWriterLock(v2Path, "live-v2-writer");
+    try {
+      await expect(
+        resumeSession(workspaceRoot, "v2-active-writer", {
+          sessionsRoot,
+          originator: "test",
+          appVersion: "1.0.0",
+        }),
+      ).rejects.toMatchObject({ cause: expect.any(SessionWriterLockedError) });
+      await expect(
+        fs.access(resolveV3SessionPath(workspaceRoot, "v2-active-writer", { sessionsRoot })),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await releaseSessionWriterLock(lock);
+    }
+  });
+
+  it("moves V2 image metadata into one frozen V3 legacy record", async () => {
+    await writeV2Image("v2-image");
+    const blobRoot = path.join(tmpDir, "blobs");
+
+    const resumed = await resumeSession(workspaceRoot, "v2-image", {
+      sessionsRoot,
+      blobRoot,
+      originator: "test",
+      appVersion: "1.0.0",
+    });
+    const materialized = await materializeMessageHistory(resumed?.messages ?? [], { blobRoot });
+    expect(materialized[0]?.content).toEqual([
+      { type: "text", text: "[Image #1]" },
+      expect.objectContaining({
+        type: "image",
+        image: expect.objectContaining({ url: expect.stringMatching(/^data:image\/png;base64,/) }),
+      }),
+    ]);
+
+    const v3 = await readSessionEvents(workspaceRoot, "v2-image", { sessionsRoot });
+    expect(v3.events[1]).toMatchObject({
+      type: "user_input_recorded",
+      input: {
+        kind: "legacy",
+        display: { text: "[Image #1]" },
+      },
+    });
+    const migratedInput = v3.events[1];
+    expect(
+      migratedInput &&
+        isKnownSessionEvent(migratedInput) &&
+        migratedInput.type === "user_input_recorded" &&
+        migratedInput.input.kind === "legacy"
+        ? Object.values(migratedInput.input.imageBlobs)
+        : [],
+    ).toEqual([expect.objectContaining({ blobRef: expect.stringMatching(/^rejelly-blob:\/\//) })]);
+    expect(
+      migratedInput &&
+        isKnownSessionEvent(migratedInput) &&
+        migratedInput.type === "user_input_recorded"
+        ? migratedInput.input.kind === "legacy"
+          ? migratedInput.input.message.extra?.rejelly
+          : "wrong input kind"
+        : "missing event",
+    ).toBeUndefined();
+  });
 
   it("lazily migrates a complete V1 snapshot and leaves the source untouched", async () => {
     const messages: Message[] = [
@@ -189,7 +473,7 @@ describe("mixed-format session store", () => {
         originator: "test",
         appVersion: "1.0.0",
       }),
-    ).rejects.toMatchObject({ kind: "unreadable", format: "v2" });
+    ).rejects.toMatchObject({ kind: "unreadable", format: "v3" });
     await expect(fs.access(v1Path.replace(/\.json$/, ".jsonl"))).rejects.toMatchObject({
       code: "ENOENT",
     });
@@ -212,11 +496,7 @@ describe("mixed-format session store", () => {
       cwd: workspaceRoot,
       sessionsRoot,
     });
-    await recorder.recordMessage(
-      "turn-1",
-      { kind: "user_input", inputKind: "initial" },
-      { role: "user", content: "v2 wins" },
-    );
+    await recordInitialTextInput(recorder, "turn-1", "v3 wins");
     await recorder.completeTurn("turn-1", "completed");
     await recorder.endSegment({ status: "completed", reason: "exit" });
     await recorder.close();
@@ -225,12 +505,12 @@ describe("mixed-format session store", () => {
     expect(listed).toHaveLength(1);
     expect(listed[0]).toMatchObject({
       id: "duplicate",
-      title: "v2 wins",
+      title: "v3 wins",
       turns: 1,
       traceIds: ["v2-trace"],
     });
     expect((await loadSession(workspaceRoot, "duplicate", { sessionsRoot }))?.messages).toEqual([
-      { role: "user", content: "v2 wins" },
+      expect.objectContaining({ role: "user", content: "v3 wins" }),
     ]);
   });
 
@@ -277,11 +557,7 @@ describe("mixed-format session store", () => {
       cwd: workspaceRoot,
       sessionsRoot,
     });
-    await recorder.recordMessage(
-      "turn-1",
-      { kind: "user_input", inputKind: "initial" },
-      { role: "user", content: "retain this transcript" },
-    );
+    await recordInitialTextInput(recorder, "turn-1", "retain this transcript");
     await recorder.recordMessage(
       "turn-1",
       { kind: "model" },
@@ -346,11 +622,7 @@ describe("mixed-format session store", () => {
         cwd: workspaceRoot,
         sessionsRoot,
       });
-      await recorder.recordMessage(
-        "turn-1",
-        { kind: "user_input", inputKind: "initial" },
-        { role: "user", content: "run the side-effecting tool" },
-      );
+      await recordInitialTextInput(recorder, "turn-1", "run the side-effecting tool");
       await recorder.recordMessage(
         "turn-1",
         { kind: "model" },
@@ -497,7 +769,7 @@ describe("mixed-format session store", () => {
 
     // A current listing checkpoint deliberately makes picker metadata independent of historical
     // replay. Corrupting a covered middle event therefore breaks strict resume, but not listing.
-    const filePath = resolveV2SessionPath(workspaceRoot, "idle-abort", { sessionsRoot });
+    const filePath = resolveV3SessionPath(workspaceRoot, "idle-abort", { sessionsRoot });
     const lines = (await fs.readFile(filePath, "utf8")).split("\n");
     lines[1] = "{not-json";
     await fs.writeFile(filePath, lines.join("\n"), "utf8");

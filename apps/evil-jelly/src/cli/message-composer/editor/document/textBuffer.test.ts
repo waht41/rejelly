@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { replaceAtToken } from "../../suggestions/file-reference/atTrigger";
-import { deletePlaceholderOrChar } from "../keyboard/placeholderMotion";
+import {
+  promptDocumentLogicalLength,
+  textPromptDocument,
+} from "../../../../shared/model/prompt/promptDocument";
+import { removeActiveAtTrigger } from "../../suggestions/file-reference/atTrigger";
 import { caretCell, verticalCaretTarget, wrapRows } from "../softWrap";
 import {
-  documentLogicalLength,
+  defaultPromptTokenDisplayText,
+  type PromptTokenDisplayText,
   projectPromptDocument,
   replacePromptRange,
-  textPromptDocument,
 } from "./promptDocument";
 import {
   applyProjectedTransform,
@@ -81,10 +84,10 @@ describe("rich document compatibility transforms", () => {
   const skill = {
     type: "token" as const,
     kind: "skill" as const,
-    id: "skill-1",
     qualifiedName: "project:review",
-    displayText: "$review",
   };
+  const displayToken: PromptTokenDisplayText = (token) =>
+    token.kind === "skill" ? "$review" : defaultPromptTokenDisplayText(token);
   const document = replacePromptRange(textPromptDocument("ab"), 1, 1, [skill]);
 
   it("moves across a rich token as one logical position", () => {
@@ -92,11 +95,13 @@ describe("rich document compatibility transforms", () => {
       { document, cursor: 2, caretAffinity: "forward" },
       moveLeft,
       "left",
+      displayToken,
     );
     const movedRight = applyProjectedTransform(
       { document, cursor: 1, caretAffinity: "forward" },
       moveRight,
       "right",
+      displayToken,
     );
 
     expect(movedLeft.cursor).toBe(1);
@@ -107,52 +112,64 @@ describe("rich document compatibility transforms", () => {
     const deleted = applyProjectedTransform(
       { document, cursor: 2, caretAffinity: "forward" },
       backspace,
+      "nearest",
+      displayToken,
     );
 
     expect(projectPromptDocument(deleted.document).text).toBe("ab");
     expect(deleted.cursor).toBe(1);
   });
 
-  it("preserves semantic tokens while legacy Image placeholders keep their atomic deletion", () => {
-    const withPlaceholder = replacePromptRange(document, 3, 3, [
-      { type: "text", text: "[Image #1]" },
-    ]);
+  it.each([
+    [{ type: "token" as const, kind: "file" as const, attachmentId: "file-1" }, "@src/a.ts"],
+    [{ type: "token" as const, kind: "image" as const, attachmentId: "image-1" }, "[Image #1]"],
+    [
+      { type: "token" as const, kind: "paste" as const, text: "one\ntwo\nthree\nfour\nfive\nsix" },
+      "[Pasted text +6 lines]",
+    ],
+  ])("deletes a %s token as one logical unit", (token, label) => {
+    const richDocument = replacePromptRange(textPromptDocument("ab"), 1, 1, [token]);
     const deleted = applyProjectedTransform(
-      { document: withPlaceholder, cursor: 13, caretAffinity: "forward" },
-      deletePlaceholderOrChar,
+      { document: richDocument, cursor: 2, caretAffinity: "forward" },
+      backspace,
+      "nearest",
+      (candidate) => (candidate === token ? label : defaultPromptTokenDisplayText(candidate)),
     );
 
-    expect(projectPromptDocument(deleted.document).text).toBe("a$reviewb");
-    expect(deleted.cursor).toBe(3);
+    expect(projectPromptDocument(deleted.document).text).toBe("ab");
+    expect(deleted.cursor).toBe(1);
   });
 
   it("preserves semantic tokens when a legacy text trigger edits a later range", () => {
     const withAtQuery = replacePromptRange(document, 3, 3, [{ type: "text", text: " @sr" }]);
     const replaced = applyProjectedTransform(
       { document: withAtQuery, cursor: 7, caretAffinity: "forward" },
-      (state) => replaceAtToken(state, ["src"]),
+      removeActiveAtTrigger,
+      "nearest",
+      displayToken,
     );
 
-    expect(projectPromptDocument(replaced.document).text).toBe("a$reviewb @src ");
-    expect(replaced.cursor).toBe(9);
+    expect(projectPromptDocument(replaced.document, displayToken).text).toBe("a$reviewb ");
+    expect(replaced.cursor).toBe(4);
   });
 
   it("keeps a vertical token snap on the target side of a soft-wrap boundary", () => {
     const tokenRowDocument = replacePromptRange(textPromptDocument("1111111111\nxx"), 10, 10, [
       skill,
     ]);
-    const projection = projectPromptDocument(tokenRowDocument);
+    const projection = projectPromptDocument(tokenRowDocument, displayToken);
     const rows = wrapRows(projection.text, 10);
     const target = verticalCaretTarget(rows, projection.text.length, -1, null)!;
     const moved = setProjectedCursor(
       {
         document: tokenRowDocument,
-        cursor: documentLogicalLength(tokenRowDocument),
+        cursor: promptDocumentLogicalLength(tokenRowDocument),
         caretAffinity: "forward",
       },
       target.cursor,
       "nearest",
       target.affinity,
+      displayToken,
     );
     const displayCursor = projection.logicalToDisplay(moved.cursor);
 

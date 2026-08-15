@@ -29,7 +29,6 @@ const skillSuggestion = {
   open: true,
   select: vi.fn(),
   dismiss: vi.fn(),
-  createTokenId: vi.fn(() => "skill-1"),
 };
 const keySink = { current: null };
 

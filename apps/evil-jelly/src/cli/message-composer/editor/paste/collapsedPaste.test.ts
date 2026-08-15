@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   coalescePaste,
-  expandPastedTextTokens,
   PASTE_COALESCE_MS,
   type PasteRun,
-  pastedTextToken,
-  pastedTextTokenBefore,
   shouldCollapsePastedText,
 } from "./collapsedPaste";
 
@@ -13,22 +10,6 @@ describe("collapsed pasted text", () => {
   it("collapses long multi-line pasted text", () => {
     expect(shouldCollapsePastedText("one\ntwo\nthree")).toBe(false);
     expect(shouldCollapsePastedText("1\n2\n3\n4\n5\n6")).toBe(true);
-  });
-
-  it("formats and detects pasted text placeholders", () => {
-    const token = pastedTextToken(2, "a\nb\nc");
-    const line = `prefix ${token}`;
-    expect(token).toBe("[Pasted text #2 +3 lines]");
-    expect(pastedTextTokenBefore(line, line.length)).toBe(token);
-    expect(pastedTextTokenBefore(`${line} suffix`, line.length + 1)).toBe(null);
-  });
-
-  it("expands live pasted text placeholders before submit", () => {
-    const pasted = "line 1\nline 2\nline 3\nline 4\nline 5\nline 6";
-    const token = pastedTextToken(1, pasted);
-    expect(expandPastedTextTokens(`before\n${token}\nafter`, [{ id: 1, text: pasted }])).toBe(
-      `before\n${pasted}\nafter`,
-    );
   });
 });
 

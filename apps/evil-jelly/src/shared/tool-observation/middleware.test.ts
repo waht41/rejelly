@@ -4,6 +4,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EvilJellyBindings } from "../host/bindings";
+import { textPromptInput } from "../model/prompt/promptInput";
 
 // Hoisted: mockGetBinding is available during vi.mock factory hoisting.
 const { mockGetBinding } = vi.hoisted(() => ({
@@ -47,7 +48,7 @@ describe("withToolLogger", () => {
     return {
       printed,
       toolBlocks,
-      getInput: async () => ({ text: "" }),
+      getInput: async () => textPromptInput(""),
       printOut: (msg: string) => {
         printed.push({ message: msg });
       },

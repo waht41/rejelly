@@ -1,28 +1,16 @@
-/**
- * Rich prompt document primitives.
- *
- * Text keeps its existing UTF-16 offsets. Every semantic token occupies one logical position,
- * regardless of the terminal width of its display text. Projection maps between those logical
- * positions and the flat display string consumed by the legacy trigger/wrap helpers.
- */
+/** Editor operations and display projection over the shared semantic prompt contract. */
 
-export interface PromptTextNode {
-  readonly type: "text";
-  readonly text: string;
-}
+import {
+  normalizePromptDocument,
+  type PromptDocument,
+  type PromptNode,
+  type PromptToken,
+  promptDocumentLogicalLength,
+  promptNodeLogicalLength,
+} from "../../../../shared/model/prompt/promptDocument";
 
-export interface SkillPromptToken {
-  readonly type: "token";
-  readonly kind: "skill";
-  readonly id: string;
-  readonly qualifiedName: string;
-  readonly displayText: string;
-}
-
-export type PromptToken = SkillPromptToken;
-export type PromptNode = PromptTextNode | PromptToken;
-export type PromptDocument = readonly PromptNode[];
 export type ProjectionBias = "left" | "right" | "nearest";
+export type PromptTokenDisplayText = (token: PromptToken, document: PromptDocument) => string;
 
 export interface ProjectedTokenSpan {
   readonly start: number;
@@ -47,37 +35,21 @@ export interface ProjectedDisplayRun {
 const clamp = (value: number, low: number, high: number): number =>
   Math.max(low, Math.min(high, value));
 
-export function nodeLogicalLength(node: PromptNode): number {
-  return node.type === "text" ? node.text.length : 1;
-}
-
-export function documentLogicalLength(document: PromptDocument): number {
-  return document.reduce((length, node) => length + nodeLogicalLength(node), 0);
-}
-
-/** Remove empty text and merge adjacent text nodes so every edit leaves a canonical document. */
-export function normalizePromptDocument(nodes: readonly PromptNode[]): PromptDocument {
-  const normalized: PromptNode[] = [];
-  for (const node of nodes) {
-    if (node.type === "text") {
-      if (node.text.length === 0) {
-        continue;
-      }
-      const previous = normalized.at(-1);
-      if (previous?.type === "text") {
-        normalized[normalized.length - 1] = { type: "text", text: previous.text + node.text };
-      } else {
-        normalized.push({ type: "text", text: node.text });
-      }
-      continue;
+export function defaultPromptTokenDisplayText(token: PromptToken): string {
+  switch (token.kind) {
+    case "skill":
+      return `$${token.qualifiedName}`;
+    case "paste": {
+      const lines = token.text.split("\n").length;
+      return lines > 1
+        ? `[Pasted text +${lines} lines]`
+        : `[Pasted text +${token.text.length} chars]`;
     }
-    normalized.push(node);
+    case "file":
+      return "[File]";
+    case "image":
+      return "[Image]";
   }
-  return normalized;
-}
-
-export function textPromptDocument(text: string): PromptDocument {
-  return text.length > 0 ? [{ type: "text", text }] : [];
 }
 
 function slicePromptDocument(
@@ -85,14 +57,14 @@ function slicePromptDocument(
   rawStart: number,
   rawEnd: number,
 ): PromptDocument {
-  const length = documentLogicalLength(document);
+  const length = promptDocumentLogicalLength(document);
   const start = clamp(rawStart, 0, length);
   const end = clamp(rawEnd, start, length);
   const nodes: PromptNode[] = [];
   let logicalOffset = 0;
 
   for (const node of document) {
-    const nodeLength = nodeLogicalLength(node);
+    const nodeLength = promptNodeLogicalLength(node);
     const nodeStart = logicalOffset;
     const nodeEnd = nodeStart + nodeLength;
     logicalOffset = nodeEnd;
@@ -118,7 +90,7 @@ export function replacePromptRange(
   rawEnd: number,
   inserted: readonly PromptNode[],
 ): PromptDocument {
-  const length = documentLogicalLength(document);
+  const length = promptDocumentLogicalLength(document);
   const start = clamp(rawStart, 0, length);
   const end = clamp(rawEnd, start, length);
   return normalizePromptDocument([
@@ -128,7 +100,10 @@ export function replacePromptRange(
   ]);
 }
 
-export function projectPromptDocument(document: PromptDocument): PromptProjection {
+export function projectPromptDocument(
+  document: PromptDocument,
+  tokenDisplayText: PromptTokenDisplayText = defaultPromptTokenDisplayText,
+): PromptProjection {
   let text = "";
   let logicalLength = 0;
   const tokenSpans: ProjectedTokenSpan[] = [];
@@ -140,7 +115,8 @@ export function projectPromptDocument(document: PromptDocument): PromptProjectio
       continue;
     }
     const start = text.length;
-    text += node.displayText;
+    const displayText = tokenDisplayText(node, document);
+    text += displayText;
     tokenSpans.push({
       start,
       end: text.length,
@@ -156,16 +132,17 @@ export function projectPromptDocument(document: PromptDocument): PromptProjectio
     let logicalOffset = 0;
     let displayOffset = 0;
     for (const node of document) {
-      const nodeLength = nodeLogicalLength(node);
+      const nodeLength = promptNodeLogicalLength(node);
       if (position <= logicalOffset + nodeLength) {
         return node.type === "text"
           ? displayOffset + position - logicalOffset
           : position === logicalOffset
             ? displayOffset
-            : displayOffset + node.displayText.length;
+            : displayOffset + tokenDisplayText(node, document).length;
       }
       logicalOffset += nodeLength;
-      displayOffset += node.type === "text" ? node.text.length : node.displayText.length;
+      displayOffset +=
+        node.type === "text" ? node.text.length : tokenDisplayText(node, document).length;
     }
     return text.length;
   };
@@ -175,7 +152,8 @@ export function projectPromptDocument(document: PromptDocument): PromptProjectio
     let logicalOffset = 0;
     let displayOffset = 0;
     for (const node of document) {
-      const displayLength = node.type === "text" ? node.text.length : node.displayText.length;
+      const displayLength =
+        node.type === "text" ? node.text.length : tokenDisplayText(node, document).length;
       const displayEnd = displayOffset + displayLength;
       if (position <= displayEnd) {
         if (node.type === "text") {
@@ -197,20 +175,13 @@ export function projectPromptDocument(document: PromptDocument): PromptProjectio
           ? logicalOffset
           : logicalOffset + 1;
       }
-      logicalOffset += nodeLogicalLength(node);
+      logicalOffset += promptNodeLogicalLength(node);
       displayOffset = displayEnd;
     }
     return logicalLength;
   };
 
   return { text, tokenSpans, logicalToDisplay, displayToLogical };
-}
-
-export function promptTokens(document: PromptDocument, kind?: PromptToken["kind"]): PromptToken[] {
-  return document.filter(
-    (node): node is PromptToken =>
-      node.type === "token" && (kind === undefined || node.kind === kind),
-  );
 }
 
 /** Split one already-wrapped display row into plain and semantic-token render runs. */

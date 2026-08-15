@@ -17,9 +17,11 @@ import {
 } from "../../shared/model/budget/tokenEstimate";
 import { messageContentToText } from "../../shared/model/message/content";
 import {
-  getUserInputDisplay,
+  copyFrozenUserInputOrigin,
+  getFrozenUserInputOrigin,
+  projectFrozenUserInputDisplay,
   type UserInputAttachmentDisplay,
-} from "../../shared/model/message/userInputMetadata";
+} from "../../shared/model/prompt/frozenUserInput";
 import {
   renderPseudoXmlElement,
   renderPseudoXmlEmptyElement,
@@ -221,7 +223,8 @@ function projectUserMessageForCompaction(message: Message): UserCompactionProjec
   const images = Array.isArray(message.content)
     ? message.content.filter((part): part is ContentPart => part.type === "image")
     : [];
-  const display = getUserInputDisplay(message);
+  const origin = getFrozenUserInputOrigin(message);
+  const display = origin ? projectFrozenUserInputDisplay(origin) : undefined;
   if (display) {
     const visible = display.attachments.slice(0, MAX_COMPACT_ATTACHMENT_REFS);
     const references = visible.map(compactAttachmentReference);
@@ -268,8 +271,9 @@ function projectionTokenCost(
   projection: UserCompactionProjection,
   content: Message["content"],
 ): number {
-  // Use the whole message so imageDimensions stored in message.extra participate in the estimate.
-  return estimateMessagesTokens([{ ...projection.message, content }]);
+  return estimateMessagesTokens([
+    copyFrozenUserInputOrigin(projection.message, { ...projection.message, content }),
+  ]);
 }
 
 function imageOmissionReference(count: number): string {
@@ -338,14 +342,22 @@ function fitUserProjection(
   }
   const complete = projectionContent(projection.text, projection.references, projection.images);
   if (projectionTokenCost(projection, complete) <= maxTokens) {
-    return { ...projection.message, content: complete };
+    return copyFrozenUserInputOrigin(projection.message, {
+      ...projection.message,
+      content: complete,
+    });
   }
 
   // Preserve the user's instruction before metadata or visual payloads. If the text itself fills
   // the budget, images are omitted rather than displacing the words that explain what to do.
   const { text, references } = fitTextAndReferences(projection, maxTokens);
   const fitted = fitImagesAfterText(projection, text, references, maxTokens);
-  return fitted.length > 0 ? { ...projection.message, content: fitted } : undefined;
+  return fitted.length > 0
+    ? copyFrozenUserInputOrigin(projection.message, {
+        ...projection.message,
+        content: fitted,
+      })
+    : undefined;
 }
 
 /**
@@ -368,7 +380,12 @@ export function selectRecentUserMessages(messages: Message[], maxTokens: number)
     );
     const cost = Math.max(1, projectionTokenCost(users[index], complete));
     if (cost <= remaining) {
-      picked.push({ ...users[index].message, content: complete });
+      picked.push(
+        copyFrozenUserInputOrigin(users[index].message, {
+          ...users[index].message,
+          content: complete,
+        }),
+      );
       remaining -= cost;
       continue;
     }
@@ -391,10 +408,10 @@ function wrapPriorUserMessage(message: Message): Message {
   const images = Array.isArray(message.content)
     ? message.content.filter((part): part is ContentPart => part.type === "image")
     : [];
-  return {
+  return copyFrozenUserInputOrigin(message, {
     ...message,
     content: projectionContent(renderPseudoXmlElement(PRIOR_USER_MESSAGE_TAG, text), [], images),
-  };
+  });
 }
 
 function isContextLengthError(error: unknown): boolean {

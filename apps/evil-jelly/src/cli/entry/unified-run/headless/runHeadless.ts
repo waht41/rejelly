@@ -1,10 +1,15 @@
 import { augmentAgent, type Message, type ModelAdapter } from "@rejelly/core";
 import type { ReviewOptions } from "@rejelly/core/debugger";
+import {
+  commitResolvedUserInput,
+  materializeFrozenUserInputMessage,
+} from "../../../../domains/session/repository/userInputRepository";
 import { SKILL_RUNTIME_PROVIDER_KEY } from "../../../../domains/skills/agent/skillRuntime";
 import { UnifiedAgent } from "../../../../features/unified/UnifiedAgent";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 import { setBinding } from "../../../../shared/host/context";
-import { buildSkillAwareUserMessage } from "../../../message-composer/message-materialization/skillAwareUserMessage";
+import { textPromptInput } from "../../../../shared/model/prompt/promptInput";
+import { materializeSkillAwareUserInput } from "../../../message-composer/message-materialization/skillAwareUserMessage";
 import { runWithReview } from "../../../runtime/runWithReview";
 import { generateTraceId } from "../../../runtime/traceId";
 import { withAbort } from "../../../runtime/withAbort";
@@ -38,10 +43,12 @@ export async function runHeadless(
       enableReview: options.enableReview,
       run: async () => {
         await setBinding(bindings);
-        const message = await buildSkillAwareUserMessage(
-          { text: userInput },
+        const resolved = await materializeSkillAwareUserInput(
+          textPromptInput(userInput),
           skillRuntime.snapshot,
         );
+        const frozen = await commitResolvedUserInput(resolved);
+        const message = await materializeFrozenUserInputMessage(frozen);
         bindings.logUserMessage(userInput);
         const result = await UnifiedAgentWithAbort({ message, history });
         bindings.logAssistantMessage(result.reply);

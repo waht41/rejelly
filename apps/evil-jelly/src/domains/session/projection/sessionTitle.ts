@@ -4,9 +4,17 @@ import {
   unwrapPriorUserMessageText,
 } from "../../../shared/conversation/compactionMessages";
 import { messageContentToText } from "../../../shared/model/message/content";
-import { getUserInputDisplay } from "../../../shared/model/message/userInputMetadata";
+import { getLegacyUserInputDisplay } from "../model/frozenUserInput";
 
 const SESSION_TITLE_MAX_CHARS = 80;
+
+export function deriveSessionTitleFromText(text: string): string | undefined {
+  const oneLine = text.replace(/\s+/g, " ").trim();
+  if (!oneLine) return undefined;
+  return oneLine.length > SESSION_TITLE_MAX_CHARS
+    ? `${oneLine.slice(0, SESSION_TITLE_MAX_CHARS - 1)}…`
+    : oneLine;
+}
 
 /**
  * Derive the stable picker title from one real user message.
@@ -22,20 +30,14 @@ export function deriveSessionTitle(
   if (message.role !== "user" || isCompactionBridgeMessage(message)) {
     return undefined;
   }
-  const display = getUserInputDisplay(message);
+  const display = getLegacyUserInputDisplay(message);
   const fallback = messageContentToText(message.content);
   const raw = display
     ? display.text
     : options.legacyCompactionProjection
       ? unwrapPriorUserMessageText(fallback)
       : fallback;
-  const oneLine = raw.replace(/\s+/g, " ").trim();
-  if (!oneLine) {
-    return undefined;
-  }
-  return oneLine.length > SESSION_TITLE_MAX_CHARS
-    ? `${oneLine.slice(0, SESSION_TITLE_MAX_CHARS - 1)}…`
-    : oneLine;
+  return deriveSessionTitleFromText(raw);
 }
 
 /** V1 snapshot compatibility: choose the first title-bearing message, or the shared fallback. */

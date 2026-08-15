@@ -1,3 +1,5 @@
+import type { FrozenUserInputV1 } from "../../../shared/model/prompt/frozenUserInput";
+import { parseFrozenUserInputV1 } from "../model/frozenUserInput";
 import {
   type BudgetUpdatedEvent,
   type ContextCompactedEvent,
@@ -9,11 +11,13 @@ import {
   type SessionEvent,
   type SessionStateEvent,
   type TurnCompletedEvent,
+  type UserInputRecordedEvent,
 } from "../model/sessionEvents";
 import {
   parseStoredSessionMessage,
   type StoredSessionMessage,
 } from "../model/storedSessionMessage";
+import { projectFrozenUserInputRuntimeMessage } from "./frozenUserInputProjection";
 
 declare const preparedSessionReplayBrand: unique symbol;
 
@@ -31,10 +35,16 @@ export type PreparedLegacySnapshotImportedEvent = LegacySnapshotImportedEvent & 
   messages: StoredSessionMessage[];
 };
 
+export type PreparedUserInputRecordedEvent = UserInputRecordedEvent & {
+  input: FrozenUserInputV1;
+  runtimeMessage: StoredSessionMessage;
+};
+
 export type PreparedSessionEvent =
   | RunSegmentStartedEvent
   | RunSegmentEndedEvent
   | PreparedMessageRecordedEvent
+  | PreparedUserInputRecordedEvent
   | TurnCompletedEvent
   | PreparedContextCompactedEvent
   | SessionStateEvent
@@ -84,16 +94,24 @@ export function prepareSessionReplay(events: readonly SessionEvent[]): PreparedS
           message: parseStoredSessionMessage(event.message),
         });
         break;
+      case "user_input_recorded": {
+        const input = parseFrozenUserInputV1(event.input);
+        const runtimeMessage = projectFrozenUserInputRuntimeMessage(input);
+        prepared.push({ ...event, input, runtimeMessage });
+        break;
+      }
       case "context_compacted":
         prepared.push({
           ...event,
-          replacementHistory: event.replacementHistory.map(parseStoredSessionMessage),
+          replacementHistory: event.replacementHistory.map((message) =>
+            parseStoredSessionMessage(message),
+          ),
         });
         break;
       case "legacy_snapshot":
         prepared.push({
           ...event,
-          messages: event.messages.map(parseStoredSessionMessage),
+          messages: event.messages.map((message) => parseStoredSessionMessage(message)),
         });
         break;
       default:

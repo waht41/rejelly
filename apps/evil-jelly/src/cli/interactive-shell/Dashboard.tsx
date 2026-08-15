@@ -5,7 +5,11 @@
 import type { DOMElement } from "ink";
 import { Box, measureElement, Static, Text, useInput, useWindowSize } from "ink";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { LineInputValue } from "../../shared/host/inputBindings";
+import {
+  type PromptInput,
+  promptInputPlainText,
+  textPromptInput,
+} from "../../shared/model/prompt/promptInput";
 import { hasActiveInterruptibleTask } from "../../shared/task-interruption/taskStack";
 import { AssistantStreamView } from "../conversation-display/assistant-stream/AssistantStreamView";
 import { HistoryItem } from "../conversation-display/history/HistoryItem";
@@ -61,7 +65,7 @@ function ModeBadge() {
   );
 }
 
-function SteerQueueList({ items, columns }: { items: LineInputValue[]; columns: number }) {
+function SteerQueueList({ items, columns }: { items: PromptInput[]; columns: number }) {
   if (items.length === 0) {
     return null;
   }
@@ -72,13 +76,14 @@ function SteerQueueList({ items, columns }: { items: LineInputValue[]; columns: 
     <Box flexDirection="column" marginBottom={1}>
       <Text dimColor>Queued steer ({items.length})</Text>
       {visible.map((item, index) => {
-        const attachmentCount = item.attachments?.length ?? 0;
+        const attachmentCount = item.attachments.length;
         const attachmentSuffix = attachmentCount > 0 ? ` [+${attachmentCount} attachment(s)]` : "";
+        const text = promptInputPlainText(item);
         return (
-          <Box key={`${index}:${item.text}:${attachmentCount}`}>
+          <Box key={`${index}:${text}:${attachmentCount}`}>
             <Text color="yellow">~ </Text>
             <Text dimColor wrap="truncate-end">
-              {truncateOneLine(`${item.text}${attachmentSuffix}`, textBudget)}
+              {truncateOneLine(`${text}${attachmentSuffix}`, textBudget)}
             </Text>
           </Box>
         );
@@ -106,7 +111,7 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
   const decision = useDecisionStore((state) => state.decision);
   const submitChoice = useDecisionStore((state) => state.submitChoice);
   const cancelChoice = useDecisionStore((state) => state.cancelChoice);
-  const [queuedSteers, setQueuedSteers] = useState<LineInputValue[]>(() => getQueuedSteers());
+  const [queuedSteers, setQueuedSteers] = useState<PromptInput[]>(() => getQueuedSteers());
 
   // Ink's <Static> counts flushed items in instance state, so its items array must only grow
   // while mounted. `/clear` moves wiped turns into clearedStaticTurns (an already-flushed
@@ -210,7 +215,9 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
                     label=""
                     isAgentRunning={isAgentWorking}
                     hasInterruptibleTask={hasActiveInterruptibleTask}
-                    onInterrupt={() => useComposerSession.getState().submitLine({ text: "/stop" })}
+                    onInterrupt={() =>
+                      useComposerSession.getState().submitLine(textPromptInput("/stop"))
+                    }
                     onCycleMode={() => useModeStore.getState().cycleMode()}
                     onCommand={handleLocalCommand}
                     onNotice={(message) => useOutputStore.getState().logSystem(message)}

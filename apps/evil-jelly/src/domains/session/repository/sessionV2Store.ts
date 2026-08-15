@@ -19,6 +19,11 @@ import {
 import { prepareSessionReplay } from "../projection/sessionReplay";
 import { readFailure, type SessionReadResult } from "./sessionReadResult";
 
+const v2Paths = (paths: SessionStoragePaths): SessionStoragePaths => ({
+  ...paths,
+  journalVersion: 2,
+});
+
 function sessionMetaFromSummary(summary: SessionSummary): SessionMeta {
   return {
     id: summary.id,
@@ -44,11 +49,12 @@ export async function readV2SessionMetaFast(
   sessionId: string,
   paths: SessionStoragePaths,
 ): Promise<SessionReadResult<SessionMeta> | { kind: "needs_full_replay" }> {
+  const routed = v2Paths(paths);
   try {
     const [meta, state, lastEvent, fileStat] = await Promise.all([
-      readSessionMetaLine(workspaceRoot, sessionId, paths),
-      findLatestSessionStateFromTail(workspaceRoot, sessionId, paths),
-      findLastEvent(workspaceRoot, sessionId, paths),
+      readSessionMetaLine(workspaceRoot, sessionId, routed),
+      findLatestSessionStateFromTail(workspaceRoot, sessionId, routed),
+      findLastEvent(workspaceRoot, sessionId, routed),
       fs.promises.stat(resolveV2SessionPath(workspaceRoot, sessionId, paths)),
     ]);
     if (!state || lastEvent?.seq !== state.event.seq) {
@@ -71,8 +77,9 @@ export async function readV2SessionMetaFull(
   sessionId: string,
   paths: SessionStoragePaths,
 ): Promise<SessionReadResult<SessionMeta>> {
+  const routed = v2Paths(paths);
   try {
-    const stored = await readSessionEvents(workspaceRoot, sessionId, paths);
+    const stored = await readSessionEvents(workspaceRoot, sessionId, routed);
     const replay = prepareSessionReplay(stored.events);
     const fileStat = await fs.promises.stat(resolveV2SessionPath(workspaceRoot, sessionId, paths));
     return {
@@ -92,8 +99,9 @@ export async function readV2Session(
   sessionId: string,
   paths: SessionStoragePaths = {},
 ): Promise<SessionReadResult<SessionRecord>> {
+  const routed = v2Paths(paths);
   try {
-    const stored = await readSessionEvents(workspaceRoot, sessionId, paths);
+    const stored = await readSessionEvents(workspaceRoot, sessionId, routed);
     const replay = prepareSessionReplay(stored.events);
     const fileStat = await fs.promises.stat(resolveV2SessionPath(workspaceRoot, sessionId, paths));
     const summary = projectSessionSummary(stored.meta, replay, { mtimeMs: fileStat.mtimeMs });

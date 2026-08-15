@@ -9,10 +9,10 @@ import {
   createSessionMetaLine,
   openSessionWriter,
   readSessionEvents,
-  resolveV2SessionPath,
+  resolveV3SessionPath,
 } from "../journal/sessionJsonlStore";
 import { resolveLegacySessionPath } from "./legacySessionStore";
-import { readV2Session } from "./sessionV2Store";
+import { readV3Session } from "./sessionV3Store";
 
 type ChildMessage =
   | { type: "writer-ready"; pid: number }
@@ -198,7 +198,7 @@ describe("session subprocess persistence", () => {
     ]);
   });
 
-  it("publishes one valid V2 file when two processes migrate the same V1 session", async () => {
+  it("publishes one valid V3 file when two processes migrate the same V1 session", async () => {
     const sessionId = "migration-race";
     const legacyPath = resolveLegacySessionPath(workspaceRoot, sessionId, { sessionsRoot });
     const legacy = {
@@ -239,9 +239,9 @@ describe("session subprocess persistence", () => {
 
     await expect(fs.readFile(legacyPath, "utf8")).resolves.toBe(legacyBytes);
     await expect(
-      fs.stat(resolveV2SessionPath(workspaceRoot, sessionId, { sessionsRoot })),
+      fs.stat(resolveV3SessionPath(workspaceRoot, sessionId, { sessionsRoot })),
     ).resolves.toBeDefined();
-    await expect(readV2Session(workspaceRoot, sessionId, { sessionsRoot })).resolves.toMatchObject({
+    await expect(readV3Session(workspaceRoot, sessionId, { sessionsRoot })).resolves.toMatchObject({
       kind: "found",
       value: {
         meta: { id: sessionId, title: "legacy", turns: 1 },

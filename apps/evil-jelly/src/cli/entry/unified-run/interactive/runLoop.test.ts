@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { connectMcpProviders } from "../../../../domains/mcp/mcpServerKit";
 import * as sessionStore from "../../../../domains/session/repository/sessionStore";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
+import { textPromptInput } from "../../../../shared/model/prompt/promptInput";
 import { createInteractiveRunControl, type InteractiveRunControl } from "./runControl";
 import { runInteractiveLoop } from "./runLoop";
 import { runEvilJellyHost } from "./runSegment";
@@ -43,7 +44,7 @@ let runControl: InteractiveRunControl;
 function createBindings() {
   const systemEvents: string[] = [];
   const bindings: EvilJellyBindings = {
-    getInput: async () => ({ text: "", attachments: [] }),
+    getInput: async () => textPromptInput(""),
     printOut: () => {},
     logUserMessage: () => {},
     logAssistantMessage: () => {},
@@ -143,8 +144,6 @@ describe("runInteractiveLoop mock session isolation", () => {
       enableReview: false,
       snapshot: undefined,
       sessionId: "session_real",
-      seedHistory: undefined,
-      seedBudget: undefined,
       mockSourceTraceId: "trace_mock",
       isolateSessionState: true,
     });
@@ -184,8 +183,6 @@ describe("runInteractiveLoop mock session isolation", () => {
       enableReview: false,
       snapshot: undefined,
       sessionId: "session_mock",
-      seedHistory: undefined,
-      seedBudget: undefined,
       mockSourceTraceId: "trace_mock",
       isolateSessionState: true,
     });
@@ -289,7 +286,7 @@ describe("runInteractiveLoop mock session isolation", () => {
       enableReview: false,
       snapshot: {} as AgentSnapshot,
       sessionId: "session_current",
-      sessionV2: { enabled: true, appVersion: "1.0.0" },
+      session: { enabled: true, appVersion: "1.0.0" },
     });
 
     expect(runHostMock).toHaveBeenCalledTimes(2);
@@ -299,7 +296,7 @@ describe("runInteractiveLoop mock session isolation", () => {
       seedContext: messages,
       seedBudget: budget,
       snapshot: undefined,
-      sessionV2: { enabled: true, appVersion: "1.0.0" },
+      session: { enabled: true, appVersion: "1.0.0" },
     });
     expect(hydrated).toHaveLength(1);
     expect(hydrated[0]?.map((item) => item.type)).toEqual(["user", "assistant"]);
