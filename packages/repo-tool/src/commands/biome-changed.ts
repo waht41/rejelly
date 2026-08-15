@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { createGit, resolveBase } from "../lib/git.js";
+import { collectChangedPaths } from "../lib/changes.js";
 import { run } from "../lib/process.js";
 
 export interface BiomeChangedOptions {
@@ -17,28 +17,10 @@ export function collectBiomeChangedFiles(
   base: string;
   files: string[];
 } {
-  const git = createGit(repoRoot);
-  const base = resolveBase(git, requestedBase);
-  const mergeBase = git.text(["merge-base", "HEAD", base]);
-  const candidates = new Set([
-    ...git.nul(["diff", "--name-only", "--diff-filter=ACMRT", mergeBase, "HEAD"]),
-    ...git.nul(["diff", "--name-only", "--diff-filter=ACMRT"]),
-    ...git.nul(["diff", "--cached", "--name-only", "--diff-filter=ACMRT"]),
-    ...git.nul(["ls-files", "--others", "--exclude-standard"]),
-  ]);
+  const changed = collectChangedPaths(repoRoot, requestedBase);
   const resolvedRoot = path.resolve(repoRoot);
-  const files = [...candidates]
-    .filter((file) => existsSync(path.join(resolvedRoot, file)))
-    .map((file) => {
-      const absolute = path.resolve(resolvedRoot, file);
-      const relative = path.relative(resolvedRoot, absolute);
-      if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-        throw new Error(`Refusing out-of-workspace path: ${file}`);
-      }
-      return relative;
-    })
-    .sort();
-  return { base, files };
+  const files = changed.files.filter((file) => existsSync(path.join(resolvedRoot, file))).sort();
+  return { base: changed.base, files };
 }
 
 export function runBiomeChanged(repoRoot: string, options: BiomeChangedOptions): number {

@@ -5,6 +5,11 @@ export type VerifyScope =
   | { filters: string[]; kind: "filtered" }
   | { kind: "all" };
 
+export type ResolvedVerifyScope =
+  | { kind: "all" }
+  | { filters: string[]; kind: "packages"; source: "affected" | "explicit" }
+  | { kind: "none"; source: "affected" };
+
 export interface VerifyOptions {
   allowMany: boolean;
   base?: string;
@@ -28,6 +33,13 @@ export interface BiomeChangedVerifyStep {
 }
 
 export type VerifyStep = BiomeChangedVerifyStep | ProcessVerifyStep;
+
+export interface VerifyPlan {
+  changedFileCount?: number;
+  scope: ResolvedVerifyScope;
+  steps: VerifyStep[];
+  unmappedFiles?: string[];
+}
 
 export interface BranchCommit {
   shortSha: string;

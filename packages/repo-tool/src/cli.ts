@@ -94,4 +94,11 @@ export function main(argv = process.argv.slice(2)): void {
   cli.parse(["node", "repo-tool", ...argv]);
 }
 
-if (isEntrypoint(import.meta.url)) main();
+if (isEntrypoint(import.meta.url)) {
+  try {
+    main();
+  } catch (error) {
+    console.error(`[repo-tool] ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  }
+}

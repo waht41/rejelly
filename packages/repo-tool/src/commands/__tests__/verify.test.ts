@@ -12,26 +12,51 @@ const defaults: VerifyOptions = {
 };
 
 describe("createVerifyPlan", () => {
-  it("combines repository tasks into one Turbo invocation", () => {
-    expect(createVerifyPlan(defaults)).toEqual([
-      {
-        command: "pnpm",
-        args: ["exec", "turbo", "run", "typecheck", "lint:jelly", "lint:doc", "test", "--affected"],
-        kind: "process",
-        label: "workspace tasks",
+  it("turns affected packages into explicit Turbo filters", () => {
+    expect(
+      createVerifyPlan(defaults, {
+        filters: ["@rejelly/repo-tool"],
+        kind: "packages",
+        source: "affected",
+      }),
+    ).toEqual({
+      scope: {
+        filters: ["@rejelly/repo-tool"],
+        kind: "packages",
+        source: "affected",
       },
-      { kind: "biome-changed", label: "Biome (changed files)" },
-    ]);
+      steps: [
+        {
+          command: "pnpm",
+          args: [
+            "exec",
+            "turbo",
+            "run",
+            "typecheck",
+            "lint:jelly",
+            "lint:doc",
+            "test",
+            "--output-logs=errors-only",
+            "--filter=@rejelly/repo-tool",
+          ],
+          kind: "process",
+          label: "workspace tasks",
+        },
+        { kind: "biome-changed", label: "Biome (changed files)" },
+      ],
+    });
   });
 
-  it("supports filtered checks without tests or Biome", () => {
-    const plan = createVerifyPlan({
-      ...defaults,
-      biome: "skip",
-      scope: { filters: ["@rejelly/evil-jelly"], kind: "filtered" },
-      tests: false,
-    });
-    expect(plan).toEqual([
+  it("supports explicit filtered checks without tests or Biome", () => {
+    const plan = createVerifyPlan(
+      { ...defaults, biome: "skip", tests: false },
+      {
+        filters: ["@rejelly/evil-jelly"],
+        kind: "packages",
+        source: "explicit",
+      },
+    );
+    expect(plan.steps).toEqual([
       {
         command: "pnpm",
         args: [
@@ -41,6 +66,7 @@ describe("createVerifyPlan", () => {
           "typecheck",
           "lint:jelly",
           "lint:doc",
+          "--output-logs=errors-only",
           "--filter=@rejelly/evil-jelly",
         ],
         kind: "process",
@@ -50,10 +76,23 @@ describe("createVerifyPlan", () => {
   });
 
   it("runs the whole workspace and full Biome only when requested", () => {
-    expect(createVerifyPlan({ ...defaults, biome: "all", scope: { kind: "all" } })).toEqual([
+    const plan = createVerifyPlan(
+      { ...defaults, biome: "all", scope: { kind: "all" } },
+      { kind: "all" },
+    );
+    expect(plan.steps).toEqual([
       {
         command: "pnpm",
-        args: ["exec", "turbo", "run", "typecheck", "lint:jelly", "lint:doc", "test"],
+        args: [
+          "exec",
+          "turbo",
+          "run",
+          "typecheck",
+          "lint:jelly",
+          "lint:doc",
+          "test",
+          "--output-logs=errors-only",
+        ],
         kind: "process",
         label: "workspace tasks",
       },
@@ -64,5 +103,10 @@ describe("createVerifyPlan", () => {
         label: "Biome (all files)",
       },
     ]);
+  });
+
+  it("skips Turbo when no changed file belongs to a workspace package", () => {
+    const plan = createVerifyPlan(defaults, { kind: "none", source: "affected" });
+    expect(plan.steps).toEqual([{ kind: "biome-changed", label: "Biome (changed files)" }]);
   });
 });

@@ -115,6 +115,9 @@ importers:
       lint-staged:
         specifier: ^16.2.7
         version: 16.2.7
+      tsx:
+        specifier: 'catalog:'
+        version: 4.21.0
       turbo:
         specifier: ^2.8.13
         version: 2.8.13
@@ -853,9 +856,6 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 22.19.6
-      tsx:
-        specifier: 'catalog:'
-        version: 4.21.0
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
