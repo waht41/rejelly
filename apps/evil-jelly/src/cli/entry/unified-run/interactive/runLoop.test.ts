@@ -26,7 +26,13 @@ vi.mock("../../../../domains/mcp/mcpServerKit", () => ({
 }));
 
 vi.mock("../../../../shared/configuration/settings", () => ({
-  getSettings: () => ({ devtoolMcp: true }),
+  getSettings: () => ({
+    mcp: {
+      user: { path: "user-settings", value: undefined },
+      workspace: { path: "workspace-settings", value: undefined },
+      devtool: false,
+    },
+  }),
 }));
 
 vi.mock("../../../skill-runtime/configuredRuntime", () => ({
@@ -67,7 +73,7 @@ describe("runInteractiveLoop mock session isolation", () => {
     runtimeMocks.formatSkillSummary.mockReturnValue(undefined);
   });
 
-  it("passes the resolved devtool opt-in to the MCP connection boundary", async () => {
+  it("passes the resolved MCP desired configuration to the connection boundary", async () => {
     const { bindings } = createBindings();
     runHostMock.mockResolvedValueOnce(undefined);
 
@@ -80,7 +86,7 @@ describe("runInteractiveLoop mock session isolation", () => {
       isolateSessionState: true,
     });
 
-    expect(connectMcpProvidersMock).toHaveBeenCalledWith({ devtoolMcp: true });
+    expect(connectMcpProvidersMock).toHaveBeenCalledWith({ desiredConfig: { servers: [] } });
   });
 
   it("publishes the path-free enabled Skill catalog through the host boundary", async () => {

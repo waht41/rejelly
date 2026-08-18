@@ -46,6 +46,7 @@
       "!src/**/*.test.*"
     ],
     "@cli:init-run": ["src/cli/entry/init-run/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@cli:mcp-run": ["src/cli/entry/mcp-run/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:unified-run": [
       "src/cli/entry/unified-run/**/*",
       "!src/**/__tests__/**/*",
@@ -147,6 +148,7 @@
           [
             "@shared",
             "@cli:entry",
+            "@cli:mcp-run",
             "@cli:interactive-shell",
             "@cli:message-composer",
             "@cli:tool-approval",
@@ -202,11 +204,13 @@
         "@cli:entry": [
           "@cli:audit-run",
           "@cli:init-run",
+          "@cli:mcp-run",
           "@cli:unified-run",
           "@cli:bindings",
           "@cli:model-composition"
         ],
         "@cli:audit-run": ["@cli:runtime"],
+        "@cli:mcp-run": ["@domain:mcp"],
         "@cli:unified-run": [
           "@cli:runtime",
           "@cli:message-composer",

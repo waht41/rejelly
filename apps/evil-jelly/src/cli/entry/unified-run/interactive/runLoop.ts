@@ -1,10 +1,15 @@
 import type { AgentSnapshot, ModelAdapter } from "@rejelly/core";
+import {
+  createDevtoolMcpDesiredServer,
+  resolveMcpSettingsLayers,
+} from "../../../../domains/mcp/configuration/configuration";
 import { connectMcpProviders } from "../../../../domains/mcp/mcpServerKit";
 import {
   generateSessionId,
   resumeSession,
 } from "../../../../domains/session/repository/sessionStore";
 import { qualifiedSkillName } from "../../../../domains/skills/definition/skillDefinition";
+import { getReviewEndpointFromEnv } from "../../../../shared/configuration/env";
 import { getSettings } from "../../../../shared/configuration/settings";
 import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
@@ -106,8 +111,12 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
   // Connect optional MCP servers (e.g. devtool introspection) once, above the run loop, so the
   // connection is reused across resume segments. Best-effort: empty when disabled/unreachable.
   // The framework borrows these via runWith({ providers }); disposal stays here (finally).
+  const settings = getSettings();
+  const dynamicMcpServers = settings.mcp.devtool
+    ? [createDevtoolMcpDesiredServer(`${new URL(getReviewEndpointFromEnv()).origin}/mcp`)]
+    : [];
   const { providers: mcpProviders, dispose: disposeMcp } = await connectMcpProviders({
-    devtoolMcp: getSettings().devtoolMcp,
+    desiredConfig: resolveMcpSettingsLayers(settings.mcp, dynamicMcpServers),
   });
   try {
     const skillRuntime = await buildConfiguredSkillRuntimeSnapshot();

@@ -10,6 +10,7 @@ import { getCliVersion, parseCliArgs } from "./entry/args";
 import { runAudit } from "./entry/audit-run/runAudit";
 import { applyWorkspaceRootFromArgs } from "./entry/bootstrap";
 import { runInit } from "./entry/init-run/runInit";
+import { runMcpCommand } from "./entry/mcp-run/runMcp";
 import { runUnified } from "./entry/unified-run/runUnified";
 import { createOpenAIModelFromEnv } from "./model-composition/createModelFromEnv";
 
@@ -27,6 +28,10 @@ async function main() {
   }
   applyWorkspaceRootFromArgs(args.workspace);
   initSettings(args.settings);
+  if (args.kind === "mcp") {
+    await runMcpCommand(args.mcpCommand);
+    process.exit(0);
+  }
 
   try {
     loadEvilJellyEnv({ cliApiKey: args.cliApiKey, envFile: args.envFile });

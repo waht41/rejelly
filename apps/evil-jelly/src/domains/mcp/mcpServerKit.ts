@@ -1,15 +1,9 @@
 /**
  * Optional MCP server wiring for evil-jelly.
  *
- * Currently a single internal entry: the `rejelly-devtool` MCP server (HTTP route
- * on the devtool-server), which lets evil introspect its OWN run via the trace DB
- * — messages, tool calls, trace profile, etc.
- *
- * Shaped as a descriptor LIST on purpose, even though there is one entry today:
- * adding a server later is a list entry, not new plumbing. It is deliberately NOT
- * a user-facing / config-file registry yet — that (bring-your-own MCP from
- * settings) is a separate, larger product surface (process spawning, env
- * injection, failure isolation, UI) and is out of scope here.
+ * T1 compatibility bridge for the built-in `evil.devtool` dynamic definition. General MCP
+ * settings already resolve into the same desired-set contract, but T2's runtime manager owns
+ * connecting those user/workspace definitions, trust gating, retries, and replacement.
  *
  * Lifecycle uses the framework's boundary DI: the composition root connects clients
  * via {@link connectMcpProviders}, seeds them into `runWith({ providers })`, and the
@@ -21,46 +15,23 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { equipMCP } from "@rejelly/adapter-mcp";
 import { expectResource } from "@rejelly/core";
-import { getReviewEndpointFromEnv } from "../../shared/configuration/env";
 import { evilJellyToolLoggerMiddleware } from "../../shared/tool-observation/middleware";
+import type { McpDesiredConfig, McpDesiredServer } from "./contracts";
 
 export interface McpProviderConnectionOptions {
-  /** Per-run opt-in resolved by the CLI composition boundary. */
-  devtoolMcp: boolean;
+  /** T1 compatibility bridge; T2 hands this desired set to McpRuntimeManager. */
+  desiredConfig: McpDesiredConfig;
 }
 
-interface McpServerDescriptor {
-  /** Provider key suffix (`mcp:<id>`) + equipMCP clientId. */
-  id: string;
-  /** Tool name prefix, e.g. `devtool_get_trace_profile`. Avoids collisions and groups the set. */
-  namespace: string;
-  /** Opt-in gate, checked at connect time only. Returning false skips the server entirely. */
-  enabled: (options: McpProviderConnectionOptions) => boolean;
-  /** Endpoint URL of the MCP server (resolved lazily, at connect time). */
-  url: () => string;
+function legacyDevtoolServers(config: McpDesiredConfig): McpDesiredServer[] {
+  return config.servers.filter(
+    (server) =>
+      server.id === "evil.devtool" &&
+      server.source.kind === "dynamic" &&
+      server.definition.enabled &&
+      server.definition.transport.type === "streamableHttp",
+  );
 }
-
-/**
- * The devtool MCP route (`/mcp`) lives on the SAME origin as the Review trace
- * ingest endpoint, so it is derived from the one endpoint evil already configures
- * — no second URL to keep in sync.
- */
-function devtoolMcpUrl(): string {
-  const origin = new URL(getReviewEndpointFromEnv()).origin;
-  return `${origin}/mcp`;
-}
-
-const MCP_SERVERS: McpServerDescriptor[] = [
-  {
-    id: "devtool",
-    namespace: "devtool",
-    // Introspection only makes sense when the devtool server is up AND traces are
-    // being exported to it, so this is opt-in via --devtool (separate from --review).
-    // Best-effort connect means a wrong guess simply no-ops rather than breaking evil.
-    enabled: (options) => options.devtoolMcp,
-    url: devtoolMcpUrl,
-  },
-];
 
 /** Provider / expectResource key for a server id. Shared by the boundary (seed) and the kit (read). */
 function resourceKey(id: string): string {
@@ -94,8 +65,8 @@ export interface McpProviders {
 }
 
 /**
- * Connect enabled MCP servers at the composition-root boundary (ABOVE runWith), so the
- * connection lives for the whole process/session and is reused across run segments.
+ * Connect the dynamic devtool definition at the composition-root boundary (ABOVE runWith), so
+ * the compatibility connection lives for the whole process/session and is reused across segments.
  *
  * BEST-EFFORT BY DESIGN: a disabled server is skipped silently; an enabled-but-unreachable
  * server warns on stderr and is omitted — never a throw. The returned `providers` go into
@@ -108,10 +79,10 @@ export async function connectMcpProviders(
 ): Promise<McpProviders> {
   const providers: Record<string, unknown> = {};
   const clients: Client[] = [];
-  for (const server of MCP_SERVERS) {
-    if (!server.enabled(options)) continue;
+  for (const server of legacyDevtoolServers(options.desiredConfig)) {
     try {
-      const client = await connectMcpClient(server.url());
+      if (server.definition.transport.type !== "streamableHttp") continue;
+      const client = await connectMcpClient(server.definition.transport.url);
       providers[resourceKey(server.id)] = client;
       clients.push(client);
     } catch (error) {
@@ -152,18 +123,17 @@ export interface McpServerKitOptions {
  */
 export async function equipMcpServerKit(options: McpServerKitOptions = {}): Promise<void> {
   const middleware = options.quiet ? [] : [evilJellyToolLoggerMiddleware];
-  for (const server of MCP_SERVERS) {
-    const client = expectResource<Client>(resourceKey(server.id), { optional: true });
-    if (!client) continue;
-    try {
-      const kit = await equipMCP(client, {
-        clientId: server.id,
-        namespace: server.namespace,
-        middleware,
-      });
-      kit.inject();
-    } catch (error) {
-      warnFailure(server.id, "equip", error);
-    }
+  const serverId = "evil.devtool";
+  const client = expectResource<Client>(resourceKey(serverId), { optional: true });
+  if (!client) return;
+  try {
+    const kit = await equipMCP(client, {
+      clientId: serverId,
+      namespace: "devtool",
+      middleware,
+    });
+    kit.inject();
+  } catch (error) {
+    warnFailure(serverId, "equip", error);
   }
 }

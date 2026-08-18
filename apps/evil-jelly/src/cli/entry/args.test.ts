@@ -92,6 +92,86 @@ describe("parseCliArgs", () => {
     expect(args.initModelId).toBe("deepseek-chat");
   });
 
+  it("parses MCP read commands without requiring model configuration", () => {
+    const list = parseCliArgs(["node", "evil", "mcp", "list", "--scope", "project"]);
+    expect(list.kind).toBe("mcp");
+    if (list.kind !== "mcp") throw new Error("expected mcp args");
+    expect(list.mcpCommand).toEqual({ action: "list", scope: "project" });
+
+    const get = parseCliArgs(["node", "evil", "mcp", "get", "docs"]);
+    expect(get.kind).toBe("mcp");
+    if (get.kind !== "mcp") throw new Error("expected mcp args");
+    expect(get.mcpCommand).toEqual({ action: "get", serverId: "docs", scope: "effective" });
+  });
+
+  it("parses HTTP and stdio MCP additions", () => {
+    const http = parseCliArgs([
+      "node",
+      "evil",
+      "mcp",
+      "add",
+      "remote",
+      "--scope",
+      "user",
+      "--url",
+      "https://example.test/mcp",
+      "--header",
+      "Authorization=env:MCP_TOKEN",
+    ]);
+    expect(http.kind).toBe("mcp");
+    if (http.kind !== "mcp") throw new Error("expected mcp args");
+    expect(http.mcpCommand).toMatchObject({
+      action: "add",
+      serverId: "remote",
+      scope: "user",
+      settings: {
+        transport: {
+          type: "streamableHttp",
+          headers: { Authorization: { fromEnv: "MCP_TOKEN" } },
+        },
+      },
+    });
+
+    const stdio = parseCliArgs([
+      "node",
+      "evil",
+      "mcp",
+      "add",
+      "local",
+      "--scope",
+      "project",
+      "--env",
+      "TOKEN=env:MCP_TOKEN",
+      "--",
+      "npx",
+      "-y",
+      "local-mcp",
+    ]);
+    expect(stdio.kind).toBe("mcp");
+    if (stdio.kind !== "mcp") throw new Error("expected mcp args");
+    expect(stdio.mcpCommand).toMatchObject({
+      action: "add",
+      serverId: "local",
+      scope: "project",
+      settings: {
+        transport: {
+          type: "stdio",
+          command: "npx",
+          args: ["-y", "local-mcp"],
+          env: { TOKEN: { fromEnv: "MCP_TOKEN" } },
+        },
+      },
+    });
+  });
+
+  it("requires explicit writable scope for MCP mutations", () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+    expect(() => parseCliArgs(["node", "evil", "mcp", "remove", "docs"])).toThrow("exit 1");
+  });
+
   it("carries --env on both the run loop and init", () => {
     expect(parseCliArgs(["node", "evil", "--env", "luna"]).envFile).toBe("luna");
     expect(parseCliArgs(["node", "evil", "init", "--env", "luna"]).envFile).toBe("luna");

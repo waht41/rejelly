@@ -13,6 +13,7 @@ import {
   registerAuditArgs,
 } from "./audit-run/args";
 import { type InitCommandArgs, parseInitArgs, registerInitArgs } from "./init-run/args";
+import { type McpCommandArgs, parseMcpArgs, registerMcpArgs } from "./mcp-run/args";
 import {
   parseUnifiedRunArgs,
   registerUnifiedRunArgs,
@@ -23,7 +24,12 @@ import {
 export type ParsedInitArgs = CommonParsedArgs & InitCommandArgs;
 export type ParsedAuditArgs = CommonParsedArgs & AuditCommandArgs;
 export type ParsedUnifiedArgs = CommonParsedArgs & UnifiedRunCommandArgs;
-export type ParsedEvilJellyArgs = ParsedInitArgs | ParsedAuditArgs | ParsedUnifiedArgs;
+export type ParsedMcpArgs = CommonParsedArgs & McpCommandArgs;
+export type ParsedEvilJellyArgs =
+  | ParsedInitArgs
+  | ParsedAuditArgs
+  | ParsedMcpArgs
+  | ParsedUnifiedArgs;
 
 export function getCliVersion(): string {
   // Source lives at src/cli/entry/args.ts, while tsup bundles it into dist/cli/index.js.
@@ -62,6 +68,7 @@ cli
 registerUnifiedRunArgs(cli);
 registerInitArgs(cli);
 registerAuditArgs(cli);
+registerMcpArgs(cli);
 
 cli
   .help((sections) =>
@@ -113,6 +120,9 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
   }
   if (commandName === "audit") {
     return { ...common, ...parseAuditArgs(args, options) };
+  }
+  if (commandName === "mcp") {
+    return { ...common, ...parseMcpArgs(args, options) };
   }
   if (hasAuditOnlyArgs(options)) {
     failArgs(
