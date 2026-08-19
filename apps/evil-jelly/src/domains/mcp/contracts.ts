@@ -372,3 +372,36 @@ export interface McpReferenceResult {
   readonly matches: readonly McpReferenceMatch[];
   readonly pendingServerIds?: readonly string[];
 }
+
+export type McpCallRejectionCode =
+  | "tool_unavailable"
+  | "catalog_changed"
+  | "arguments_too_large"
+  | "arguments_too_deep"
+  | "invalid_tool_schema"
+  | "invalid_arguments";
+
+export interface McpCallValidationIssue {
+  readonly instancePath: string;
+  readonly schemaPath: string;
+  readonly keyword: string;
+  readonly message: string;
+}
+
+export type McpCallPolicyResult<TCallResult> =
+  | {
+      readonly type: "mcp_call_result_v1";
+      readonly status: "completed";
+      readonly tool: McpToolIdentity;
+      readonly catalogRevision: string;
+      readonly result: TCallResult;
+    }
+  | {
+      readonly type: "mcp_call_result_v1";
+      readonly status: "rejected";
+      readonly tool: McpToolIdentity;
+      readonly code: McpCallRejectionCode;
+      readonly message: string;
+      readonly currentCatalogRevision?: string;
+      readonly issues?: readonly McpCallValidationIssue[];
+    };

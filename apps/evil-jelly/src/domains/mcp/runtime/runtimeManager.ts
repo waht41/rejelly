@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { McpNativeToolDescriptor } from "@rejelly/adapter-mcp";
 import { evaluateMcpTrust, type McpTrustGrant } from "../configuration/configuration";
 import {
   fingerprintMcpConnectionDefinition,
@@ -10,22 +11,16 @@ import {
   type McpServerRuntimeState,
 } from "../contracts";
 
-export interface McpRuntimeToolDescriptor {
-  readonly name: string;
-  readonly description?: string;
-  readonly inputSchema: Readonly<Record<string, unknown>>;
-}
-
 export interface McpRuntimeCatalog {
   readonly serverId: string;
   readonly revision: string;
-  readonly tools: readonly McpRuntimeToolDescriptor[];
+  readonly tools: readonly McpNativeToolDescriptor[];
 }
 
 export interface McpRuntimeConnection {
   /** SDK/client facade borrowed by T2's compatibility kit and T3's gateway adapter. */
   readonly client: unknown;
-  listTools(): Promise<readonly McpRuntimeToolDescriptor[]>;
+  listTools(): Promise<readonly McpNativeToolDescriptor[]>;
   close(): Promise<void>;
 }
 
@@ -34,7 +29,7 @@ export interface McpRuntimeConnectionCallbacks {
   readonly onError: (error: Error) => void;
   readonly onToolsChanged: (
     error: Error | null,
-    tools: readonly McpRuntimeToolDescriptor[] | null,
+    tools: readonly McpNativeToolDescriptor[] | null,
   ) => void;
 }
 
@@ -104,7 +99,7 @@ function canonicalJson(value: unknown): string {
     .join(",")}}`;
 }
 
-function catalogRevision(tools: readonly McpRuntimeToolDescriptor[]): string {
+function catalogRevision(tools: readonly McpNativeToolDescriptor[]): string {
   const projection = [...tools]
     .sort((left, right) => left.name.localeCompare(right.name))
     .map((tool) => ({
@@ -117,7 +112,7 @@ function catalogRevision(tools: readonly McpRuntimeToolDescriptor[]): string {
 
 function freezeCatalog(
   serverId: string,
-  tools: readonly McpRuntimeToolDescriptor[],
+  tools: readonly McpNativeToolDescriptor[],
 ): McpRuntimeCatalog {
   const frozenTools = tools
     .map((tool) =>
@@ -390,7 +385,7 @@ export class McpRuntimeManager {
   private async acceptInitialCatalog(
     entry: RuntimeEntry,
     connection: McpRuntimeConnection,
-    tools: readonly McpRuntimeToolDescriptor[],
+    tools: readonly McpNativeToolDescriptor[],
   ): Promise<void> {
     if (!this.isCurrent(entry) || entry.connection !== connection) {
       await this.closeConnection(connection);
@@ -449,7 +444,7 @@ export class McpRuntimeManager {
   private handleToolsChanged(
     entry: RuntimeEntry,
     error: Error | null,
-    tools: readonly McpRuntimeToolDescriptor[] | null,
+    tools: readonly McpNativeToolDescriptor[] | null,
   ): void {
     if (!this.isCurrent(entry) || entry.status !== "ready" || !entry.connection) return;
     if (error || !tools) {

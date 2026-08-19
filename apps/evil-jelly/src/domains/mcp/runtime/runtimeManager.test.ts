@@ -1,3 +1,4 @@
+import type { McpNativeToolDescriptor } from "@rejelly/adapter-mcp";
 import { describe, expect, it, vi } from "vitest";
 import { defaultMcpServerDefinition } from "../configuration/configuration";
 import type { McpDesiredConfig, McpDesiredServer } from "../contracts";
@@ -7,7 +8,6 @@ import {
   type McpRuntimeConnector,
   McpRuntimeManager,
   type McpRuntimeScheduler,
-  type McpRuntimeToolDescriptor,
 } from "./runtimeManager";
 
 function deferred<T>() {
@@ -50,9 +50,9 @@ function desired(...servers: McpDesiredServer[]): McpDesiredConfig {
 class FakeConnection implements McpRuntimeConnection {
   readonly client = { id: Math.random() };
   readonly close = vi.fn<() => Promise<void>>(async () => undefined);
-  readonly listTools = vi.fn<() => Promise<readonly McpRuntimeToolDescriptor[]>>();
+  readonly listTools = vi.fn<() => Promise<readonly McpNativeToolDescriptor[]>>();
 
-  constructor(tools: readonly McpRuntimeToolDescriptor[] = []) {
+  constructor(tools: readonly McpNativeToolDescriptor[] = []) {
     this.listTools.mockResolvedValue(tools);
   }
 }

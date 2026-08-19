@@ -4,7 +4,7 @@ import {
   StdioClientTransport,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import { loadMcpToolCatalog, normalizeMcpToolCatalog } from "@rejelly/adapter-mcp";
 import { resolveWorkspaceCwd } from "../../../shared/fs-policy/workspace-fs-policy";
 import {
   type McpEnvironmentResolver,
@@ -15,7 +15,6 @@ import type {
   McpRuntimeConnection,
   McpRuntimeConnectionCallbacks,
   McpRuntimeConnector,
-  McpRuntimeToolDescriptor,
 } from "./runtimeManager";
 
 export interface SdkMcpRuntimeConnectorOptions {
@@ -23,14 +22,6 @@ export interface SdkMcpRuntimeConnectorOptions {
   readonly resolveEnvironment: McpEnvironmentResolver;
   readonly clientName?: string;
   readonly clientVersion?: string;
-}
-
-function mapTools(tools: readonly Tool[]): McpRuntimeToolDescriptor[] {
-  return tools.map((tool) => ({
-    name: tool.name,
-    ...(tool.description === undefined ? {} : { description: tool.description }),
-    inputSchema: tool.inputSchema,
-  }));
 }
 
 function secretValues(sources: Readonly<Record<string, McpValueSource>>): string[] {
@@ -125,11 +116,23 @@ export class SdkMcpRuntimeConnector implements McpRuntimeConnector {
             tools: {
               autoRefresh: true,
               debounceMs: 100,
-              onChanged: (error, tools) =>
-                callbacks.onToolsChanged(
-                  error ? safeConnectionError(error, resolvedSecrets) : null,
-                  tools ? mapTools(tools) : null,
-                ),
+              onChanged: (error, tools) => {
+                if (error || !tools) {
+                  callbacks.onToolsChanged(
+                    error ? safeConnectionError(error, resolvedSecrets) : null,
+                    null,
+                  );
+                  return;
+                }
+                try {
+                  callbacks.onToolsChanged(null, normalizeMcpToolCatalog(tools));
+                } catch (normalizationError) {
+                  callbacks.onToolsChanged(
+                    safeConnectionError(normalizationError, resolvedSecrets),
+                    null,
+                  );
+                }
+              },
             },
           },
         },
@@ -165,13 +168,12 @@ export class SdkMcpRuntimeConnector implements McpRuntimeConnector {
         client,
         listTools: async () => {
           try {
-            return mapTools(
-              (
-                await client.listTools(undefined, {
+            return loadMcpToolCatalog({
+              listTools: (params) =>
+                client.listTools(params, {
                   timeout: server.definition.toolTimeoutMs,
-                })
-              ).tools,
-            );
+                }),
+            });
           } catch (error) {
             throw safeConnectionError(error, resolvedSecrets);
           }
