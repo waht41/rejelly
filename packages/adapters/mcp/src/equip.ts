@@ -12,11 +12,12 @@ import {
   type ToolMiddleware,
 } from "@rejelly/core";
 import { z } from "zod";
+import { McpProtocolError } from "./errors";
 import { fromMCPTool } from "./from-mcp-tool";
+import { type McpNativeToolDescriptor, normalizeMcpToolCatalog } from "./gateway";
 import {
   listResourcesPage,
   type MCPClientLike,
-  type MCPToolDescriptor,
   normalizeListTools,
   readResourceNormalized,
 } from "./mcp-compat";
@@ -146,7 +147,7 @@ function messagesToInstruction(
 }
 
 function buildMcpToolDefinitions(
-  mcpTools: MCPToolDescriptor[],
+  mcpTools: readonly McpNativeToolDescriptor[],
   client: MCPClientLike,
   namespace?: string,
 ): { tools: ToolDefinition[]; toolMap: Record<string, ToolDefinition> } {
@@ -246,7 +247,7 @@ export async function equipMCP(
 
   const requiredNames = toolFilter !== undefined && toolFilter.length > 0 ? toolFilter : undefined;
 
-  const loadList = async (): Promise<MCPToolDescriptor[]> => {
+  const loadList = async (): Promise<readonly McpNativeToolDescriptor[]> => {
     if (toolFilter !== undefined && toolFilter.length === 0) {
       return [];
     }
@@ -265,7 +266,13 @@ export async function equipMCP(
     listEpoch,
     toolFilterKey,
   ] as const);
-  const mcpTools = JSON.parse(raw) as MCPToolDescriptor[];
+  const parsedTools: unknown = JSON.parse(raw);
+  if (!Array.isArray(parsedTools)) {
+    throw new McpProtocolError("Cached tools/list value is not an array", {
+      code: "invalid_catalog_shape",
+    });
+  }
+  const mcpTools = normalizeMcpToolCatalog(parsedTools);
 
   const { tools, toolMap } = buildMcpToolDefinitions(mcpTools, client, namespace);
   const { resourceTools, resourceToolMap } = buildResourceToolDefinitions(
