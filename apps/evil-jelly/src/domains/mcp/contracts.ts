@@ -185,20 +185,7 @@ function normalizedValueSources(
 
 /** Canonical projection contains references and policy, never resolved environment values. */
 function fingerprintProjection(serverId: string, server: McpServerDefinition): object {
-  const transport =
-    server.transport.type === "stdio"
-      ? {
-          type: server.transport.type,
-          command: server.transport.command,
-          args: [...server.transport.args],
-          cwd: server.transport.cwd,
-          env: normalizedValueSources(server.transport.env),
-        }
-      : {
-          type: server.transport.type,
-          url: server.transport.url,
-          headers: normalizedValueSources(server.transport.headers),
-        };
+  const transport = transportFingerprintProjection(server.transport);
   return {
     id: serverId,
     transport,
@@ -226,12 +213,40 @@ function fingerprintProjection(serverId: string, server: McpServerDefinition): o
   };
 }
 
+function transportFingerprintProjection(transport: McpTransportDefinition): object {
+  return transport.type === "stdio"
+    ? {
+        type: transport.type,
+        command: transport.command,
+        args: [...transport.args],
+        cwd: transport.cwd,
+        env: normalizedValueSources(transport.env),
+      }
+    : {
+        type: transport.type,
+        url: transport.url,
+        headers: normalizedValueSources(transport.headers),
+      };
+}
+
 export function fingerprintMcpServerDefinition(
   serverId: string,
   server: McpServerDefinition,
 ): string {
   return createHash("sha256")
     .update(JSON.stringify(fingerprintProjection(serverId, server)))
+    .digest("hex");
+}
+
+/** Transport-only fingerprint: policy/default changes can publish a new binding without reconnect. */
+export function fingerprintMcpConnectionDefinition(
+  serverId: string,
+  server: McpServerDefinition,
+): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({ id: serverId, transport: transportFingerprintProjection(server.transport) }),
+    )
     .digest("hex");
 }
 

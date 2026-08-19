@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  fingerprintMcpConnectionDefinition,
   fingerprintMcpServerDefinition,
   isMcpToolAllowed,
   isReservedMcpServerId,
@@ -208,6 +209,21 @@ describe("MCP definition fingerprint", () => {
       ),
     ).not.toBe(base);
     expect(fingerprintMcpServerDefinition("renamed", server())).not.toBe(base);
+  });
+
+  it("separates transport identity from binding policy identity", () => {
+    const original = server();
+    const policyChanged = server({
+      ...original,
+      tools: { ...original.tools, deny: ["delete_repository", "write_file"] },
+      toolTimeoutMs: 5_000,
+    });
+    expect(fingerprintMcpServerDefinition("github", policyChanged)).not.toBe(
+      fingerprintMcpServerDefinition("github", original),
+    );
+    expect(fingerprintMcpConnectionDefinition("github", policyChanged)).toBe(
+      fingerprintMcpConnectionDefinition("github", original),
+    );
   });
 });
 

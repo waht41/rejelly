@@ -65,12 +65,14 @@ describe("MCP configuration", () => {
       Authorization: { fromEnv: "TOKEN", prefix: "Bearer " },
       Accept: { value: "application/json" },
     } as const;
-    expect(resolveMcpValueSources(sources, { TOKEN: "secret" })).toEqual({
+    expect(
+      resolveMcpValueSources(sources, (name) => (name === "TOKEN" ? "secret" : undefined)),
+    ).toEqual({
       ok: true,
       values: { Authorization: "Bearer secret", Accept: "application/json" },
     });
     expect(sources.Authorization).toEqual({ fromEnv: "TOKEN", prefix: "Bearer " });
-    expect(resolveMcpValueSources(sources, {})).toEqual({
+    expect(resolveMcpValueSources(sources, () => undefined)).toEqual({
       ok: false,
       missingEnvironmentVariables: ["TOKEN"],
     });

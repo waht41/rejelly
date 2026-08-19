@@ -3,13 +3,18 @@ import {
   createDevtoolMcpDesiredServer,
   resolveMcpSettingsLayers,
 } from "../../../../domains/mcp/configuration/configuration";
-import { connectMcpProviders } from "../../../../domains/mcp/mcpServerKit";
+import { createMcpRuntimeProviders } from "../../../../domains/mcp/mcpServerKit";
+import { McpRuntimeManager } from "../../../../domains/mcp/runtime/runtimeManager";
+import { SdkMcpRuntimeConnector } from "../../../../domains/mcp/runtime/sdkConnector";
 import {
   generateSessionId,
   resumeSession,
 } from "../../../../domains/session/repository/sessionStore";
 import { qualifiedSkillName } from "../../../../domains/skills/definition/skillDefinition";
-import { getReviewEndpointFromEnv } from "../../../../shared/configuration/env";
+import {
+  getEnvironmentValue,
+  getReviewEndpointFromEnv,
+} from "../../../../shared/configuration/env";
 import { getSettings } from "../../../../shared/configuration/settings";
 import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
@@ -115,9 +120,14 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
   const dynamicMcpServers = settings.mcp.devtool
     ? [createDevtoolMcpDesiredServer(`${new URL(getReviewEndpointFromEnv()).origin}/mcp`)]
     : [];
-  const { providers: mcpProviders, dispose: disposeMcp } = await connectMcpProviders({
-    desiredConfig: resolveMcpSettingsLayers(settings.mcp, dynamicMcpServers),
-  });
+  const mcpRuntime = new McpRuntimeManager(
+    new SdkMcpRuntimeConnector({
+      workspaceRoot: getWorkspaceFsPolicy().getRoot(),
+      resolveEnvironment: getEnvironmentValue,
+    }),
+  );
+  await mcpRuntime.reconcile(resolveMcpSettingsLayers(settings.mcp, dynamicMcpServers));
+  const mcpProviders = createMcpRuntimeProviders(mcpRuntime);
   try {
     const skillRuntime = await buildConfiguredSkillRuntimeSnapshot();
     bindings.setAvailableSkills?.(
@@ -188,6 +198,6 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
       }
     }
   } finally {
-    await disposeMcp();
+    await mcpRuntime.dispose();
   }
 }

@@ -217,10 +217,12 @@ export type McpResolvedValues =
   | { readonly ok: true; readonly values: Readonly<Record<string, string>> }
   | { readonly ok: false; readonly missingEnvironmentVariables: readonly string[] };
 
+export type McpEnvironmentResolver = (name: string) => string | undefined;
+
 /** Resolve refs at the connection boundary. Missing names are safe to report; values are not. */
 export function resolveMcpValueSources(
   sources: Readonly<Record<string, McpValueSource>>,
-  environment: Readonly<Record<string, string | undefined>>,
+  resolveEnvironment: McpEnvironmentResolver,
 ): McpResolvedValues {
   const values: Record<string, string> = {};
   const missing = new Set<string>();
@@ -229,7 +231,7 @@ export function resolveMcpValueSources(
       values[name] = source.value;
       continue;
     }
-    const value = environment[source.fromEnv];
+    const value = resolveEnvironment(source.fromEnv);
     if (value === undefined) {
       missing.add(source.fromEnv);
       continue;

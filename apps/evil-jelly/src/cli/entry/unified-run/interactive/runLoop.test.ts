@@ -1,6 +1,6 @@
 import type { AgentSnapshot, Message, ModelAdapter } from "@rejelly/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { connectMcpProviders } from "../../../../domains/mcp/mcpServerKit";
+import { createMcpRuntimeProviders } from "../../../../domains/mcp/mcpServerKit";
 import * as sessionStore from "../../../../domains/session/repository/sessionStore";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 import { textPromptInput } from "../../../../shared/model/prompt/promptInput";
@@ -12,6 +12,8 @@ const runtimeMocks = vi.hoisted(() => ({
   buildSkillRuntime: vi.fn(),
   formatSkillSummary: vi.fn(),
   disposeMcp: vi.fn(async () => undefined),
+  reconcileMcp: vi.fn(async () => undefined),
+  connectorOptions: vi.fn(),
 }));
 
 vi.mock("./runSegment", () => ({
@@ -19,10 +21,22 @@ vi.mock("./runSegment", () => ({
 }));
 
 vi.mock("../../../../domains/mcp/mcpServerKit", () => ({
-  connectMcpProviders: vi.fn(async () => ({
-    providers: {},
-    dispose: runtimeMocks.disposeMcp,
-  })),
+  createMcpRuntimeProviders: vi.fn(() => ({})),
+}));
+
+vi.mock("../../../../domains/mcp/runtime/runtimeManager", () => ({
+  McpRuntimeManager: class {
+    reconcile = runtimeMocks.reconcileMcp;
+    dispose = runtimeMocks.disposeMcp;
+  },
+}));
+
+vi.mock("../../../../domains/mcp/runtime/sdkConnector", () => ({
+  SdkMcpRuntimeConnector: class {
+    constructor(options: unknown) {
+      runtimeMocks.connectorOptions(options);
+    }
+  },
 }));
 
 vi.mock("../../../../shared/configuration/settings", () => ({
@@ -44,7 +58,7 @@ vi.mock("../../../skill-runtime/startupSummary", () => ({
 }));
 
 const runHostMock = vi.mocked(runEvilJellyHost);
-const connectMcpProvidersMock = vi.mocked(connectMcpProviders);
+const createMcpRuntimeProvidersMock = vi.mocked(createMcpRuntimeProviders);
 let runControl: InteractiveRunControl;
 
 function createBindings() {
@@ -73,7 +87,7 @@ describe("runInteractiveLoop mock session isolation", () => {
     runtimeMocks.formatSkillSummary.mockReturnValue(undefined);
   });
 
-  it("passes the resolved MCP desired configuration to the connection boundary", async () => {
+  it("reconciles the resolved MCP desired configuration without blocking on readiness", async () => {
     const { bindings } = createBindings();
     runHostMock.mockResolvedValueOnce(undefined);
 
@@ -86,7 +100,8 @@ describe("runInteractiveLoop mock session isolation", () => {
       isolateSessionState: true,
     });
 
-    expect(connectMcpProvidersMock).toHaveBeenCalledWith({ desiredConfig: { servers: [] } });
+    expect(runtimeMocks.reconcileMcp).toHaveBeenCalledWith({ servers: [] });
+    expect(createMcpRuntimeProvidersMock).toHaveBeenCalledOnce();
   });
 
   it("publishes the path-free enabled Skill catalog through the host boundary", async () => {
