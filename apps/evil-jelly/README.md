@@ -380,9 +380,12 @@ from two scopes are never deep-merged. Keep secrets in environment variables and
 with `{ "fromEnv": "NAME" }`. Workspace definitions require approval of their exact non-secret
 configuration fingerprint before they connect. A changed definition invalidates the old grant.
 
-`use.chat.exposure` accepts `off`, `explicit`, or `always`. Audit is independent and considers only
-servers with `use.audit.exposure: "always"`; its `allow` list is mandatory for native tools to be
-routable. `required: true` blocks only the corresponding consumer while that server is unavailable.
+`use.chat.exposure` accepts `off`, `explicit`, or `always`. Every enabled chat server except `off`
+is advertised to the Agent by name and can be progressively inspected through `mcp_reference`.
+`explicit` still requires a turn/session selection before `mcp_call`; `always` is callable in every
+chat turn. Audit is independent and considers only servers with `use.audit.exposure: "always"`;
+its `allow` list is mandatory for native tools to be routable. `required: true` blocks only the
+corresponding consumer while that server is unavailable.
 
 ```bash
 evil mcp list

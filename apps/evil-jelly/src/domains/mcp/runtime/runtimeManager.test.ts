@@ -115,7 +115,7 @@ async function waitForStatus(
 }
 
 describe("McpRuntimeManager", () => {
-  it("captures structured routes for always and explicitly selected servers", async () => {
+  it("advertises configured chat servers while routing only always and selected servers", async () => {
     const connector = new ControlledConnector();
     const manager = new McpRuntimeManager(connector);
     const baseAlways = server("always");
@@ -147,8 +147,10 @@ describe("McpRuntimeManager", () => {
     const first = manager.captureDispatchBinding("chat");
     const second = manager.captureDispatchBinding("chat", ["selected"]);
 
-    expect(first.servers.map((item) => item.serverId)).toEqual(["always"]);
+    expect(first.servers.map((item) => item.serverId)).toEqual(["always", "selected"]);
     expect(second.servers.map((item) => item.serverId)).toEqual(["always", "selected"]);
+    expect(manager.getVisibleServerIds("chat")).toEqual(["always", "selected"]);
+    expect(first.route({ serverId: "selected", nativeToolName: "read" })).toBeUndefined();
     expect(second.route({ serverId: "always", nativeToolName: "read" })?.description).toBe(
       "Read always",
     );

@@ -62,6 +62,7 @@ function binding(): McpDispatchBinding {
     route: (identity) =>
       routes.find(
         (candidate) =>
+          candidate.identity.serverId === "alpha" &&
           candidate.identity.serverId === identity.serverId &&
           candidate.identity.nativeToolName === identity.nativeToolName,
       ),
@@ -93,6 +94,7 @@ describe("MCP dispatch gateway", () => {
       { serverId: "alpha", nativeToolName: "read" },
       { serverId: "beta", nativeToolName: "read" },
     ]);
+    expect(result.matches.map((match) => match.callable)).toEqual([true, false]);
     expect(result.pendingServerIds).toEqual(["pending"]);
     expect(
       referenceMcpTools(binding(), { query: "read", serverIds: ["beta"] }).matches.map(

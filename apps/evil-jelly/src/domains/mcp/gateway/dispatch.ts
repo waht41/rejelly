@@ -42,15 +42,24 @@ export function referenceMcpTools(
 ): McpReferenceResult {
   const terms = input.query.toLocaleLowerCase().split(/\s+/).filter(Boolean);
   const requestedServers = input.serverIds ? new Set(input.serverIds) : undefined;
-  const matches: Array<{ route: McpBoundRoute; score: number }> = [];
+  const matches: Array<{ route: McpBoundRoute & { readonly callable: boolean }; score: number }> =
+    [];
   for (const server of binding.servers) {
     if (requestedServers && !requestedServers.has(server.serverId)) continue;
+    if (server.status !== "ready" || !server.catalogRevision) continue;
     for (const tool of server.tools) {
-      const route = binding.route({
+      const identity = Object.freeze({
         serverId: server.serverId,
         nativeToolName: tool.nativeToolName,
       });
-      if (!route) continue;
+      const route = Object.freeze({
+        identity,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        configFingerprint: server.configFingerprint,
+        catalogRevision: server.catalogRevision,
+        callable: binding.route(identity) !== undefined,
+      });
       const score = matchScore(route, terms);
       if (score > 0) matches.push({ route, score });
     }

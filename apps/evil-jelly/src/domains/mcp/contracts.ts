@@ -335,7 +335,7 @@ export const MCP_REFERENCE_TOOL_NAME = "mcp_reference";
 export const MCP_CALL_TOOL_NAME = "mcp_call";
 
 export const MCP_REFERENCE_TOOL_DESCRIPTION =
-  "Find selected MCP tools and return their current descriptions, input schemas, and catalog revisions.";
+  "Find configured MCP tools and return their current descriptions, input schemas, callability, and catalog revisions.";
 export const MCP_CALL_TOOL_DESCRIPTION =
   "Call one previously referenced MCP tool using its structured identity, catalog revision, and JSON object arguments.";
 
@@ -366,7 +366,10 @@ export const mcpCallInputSchema = z
 export type McpReferenceInput = z.infer<typeof mcpReferenceInputSchema>;
 export type McpCallInput = z.infer<typeof mcpCallInputSchema>;
 
-export type McpReferenceMatch = McpBoundRoute;
+export interface McpReferenceMatch extends McpBoundRoute {
+  /** False means discoverable but not selected for calls in this dispatch. */
+  readonly callable: boolean;
+}
 
 export interface McpReferenceResult {
   readonly type: "mcp_reference_v1";

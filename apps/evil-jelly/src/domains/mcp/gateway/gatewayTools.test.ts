@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import type { McpBoundRoute, McpCallInput } from "../contracts";
+import type { McpBoundRoute, McpCallInput, McpReferenceMatch } from "../contracts";
 import { createMcpGatewayToolDefinitions } from "./gatewayTools";
 import { McpCallPolicy } from "./mcpCallPolicy";
 
@@ -19,6 +19,10 @@ function route(overrides: Partial<McpBoundRoute> = {}): McpBoundRoute {
     catalogRevision: "catalog-1",
     ...overrides,
   };
+}
+
+function referenceMatch(overrides: Partial<McpReferenceMatch> = {}): McpReferenceMatch {
+  return { ...route(overrides), callable: overrides.callable ?? true };
 }
 
 function input(overrides: Partial<McpCallInput> = {}): McpCallInput {
@@ -50,7 +54,7 @@ describe("MCP gateway tools", () => {
   it("keeps provider schemas byte-stable across catalog and handler changes", () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const first = createMcpGatewayToolDefinitions({
-      reference: async () => ({ type: "mcp_reference_v1", matches: [route()] }),
+      reference: async () => ({ type: "mcp_reference_v1", matches: [referenceMatch()] }),
       callPolicy: new McpCallPolicy({
         resolveRoute: () => route(),
         invoke: async () => ({ ok: true, result: { content: [] } }),
@@ -59,7 +63,7 @@ describe("MCP gateway tools", () => {
     const second = createMcpGatewayToolDefinitions({
       reference: async () => ({
         type: "mcp_reference_v1",
-        matches: [route({ catalogRevision: "catalog-2" })],
+        matches: [referenceMatch({ catalogRevision: "catalog-2" })],
       }),
       callPolicy: new McpCallPolicy({
         resolveRoute: () => route({ catalogRevision: "catalog-2" }),

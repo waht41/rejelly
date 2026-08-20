@@ -193,6 +193,10 @@ function selectedForConsumer(
   return policy.exposure === "always" || selectedServerIds.has(server.id);
 }
 
+function visibleForConsumer(server: McpDesiredServer, consumer: McpConsumer): boolean {
+  return server.definition.enabled && server.definition.use[consumer].exposure !== "off";
+}
+
 export class McpRuntimeManager {
   private readonly entries = new Map<string, RuntimeEntry>();
   private readonly listeners = new Set<McpRuntimeSnapshotListener>();
@@ -245,6 +249,16 @@ export class McpRuntimeManager {
     return this.entries.get(serverId)?.server;
   }
 
+  /** Names safe to advertise to a consumer before native tool schemas are requested. */
+  getVisibleServerIds(consumer: McpConsumer): readonly string[] {
+    return Object.freeze(
+      [...this.entries.values()]
+        .filter((entry) => visibleForConsumer(entry.server, consumer))
+        .map((entry) => entry.server.id)
+        .sort(),
+    );
+  }
+
   getAuditLimits(
     serverId: string,
   ): { readonly maxCallsPerSeed: number; readonly maxResultBytesPerSeed: number } | undefined {
@@ -264,8 +278,15 @@ export class McpRuntimeManager {
   ): McpDispatchBinding {
     this.assertActive();
     const selected = new Set(selectedServerIds);
-    const servers: McpSelectedServerBinding[] = [...this.entries.values()]
-      .filter((entry) => selectedForConsumer(entry.server, consumer, selected))
+    const visibleEntries = [...this.entries.values()].filter((entry) =>
+      visibleForConsumer(entry.server, consumer),
+    );
+    const routableServerIds = new Set(
+      visibleEntries
+        .filter((entry) => selectedForConsumer(entry.server, consumer, selected))
+        .map((entry) => entry.server.id),
+    );
+    const servers: McpSelectedServerBinding[] = visibleEntries
       .map((entry) => {
         const tools: McpBoundNativeTool[] = (entry.catalog?.tools ?? [])
           .filter((tool) => isMcpToolAllowed(entry.server.definition, consumer, tool.name))
@@ -292,6 +313,7 @@ export class McpRuntimeManager {
       generation: this.generation,
       servers: frozenServers,
       route: (identity: McpToolIdentity) => {
+        if (!routableServerIds.has(identity.serverId)) return undefined;
         const requestedKey = identityKey(identity.serverId, identity.nativeToolName);
         for (const server of frozenServers) {
           if (server.status !== "ready" || !server.catalogRevision) continue;

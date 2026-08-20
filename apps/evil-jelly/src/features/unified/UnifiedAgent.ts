@@ -14,6 +14,7 @@ import {
   isToolLoopExceededError,
   type ToolDefinition,
 } from "@rejelly/core";
+import { equipMcpCatalog } from "../../domains/mcp/agent/equipMcpCatalog";
 import { MCP_CALL_TOOL_NAME, MCP_REFERENCE_TOOL_NAME } from "../../domains/mcp/contracts";
 import {
   createMcpGatewayToolsForDispatch,
@@ -141,6 +142,7 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
   handler: async (props) => {
     await useUnifiedTools();
     await useUnifiedPrompts(props);
+    equipMcpCatalog();
     equipSkillKit();
     useStandardStreaming({ textMode: "plain" });
 
