@@ -9,7 +9,7 @@ import {
 } from "../contracts";
 
 export const MCP_CONFIGURATION_DEFAULTS = Object.freeze({
-  startupTimeoutMs: 10_000,
+  startupTimeoutMs: 30_000,
   toolTimeoutMs: 60_000,
   maxConcurrency: 4,
   auditMaxCallsPerSeed: 4,

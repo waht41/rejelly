@@ -18,7 +18,7 @@ describe("MCP configuration", () => {
     ).toEqual({
       transport: { type: "stdio", command: "mcp-server", args: [], cwd: ".", env: {} },
       enabled: true,
-      startupTimeoutMs: 10_000,
+      startupTimeoutMs: 30_000,
       toolTimeoutMs: 60_000,
       maxConcurrency: 4,
       tools: { deny: [] },
@@ -56,7 +56,7 @@ describe("MCP configuration", () => {
     expect(config.servers[0]).toMatchObject({
       id: "docs",
       source: { kind: "workspace" },
-      definition: { transport: { command: "workspace-command" }, startupTimeoutMs: 10_000 },
+      definition: { transport: { command: "workspace-command" }, startupTimeoutMs: 30_000 },
     });
   });
 

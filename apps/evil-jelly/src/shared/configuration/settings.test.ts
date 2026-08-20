@@ -215,7 +215,7 @@ describe("settings resolution", () => {
       source: { kind: "workspace" },
       definition: {
         transport: { command: "project-command" },
-        startupTimeoutMs: 10_000,
+        startupTimeoutMs: 30_000,
         use: { chat: { exposure: "explicit" } },
       },
     });

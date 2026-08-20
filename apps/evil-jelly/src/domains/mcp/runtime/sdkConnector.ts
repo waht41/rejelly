@@ -5,6 +5,7 @@ import {
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { callMcpTool, loadMcpToolCatalog, normalizeMcpToolCatalog } from "@rejelly/adapter-mcp";
+import stripAnsi from "strip-ansi";
 import { resolveWorkspaceCwd } from "../../../shared/fs-policy/workspace-fs-policy";
 import {
   type McpEnvironmentResolver,
@@ -22,6 +23,16 @@ export interface SdkMcpRuntimeConnectorOptions {
   readonly resolveEnvironment: McpEnvironmentResolver;
   readonly clientName?: string;
   readonly clientVersion?: string;
+}
+
+const MCP_STDIO_STDERR_TAIL_CHARS = 4_096;
+
+function captureStdioStderr(transport: StdioClientTransport): () => string {
+  let tail = "";
+  transport.stderr?.on("data", (chunk) => {
+    tail = `${tail}${stripAnsi(String(chunk))}`.slice(-MCP_STDIO_STDERR_TAIL_CHARS);
+  });
+  return () => tail.trim();
 }
 
 function secretValues(sources: Readonly<Record<string, McpValueSource>>): string[] {
@@ -98,6 +109,7 @@ export class SdkMcpRuntimeConnector implements McpRuntimeConnector {
         ? server.definition.transport.env
         : server.definition.transport.headers;
     const resolvedSecrets = secretValues(sourceValues);
+    let readStderrTail = () => "";
     const resolveForConnection = (
       sources: Readonly<Record<string, McpValueSource>>,
     ): Readonly<Record<string, string>> => {
@@ -140,28 +152,34 @@ export class SdkMcpRuntimeConnector implements McpRuntimeConnector {
       client.onclose = callbacks.onClose;
       client.onerror = (error) => callbacks.onError(safeConnectionError(error, resolvedSecrets));
 
-      const transport =
-        server.definition.transport.type === "stdio"
-          ? new StdioClientTransport({
-              command: server.definition.transport.command,
-              args: [...server.definition.transport.args],
-              cwd: resolveWorkspaceCwd(this.options.workspaceRoot, server.definition.transport.cwd),
-              env: {
-                ...getDefaultEnvironment(),
-                ...resolveForConnection(server.definition.transport.env),
-              },
-            })
-          : new StreamableHTTPClientTransport(new URL(server.definition.transport.url), {
-              requestInit: {
-                headers: resolveForConnection(server.definition.transport.headers),
-              },
-              reconnectionOptions: {
-                initialReconnectionDelay: 1_000,
-                maxReconnectionDelay: 1_000,
-                reconnectionDelayGrowFactor: 1,
-                maxRetries: 0,
-              },
-            });
+      const transport = (() => {
+        if (server.definition.transport.type === "stdio") {
+          const stdioTransport = new StdioClientTransport({
+            command: server.definition.transport.command,
+            args: [...server.definition.transport.args],
+            cwd: resolveWorkspaceCwd(this.options.workspaceRoot, server.definition.transport.cwd),
+            env: {
+              ...getDefaultEnvironment(),
+              ...resolveForConnection(server.definition.transport.env),
+            },
+            // The SDK defaults to inherited stderr, which bypasses Ink and corrupts the TUI.
+            stderr: "pipe",
+          });
+          readStderrTail = captureStdioStderr(stdioTransport);
+          return stdioTransport;
+        }
+        return new StreamableHTTPClientTransport(new URL(server.definition.transport.url), {
+          requestInit: {
+            headers: resolveForConnection(server.definition.transport.headers),
+          },
+          reconnectionOptions: {
+            initialReconnectionDelay: 1_000,
+            maxReconnectionDelay: 1_000,
+            reconnectionDelayGrowFactor: 1,
+            maxRetries: 0,
+          },
+        });
+      })();
 
       await connectWithBoundary(client, transport, signal, server.definition.startupTimeoutMs);
       return {
@@ -197,7 +215,12 @@ export class SdkMcpRuntimeConnector implements McpRuntimeConnector {
         close: () => client.close(),
       };
     } catch (error) {
-      throw safeConnectionError(error, resolvedSecrets);
+      const stderrTail = readStderrTail();
+      const message = error instanceof Error ? error.message : String(error);
+      throw safeConnectionError(
+        stderrTail ? new Error(`${message}\nMCP server stderr:\n${stderrTail}`) : error,
+        resolvedSecrets,
+      );
     }
   }
 }
