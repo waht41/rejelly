@@ -164,35 +164,31 @@ describe("parseCliArgs", () => {
     });
   });
 
-  it("preserves stdio flags when a PowerShell pnpm shim consumes the separator", () => {
-    const args = parseCliArgs([
-      "node",
-      "evil",
-      "mcp",
-      "add",
-      "typescript",
-      "--scope",
-      "project",
-      "npx",
-      "-y",
-      "ts-language-mcp",
-      ".",
-    ]);
-
-    expect(args.kind).toBe("mcp");
-    if (args.kind !== "mcp") throw new Error("expected mcp args");
-    expect(args.mcpCommand).toMatchObject({
-      action: "add",
-      serverId: "typescript",
-      scope: "project",
-      settings: {
-        transport: {
-          type: "stdio",
-          command: "npx",
-          args: ["-y", "ts-language-mcp", "."],
-        },
-      },
+  it("rejects a stdio MCP command without an explicit separator", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
     });
+
+    expect(() =>
+      parseCliArgs([
+        "node",
+        "evil",
+        "mcp",
+        "add",
+        "typescript",
+        "--scope",
+        "project",
+        "npx",
+        "-y",
+        "ts-language-mcp",
+        ".",
+      ]),
+    ).toThrow("exit 1");
+    expect(error).toHaveBeenCalledWith(
+      "mcp add stdio commands require an explicit `--` before the executable " +
+        "(PowerShell: quote it as `'--'`).",
+    );
   });
 
   it("requires explicit writable scope for MCP mutations", () => {

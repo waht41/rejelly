@@ -401,6 +401,10 @@ Type `$` and select an MCP server to insert a structured `$mcp:<id>` turn token.
 sees only the stable `mcp_reference` and `mcp_call` gateways; native schemas are referenced through
 conversation history and validated again immediately before the native call.
 
+A stdio `mcp add` requires the explicit `--` separator before its executable. PowerShell's pnpm
+shim consumes a bare separator, so quote that token there: `evil mcp add typescript --scope project
+'--' npx -y ts-language-mcp .`.
+
 Documentation-domain configuration does not belong in settings. It uses the fixed `.evil-jelly/doc-map.jsonc` path unless a one-off `--doc-map` override is supplied.
 
 ### doc-map format
