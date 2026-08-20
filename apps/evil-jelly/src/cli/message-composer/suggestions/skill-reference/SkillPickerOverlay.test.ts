@@ -19,14 +19,16 @@ const items: UserSkillListItem[] = [
     description: "Longer description",
   },
 ];
+const references = items.map((skill) => ({ kind: "skill" as const, skill }));
 
 describe("SkillPickerOverlay", () => {
   it("renders aligned title, type, and description columns", () => {
     const output = stripAnsi(
       renderToString(
         createElement(SkillPickerOverlay, {
-          items,
-          getReferenceName: (skill) => skill.name,
+          items: references,
+          getReferenceName: (item) =>
+            item.kind === "skill" ? item.skill.name : item.server.serverId,
           onSelect: vi.fn(),
           onCancel: vi.fn(),
         }),
@@ -47,8 +49,9 @@ describe("SkillPickerOverlay", () => {
     const output = stripAnsi(
       renderToString(
         createElement(SkillPickerOverlay, {
-          items,
-          getReferenceName: (skill) => skill.name,
+          items: references,
+          getReferenceName: (item) =>
+            item.kind === "skill" ? item.skill.name : item.server.serverId,
           onSelect: vi.fn(),
           onCancel: vi.fn(),
         }),
@@ -80,8 +83,9 @@ describe("SkillPickerOverlay", () => {
     const output = stripAnsi(
       renderToString(
         createElement(SkillPickerOverlay, {
-          items: duplicateItems,
-          getReferenceName: (skill) => skill.qualifiedName,
+          items: duplicateItems.map((skill) => ({ kind: "skill" as const, skill })),
+          getReferenceName: (item) =>
+            item.kind === "skill" ? item.skill.qualifiedName : item.server.serverId,
           onSelect: vi.fn(),
           onCancel: vi.fn(),
         }),
@@ -91,5 +95,22 @@ describe("SkillPickerOverlay", () => {
 
     expect(output).toContain("▸ $user:review");
     expect(output).toContain("  $project:review");
+  });
+
+  it("renders MCP references in the shared dollar picker", () => {
+    const output = stripAnsi(
+      renderToString(
+        createElement(SkillPickerOverlay, {
+          items: [{ kind: "mcp", server: { serverId: "docs" } }],
+          getReferenceName: () => "docs",
+          onSelect: vi.fn(),
+          onCancel: vi.fn(),
+        }),
+        { columns: 80 },
+      ),
+    );
+
+    expect(output).toContain("▸ $docs");
+    expect(output).toContain("[MCP] MCP server docs");
   });
 });

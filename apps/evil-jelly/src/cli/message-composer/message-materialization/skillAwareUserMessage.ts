@@ -6,7 +6,7 @@ import { qualifiedSkillName } from "../../../domains/skills/definition/skillDefi
 import type { ResolvedUserInputV1 } from "../../../shared/model/prompt/frozenUserInput";
 import { promptTokens } from "../../../shared/model/prompt/promptDocument";
 import type { PromptInput } from "../../../shared/model/prompt/promptInput";
-import { materializeUserInput } from "./userMessage";
+import { materializeUserInput, type UserMessageMaterializationOptions } from "./userMessage";
 
 /** Resolve semantic Skill tokens against the enabled process snapshot. */
 export function resolveExplicitSkills(
@@ -34,6 +34,7 @@ export function resolveExplicitSkills(
 export async function materializeSkillAwareUserInput(
   input: PromptInput,
   snapshot: SkillRuntimeSnapshot | undefined,
+  options: Pick<UserMessageMaterializationOptions, "mcpResolution"> = {},
 ): Promise<ResolvedUserInputV1> {
   const skills = resolveExplicitSkills(
     snapshot,
@@ -46,6 +47,7 @@ export async function materializeSkillAwareUserInput(
     ]),
   );
   return materializeUserInput(input, {
+    ...options,
     skillResolution: (qualifiedName) => {
       return skillByName.get(qualifiedName) ?? { status: "unavailable" };
     },

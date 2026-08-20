@@ -18,7 +18,7 @@ import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 import { runWithReview } from "../../../runtime/runWithReview";
 import { generateTraceId } from "../../../runtime/traceId";
-import { MainCliAgent } from "../../../unified-conversation/MainCliAgent";
+import { MainCliAgent, type MainCliAgentProps } from "../../../unified-conversation/MainCliAgent";
 import type { InteractiveRunControl } from "./runControl";
 
 export interface RunEvilJellyHostOptions {
@@ -46,6 +46,10 @@ export interface RunEvilJellyHostOptions {
   seedContext?: Message[];
   /** Cumulative usage carried back from a resumed session, used as the /status base. */
   seedBudget?: SessionBudget;
+  /** Session-level MCP selection recovered independently of compacted model history. */
+  seedMcpSelection?: readonly string[];
+  /** Resolve non-secret token metadata at submit time. */
+  resolveMcpUserInput?: MainCliAgentProps["resolveMcpUserInput"];
   /**
    * MCP clients seeded as root providers (key `mcp:<id>`), read in-agent via expectResource.
    * Connected once at the run-loop boundary and reused across segments; the framework borrows
@@ -202,6 +206,8 @@ export async function runEvilJellyHost(
           traceId,
           seedContext: preparedSeedContext,
           seedBudget,
+          seedMcpSelection: options.seedMcpSelection,
+          resolveMcpUserInput: options.resolveMcpUserInput,
           sessionBlobRoot: options.session?.blobRoot,
           isolateSessionState: options.isolateSessionState,
           sessionRecorder: recorder,

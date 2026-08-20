@@ -1,26 +1,28 @@
 import { useCallback, useEffect, useState } from "react";
 import type { SkillPromptToken } from "../../../../shared/model/prompt/promptDocument";
 import type { TextBuffer } from "../../editor/document/textBuffer";
-import type { SkillPickerItem } from "../../session/composerSession";
-import { filterSkillPickerItems } from "./skillMatching";
+import type { McpPickerItem, SkillPickerItem } from "../../session/composerSession";
+import { filterPromptReferencePickerItems, type PromptReferencePickerItem } from "./skillMatching";
 import { activeSkillTrigger, extractSkillQuery, removeActiveSkillTrigger } from "./skillTrigger";
 
 export interface SkillReferenceSuggestion {
-  matches: SkillPickerItem[];
+  matches: PromptReferencePickerItem[];
   open: boolean;
-  select: (skill: SkillPickerItem) => void;
+  select: (item: PromptReferencePickerItem) => void;
   dismiss: () => void;
 }
 
 export function useSkillReferenceSuggestion({
   buffer,
   availableSkills,
+  availableMcpServers,
   selectedSkills,
   maxSelectedSkills,
   onNotice,
 }: {
   buffer: TextBuffer;
   availableSkills: SkillPickerItem[];
+  availableMcpServers: McpPickerItem[];
   selectedSkills: SkillPromptToken[];
   maxSelectedSkills: number;
   onNotice: (message: string) => void;
@@ -39,10 +41,11 @@ export function useSkillReferenceSuggestion({
     setQuery(null);
   }, [buffer.apply]);
   const select = useCallback(
-    (skill: SkillPickerItem) => {
+    (item: PromptReferencePickerItem) => {
       if (
+        item.kind === "skill" &&
         selectedSkills.length >= maxSelectedSkills &&
-        !selectedSkills.some((selected) => selected.qualifiedName === skill.qualifiedName)
+        !selectedSkills.some((selected) => selected.qualifiedName === item.skill.qualifiedName)
       ) {
         onNotice(`At most ${maxSelectedSkills} Skills can be selected for one input.`);
         buffer.apply(removeActiveSkillTrigger);
@@ -56,11 +59,9 @@ export function useSkillReferenceSuggestion({
       }
       const after = buffer.text.slice(trigger.end);
       buffer.replaceDisplayRange(trigger.start, trigger.end, [
-        {
-          type: "token",
-          kind: "skill",
-          qualifiedName: skill.qualifiedName,
-        },
+        item.kind === "skill"
+          ? { type: "token", kind: "skill", qualifiedName: item.skill.qualifiedName }
+          : { type: "token", kind: "mcp", serverId: item.server.serverId },
         ...(after.length === 0 || !/^\s/.test(after) ? [{ type: "text" as const, text: " " }] : []),
       ]);
       setQuery(null);
@@ -76,7 +77,10 @@ export function useSkillReferenceSuggestion({
     ],
   );
 
-  const matches = query === null ? [] : filterSkillPickerItems(availableSkills, query);
+  const matches =
+    query === null
+      ? []
+      : filterPromptReferencePickerItems(availableSkills, availableMcpServers, query);
   return {
     matches,
     open: query !== null && matches.length > 0,

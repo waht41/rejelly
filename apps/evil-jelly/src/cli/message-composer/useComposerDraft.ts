@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { releasePromptAttachments } from "../../shared/host/promptResourceLifecycle";
 import {
+  type McpPromptToken,
   type PromptDocument,
   type PromptToken,
   promptTokens,
@@ -18,9 +19,11 @@ import { defaultPromptTokenDisplayText } from "./editor/document/promptDocument"
 import type { TextBuffer } from "./editor/document/textBuffer";
 import { useTextBuffer } from "./editor/document/textBuffer";
 import { useCollapsedPaste } from "./editor/paste/useCollapsedPaste";
-import type { SkillPickerItem } from "./session/composerSession";
+import type { McpPickerItem, SkillPickerItem } from "./session/composerSession";
 import { useComposerSession } from "./session/composerSession";
 import {
+  mcpReferenceName,
+  mcpTokensFromDocument,
   selectedSkillReferenceName,
   skillTokensFromDocument,
 } from "./suggestions/skill-reference/skillTrigger";
@@ -29,7 +32,9 @@ export interface ComposerDraft {
   buffer: TextBuffer;
   selectedFiles: string[];
   selectedSkills: SkillPromptToken[];
+  selectedMcpServers: McpPromptToken[];
   availableSkills: SkillPickerItem[];
+  availableMcpServers: McpPickerItem[];
   attachFile: (path: string, start: number, end: number) => void;
   clear: () => void;
   submit: () => void;
@@ -76,6 +81,7 @@ export function useComposerDraft({
 }): ComposerDraft {
   const submitLine = useComposerSession((state) => state.submitLine);
   const availableSkills = useComposerSession((state) => state.availableSkills);
+  const availableMcpServers = useComposerSession((state) => state.availableMcpServers);
   const draftSeed = useComposerSession((state) => state.draftSeed);
   const clearDraftSeed = useComposerSession((state) => state.clearDraftSeed);
   const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
@@ -85,7 +91,7 @@ export function useComposerDraft({
   const tokenDisplayText = useCallback(
     (token: PromptToken, document: PromptDocument): string => {
       if (token.kind === "skill") {
-        return `$${selectedSkillReferenceName(token, availableSkills)}`;
+        return `$${selectedSkillReferenceName(token, availableSkills, availableMcpServers)}`;
       }
       if (token.kind === "file") {
         const attachment = attachments.find((candidate) => candidate.id === token.attachmentId);
@@ -95,13 +101,20 @@ export function useComposerDraft({
         const index = promptTokens(document, "image").indexOf(token) + 1;
         return `[Image #${Math.max(1, index)}]`;
       }
+      if (token.kind === "mcp") {
+        return `$${mcpReferenceName(token, availableSkills)}`;
+      }
       return defaultPromptTokenDisplayText(token);
     },
-    [attachments, availableSkills],
+    [attachments, availableMcpServers, availableSkills],
   );
   const buffer = useTextBuffer("", tokenDisplayText);
   const collapsedPaste = useCollapsedPaste(buffer);
   const selectedSkills = useMemo(() => skillTokensFromDocument(buffer.document), [buffer.document]);
+  const selectedMcpServers = useMemo(
+    () => mcpTokensFromDocument(buffer.document),
+    [buffer.document],
+  );
   const liveAttachments = useMemo(
     () => referencedAttachments(buffer.document, attachments),
     [attachments, buffer.document],
@@ -235,7 +248,9 @@ export function useComposerDraft({
     buffer,
     selectedFiles,
     selectedSkills,
+    selectedMcpServers,
     availableSkills,
+    availableMcpServers,
     attachFile,
     clear,
     submit,

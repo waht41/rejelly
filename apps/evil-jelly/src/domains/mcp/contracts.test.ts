@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { validateMcpServerId } from "../../shared/model/mcp/serverIdentity";
 import {
   fingerprintMcpConnectionDefinition,
   fingerprintMcpServerDefinition,
@@ -13,7 +14,6 @@ import {
   type McpServerDefinition,
   mcpCallInputSchema,
   mcpReferenceInputSchema,
-  validateMcpServerId,
   validateUserMcpServerId,
 } from "./contracts";
 

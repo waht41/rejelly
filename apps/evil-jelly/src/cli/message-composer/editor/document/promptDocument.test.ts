@@ -71,6 +71,15 @@ describe("PromptDocument", () => {
     expect(promptTokens(removed)).toEqual([]);
   });
 
+  it("copies and deletes an MCP token as one semantic node", () => {
+    const mcp = { type: "token" as const, kind: "mcp" as const, serverId: "docs" };
+    const document = replacePromptRange(textPromptDocument("use "), 4, 4, [mcp]);
+
+    expect(projectPromptDocument(document).text).toBe("use $mcp:docs");
+    expect(promptTokens(document, "mcp")).toEqual([mcp]);
+    expect(replacePromptRange(document, 4, 5, [])).toEqual([{ type: "text", text: "use " }]);
+  });
+
   it("splits a display row into dedicated token render runs", () => {
     const document = replacePromptRange(textPromptDocument("ab"), 1, 1, [skill]);
     const projection = projectPromptDocument(document, displayToken);

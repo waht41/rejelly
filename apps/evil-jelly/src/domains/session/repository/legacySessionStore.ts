@@ -55,6 +55,7 @@ export function readLegacySession(
           turns: countConversationTurns(parsed.messages),
         },
         messages: parsed.messages,
+        mcpSelection: [],
         ...(parsed.messages.some(isCompactionBridgeMessage)
           ? {
               warnings: [

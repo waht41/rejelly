@@ -154,6 +154,7 @@ describe("hydrateResumeSeed", () => {
       ],
       totalTurns: 25,
       budget: undefined,
+      mcpSelection: [],
     });
 
     expect(hydrated).toHaveLength(1);

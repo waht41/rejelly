@@ -2,11 +2,12 @@
 
 import { create } from "zustand";
 import { SKILL_AGENT_LIMITS } from "../../../domains/skills/agent/limits";
-import type { UserSkillListItem } from "../../../shared/host/inputBindings";
+import type { UserMcpListItem, UserSkillListItem } from "../../../shared/host/inputBindings";
 import { releasePromptResources } from "../../../shared/host/promptResourceLifecycle";
 import { copyPromptInput, type PromptInput } from "../../../shared/model/prompt/promptInput";
 
 export type SkillPickerItem = UserSkillListItem;
+export type McpPickerItem = UserMcpListItem;
 export const MAX_SELECTED_SKILLS = SKILL_AGENT_LIMITS.explicitSkillsPerTurn;
 
 export type DraftSeed = { id: number; value: PromptInput };
@@ -14,11 +15,13 @@ let draftSeedId = 0;
 
 interface ComposerSessionState {
   availableSkills: SkillPickerItem[];
+  availableMcpServers: McpPickerItem[];
   draftSeed: DraftSeed | null;
   backgroundLineHandler: ((value: PromptInput) => void) | null;
 
   submitLine: (value: PromptInput) => void;
   setAvailableSkills: (skills: SkillPickerItem[]) => void;
+  setAvailableMcpServers: (servers: McpPickerItem[]) => void;
   seedDraft: (value: PromptInput) => void;
   clearDraftSeed: (id: number) => void;
   setBackgroundLineHandler: (handler: ((value: PromptInput) => void) | null) => void;
@@ -26,6 +29,7 @@ interface ComposerSessionState {
 
 export const useComposerSession = create<ComposerSessionState>((set, get) => ({
   availableSkills: [],
+  availableMcpServers: [],
   draftSeed: null,
   backgroundLineHandler: null,
 
@@ -34,6 +38,12 @@ export const useComposerSession = create<ComposerSessionState>((set, get) => ({
     set({
       availableSkills: [...skills].sort((left, right) =>
         left.qualifiedName.localeCompare(right.qualifiedName, "en"),
+      ),
+    }),
+  setAvailableMcpServers: (servers) =>
+    set({
+      availableMcpServers: [...servers].sort((left, right) =>
+        left.serverId.localeCompare(right.serverId, "en"),
       ),
     }),
   seedDraft: (value) => {
@@ -56,6 +66,7 @@ export function resetComposerSession(): void {
   const discarded = useComposerSession.getState().draftSeed;
   useComposerSession.setState({
     availableSkills: [],
+    availableMcpServers: [],
     draftSeed: null,
     backgroundLineHandler: null,
   });

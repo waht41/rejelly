@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   copyFrozenUserInputOrigin,
   type FrozenResolvedUserInputV1,
+  frozenUserInputMcpServerIds,
   getFrozenUserInputOrigin,
   projectFrozenUserInputDisplay,
   projectFrozenUserInputMessage,
@@ -22,16 +23,22 @@ const input: FrozenResolvedUserInputV1 = {
       status: "resolved",
       context: "<attached_file>body</attached_file>",
     },
+    { kind: "mcp", serverId: "docs", status: "selected", configFingerprint: "config-1" },
+    { kind: "mcp", serverId: "docs", status: "selected", configFingerprint: "config-1" },
   ],
 };
 
 describe("frozen user input projections", () => {
   it("derives display and model content from one frozen record", () => {
     expect(projectFrozenUserInputDisplay(input)).toMatchObject({
-      text: "review $project:review@src/a.ts",
+      text: "review $project:review@src/a.ts$mcp:docs$mcp:docs",
       attachments: [{ type: "file", label: "src/a.ts", action: "read" }],
     });
     expect(projectFrozenUserInputMessage(input).content).toContain('<explicit_skills count="1">');
+    expect(projectFrozenUserInputMessage(input).content).toContain(
+      '<selected_mcp server="docs" status="selected" />',
+    );
+    expect(frozenUserInputMcpServerIds(input)).toEqual(["docs"]);
   });
 
   it("copies only the canonical origin association between Message projections", () => {

@@ -16,7 +16,9 @@ export interface McpGatewayDispatch {
   ) => Promise<McpCallInvocationOutcome>;
 }
 
-export type McpDispatchBindingFactory = () => McpGatewayDispatch | Promise<McpGatewayDispatch>;
+export type McpDispatchBindingFactory = (
+  selectedServerIds?: readonly string[],
+) => McpGatewayDispatch | Promise<McpGatewayDispatch>;
 
 function matchScore(route: McpBoundRoute, terms: readonly string[]): number {
   const nativeName = route.identity.nativeToolName.toLocaleLowerCase();

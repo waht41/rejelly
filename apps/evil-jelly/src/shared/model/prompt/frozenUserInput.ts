@@ -1,7 +1,7 @@
 import type { ContentPart, Message } from "@rejelly/core";
 import type { FileLocator } from "../../fs-policy/file-locator";
 import type { SessionBlobMetadata } from "../../session/blobContract";
-import { renderPseudoXmlElement } from "./pseudoXml";
+import { renderPseudoXmlElement, renderPseudoXmlEmptyElement } from "./pseudoXml";
 
 export interface UserInputAttachmentDisplay {
   readonly type: "file" | "image";
@@ -40,6 +40,12 @@ export type ResolvedUserInputNodeV1 =
       readonly bytes: Uint8Array;
       readonly mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
       readonly detail: "auto" | "low" | "high";
+    }
+  | {
+      readonly kind: "mcp";
+      readonly serverId: string;
+      readonly status: "selected" | "unavailable" | "disabled" | "untrusted";
+      readonly configFingerprint?: string;
     };
 
 /** Transient resolver output. It is consumed by commit and never stored or used as a projection source. */
@@ -129,6 +135,12 @@ export function projectFrozenUserInputMessage(input: FrozenUserInputV1): Message
           image: { url: node.blob.blobRef, detail: node.detail },
         });
         break;
+      case "mcp":
+        modelText += renderPseudoXmlEmptyElement("selected_mcp", {
+          server: node.serverId,
+          status: node.status,
+        });
+        break;
     }
   }
 
@@ -174,6 +186,9 @@ export function projectFrozenUserInputDisplay(input: FrozenUserInputV1): UserInp
         attachments.push({ type: "image", label, action: "attach" });
         break;
       }
+      case "mcp":
+        text += `$mcp:${node.serverId}`;
+        break;
     }
   }
   return { text, attachments };
@@ -181,6 +196,16 @@ export function projectFrozenUserInputDisplay(input: FrozenUserInputV1): UserInp
 
 export function projectFrozenUserInputPlainText(input: FrozenUserInputV1): string {
   return projectFrozenUserInputDisplay(input).text;
+}
+
+/** Set projection used to authorize this turn; document order never changes selection semantics. */
+export function frozenUserInputMcpServerIds(input: FrozenUserInputV1): readonly string[] {
+  if (input.kind === "legacy") return [];
+  return Object.freeze(
+    [
+      ...new Set(input.nodes.flatMap((node) => (node.kind === "mcp" ? [node.serverId] : []))),
+    ].sort(),
+  );
 }
 
 export function frozenUserInputImageBlobs(

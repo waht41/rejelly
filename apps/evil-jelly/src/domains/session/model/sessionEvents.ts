@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { validateMcpServerId } from "../../../shared/model/mcp/serverIdentity";
 import {
   messageSourceSchema,
   nonUserMessageSourceSchema,
@@ -136,6 +137,21 @@ export const userInputRecordedEventSchema = z
   })
   .passthrough();
 
+export const mcpSelectionChangedEventSchema = z
+  .object({
+    ...eventBaseFields,
+    type: z.literal("mcp_selection_changed"),
+    /** Complete session-level set. Array order has no semantic meaning. */
+    selectedServerIds: z.array(
+      z
+        .string()
+        .min(1)
+        .refine((value) => validateMcpServerId(value).ok),
+    ),
+    reason: z.enum(["startup", "command"]),
+  })
+  .passthrough();
+
 export const turnCompletedEventSchema = z
   .object({
     ...eventBaseFields,
@@ -243,6 +259,7 @@ export const knownSessionEventSchema = z.discriminatedUnion("type", [
   runSegmentEndedEventSchema,
   messageRecordedEventSchema,
   userInputRecordedEventSchema,
+  mcpSelectionChangedEventSchema,
   turnCompletedEventSchema,
   contextCompactedEventSchema,
   sessionStateEventSchema,
@@ -265,6 +282,7 @@ export type RunSegmentStartedEvent = z.infer<typeof runSegmentStartedEventSchema
 export type RunSegmentEndedEvent = z.infer<typeof runSegmentEndedEventSchema>;
 export type MessageRecordedEvent = z.infer<typeof messageRecordedEventSchema>;
 export type UserInputRecordedEvent = z.infer<typeof userInputRecordedEventSchema>;
+export type McpSelectionChangedEvent = z.infer<typeof mcpSelectionChangedEventSchema>;
 export type TurnCompletedEvent = z.infer<typeof turnCompletedEventSchema>;
 export type ContextCompactedEvent = z.infer<typeof contextCompactedEventSchema>;
 export type SessionStatus = z.infer<typeof sessionStatusSchema>;
@@ -280,6 +298,7 @@ const newSessionEventSchema = z.discriminatedUnion("type", [
   runSegmentEndedEventSchema.omit({ seq: true, timestamp: true }),
   v3MessageRecordedEventSchema.omit({ seq: true, timestamp: true }),
   userInputRecordedEventSchema.omit({ seq: true, timestamp: true }),
+  mcpSelectionChangedEventSchema.omit({ seq: true, timestamp: true }),
   turnCompletedEventSchema.omit({ seq: true, timestamp: true }),
   contextCompactedEventSchema.omit({ seq: true, timestamp: true }),
   sessionStateEventSchema.omit({ seq: true, timestamp: true }),
@@ -330,9 +349,9 @@ export function parseSessionEvent(
   }
   if (
     schemaVersion === LEGACY_JSONL_SESSION_SCHEMA_VERSION &&
-    parsed.data.type === "user_input_recorded"
+    (parsed.data.type === "user_input_recorded" || parsed.data.type === "mcp_selection_changed")
   ) {
-    throw new SessionSchemaError("Session V2 cannot contain user_input_recorded events");
+    throw new SessionSchemaError(`Session V2 cannot contain ${parsed.data.type} events`);
   }
   if (
     schemaVersion === SESSION_SCHEMA_VERSION &&
@@ -342,6 +361,7 @@ export function parseSessionEvent(
     throw new SessionSchemaError("Session V3 user input must use user_input_recorded");
   }
   assertValidCompactionTurnAssociation(parsed.data);
+  assertValidMcpSelection(parsed.data);
   return parsed.data;
 }
 
@@ -351,7 +371,17 @@ export function parseNewSessionEvent(value: unknown): NewSessionEvent {
     throw new SessionSchemaError("Invalid new Session V3 event", parsed.error);
   }
   assertValidCompactionTurnAssociation(parsed.data);
+  assertValidMcpSelection(parsed.data);
   return parsed.data;
+}
+
+function assertValidMcpSelection(event: KnownSessionEvent | NewSessionEvent): void {
+  if (
+    event.type === "mcp_selection_changed" &&
+    new Set(event.selectedServerIds).size !== event.selectedServerIds.length
+  ) {
+    throw new SessionSchemaError("Invalid mcp_selection_changed event: duplicate server id");
+  }
 }
 
 /**

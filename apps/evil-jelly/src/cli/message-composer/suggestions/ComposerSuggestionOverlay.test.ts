@@ -25,7 +25,7 @@ const file = {
   dismiss: vi.fn(),
 };
 const skillSuggestion = {
-  matches: [skill],
+  matches: [{ kind: "skill" as const, skill }],
   open: true,
   select: vi.fn(),
   dismiss: vi.fn(),
@@ -44,6 +44,7 @@ function render(overrides: {
         skill: { ...skillSuggestion, open: overrides.skillOpen ?? true },
         file: { ...file, open: overrides.fileOpen ?? true },
         availableSkills: [skill],
+        availableMcpServers: [],
         visibleRows: 5,
         keySink,
       }),

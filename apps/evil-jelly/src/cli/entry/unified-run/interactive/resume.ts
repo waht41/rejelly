@@ -19,6 +19,7 @@ export interface SessionResumeSeed {
   transcript: TranscriptItem[];
   totalTurns: number;
   budget: SessionBudget | undefined;
+  mcpSelection: readonly string[];
   warnings?: string[];
 }
 
@@ -95,6 +96,7 @@ export function buildLegacyResumeSeed(
     transcript: buildLegacyTranscript(messages, { tailTurns: 10 }),
     totalTurns: options.totalTurns ?? countConversationTurns(messages),
     budget: options.budget,
+    mcpSelection: [],
   };
 }
 
@@ -108,6 +110,7 @@ export function buildSessionResumeSeed(record: SessionRecord): SessionResumeSeed
     ...legacy,
     ...(record.transcript ? { transcript: record.transcript } : {}),
     ...(record.warnings ? { warnings: record.warnings } : {}),
+    mcpSelection: record.mcpSelection,
   };
 }
 

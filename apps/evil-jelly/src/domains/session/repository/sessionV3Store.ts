@@ -10,6 +10,7 @@ import {
 } from "../journal/sessionJsonlStore";
 import { isKnownSessionEvent } from "../model/sessionEvents";
 import type { SessionMeta, SessionRecord } from "../model/sessionTypes";
+import { projectMcpSessionSelection } from "../projection/mcpSelectionProjection";
 import { buildStoredActiveContext, buildTranscript } from "../projection/sessionHistoryProjection";
 import {
   projectSessionSummary,
@@ -110,6 +111,7 @@ export async function readV3Session(
         meta: sessionMetaFromSummary(summary),
         messages: buildStoredActiveContext(replay),
         transcript: buildTranscript(replay, { tailTurns: 10 }),
+        mcpSelection: projectMcpSessionSelection(replay),
         ...(warnings ? { warnings } : {}),
       },
     };

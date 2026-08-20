@@ -1,3 +1,4 @@
+import { validateMcpServerId } from "../mcp/serverIdentity";
 import {
   isPromptDocumentSemanticallyEmpty,
   normalizePromptDocument,
@@ -195,6 +196,10 @@ function assertValidPromptNode(node: PromptNode): void {
   if ((node.kind === "file" || node.kind === "image") && !node.attachmentId.trim()) {
     throw new PromptInputContractError(`${node.kind} token attachmentId must not be empty`);
   }
+  if (node.kind === "mcp") {
+    const identity = validateMcpServerId(node.serverId);
+    if (!identity.ok) throw new PromptInputContractError(identity.reason);
+  }
 }
 
 function promptInputTextProjection(input: PromptInput): string {
@@ -217,6 +222,8 @@ function promptInputTextProjection(input: PromptInput): string {
         case "image":
           imageIndex += 1;
           return `[Image #${imageIndex}]`;
+        case "mcp":
+          return `$mcp:${node.serverId}`;
         default:
           return assertNever(node);
       }

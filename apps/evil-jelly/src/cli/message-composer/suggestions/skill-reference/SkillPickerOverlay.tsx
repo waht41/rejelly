@@ -1,22 +1,21 @@
 import { Box, Text } from "ink";
 import stringWidth from "string-width";
-import type { UserSkillListItem } from "../../../../shared/host/inputBindings";
 import type { ComposerPickerKeySink } from "../ComposerPicker";
 import { ComposerPicker } from "../ComposerPicker";
-
-type SkillPickerItem = UserSkillListItem;
+import type { PromptReferencePickerItem } from "./skillMatching";
 
 interface SkillPickerOverlayProps {
-  items: SkillPickerItem[];
-  getReferenceName: (skill: SkillPickerItem) => string;
-  onSelect: (skill: SkillPickerItem) => void;
+  items: PromptReferencePickerItem[];
+  getReferenceName: (item: PromptReferencePickerItem) => string;
+  onSelect: (item: PromptReferencePickerItem) => void;
   onCancel: () => void;
   maxVisibleRows?: number;
   keySink?: ComposerPickerKeySink;
 }
 
-function pickerDescription(item: SkillPickerItem): string {
-  const text = (item.shortDescription ?? item.description).replace(/\s+/g, " ").trim();
+function pickerDescription(item: PromptReferencePickerItem): string {
+  if (item.kind === "mcp") return `MCP server ${item.server.serverId}`;
+  const text = (item.skill.shortDescription ?? item.skill.description).replace(/\s+/g, " ").trim();
   return text.length <= 100 ? text : `${text.slice(0, 99)}…`;
 }
 
@@ -28,7 +27,7 @@ export function SkillPickerOverlay({
   maxVisibleRows,
   keySink,
 }: SkillPickerOverlayProps) {
-  const displayTitle = (item: SkillPickerItem) => `$${getReferenceName(item)}`;
+  const displayTitle = (item: PromptReferencePickerItem) => `$${getReferenceName(item)}`;
   const titleColumnWidth = items.reduce(
     (width, item) => Math.max(width, stringWidth(displayTitle(item))),
     0,
@@ -37,11 +36,13 @@ export function SkillPickerOverlay({
   return (
     <ComposerPicker
       items={items}
-      getKey={(item) => item.qualifiedName}
+      getKey={(item) =>
+        item.kind === "skill" ? `skill:${item.skill.qualifiedName}` : `mcp:${item.server.serverId}`
+      }
       onSelect={onSelect}
       onCancel={onCancel}
       keySink={keySink}
-      empty={<Text dimColor>No matching Skills</Text>}
+      empty={<Text dimColor>No matching references</Text>}
       visibleRows={maxVisibleRows}
       renderItem={(item, { selected }) => (
         <Box flexDirection="row">
@@ -53,7 +54,7 @@ export function SkillPickerOverlay({
           </Box>
           <Box flexShrink={1}>
             <Text color={selected ? "cyan" : undefined} dimColor={!selected} wrap="truncate-end">
-              [Skill] {pickerDescription(item)}
+              [{item.kind === "skill" ? "Skill" : "MCP"}] {pickerDescription(item)}
             </Text>
           </Box>
         </Box>

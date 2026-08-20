@@ -90,6 +90,8 @@ describe("runInteractiveLoop mock session isolation", () => {
 
   it("reconciles the resolved MCP desired configuration without blocking on readiness", async () => {
     const { bindings } = createBindings();
+    const setAvailableMcpServers = vi.fn();
+    bindings.setAvailableMcpServers = setAvailableMcpServers;
     runHostMock.mockResolvedValueOnce(undefined);
 
     await runInteractiveLoop({
@@ -102,6 +104,7 @@ describe("runInteractiveLoop mock session isolation", () => {
     });
 
     expect(runtimeMocks.reconcileMcp).toHaveBeenCalledWith({ servers: [] });
+    expect(setAvailableMcpServers).toHaveBeenCalledWith([]);
     expect(createMcpRuntimeProvidersMock).toHaveBeenCalledOnce();
   });
 
@@ -244,6 +247,7 @@ describe("runInteractiveLoop mock session isolation", () => {
         transcript: [],
         totalTurns: 1,
         budget,
+        mcpSelection: [],
       },
     });
 
@@ -294,6 +298,7 @@ describe("runInteractiveLoop mock session isolation", () => {
         budget,
       },
       messages,
+      mcpSelection: ["docs"],
     });
     runHostMock
       .mockImplementationOnce(async () => {
@@ -317,6 +322,7 @@ describe("runInteractiveLoop mock session isolation", () => {
       sessionStartMode: "resumed",
       seedContext: messages,
       seedBudget: budget,
+      seedMcpSelection: ["docs"],
       snapshot: undefined,
       session: { enabled: true, appVersion: "1.0.0" },
     });

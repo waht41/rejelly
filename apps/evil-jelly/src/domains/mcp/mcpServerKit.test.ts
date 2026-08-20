@@ -38,8 +38,8 @@ describe("MCP dispatch composition", () => {
       .mockResolvedValueOnce({ action: "accept" });
     const factory = createMcpDispatchBindingFactory(manager, confirmTool);
 
-    const first = await factory();
-    const second = await factory();
+    const first = await factory(["docs"]);
+    const second = await factory(["github", "docs"]);
     await expect(first.invoke(route, {})).resolves.toMatchObject({
       ok: false,
       code: "approval_denied",
@@ -49,5 +49,7 @@ describe("MCP dispatch composition", () => {
     await expect(second.invoke(route, { path: "guide.md" })).resolves.toMatchObject({ ok: true });
     expect(callBoundTool).toHaveBeenCalledWith("chat", route, { path: "guide.md" });
     expect(captureDispatchBinding).toHaveBeenCalledTimes(2);
+    expect(captureDispatchBinding).toHaveBeenNthCalledWith(1, "chat", ["docs"]);
+    expect(captureDispatchBinding).toHaveBeenNthCalledWith(2, "chat", ["github", "docs"]);
   });
 });

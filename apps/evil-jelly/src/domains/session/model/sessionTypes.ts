@@ -21,6 +21,8 @@ export interface SessionRecord {
   messages: Message[];
   /** Prepared display projection. V1 callers may still build this lazily from messages. */
   transcript?: TranscriptItem[];
+  /** Canonical V3 projection; V1/V2 sources project the empty set. */
+  mcpSelection: readonly string[];
   /** Non-blocking compatibility notices to show when hydrating a resumed session. */
   warnings?: string[];
 }

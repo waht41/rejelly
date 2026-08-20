@@ -9,6 +9,11 @@ export interface UserSkillListItem {
   shortDescription?: string;
 }
 
+/** Stable MCP server identity exposed to the semantic `$` reference picker. */
+export interface UserMcpListItem {
+  serverId: string;
+}
+
 /** One row in a driver-provided action menu (hotkey plus arbitrary value). */
 export interface PromptChoiceOption {
   key: string;
@@ -34,5 +39,6 @@ export interface PromptChoiceRequest {
 export interface PromptInputBindings {
   getInput: () => Promise<PromptInput>;
   setAvailableSkills?: (skills: UserSkillListItem[]) => void;
+  setAvailableMcpServers?: (servers: UserMcpListItem[]) => void;
   requestChoice: (request: PromptChoiceRequest) => Promise<string>;
 }

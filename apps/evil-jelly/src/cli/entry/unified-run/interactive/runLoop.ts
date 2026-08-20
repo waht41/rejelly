@@ -129,10 +129,27 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
       resolveEnvironment: getEnvironmentValue,
     }),
   );
-  await mcpRuntime.reconcile(resolveMcpSettingsLayers(settings.mcp, dynamicMcpServers));
+  const desiredMcp = resolveMcpSettingsLayers(settings.mcp, dynamicMcpServers);
+  await mcpRuntime.reconcile(desiredMcp);
   const mcpProviders = createMcpRuntimeProviders(mcpRuntime);
   const mcpBindingFactory = createMcpDispatchBindingFactory(mcpRuntime, bindings.confirmTool);
+  const resolveMcpUserInput = (serverId: string) => {
+    const state = mcpRuntime.getSnapshot().servers.find((server) => server.serverId === serverId);
+    if (!state) return { status: "unavailable" as const };
+    const status =
+      state.status === "disabled"
+        ? ("disabled" as const)
+        : state.status === "untrusted"
+          ? ("untrusted" as const)
+          : ("selected" as const);
+    return { status, configFingerprint: state.configFingerprint };
+  };
   try {
+    bindings.setAvailableMcpServers?.(
+      desiredMcp.servers
+        .filter((server) => server.definition.use.chat.exposure !== "off")
+        .map((server) => ({ serverId: server.id })),
+    );
     const skillRuntime = await buildConfiguredSkillRuntimeSnapshot();
     bindings.setAvailableSkills?.(
       (skillRuntime.snapshot.catalog.entries ?? []).map((skill) => ({
@@ -159,8 +176,10 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
         sessionStartMode: state.sessionStartMode,
         seedContext: state.resumeSeed?.activeContext,
         seedBudget: state.resumeSeed?.budget,
+        seedMcpSelection: state.resumeSeed?.mcpSelection,
         mcpProviders,
         mcpBindingFactory,
+        resolveMcpUserInput,
         skillSnapshot: skillRuntime.snapshot,
         mockSourceTraceId,
         isolateSessionState,

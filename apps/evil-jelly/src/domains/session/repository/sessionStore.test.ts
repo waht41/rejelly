@@ -77,6 +77,7 @@ describe("mixed-format session store", () => {
         ...(options.budget ? { budget: options.budget } : {}),
       },
       messages,
+      mcpSelection: [],
     };
     await fs.writeFile(filePath, JSON.stringify(record), "utf8");
     return filePath;

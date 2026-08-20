@@ -158,6 +158,9 @@ function createPromptBindings(options: {
     setAvailableSkills: (skills) => {
       useComposerSession.getState().setAvailableSkills(skills);
     },
+    setAvailableMcpServers: (servers) => {
+      useComposerSession.getState().setAvailableMcpServers(servers);
+    },
   };
 }
 

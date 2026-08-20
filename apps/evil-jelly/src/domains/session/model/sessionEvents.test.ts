@@ -132,6 +132,39 @@ describe("sessionEvents", () => {
     ).toThrow(SessionSchemaError);
   });
 
+  it("records a complete session MCP selection set only in V3", () => {
+    expect(
+      parseNewSessionEvent({
+        type: "mcp_selection_changed",
+        selectedServerIds: ["docs", "github"],
+        reason: "command",
+      }),
+    ).toEqual({
+      type: "mcp_selection_changed",
+      selectedServerIds: ["docs", "github"],
+      reason: "command",
+    });
+    expect(() =>
+      parseNewSessionEvent({
+        type: "mcp_selection_changed",
+        selectedServerIds: ["docs", "docs"],
+        reason: "startup",
+      }),
+    ).toThrow("duplicate server id");
+    expect(() =>
+      parseSessionEvent(
+        {
+          type: "mcp_selection_changed",
+          seq: 1,
+          timestamp: 2,
+          selectedServerIds: ["docs"],
+          reason: "startup",
+        },
+        2,
+      ),
+    ).toThrow("Session V2 cannot contain mcp_selection_changed events");
+  });
+
   it("uses created/resumed for run starts instead of encoding the caller path", () => {
     expect(
       parseSessionEvent({

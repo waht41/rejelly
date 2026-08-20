@@ -1,8 +1,13 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import {
+  MCP_SERVER_ID_MAX_CHARS,
+  type McpIdentifierValidationResult,
+  validateMcpServerId,
+} from "../../shared/model/mcp/serverIdentity";
 
 export const MCP_CONTRACT_LIMITS = Object.freeze({
-  serverIdChars: 64,
+  serverIdChars: MCP_SERVER_ID_MAX_CHARS,
   toolNameChars: 256,
   catalogRevisionChars: 128,
   referenceQueryChars: 512,
@@ -13,36 +18,6 @@ export const MCP_CONTRACT_LIMITS = Object.freeze({
 });
 
 export const MCP_RESERVED_SERVER_ID_PREFIX = "evil.";
-
-export type McpIdentifierValidationResult =
-  | { readonly ok: true; readonly value: string }
-  | { readonly ok: false; readonly value: string; readonly reason: string };
-
-const MCP_SERVER_ID_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
-
-/** Trim and validate the stable identity used by config, Session, policy, and runtime. */
-export function validateMcpServerId(input: string): McpIdentifierValidationResult {
-  const value = input.trim();
-  if (value.length === 0) {
-    return { ok: false, value, reason: "MCP server id must not be empty." };
-  }
-  if (value.length > MCP_CONTRACT_LIMITS.serverIdChars) {
-    return {
-      ok: false,
-      value,
-      reason: `MCP server id must be at most ${MCP_CONTRACT_LIMITS.serverIdChars} characters.`,
-    };
-  }
-  if (!MCP_SERVER_ID_PATTERN.test(value)) {
-    return {
-      ok: false,
-      value,
-      reason:
-        "MCP server id must start with a lowercase ASCII letter or digit and contain only a-z, 0-9, dot, underscore, or hyphen.",
-    };
-  }
-  return { ok: true, value };
-}
 
 export function isReservedMcpServerId(serverId: string): boolean {
   return serverId.startsWith(MCP_RESERVED_SERVER_ID_PREFIX);
@@ -328,7 +303,7 @@ const gatewayServerIdSchema = z
   .string()
   .min(1)
   .max(MCP_CONTRACT_LIMITS.serverIdChars)
-  .regex(MCP_SERVER_ID_PATTERN);
+  .refine((value) => validateMcpServerId(value).ok);
 
 export const MCP_REFERENCE_TOOL_NAME = "mcp_reference";
 export const MCP_CALL_TOOL_NAME = "mcp_call";

@@ -63,6 +63,12 @@ export class LazySessionRecorder implements SessionRecorder {
     return (await this.#ensureOpen()).recordUserInput(...args);
   }
 
+  async recordMcpSelection(
+    ...args: Parameters<SessionRecorder["recordMcpSelection"]>
+  ): Promise<void> {
+    await (await this.#ensureOpen()).recordMcpSelection(...args);
+  }
+
   async recordMessages(...args: Parameters<SessionRecorder["recordMessages"]>): Promise<void> {
     await (await this.#ensureOpen()).recordMessages(...args);
   }
