@@ -58,6 +58,12 @@ function binding(): McpDispatchBinding {
         status: "pending",
         tools: [],
       },
+      {
+        serverId: "workspace",
+        configFingerprint: "config-workspace",
+        status: "untrusted",
+        tools: [],
+      },
     ],
     route: (identity) =>
       routes.find(
@@ -87,7 +93,7 @@ describe("MCP dispatch gateway", () => {
     ).resolves.toMatchObject({ status: "rejected", code: "tool_unavailable" });
   });
 
-  it("references same-named tools by structured identity and reports pending servers", () => {
+  it("references same-named tools and reports unavailable servers with actions", () => {
     const result = referenceMcpTools(binding(), { query: "read documentation" });
 
     expect(result.matches.map((match) => match.identity)).toEqual([
@@ -95,12 +101,25 @@ describe("MCP dispatch gateway", () => {
       { serverId: "beta", nativeToolName: "read" },
     ]);
     expect(result.matches.map((match) => match.callable)).toEqual([true, false]);
-    expect(result.pendingServerIds).toEqual(["pending"]);
+    expect(result.unavailableServers).toEqual([
+      { serverId: "pending", status: "pending", suggestedAction: "wait" },
+      { serverId: "workspace", status: "untrusted", suggestedAction: "select_and_trust" },
+    ]);
     expect(
       referenceMcpTools(binding(), { query: "read", serverIds: ["beta"] }).matches.map(
         (match) => match.identity,
       ),
     ).toEqual([{ serverId: "beta", nativeToolName: "read" }]);
+    expect(
+      referenceMcpTools(binding(), { query: "read", serverIds: ["beta"] }).unavailableServers,
+    ).toBeUndefined();
+  });
+
+  it("treats an exact asterisk query as a bounded visible-tool listing", () => {
+    const result = referenceMcpTools(binding(), { query: "*", maxResults: 1 });
+
+    expect(result.matches).toHaveLength(1);
+    expect(result.matches[0]?.identity).toEqual({ serverId: "alpha", nativeToolName: "read" });
   });
 
   it("keeps a dispatched call bound to the invocation port from its own tool batch", async () => {

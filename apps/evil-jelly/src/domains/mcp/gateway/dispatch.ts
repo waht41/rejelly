@@ -4,6 +4,7 @@ import {
   type McpDispatchBinding,
   type McpReferenceInput,
   type McpReferenceResult,
+  type McpReferenceUnavailableServer,
 } from "../contracts";
 import { createMcpGatewayToolDefinitions, type McpGatewayToolDefinitions } from "./gatewayTools";
 import { type McpCallInvocationOutcome, McpCallPolicy } from "./mcpCallPolicy";
@@ -41,6 +42,7 @@ export function referenceMcpTools(
   input: McpReferenceInput,
 ): McpReferenceResult {
   const terms = input.query.toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const listAll = terms.length === 1 && terms[0] === "*";
   const requestedServers = input.serverIds ? new Set(input.serverIds) : undefined;
   const matches: Array<{ route: McpBoundRoute & { readonly callable: boolean }; score: number }> =
     [];
@@ -60,7 +62,7 @@ export function referenceMcpTools(
         catalogRevision: server.catalogRevision,
         callable: binding.route(identity) !== undefined,
       });
-      const score = matchScore(route, terms);
+      const score = listAll ? 1 : matchScore(route, terms);
       if (score > 0) matches.push({ route, score });
     }
   }
@@ -71,14 +73,32 @@ export function referenceMcpTools(
       left.route.identity.nativeToolName.localeCompare(right.route.identity.nativeToolName),
   );
   const maxResults = input.maxResults ?? Math.min(8, MCP_CONTRACT_LIMITS.referenceMaxResults);
-  const pendingServerIds = binding.servers
-    .filter((server) => server.status === "pending")
-    .map((server) => server.serverId)
-    .sort();
+  const unavailableServers: McpReferenceUnavailableServer[] = binding.servers
+    .flatMap((server): McpReferenceUnavailableServer[] => {
+      if (requestedServers && !requestedServers.has(server.serverId)) return [];
+      if (server.status === "ready") return [];
+      return [
+        {
+          serverId: server.serverId,
+          status: server.status,
+          suggestedAction:
+            server.status === "disabled"
+              ? "enable"
+              : server.status === "untrusted"
+                ? "select_and_trust"
+                : server.status === "pending"
+                  ? "wait"
+                  : "reload",
+        },
+      ];
+    })
+    .sort((left, right) => left.serverId.localeCompare(right.serverId));
   return Object.freeze({
     type: "mcp_reference_v1",
     matches: Object.freeze(matches.slice(0, maxResults).map((match) => match.route)),
-    ...(pendingServerIds.length > 0 ? { pendingServerIds: Object.freeze(pendingServerIds) } : {}),
+    ...(unavailableServers.length > 0
+      ? { unavailableServers: Object.freeze(unavailableServers) }
+      : {}),
   });
 }
 

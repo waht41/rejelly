@@ -335,7 +335,7 @@ export const MCP_REFERENCE_TOOL_NAME = "mcp_reference";
 export const MCP_CALL_TOOL_NAME = "mcp_call";
 
 export const MCP_REFERENCE_TOOL_DESCRIPTION =
-  "Find configured MCP tools and return their current descriptions, input schemas, callability, and catalog revisions.";
+  "Find configured MCP tools and return their descriptions, input schemas, callability, and availability; use query `*` to list visible tools.";
 export const MCP_CALL_TOOL_DESCRIPTION =
   "Call one previously referenced MCP tool using its structured identity, catalog revision, and JSON object arguments.";
 
@@ -371,10 +371,18 @@ export interface McpReferenceMatch extends McpBoundRoute {
   readonly callable: boolean;
 }
 
+export type McpReferenceUnavailableStatus = Exclude<McpServerRuntimeStatus, "ready">;
+
+export interface McpReferenceUnavailableServer {
+  readonly serverId: string;
+  readonly status: McpReferenceUnavailableStatus;
+  readonly suggestedAction: "enable" | "select_and_trust" | "wait" | "reload";
+}
+
 export interface McpReferenceResult {
   readonly type: "mcp_reference_v1";
   readonly matches: readonly McpReferenceMatch[];
-  readonly pendingServerIds?: readonly string[];
+  readonly unavailableServers?: readonly McpReferenceUnavailableServer[];
 }
 
 export type McpCallRejectionCode =

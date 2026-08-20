@@ -236,7 +236,7 @@ describe("stable MCP gateway contract", () => {
       reference: {
         name: "mcp_reference",
         description:
-          "Find configured MCP tools and return their current descriptions, input schemas, callability, and catalog revisions.",
+          "Find configured MCP tools and return their descriptions, input schemas, callability, and availability; use query `*` to list visible tools.",
       },
       call: {
         name: "mcp_call",

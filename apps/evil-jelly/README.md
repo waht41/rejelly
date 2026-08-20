@@ -387,6 +387,10 @@ chat turn. Audit is independent and considers only servers with `use.audit.expos
 its `allow` list is mandatory for native tools to be routable. `required: true` blocks only the
 corresponding consumer while that server is unavailable.
 
+`mcp_reference` accepts `*` as a bounded visible-tool listing. When a configured server is not
+ready, its result reports `unavailableServers` with an `untrusted`, `pending`, `failed`, or
+`disabled` status and a `suggestedAction`; these states are not search misses.
+
 ```bash
 evil mcp list
 evil mcp list --scope user

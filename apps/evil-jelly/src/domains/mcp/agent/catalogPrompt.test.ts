@@ -8,7 +8,8 @@ describe("MCP server catalog prompt", () => {
     expect(prompt).toContain("<available_mcp_servers>");
     expect(prompt.indexOf("- docs")).toBeLessThan(prompt.indexOf("- typescript"));
     expect(prompt).toContain("Use `mcp_reference` to load matching native tool descriptions");
-    expect(prompt).toContain("`callable` field is true");
+    expect(prompt).toContain("query `*` lists visible tools");
+    expect(prompt).toContain("`unavailableServers[].suggestedAction`");
     expect(prompt).not.toContain("transport");
   });
 

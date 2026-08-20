@@ -39,6 +39,10 @@ describe("buildUnifiedSystemPrompt", () => {
       "For semantic TypeScript tasks such as references, definitions, hover, and implementations, call mcp_reference first.",
     );
     expect(prompt).toContain("matching callable MCP tool");
+    expect(prompt).toContain(
+      "If mcp_reference returns unavailableServers, report each structured status and follow its suggestedAction.",
+    );
+    expect(prompt).toContain("Do not retry synonyms");
     expect(prompt).toContain("otherwise fall back to grep + read_file");
     expect(prompt).not.toContain("There is no language-server/`ts_` tool available");
   });
