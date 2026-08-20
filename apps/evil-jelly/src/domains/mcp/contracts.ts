@@ -288,16 +288,42 @@ export type McpJsonValue =
   | McpJsonValue[]
   | { [key: string]: McpJsonValue };
 
-const mcpJsonValueSchema: z.ZodType<McpJsonValue> = z.lazy(() =>
-  z.union([
-    z.null(),
-    z.boolean(),
-    z.number().finite(),
-    z.string(),
-    z.array(mcpJsonValueSchema),
-    z.record(z.string(), mcpJsonValueSchema),
-  ]),
-);
+function isMcpJsonValue(value: unknown): value is McpJsonValue {
+  const active = new WeakSet<object>();
+  const stack: Array<{ readonly value: unknown; readonly exit?: true }> = [{ value }];
+  while (stack.length > 0) {
+    const frame = stack.pop()!;
+    const current = frame.value;
+    if (current === null || typeof current === "string" || typeof current === "boolean") continue;
+    if (typeof current === "number") {
+      if (!Number.isFinite(current)) return false;
+      continue;
+    }
+    if (typeof current !== "object") return false;
+    if (frame.exit) {
+      active.delete(current);
+      continue;
+    }
+    if (active.has(current)) return false;
+    if (!Array.isArray(current)) {
+      const prototype = Object.getPrototypeOf(current);
+      if (prototype !== Object.prototype && prototype !== null) return false;
+    }
+    active.add(current);
+    stack.push({ value: current, exit: true });
+    for (const child of Array.isArray(current) ? current : Object.values(current)) {
+      stack.push({ value: child });
+    }
+  }
+  return true;
+}
+
+// Provider schemas intentionally expose arbitrary JSON values as opaque. The selected native
+// tool's full JSON Schema remains authoritative and is validated by McpCallPolicy immediately
+// before invocation.
+const mcpJsonValueSchema = z.custom<McpJsonValue>(isMcpJsonValue, {
+  message: "Expected a JSON value",
+});
 
 const gatewayServerIdSchema = z
   .string()

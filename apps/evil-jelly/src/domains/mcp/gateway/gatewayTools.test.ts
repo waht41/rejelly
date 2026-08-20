@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import type { McpBoundRoute, McpCallInput } from "../contracts";
@@ -43,7 +43,12 @@ function providerProjection(
 }
 
 describe("MCP gateway tools", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("keeps provider schemas byte-stable across catalog and handler changes", () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const first = createMcpGatewayToolDefinitions({
       reference: async () => ({ type: "mcp_reference_v1", matches: [route()] }),
       callPolicy: new McpCallPolicy({
@@ -65,7 +70,16 @@ describe("MCP gateway tools", () => {
       }),
     });
 
-    expect(providerProjection(first)).toBe(providerProjection(second));
+    const firstProjection = providerProjection(first);
+    expect(firstProjection).toBe(providerProjection(second));
+    expect(warning).not.toHaveBeenCalled();
+    const projectedTools = JSON.parse(firstProjection) as Array<{
+      name: string;
+      parameters: { properties?: Record<string, unknown> };
+    }>;
+    expect(
+      projectedTools.find((tool) => tool.name === "mcp_call")?.parameters.properties?.arguments,
+    ).toEqual({ type: "object", additionalProperties: {} });
     expect(first.map((tool) => tool.name)).toEqual(["mcp_reference", "mcp_call"]);
   });
 
