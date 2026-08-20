@@ -5,7 +5,9 @@ describe("normalizeVerifyOptions", () => {
   it("defaults to affected packages and changed-file Biome", () => {
     expect(normalizeVerifyOptions({})).toMatchObject({
       biome: "changed",
+      fix: false,
       scope: { kind: "affected" },
+      verbose: false,
     });
   });
 
@@ -30,6 +32,19 @@ describe("normalizeVerifyOptions", () => {
   it("rejects ambiguous all-plus-filter scope", () => {
     expect(() => normalizeVerifyOptions({ all: true, filter: "a" })).toThrow(
       "--all cannot be combined with --filter",
+    );
+  });
+
+  it("enables explicit safe fixing and verbose output", () => {
+    expect(normalizeVerifyOptions({ fix: true, verbose: true })).toMatchObject({
+      fix: true,
+      verbose: true,
+    });
+  });
+
+  it("rejects fixing when Biome is disabled", () => {
+    expect(() => normalizeVerifyOptions({ biome: "skip", fix: true })).toThrow(
+      "--fix cannot be combined with --biome skip",
     );
   });
 });

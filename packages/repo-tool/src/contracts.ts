@@ -15,9 +15,11 @@ export interface VerifyOptions {
   base?: string;
   biome: BiomeScope;
   dryRun: boolean;
+  fix: boolean;
   maxFiles: number;
   scope: VerifyScope;
   tests: boolean;
+  verbose: boolean;
 }
 
 export interface ProcessVerifyStep {
@@ -30,6 +32,13 @@ export interface ProcessVerifyStep {
 export interface BiomeChangedVerifyStep {
   kind: "biome-changed";
   label: string;
+  selection?: BiomeChangedSelection;
+  write: boolean;
+}
+
+export interface BiomeChangedSelection {
+  base: string;
+  files: string[];
 }
 
 export type VerifyStep = BiomeChangedVerifyStep | ProcessVerifyStep;

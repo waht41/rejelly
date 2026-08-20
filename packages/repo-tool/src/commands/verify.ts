@@ -1,4 +1,5 @@
 import type {
+  BiomeChangedSelection,
   ProcessVerifyStep,
   ResolvedVerifyScope,
   VerifyOptions,
@@ -7,15 +8,40 @@ import type {
 } from "../contracts.js";
 import { collectChangedPaths } from "../lib/changes.js";
 import { run } from "../lib/process.js";
-import { loadWorkspacePackages, mapChangedPathsToPackages } from "../lib/workspace.js";
+import {
+  filterChangedPathsForPackages,
+  loadWorkspacePackages,
+  mapChangedPathsToPackages,
+  resolveTurboFilteredPackages,
+} from "../lib/workspace.js";
 import { runBiomeChanged } from "./biome-changed.js";
 
 export function createVerifyPlan(
   options: VerifyOptions,
   scope: ResolvedVerifyScope,
-  context: { changedFileCount?: number; unmappedFiles?: string[] } = {},
+  context: {
+    biomeSelection?: BiomeChangedSelection;
+    changedFileCount?: number;
+    unmappedFiles?: string[];
+  } = {},
 ): VerifyPlan {
   const steps: VerifyStep[] = [];
+  if (options.biome === "all") {
+    steps.push({
+      command: "pnpm",
+      args: ["exec", "biome", "check", ...(options.fix ? ["--write"] : []), "."],
+      kind: "process",
+      label: `Biome ${options.fix ? "write" : "check"} (all files)`,
+    });
+  } else if (options.biome === "changed") {
+    steps.push({
+      kind: "biome-changed",
+      label: `Biome ${options.fix ? "write" : "check"} (changed files)`,
+      ...(context.biomeSelection ? { selection: context.biomeSelection } : {}),
+      write: options.fix,
+    });
+  }
+
   if (scope.kind !== "none") {
     const tasks = ["typecheck", "lint:jelly", "lint:doc", ...(options.tests ? ["test"] : [])];
     const turboArgs = ["exec", "turbo", "run", ...tasks, "--output-logs=errors-only"];
@@ -24,28 +50,51 @@ export function createVerifyPlan(
     }
     steps.push({ command: "pnpm", args: turboArgs, kind: "process", label: "workspace tasks" });
   }
-
-  if (options.biome === "all") {
-    steps.push({
-      command: "pnpm",
-      args: ["exec", "biome", "check", "."],
-      kind: "process",
-      label: "Biome (all files)",
-    });
-  } else if (options.biome === "changed") {
-    steps.push({ kind: "biome-changed", label: "Biome (changed files)" });
-  }
-  return { ...context, scope, steps };
+  return {
+    ...(context.changedFileCount === undefined
+      ? {}
+      : { changedFileCount: context.changedFileCount }),
+    scope,
+    steps,
+    ...(context.unmappedFiles ? { unmappedFiles: context.unmappedFiles } : {}),
+  };
 }
 
 export function resolveVerifyPlan(repoRoot: string, options: VerifyOptions): VerifyPlan {
   if (options.scope.kind === "all") return createVerifyPlan(options, { kind: "all" });
   if (options.scope.kind === "filtered") {
-    return createVerifyPlan(options, {
-      filters: options.scope.filters,
-      kind: "packages",
-      source: "explicit",
-    });
+    if (options.biome !== "changed") {
+      return createVerifyPlan(options, {
+        filters: options.scope.filters,
+        kind: "packages",
+        source: "explicit",
+      });
+    }
+    const changed = collectChangedPaths(repoRoot, options.base);
+    const workspacePackages = loadWorkspacePackages(repoRoot);
+    const selectedPackages = resolveTurboFilteredPackages(repoRoot, options.scope.filters);
+    const affected = mapChangedPathsToPackages(repoRoot, changed.files, workspacePackages);
+    return createVerifyPlan(
+      options,
+      {
+        filters: options.scope.filters,
+        kind: "packages",
+        source: "explicit",
+      },
+      {
+        biomeSelection: {
+          base: changed.base,
+          files: filterChangedPathsForPackages(
+            repoRoot,
+            changed.files,
+            workspacePackages,
+            selectedPackages,
+          ),
+        },
+        changedFileCount: changed.files.length,
+        unmappedFiles: affected.unmappedFiles,
+      },
+    );
   }
 
   const changed = collectChangedPaths(repoRoot, options.base);
@@ -59,6 +108,7 @@ export function resolveVerifyPlan(repoRoot: string, options: VerifyOptions): Ver
       ? { filters: affected.packages, kind: "packages", source: "affected" }
       : { kind: "none", source: "affected" };
   return createVerifyPlan(options, scope, {
+    biomeSelection: { base: changed.base, files: changed.files },
     changedFileCount: changed.files.length,
     unmappedFiles: affected.unmappedFiles,
   });
@@ -67,14 +117,14 @@ export function resolveVerifyPlan(repoRoot: string, options: VerifyOptions): Ver
 function printableCommand(step: VerifyStep): string {
   return step.kind === "process"
     ? [step.command, ...step.args].join(" ")
-    : "repo-tool biome-changed";
+    : `repo-tool biome-changed${step.write ? " --write" : ""}`;
 }
 
 function runProcessStep(repoRoot: string, step: ProcessVerifyStep): number {
   return run(step.command, step.args, repoRoot);
 }
 
-function printScope(plan: VerifyPlan): void {
+function printScope(plan: VerifyPlan, verbose: boolean): void {
   if (plan.scope.kind === "all") {
     console.log("repo-tool verify: scope=all");
   } else if (plan.scope.kind === "none") {
@@ -88,13 +138,15 @@ function printScope(plan: VerifyPlan): void {
   }
   if (plan.unmappedFiles && plan.unmappedFiles.length > 0) {
     console.log(`repo-tool verify: ${plan.unmappedFiles.length} root/unmapped changed file(s)`);
-    for (const file of plan.unmappedFiles) console.log(`  ${file}`);
+    if (verbose) {
+      for (const file of plan.unmappedFiles) console.log(`  ${file}`);
+    }
   }
 }
 
 export function runVerify(repoRoot: string, options: VerifyOptions): number {
   const plan = resolveVerifyPlan(repoRoot, options);
-  printScope(plan);
+  printScope(plan, options.verbose);
   console.log(`repo-tool verify: ${plan.steps.length} step(s)`);
   for (const [index, step] of plan.steps.entries()) {
     console.log(`  ${index + 1}. ${step.label}: ${printableCommand(step)}`);
@@ -109,7 +161,9 @@ export function runVerify(repoRoot: string, options: VerifyOptions): number {
             allowMany: options.allowMany,
             base: options.base,
             maxFiles: options.maxFiles,
-            write: false,
+            ...(step.selection ? { selection: step.selection } : {}),
+            verbose: options.verbose,
+            write: step.write,
           })
         : runProcessStep(repoRoot, step);
     if (status !== 0) {

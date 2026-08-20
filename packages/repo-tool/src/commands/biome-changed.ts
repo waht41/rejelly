@@ -1,5 +1,7 @@
-import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import type { BiomeChangedSelection } from "../contracts.js";
 import { collectChangedPaths } from "../lib/changes.js";
 import { run } from "../lib/process.js";
 
@@ -7,6 +9,8 @@ export interface BiomeChangedOptions {
   allowMany: boolean;
   base?: string;
   maxFiles: number;
+  selection?: BiomeChangedSelection;
+  verbose: boolean;
   write: boolean;
 }
 
@@ -47,22 +51,53 @@ export function collectBiomeChangedFiles(
   return { base: changed.base, files };
 }
 
+export function exceedsBiomeWriteLimit(
+  fileCount: number,
+  options: Pick<BiomeChangedOptions, "allowMany" | "maxFiles" | "write">,
+): boolean {
+  return options.write && !options.allowMany && fileCount > options.maxFiles;
+}
+
+function contentHash(file: string): string {
+  return createHash("sha256").update(readFileSync(file)).digest("hex");
+}
+
+function changedByWrite(
+  repoRoot: string,
+  files: readonly string[],
+  before: ReadonlyMap<string, string>,
+): string[] {
+  return files.filter((file) => {
+    const absolute = path.join(repoRoot, file);
+    return existsSync(absolute) && before.get(file) !== contentHash(absolute);
+  });
+}
+
 export function runBiomeChanged(repoRoot: string, options: BiomeChangedOptions): number {
-  const { base, files } = collectBiomeChangedFiles(repoRoot, options.base);
+  const candidate = options.selection ?? collectBiomeChangedFiles(repoRoot, options.base);
+  const base = candidate.base;
+  const resolvedRoot = path.resolve(repoRoot);
+  const files = candidate.files.filter((file) => existsSync(path.join(resolvedRoot, file))).sort();
   console.log(
     `Biome ${options.write ? "write" : "check"}: ${files.length} changed candidate(s), base ${base}`,
   );
-  for (const file of files) console.log(`  ${file}`);
+  if (options.verbose) {
+    for (const file of files) console.log(`  ${file}`);
+  }
   if (files.length === 0) return 0;
-  if (!options.allowMany && files.length > options.maxFiles) {
+  if (exceedsBiomeWriteLimit(files.length, options)) {
     throw new Error(
-      `Refusing to process ${files.length} files (limit ${options.maxFiles}); inspect the scope or pass --allow-many`,
+      `Refusing to modify ${files.length} files (limit ${options.maxFiles}); inspect the scope or pass --allow-many`,
     );
   }
+  const before = options.write
+    ? new Map(files.map((file) => [file, contentHash(path.join(resolvedRoot, file))]))
+    : new Map<string, string>();
   const batches = chunkBiomePaths(files);
+  let status = 0;
   for (const [index, batch] of batches.entries()) {
     if (batches.length > 1) console.log(`Biome batch ${index + 1}/${batches.length}`);
-    const status = run(
+    status = run(
       "pnpm",
       [
         "exec",
@@ -74,7 +109,14 @@ export function runBiomeChanged(repoRoot: string, options: BiomeChangedOptions):
       ],
       repoRoot,
     );
-    if (status !== 0) return status;
+    if (status !== 0) break;
   }
-  return 0;
+  if (options.write) {
+    const modified = changedByWrite(resolvedRoot, files, before);
+    console.log(`Biome write: modified ${modified.length} file(s)`);
+    if (options.verbose) {
+      for (const file of modified) console.log(`  ${file}`);
+    }
+  }
+  return status;
 }
