@@ -31,6 +31,9 @@ describe("tool observation projection", () => {
     expect(
       projectToolStart(context("mcp_reference", { query: "typescript references" })).summary,
     ).toBe('[Tools] mcp_reference → "typescript references"');
+    expect(projectToolStart(context("mcp_request", { serverId: "typescript" })).summary).toBe(
+      "[Tools] mcp_request → typescript",
+    );
     expect(
       projectToolStart(
         context("mcp_call", {

@@ -24,6 +24,11 @@ function ports(overrides: Partial<McpCommandPorts> = {}) {
     status: vi.fn(() => [row()]),
     reload: vi.fn(async () => undefined),
     grantTrust: vi.fn(async () => undefined),
+    waitForServer: vi.fn(async () => ({
+      serverId: "docs",
+      configFingerprint: "a".repeat(64),
+      status: "ready" as const,
+    })),
   };
   return {
     control,
@@ -52,6 +57,11 @@ describe("MCP interactive commands", () => {
         status: () => [row({ source: { kind: "workspace" }, connection: "untrusted" })],
         reload: vi.fn(async () => undefined),
         grantTrust: vi.fn(async () => undefined),
+        waitForServer: vi.fn(async () => ({
+          serverId: "docs",
+          configFingerprint: "a".repeat(64),
+          status: "ready" as const,
+        })),
       },
       requestChoice: vi.fn(async () => "trust"),
     });

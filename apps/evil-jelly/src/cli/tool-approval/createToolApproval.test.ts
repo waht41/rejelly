@@ -440,4 +440,29 @@ describe("createToolApproval", () => {
     useDecisionStore.getState().submitChoice("accept");
     await expect(pending).resolves.toEqual({ action: "accept" });
   });
+
+  it("prompts for session MCP access with the host-owned fingerprint", async () => {
+    resetCliStores();
+    const confirmTool = createToolApproval({ getMode: () => "auto" });
+
+    const pending = confirmTool({
+      type: "mcp_access",
+      serverId: "typescript",
+      source: "workspace",
+      configFingerprint: "f".repeat(64),
+      requiresTrust: true,
+      reason: "Find symbol references",
+    });
+
+    await flushMicrotasks();
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      type: "choice",
+      message: expect.stringContaining("Allow MCP server typescript for this session?"),
+    });
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      message: expect.stringContaining("Find symbol references"),
+    });
+    useDecisionStore.getState().submitChoice("accept");
+    await expect(pending).resolves.toEqual({ action: "accept" });
+  });
 });

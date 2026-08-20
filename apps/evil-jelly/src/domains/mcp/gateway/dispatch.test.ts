@@ -79,13 +79,19 @@ describe("MCP dispatch gateway", () => {
   it("keeps stable unavailable gateway tools without an MCP runtime", async () => {
     const tools = createMcpGatewayToolsForDispatch(createUnavailableMcpDispatch());
 
-    expect(tools.map((tool) => tool.name)).toEqual(["mcp_reference", "mcp_call"]);
+    expect(tools.map((tool) => tool.name)).toEqual(["mcp_reference", "mcp_request", "mcp_call"]);
     await expect(tools[0].handler({ query: "typescript" })).resolves.toEqual({
       type: "mcp_reference_v1",
       matches: [],
     });
     await expect(
       tools[1].handler({
+        serverId: "typescript",
+        reason: "Use semantic TypeScript tools",
+      }),
+    ).resolves.toMatchObject({ status: "unavailable", code: "runtime_unavailable" });
+    await expect(
+      tools[2].handler({
         tool: { serverId: "typescript", nativeToolName: "get_definition" },
         catalogRevision: "catalog-1",
         arguments: {},
@@ -103,7 +109,7 @@ describe("MCP dispatch gateway", () => {
     expect(result.matches.map((match) => match.callable)).toEqual([true, false]);
     expect(result.unavailableServers).toEqual([
       { serverId: "pending", status: "pending", suggestedAction: "wait" },
-      { serverId: "workspace", status: "untrusted", suggestedAction: "select_and_trust" },
+      { serverId: "workspace", status: "untrusted", suggestedAction: "request_access" },
     ]);
     expect(
       referenceMcpTools(binding(), { query: "read", serverIds: ["beta"] }).matches.map(
@@ -133,11 +139,26 @@ describe("MCP dispatch gateway", () => {
     }));
     const firstTools = createMcpGatewayToolsForDispatch({
       binding: binding(),
+      request: async (input) => ({
+        type: "mcp_request_v1",
+        serverId: input.serverId,
+        status: "denied",
+        message: "not used",
+      }),
       invoke: firstInvoke,
     });
-    createMcpGatewayToolsForDispatch({ binding: binding(), invoke: secondInvoke });
+    createMcpGatewayToolsForDispatch({
+      binding: binding(),
+      request: async (input) => ({
+        type: "mcp_request_v1",
+        serverId: input.serverId,
+        status: "denied",
+        message: "not used",
+      }),
+      invoke: secondInvoke,
+    });
 
-    const result = await firstTools[1].handler({
+    const result = await firstTools[2].handler({
       tool: { serverId: "alpha", nativeToolName: "read" },
       catalogRevision: "catalog-alpha",
       arguments: { path: "guide.md" },

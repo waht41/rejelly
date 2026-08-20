@@ -148,7 +148,7 @@ export const mcpSelectionChangedEventSchema = z
         .min(1)
         .refine((value) => validateMcpServerId(value).ok),
     ),
-    reason: z.enum(["startup", "command"]),
+    reason: z.enum(["startup", "command", "tool"]),
   })
   .passthrough();
 

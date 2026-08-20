@@ -1,3 +1,4 @@
+import { requestMcpAccess } from "../../domains/mcp/management/requestAccess";
 import {
   formatMcpSessionStatus,
   type McpSessionControl,
@@ -53,44 +54,53 @@ export async function handleMcpCommand(rawInput: string, ports: McpCommandPorts)
   const rows = control.status(ports.selectedServerIds);
   const row = rows.find((candidate) => candidate.serverId === serverId);
   if (action === "use") {
-    if (!row) {
-      ports.logSystem(`Unknown MCP server: ${serverId}.\n`);
-      return;
-    }
-    if (row.exposure === "off" || row.connection === "disabled") {
-      ports.logSystem(`MCP server ${serverId} is disabled for chat.\n`);
-      return;
-    }
-    if (row.connection === "untrusted") {
-      const source =
-        row.source.kind === "dynamic" ? `dynamic:${row.source.sourceId}` : row.source.kind;
-      const selected = await ports.requestChoice({
-        message:
-          `Trust workspace MCP server ${serverId}?\n` +
-          `Source: ${source}\nFingerprint: ${row.configFingerprint}`,
-        options: [
-          { key: "y", label: "Trust this fingerprint", value: "trust" },
-          { key: "n", label: "Cancel", value: "cancel" },
-        ],
-        cancelValue: "cancel",
-      });
-      if (selected !== "trust") {
-        ports.logSystem(`MCP server ${serverId} was not selected.\n`);
-        return;
-      }
-      await control.grantTrust(serverId);
-    }
+    const result = await requestMcpAccess(
+      { serverId, reason: "Explicit /mcp use command" },
+      {
+        control,
+        selectedServerIds: () => ports.selectedServerIds,
+        approve: async (proposal) => {
+          if (!proposal.requiresTrust) return true;
+          const source =
+            proposal.source.kind === "dynamic"
+              ? `dynamic:${proposal.source.sourceId}`
+              : proposal.source.kind;
+          const selected = await ports.requestChoice({
+            message:
+              `Trust workspace MCP server ${serverId}?\n` +
+              `Source: ${source}\nFingerprint: ${proposal.configFingerprint}`,
+            options: [
+              { key: "y", label: "Trust this fingerprint", value: "trust" },
+              { key: "n", label: "Cancel", value: "cancel" },
+            ],
+            cancelValue: "cancel",
+          });
+          return selected === "trust";
+        },
+        commitSelection: async (selectedServerIds) => {
+          await ports.recordSelection(selectedServerIds);
+          ports.setSelectedServerIds(selectedServerIds);
+        },
+      },
+    );
+    ports.logSystem(
+      result.status === "granted"
+        ? `MCP server ${serverId} selected for this session (${result.connection}).\n`
+        : result.status === "denied"
+          ? `MCP server ${serverId} was not selected.\n`
+          : `MCP server ${serverId} unavailable: ${result.message}\n`,
+    );
+    return;
   }
 
+  if (!row) {
+    ports.logSystem(`Unknown MCP server: ${serverId}.\n`);
+    return;
+  }
   const next = new Set(ports.selectedServerIds);
-  if (action === "use") next.add(serverId);
-  else next.delete(serverId);
+  next.delete(serverId);
   const selectedServerIds = [...next].sort();
   ports.setSelectedServerIds(selectedServerIds);
   await ports.recordSelection(selectedServerIds);
-  ports.logSystem(
-    action === "use"
-      ? `MCP server ${serverId} selected for this session.\n`
-      : `MCP server ${serverId} removed from this session selection.\n`,
-  );
+  ports.logSystem(`MCP server ${serverId} removed from this session selection.\n`);
 }

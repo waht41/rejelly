@@ -40,8 +40,9 @@ describe("buildUnifiedSystemPrompt", () => {
     );
     expect(prompt).toContain("matching callable MCP tool");
     expect(prompt).toContain(
-      "If mcp_reference returns unavailableServers, report each structured status and follow its suggestedAction.",
+      "If mcp_reference returns request_access or a relevant match with callable=false, call mcp_request once",
     );
+    expect(prompt).toContain("do not ask the user to run /mcp manually");
     expect(prompt).toContain("Do not retry synonyms");
     expect(prompt).toContain("otherwise fall back to grep + read_file");
     expect(prompt).not.toContain("There is no language-server/`ts_` tool available");

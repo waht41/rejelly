@@ -11,6 +11,7 @@ export const MCP_CONTRACT_LIMITS = Object.freeze({
   toolNameChars: 256,
   catalogRevisionChars: 128,
   referenceQueryChars: 512,
+  requestReasonChars: 256,
   referenceServerIds: 32,
   referenceMaxResults: 20,
   gatewayArgumentsBytes: 256 * 1024,
@@ -332,10 +333,13 @@ const gatewayServerIdSchema = z
   .refine((value) => validateMcpServerId(value).ok);
 
 export const MCP_REFERENCE_TOOL_NAME = "mcp_reference";
+export const MCP_REQUEST_TOOL_NAME = "mcp_request";
 export const MCP_CALL_TOOL_NAME = "mcp_call";
 
 export const MCP_REFERENCE_TOOL_DESCRIPTION =
   "Find configured MCP tools and return their descriptions, input schemas, callability, and availability; use query `*` to list visible tools.";
+export const MCP_REQUEST_TOOL_DESCRIPTION =
+  "Ask the user to trust and enable one configured MCP server for this chat session.";
 export const MCP_CALL_TOOL_DESCRIPTION =
   "Call one previously referenced MCP tool using its structured identity, catalog revision, and JSON object arguments.";
 
@@ -347,6 +351,13 @@ export const mcpReferenceInputSchema = z
       .max(MCP_CONTRACT_LIMITS.referenceServerIds)
       .optional(),
     maxResults: z.number().int().min(1).max(MCP_CONTRACT_LIMITS.referenceMaxResults).optional(),
+  })
+  .strict();
+
+export const mcpRequestInputSchema = z
+  .object({
+    serverId: gatewayServerIdSchema,
+    reason: z.string().min(1).max(MCP_CONTRACT_LIMITS.requestReasonChars).optional(),
   })
   .strict();
 
@@ -364,6 +375,7 @@ export const mcpCallInputSchema = z
   .strict();
 
 export type McpReferenceInput = z.infer<typeof mcpReferenceInputSchema>;
+export type McpRequestInput = z.infer<typeof mcpRequestInputSchema>;
 export type McpCallInput = z.infer<typeof mcpCallInputSchema>;
 
 export interface McpReferenceMatch extends McpBoundRoute {
@@ -376,7 +388,7 @@ export type McpReferenceUnavailableStatus = Exclude<McpServerRuntimeStatus, "rea
 export interface McpReferenceUnavailableServer {
   readonly serverId: string;
   readonly status: McpReferenceUnavailableStatus;
-  readonly suggestedAction: "enable" | "select_and_trust" | "wait" | "reload";
+  readonly suggestedAction: "enable" | "request_access" | "wait" | "reload";
 }
 
 export interface McpReferenceResult {
@@ -384,6 +396,30 @@ export interface McpReferenceResult {
   readonly matches: readonly McpReferenceMatch[];
   readonly unavailableServers?: readonly McpReferenceUnavailableServer[];
 }
+
+export type McpRequestResult =
+  | {
+      readonly type: "mcp_request_v1";
+      readonly serverId: string;
+      readonly status: "granted";
+      readonly selected: boolean;
+      readonly callable: boolean;
+      readonly connection: McpServerRuntimeStatus;
+      readonly configFingerprint: string;
+    }
+  | {
+      readonly type: "mcp_request_v1";
+      readonly serverId: string;
+      readonly status: "denied";
+      readonly message: string;
+    }
+  | {
+      readonly type: "mcp_request_v1";
+      readonly serverId: string;
+      readonly status: "unavailable";
+      readonly code: "runtime_unavailable" | "not_configured" | "disabled" | "request_failed";
+      readonly message: string;
+    };
 
 export type McpCallRejectionCode =
   | "tool_unavailable"

@@ -5,16 +5,25 @@ import {
   type McpReferenceInput,
   type McpReferenceResult,
   type McpReferenceUnavailableServer,
+  type McpRequestInput,
+  type McpRequestResult,
 } from "../contracts";
-import { createMcpGatewayToolDefinitions, type McpGatewayToolDefinitions } from "./gatewayTools";
+import {
+  createMcpChatGatewayToolDefinitions,
+  type McpChatGatewayToolDefinitions,
+} from "./gatewayTools";
 import { type McpCallInvocationOutcome, McpCallPolicy } from "./mcpCallPolicy";
 
-export interface McpGatewayDispatch {
+export interface McpGatewayCallDispatch {
   readonly binding: McpDispatchBinding;
   readonly invoke: (
     route: McpBoundRoute,
     argumentsValue: Record<string, unknown>,
   ) => Promise<McpCallInvocationOutcome>;
+}
+
+export interface McpGatewayDispatch extends McpGatewayCallDispatch {
+  readonly request: (input: McpRequestInput) => Promise<McpRequestResult>;
 }
 
 export type McpDispatchBindingFactory = (
@@ -85,7 +94,7 @@ export function referenceMcpTools(
             server.status === "disabled"
               ? "enable"
               : server.status === "untrusted"
-                ? "select_and_trust"
+                ? "request_access"
                 : server.status === "pending"
                   ? "wait"
                   : "reload",
@@ -105,9 +114,10 @@ export function referenceMcpTools(
 /** Create one tool batch whose handlers are permanently bound to one model dispatch. */
 export function createMcpGatewayToolsForDispatch(
   dispatch: McpGatewayDispatch,
-): McpGatewayToolDefinitions {
-  return createMcpGatewayToolDefinitions({
+): McpChatGatewayToolDefinitions {
+  return createMcpChatGatewayToolDefinitions({
     reference: async (input) => referenceMcpTools(dispatch.binding, input),
+    request: dispatch.request,
     callPolicy: new McpCallPolicy({
       resolveRoute: (identity) => dispatch.binding.route(identity),
       invoke: dispatch.invoke,
@@ -126,6 +136,13 @@ const EMPTY_MCP_BINDING: McpDispatchBinding = Object.freeze({
 export function createUnavailableMcpDispatch(): McpGatewayDispatch {
   return Object.freeze({
     binding: EMPTY_MCP_BINDING,
+    request: async (input: McpRequestInput) => ({
+      type: "mcp_request_v1" as const,
+      serverId: input.serverId,
+      status: "unavailable" as const,
+      code: "runtime_unavailable" as const,
+      message: "No MCP runtime is available for this dispatch.",
+    }),
     invoke: async () => ({
       ok: false as const,
       code: "tool_unavailable" as const,

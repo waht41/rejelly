@@ -44,10 +44,20 @@ export interface McpCallConfirmationPayload {
   arguments: Record<string, unknown>;
 }
 
+export interface McpAccessConfirmationPayload {
+  type: "mcp_access";
+  serverId: string;
+  source: string;
+  configFingerprint: string;
+  requiresTrust: boolean;
+  reason?: string;
+}
+
 export type ToolConfirmationRequest =
   | FsWritePayload
   | FsOutsideAccessPayload
   | ShellCommandPayload
+  | McpAccessConfirmationPayload
   | McpCallConfirmationPayload;
 
 export type ToolConfirmationResult =

@@ -1,4 +1,4 @@
-import type { McpConfigSource, McpServerRuntimeStatus } from "../contracts";
+import type { McpConfigSource, McpServerRuntimeState, McpServerRuntimeStatus } from "../contracts";
 
 export interface McpSessionStatusRow {
   readonly serverId: string;
@@ -16,6 +16,7 @@ export interface McpSessionControl {
   status(selectedServerIds: readonly string[]): readonly McpSessionStatusRow[];
   reload(serverId?: string): Promise<void>;
   grantTrust(serverId: string): Promise<void>;
+  waitForServer(serverId: string): Promise<McpServerRuntimeState>;
 }
 
 function sourceLabel(source: McpConfigSource): string {

@@ -4,11 +4,16 @@ import {
   MCP_CALL_TOOL_NAME,
   MCP_REFERENCE_TOOL_DESCRIPTION,
   MCP_REFERENCE_TOOL_NAME,
+  MCP_REQUEST_TOOL_DESCRIPTION,
+  MCP_REQUEST_TOOL_NAME,
   type McpCallInput,
   type McpReferenceInput,
   type McpReferenceResult,
+  type McpRequestInput,
+  type McpRequestResult,
   mcpCallInputSchema,
   mcpReferenceInputSchema,
+  mcpRequestInputSchema,
 } from "../contracts";
 import type { McpCallPolicy } from "./mcpCallPolicy";
 
@@ -17,8 +22,18 @@ export interface McpGatewayToolPorts {
   readonly callPolicy: McpCallPolicy;
 }
 
+export interface McpChatGatewayToolPorts extends McpGatewayToolPorts {
+  readonly request: (input: McpRequestInput) => Promise<McpRequestResult>;
+}
+
 export type McpGatewayToolDefinitions = readonly [
   ToolDefinition<typeof mcpReferenceInputSchema>,
+  ToolDefinition<typeof mcpCallInputSchema>,
+];
+
+export type McpChatGatewayToolDefinitions = readonly [
+  ToolDefinition<typeof mcpReferenceInputSchema>,
+  ToolDefinition<typeof mcpRequestInputSchema>,
   ToolDefinition<typeof mcpCallInputSchema>,
 ];
 
@@ -39,4 +54,18 @@ export function createMcpGatewayToolDefinitions(
     handler: (input: McpCallInput) => ports.callPolicy.execute(input),
   });
   return Object.freeze([referenceTool, callTool]);
+}
+
+/** Chat adds a fixed access-request gateway; Audit deliberately keeps the two-tool surface. */
+export function createMcpChatGatewayToolDefinitions(
+  ports: McpChatGatewayToolPorts,
+): McpChatGatewayToolDefinitions {
+  const [referenceTool, callTool] = createMcpGatewayToolDefinitions(ports);
+  const requestTool: ToolDefinition<typeof mcpRequestInputSchema> = Object.freeze({
+    name: MCP_REQUEST_TOOL_NAME,
+    description: MCP_REQUEST_TOOL_DESCRIPTION,
+    parameters: mcpRequestInputSchema,
+    handler: (input: McpRequestInput) => ports.request(input),
+  });
+  return Object.freeze([referenceTool, requestTool, callTool]);
 }

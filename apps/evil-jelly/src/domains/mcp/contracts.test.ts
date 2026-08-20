@@ -10,10 +10,13 @@ import {
   MCP_CONTRACT_LIMITS,
   MCP_REFERENCE_TOOL_DESCRIPTION,
   MCP_REFERENCE_TOOL_NAME,
+  MCP_REQUEST_TOOL_DESCRIPTION,
+  MCP_REQUEST_TOOL_NAME,
   type McpDesiredConfig,
   type McpServerDefinition,
   mcpCallInputSchema,
   mcpReferenceInputSchema,
+  mcpRequestInputSchema,
   validateUserMcpServerId,
 } from "./contracts";
 
@@ -231,12 +234,18 @@ describe("stable MCP gateway contract", () => {
   it("keeps fixed names and descriptions independent of configured servers", () => {
     expect({
       reference: { name: MCP_REFERENCE_TOOL_NAME, description: MCP_REFERENCE_TOOL_DESCRIPTION },
+      request: { name: MCP_REQUEST_TOOL_NAME, description: MCP_REQUEST_TOOL_DESCRIPTION },
       call: { name: MCP_CALL_TOOL_NAME, description: MCP_CALL_TOOL_DESCRIPTION },
     }).toEqual({
       reference: {
         name: "mcp_reference",
         description:
           "Find configured MCP tools and return their descriptions, input schemas, callability, and availability; use query `*` to list visible tools.",
+      },
+      request: {
+        name: "mcp_request",
+        description:
+          "Ask the user to trust and enable one configured MCP server for this chat session.",
       },
       call: {
         name: "mcp_call",
@@ -266,6 +275,16 @@ describe("stable MCP gateway contract", () => {
         flags: [true, null, { nested: ["a", 3] }],
       },
     });
+  });
+
+  it("bounds MCP access requests without accepting model-supplied fingerprints", () => {
+    expect(
+      mcpRequestInputSchema.parse({ serverId: "github", reason: "Search repositories" }),
+    ).toEqual({ serverId: "github", reason: "Search repositories" });
+    expect(
+      mcpRequestInputSchema.safeParse({ serverId: "github", configFingerprint: "model-value" })
+        .success,
+    ).toBe(false);
   });
 
   it("rejects non-JSON values and unknown gateway fields", () => {

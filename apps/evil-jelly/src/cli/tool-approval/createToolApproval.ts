@@ -7,6 +7,7 @@ import type { AgentMode } from "../../shared/host/modeBindings";
 import type {
   FsOutsideAccessPayload,
   FsWritePayload,
+  McpAccessConfirmationPayload,
   McpCallConfirmationPayload,
   ShellCommandPayload,
   ToolConfirmationHandler,
@@ -165,6 +166,31 @@ async function confirmMcpCall(
     message: `Allow MCP tool ${identity}?\nArguments:\n${JSON.stringify(params.arguments, null, 2)}`,
     options: [
       { key: "y", label: "Allow", value: "accept" },
+      { key: "n", label: "Reject", value: "reject" },
+    ],
+    cancelValue: "reject",
+  });
+  useOutputStore.getState().resumeWork("Running…");
+  return selected === "accept" ? { action: "accept" } : { action: "reject" };
+}
+
+async function confirmMcpAccess(
+  params: McpAccessConfirmationPayload,
+  decision: OperatorDecisionSession,
+): Promise<ToolConfirmationResult> {
+  useOutputStore.getState().setPhase("awaiting_user", `MCP access → ${params.serverId}`);
+  const trustLine = params.requiresTrust
+    ? "\nThis also trusts the exact workspace configuration fingerprint."
+    : "";
+  const reasonLine = params.reason ? `\nReason: ${params.reason}` : "";
+  const selected = await decision.requestChoice({
+    message:
+      `Allow MCP server ${params.serverId} for this session?\n` +
+      `Source: ${params.source}\nFingerprint: ${params.configFingerprint}` +
+      trustLine +
+      reasonLine,
+    options: [
+      { key: "y", label: "Allow for this session", value: "accept" },
       { key: "n", label: "Reject", value: "reject" },
     ],
     cancelValue: "reject",
@@ -369,6 +395,9 @@ export function createToolApproval(
     }
     if (params.type === "fs_outside_access") {
       return decision.run((session) => confirmOutsideAccess(params, session));
+    }
+    if (params.type === "mcp_access") {
+      return decision.run((session) => confirmMcpAccess(params, session));
     }
     if (params.type === "mcp_call") {
       return decision.run((session) => confirmMcpCall(params, session));

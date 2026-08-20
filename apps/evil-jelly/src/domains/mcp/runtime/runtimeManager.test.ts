@@ -150,6 +150,7 @@ describe("McpRuntimeManager", () => {
     expect(first.servers.map((item) => item.serverId)).toEqual(["always", "selected"]);
     expect(second.servers.map((item) => item.serverId)).toEqual(["always", "selected"]);
     expect(manager.getVisibleServerIds("chat")).toEqual(["always", "selected"]);
+    await expect(manager.waitForServer("always")).resolves.toMatchObject({ status: "ready" });
     expect(first.route({ serverId: "selected", nativeToolName: "read" })).toBeUndefined();
     expect(second.route({ serverId: "always", nativeToolName: "read" })?.description).toBe(
       "Read always",

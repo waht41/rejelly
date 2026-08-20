@@ -130,6 +130,10 @@ function formatToolProgressLine(ctx: ToolContext): string {
     const query = typeof input.query === "string" ? input.query.trim() : "";
     return `[Tools] mcp_reference → "${query || "(empty query)"}"…\n`;
   }
+  if (ctx.toolName === "mcp_request") {
+    const serverId = typeof input.serverId === "string" ? input.serverId : "(MCP server)";
+    return `[Tools] mcp_request → ${serverId}…\n`;
+  }
   if (ctx.toolName === "mcp_call") {
     const tool =
       typeof input.tool === "object" && input.tool !== null

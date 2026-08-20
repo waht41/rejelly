@@ -13,6 +13,8 @@ import {
   type Message,
   reborn,
 } from "@rejelly/core";
+import type { McpRequestInput } from "../../domains/mcp/contracts";
+import { requestMcpAccess } from "../../domains/mcp/management/requestAccess";
 import type { McpSessionControl } from "../../domains/mcp/management/sessionControl";
 import type { SessionRecorder } from "../../domains/session/recorder/sessionRecorder";
 import {
@@ -172,7 +174,7 @@ interface RouterRuntime {
   appendTurn: (userMessage: Message, reply: string, delta?: Message[]) => void;
   skillSnapshot?: SkillRuntimeSnapshot;
   resolveMcpUserInput?: MainCliAgentProps["resolveMcpUserInput"];
-  sessionMcpSelection: readonly string[];
+  sessionMcpSelection: () => readonly string[];
   setSessionMcpSelection: (selectedServerIds: readonly string[]) => void;
   mcpBindingFactory?: ConversationAgentProps["mcpBindingFactory"];
 }
@@ -364,7 +366,7 @@ async function handleResume(runtime: RouterRuntime, rawInput: string): Promise<b
 async function handleMcp(runtime: RouterRuntime, rawInput: string): Promise<void> {
   await handleMcpCommand(rawInput, {
     control: runtime.props.mcpSessionControl,
-    selectedServerIds: runtime.sessionMcpSelection,
+    selectedServerIds: runtime.sessionMcpSelection(),
     setSelectedServerIds: runtime.setSessionMcpSelection,
     recordSelection: async (selectedServerIds) => {
       await runtime.props.sessionRecorder?.recordMcpSelection(selectedServerIds, "command");
@@ -419,9 +421,38 @@ async function runConversationTurn(
     submittedUserMessage = committed.message;
     const turnMcpSelection = new Set(frozenUserInputMcpServerIds(committed.frozen));
     const selectedServerIds = () =>
-      [...new Set([...runtime.sessionMcpSelection, ...turnMcpSelection])].sort();
+      [...new Set([...runtime.sessionMcpSelection(), ...turnMcpSelection])].sort();
     const mcpBindingFactory = runtime.mcpBindingFactory
-      ? () => runtime.mcpBindingFactory!(selectedServerIds())
+      ? async () => {
+          const dispatch = await runtime.mcpBindingFactory!(selectedServerIds());
+          return Object.freeze({
+            ...dispatch,
+            request: (input: McpRequestInput) =>
+              requestMcpAccess(input, {
+                control: runtime.props.mcpSessionControl,
+                selectedServerIds: runtime.sessionMcpSelection,
+                approve: async (proposal) => {
+                  const source =
+                    proposal.source.kind === "dynamic"
+                      ? `dynamic:${proposal.source.sourceId}`
+                      : proposal.source.kind;
+                  const decision = await runtime.host.confirmTool({
+                    type: "mcp_access",
+                    serverId: proposal.serverId,
+                    source,
+                    configFingerprint: proposal.configFingerprint,
+                    requiresTrust: proposal.requiresTrust,
+                    ...(proposal.reason ? { reason: proposal.reason } : {}),
+                  });
+                  return decision.action === "accept";
+                },
+                commitSelection: async (next) => {
+                  await runtime.props.sessionRecorder?.recordMcpSelection(next, "tool");
+                  runtime.setSessionMcpSelection(next);
+                },
+              }),
+          });
+        }
       : undefined;
 
     const result = await UnifiedAgentWithAbort({
@@ -508,7 +539,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
       "main_cli:last_cache_tokens",
       props.seedBudget?.lastCacheReadTokens ?? 0,
     );
-    const [sessionMcpSelection, setSessionMcpSelection] = equipMemory<readonly string[]>(
+    const [storedSessionMcpSelection, storeSessionMcpSelection] = equipMemory<readonly string[]>(
       "main_cli:mcp_selection",
       props.seedMcpSelection ?? [],
     );
@@ -516,6 +547,11 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
     // equipMemory getters are frozen at entry, so we mirror writes here for same-turn reads).
     let liveContextTokens = storedContextTokens;
     let liveCacheTokens = storedCacheTokens;
+    let liveSessionMcpSelection = storedSessionMcpSelection;
+    const setSessionMcpSelection = (selectedServerIds: readonly string[]) => {
+      liveSessionMcpSelection = selectedServerIds;
+      storeSessionMcpSelection(selectedServerIds);
+    };
     // Root-context budget config fires for every model call in descendant agents (the update walks
     // the parent chain), so delta.promptTokens of the latest call tracks current context occupancy.
     equipBudget({
@@ -555,7 +591,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
         optional: true,
       }),
       resolveMcpUserInput: props.resolveMcpUserInput,
-      sessionMcpSelection,
+      sessionMcpSelection: () => liveSessionMcpSelection,
       setSessionMcpSelection,
       mcpBindingFactory: props.mcpBindingFactory,
     };

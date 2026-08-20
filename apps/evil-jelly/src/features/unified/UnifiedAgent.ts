@@ -15,7 +15,11 @@ import {
   type ToolDefinition,
 } from "@rejelly/core";
 import { equipMcpCatalog } from "../../domains/mcp/agent/equipMcpCatalog";
-import { MCP_CALL_TOOL_NAME, MCP_REFERENCE_TOOL_NAME } from "../../domains/mcp/contracts";
+import {
+  MCP_CALL_TOOL_NAME,
+  MCP_REFERENCE_TOOL_NAME,
+  MCP_REQUEST_TOOL_NAME,
+} from "../../domains/mcp/contracts";
 import {
   createMcpGatewayToolsForDispatch,
   createUnavailableMcpDispatch,
@@ -83,7 +87,10 @@ async function toolsForMcpDispatch(
 ): Promise<readonly ToolDefinition[]> {
   const dispatch = factory ? await factory() : createUnavailableMcpDispatch();
   const withoutGateways = baseTools.filter(
-    (tool) => tool.name !== MCP_REFERENCE_TOOL_NAME && tool.name !== MCP_CALL_TOOL_NAME,
+    (tool) =>
+      tool.name !== MCP_REFERENCE_TOOL_NAME &&
+      tool.name !== MCP_REQUEST_TOOL_NAME &&
+      tool.name !== MCP_CALL_TOOL_NAME,
   );
   const gatewayTools = createMcpGatewayToolsForDispatch(dispatch).map((tool) =>
     augmentTool(tool as unknown as ToolDefinition, [evilJellyToolLoggerMiddleware]),

@@ -199,6 +199,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
       trustGrants = readMcpTrustGrants(workspaceRoot);
       await mcpRuntime.reconcile(desiredMcp, trustGrants);
     },
+    waitForServer: (serverId) => mcpRuntime.waitForServer(serverId),
   };
   const resolveMcpUserInput = (serverId: string) => {
     const state = mcpRuntime.getSnapshot().servers.find((server) => server.serverId === serverId);

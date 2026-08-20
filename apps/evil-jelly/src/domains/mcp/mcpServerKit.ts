@@ -1,7 +1,7 @@
 /** Process-owned MCP runtime projection into per-dispatch gateway bindings. */
 
 import type { ToolConfirmationHandler } from "../../shared/host/toolConfirmationBindings";
-import type { McpBoundRoute } from "./contracts";
+import type { McpBoundRoute, McpRequestInput } from "./contracts";
 import type { McpDispatchBindingFactory } from "./gateway/dispatch";
 import type { McpRuntimeManager } from "./runtime/runtimeManager";
 
@@ -35,6 +35,13 @@ export function createMcpDispatchBindingFactory(
     const binding = manager.captureDispatchBinding("chat", selectedServerIds);
     return Object.freeze({
       binding,
+      request: async (input: McpRequestInput) => ({
+        type: "mcp_request_v1" as const,
+        serverId: input.serverId,
+        status: "unavailable" as const,
+        code: "runtime_unavailable" as const,
+        message: "MCP access requests are unavailable in this host.",
+      }),
       invoke: async (route: McpBoundRoute, argumentsValue: Record<string, unknown>) => {
         const decision = await confirmTool({
           type: "mcp_call",

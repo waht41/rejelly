@@ -144,6 +144,13 @@ describe("sessionEvents", () => {
       selectedServerIds: ["docs", "github"],
       reason: "command",
     });
+    expect(
+      parseNewSessionEvent({
+        type: "mcp_selection_changed",
+        selectedServerIds: ["typescript"],
+        reason: "tool",
+      }),
+    ).toMatchObject({ reason: "tool" });
     expect(() =>
       parseNewSessionEvent({
         type: "mcp_selection_changed",

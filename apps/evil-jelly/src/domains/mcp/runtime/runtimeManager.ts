@@ -510,6 +510,21 @@ export class McpRuntimeManager {
     }
   }
 
+  /** Wait for one configured server to leave its transient startup state. */
+  async waitForServer(serverId: string): Promise<McpServerRuntimeState> {
+    while (true) {
+      const state = this.snapshot.servers.find((server) => server.serverId === serverId);
+      if (!state) throw new Error(`Unknown MCP server: ${serverId}`);
+      if (state.status !== "pending") return state;
+      await new Promise<void>((resolve) => {
+        const unsubscribe = this.subscribe(() => {
+          unsubscribe();
+          resolve();
+        });
+      });
+    }
+  }
+
   async dispose(): Promise<void> {
     await this.enqueue(async () => {
       if (this.disposed) return;

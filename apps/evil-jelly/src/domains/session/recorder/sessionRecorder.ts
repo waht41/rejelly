@@ -57,7 +57,7 @@ export interface SessionRecorder extends SessionMessageSink {
   ): Promise<FrozenUserInputV1>;
   recordMcpSelection(
     selectedServerIds: readonly string[],
-    reason: "startup" | "command",
+    reason: "startup" | "command" | "tool",
   ): Promise<void>;
   completeTurn(
     turnId: string,
@@ -215,7 +215,7 @@ class JsonlSessionRecorder implements SessionRecorder {
 
   async recordMcpSelection(
     selectedServerIds: readonly string[],
-    reason: "startup" | "command",
+    reason: "startup" | "command" | "tool",
   ): Promise<void> {
     await this.#append({
       type: "mcp_selection_changed",

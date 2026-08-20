@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import type { McpBoundRoute, McpCallInput, McpReferenceMatch } from "../contracts";
-import { createMcpGatewayToolDefinitions } from "./gatewayTools";
+import { createMcpChatGatewayToolDefinitions } from "./gatewayTools";
 import { McpCallPolicy } from "./mcpCallPolicy";
 
 function route(overrides: Partial<McpBoundRoute> = {}): McpBoundRoute {
@@ -53,17 +53,29 @@ describe("MCP gateway tools", () => {
 
   it("keeps provider schemas byte-stable across catalog and handler changes", () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const first = createMcpGatewayToolDefinitions({
+    const first = createMcpChatGatewayToolDefinitions({
       reference: async () => ({ type: "mcp_reference_v1", matches: [referenceMatch()] }),
+      request: async (request) => ({
+        type: "mcp_request_v1",
+        serverId: request.serverId,
+        status: "denied",
+        message: "first",
+      }),
       callPolicy: new McpCallPolicy({
         resolveRoute: () => route(),
         invoke: async () => ({ ok: true, result: { content: [] } }),
       }),
     });
-    const second = createMcpGatewayToolDefinitions({
+    const second = createMcpChatGatewayToolDefinitions({
       reference: async () => ({
         type: "mcp_reference_v1",
         matches: [referenceMatch({ catalogRevision: "catalog-2" })],
+      }),
+      request: async (request) => ({
+        type: "mcp_request_v1",
+        serverId: request.serverId,
+        status: "denied",
+        message: "second",
       }),
       callPolicy: new McpCallPolicy({
         resolveRoute: () => route({ catalogRevision: "catalog-2" }),
@@ -84,7 +96,7 @@ describe("MCP gateway tools", () => {
     expect(
       projectedTools.find((tool) => tool.name === "mcp_call")?.parameters.properties?.arguments,
     ).toEqual({ type: "object", additionalProperties: {} });
-    expect(first.map((tool) => tool.name)).toEqual(["mcp_reference", "mcp_call"]);
+    expect(first.map((tool) => tool.name)).toEqual(["mcp_reference", "mcp_request", "mcp_call"]);
   });
 
   it("rejects stale revisions before native I/O", async () => {

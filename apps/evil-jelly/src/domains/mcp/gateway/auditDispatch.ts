@@ -3,7 +3,7 @@
 import type { ToolDefinition } from "@rejelly/core";
 import type { McpBoundRoute } from "../contracts";
 import type { McpRuntimeManager } from "../runtime/runtimeManager";
-import { type McpGatewayDispatch, referenceMcpTools } from "./dispatch";
+import { type McpGatewayCallDispatch, referenceMcpTools } from "./dispatch";
 import { createMcpGatewayToolDefinitions } from "./gatewayTools";
 import { McpCallPolicy } from "./mcpCallPolicy";
 
@@ -49,7 +49,7 @@ function encodedBytes(value: unknown): number {
 export function createAuditMcpDispatch(
   manager: McpRuntimeManager,
   provenance: McpAuditProvenanceCollector,
-): McpGatewayDispatch {
+): McpGatewayCallDispatch {
   const binding = manager.captureDispatchBinding("audit");
   const callsByServer = new Map<string, number>();
   const resultBytesByServer = new Map<string, number>();
