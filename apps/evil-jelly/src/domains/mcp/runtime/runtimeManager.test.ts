@@ -158,6 +158,31 @@ describe("McpRuntimeManager", () => {
     await manager.dispose();
   });
 
+  it("waits only for required servers that are effective for this dispatch", async () => {
+    const connector = new ControlledConnector();
+    const manager = new McpRuntimeManager(connector);
+    const base = server("docs");
+    const required: McpDesiredServer = {
+      ...base,
+      definition: {
+        ...base.definition,
+        use: {
+          ...base.definition.use,
+          chat: { exposure: "explicit", required: true },
+        },
+      },
+    };
+    await manager.reconcile(desired(required));
+
+    await expect(manager.waitForRequiredServers("chat")).resolves.toEqual([]);
+    const waiting = manager.waitForRequiredServers("chat", ["docs"]);
+    connector.attempts[0]!.result.resolve(new FakeConnection());
+    await expect(waiting).resolves.toEqual([
+      expect.objectContaining({ serverId: "docs", status: "ready" }),
+    ]);
+    await manager.dispose();
+  });
+
   it("rejects a captured route when the live catalog changes before call", async () => {
     const connector = new ControlledConnector();
     const manager = new McpRuntimeManager(connector);

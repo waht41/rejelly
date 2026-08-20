@@ -30,7 +30,7 @@ function resolveOptionalString(raw: unknown, trim = true): string | undefined {
 export function registerUnifiedRunArgs(cli: CAC): void {
   cli.option(
     "--devtool",
-    "Connect the devtool MCP toolset (needs a running devtool server; usually with --review)",
+    "Connect the devtool MCP toolset for the interactive coding run (not supported by audit)",
   );
   cli
     .command("", "Start the interactive run loop")

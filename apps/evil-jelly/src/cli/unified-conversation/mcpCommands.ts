@@ -1,0 +1,96 @@
+import {
+  formatMcpSessionStatus,
+  type McpSessionControl,
+} from "../../domains/mcp/management/sessionControl";
+import type { PromptChoiceRequest } from "../../shared/host/inputBindings";
+
+export interface McpCommandPorts {
+  readonly control?: McpSessionControl;
+  readonly selectedServerIds: readonly string[];
+  setSelectedServerIds(selectedServerIds: readonly string[]): void;
+  recordSelection(selectedServerIds: readonly string[]): Promise<void>;
+  requestChoice(request: PromptChoiceRequest): Promise<string>;
+  logSystem(message: string): void;
+}
+
+function usage(): string {
+  return "Usage: /mcp | /mcp use <serverId> | /mcp unuse <serverId> | /mcp reload [serverId]";
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export async function handleMcpCommand(rawInput: string, ports: McpCommandPorts): Promise<void> {
+  const { control } = ports;
+  if (!control) {
+    ports.logSystem("MCP runtime is unavailable.\n");
+    return;
+  }
+  const args = rawInput.slice("/mcp".length).trim().split(/\s+/).filter(Boolean);
+  if (args.length === 0) {
+    ports.logSystem(formatMcpSessionStatus(control.status(ports.selectedServerIds)));
+    return;
+  }
+  const [rawAction, serverId, ...extra] = args;
+  const action = rawAction?.toLocaleLowerCase();
+  if (action === "reload" && extra.length === 0) {
+    try {
+      await control.reload(serverId);
+      ports.logSystem(
+        serverId ? `MCP server ${serverId} reloaded.\n` : "MCP configuration reloaded.\n",
+      );
+    } catch (error) {
+      ports.logSystem(`MCP reload failed: ${errorMessage(error)}\n`);
+    }
+    return;
+  }
+  if ((action !== "use" && action !== "unuse") || !serverId || extra.length > 0) {
+    ports.logSystem(`${usage()}\n`);
+    return;
+  }
+
+  const rows = control.status(ports.selectedServerIds);
+  const row = rows.find((candidate) => candidate.serverId === serverId);
+  if (action === "use") {
+    if (!row) {
+      ports.logSystem(`Unknown MCP server: ${serverId}.\n`);
+      return;
+    }
+    if (row.exposure === "off" || row.connection === "disabled") {
+      ports.logSystem(`MCP server ${serverId} is disabled for chat.\n`);
+      return;
+    }
+    if (row.connection === "untrusted") {
+      const source =
+        row.source.kind === "dynamic" ? `dynamic:${row.source.sourceId}` : row.source.kind;
+      const selected = await ports.requestChoice({
+        message:
+          `Trust workspace MCP server ${serverId}?\n` +
+          `Source: ${source}\nFingerprint: ${row.configFingerprint}`,
+        options: [
+          { key: "y", label: "Trust this fingerprint", value: "trust" },
+          { key: "n", label: "Cancel", value: "cancel" },
+        ],
+        cancelValue: "cancel",
+      });
+      if (selected !== "trust") {
+        ports.logSystem(`MCP server ${serverId} was not selected.\n`);
+        return;
+      }
+      await control.grantTrust(serverId);
+    }
+  }
+
+  const next = new Set(ports.selectedServerIds);
+  if (action === "use") next.add(serverId);
+  else next.delete(serverId);
+  const selectedServerIds = [...next].sort();
+  ports.setSelectedServerIds(selectedServerIds);
+  await ports.recordSelection(selectedServerIds);
+  ports.logSystem(
+    action === "use"
+      ? `MCP server ${serverId} selected for this session.\n`
+      : `MCP server ${serverId} removed from this session selection.\n`,
+  );
+}

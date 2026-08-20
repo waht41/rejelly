@@ -171,7 +171,7 @@
         ]
       },
       "connect": {
-        "@cli:audit-run": ["@feature:audit"],
+        "@cli:audit-run": ["@feature:audit", "@domain:mcp"],
         "@cli:unified-run": [
           "@feature:unified",
           "@feature:replay",
@@ -182,7 +182,7 @@
           "@domain:skills:definition",
           "@domain:mcp"
         ],
-        "@cli:unified-conversation": ["@feature:unified"],
+        "@cli:unified-conversation": ["@feature:unified", "@domain:mcp"],
         "@feature:unified": [
           "@domain:workspace",
           "@domain:web",
@@ -191,7 +191,7 @@
           "@domain:policy",
           "@domain:mcp"
         ],
-        "@feature:audit": ["@domain:workspace"],
+        "@feature:audit": ["@domain:workspace", "@domain:mcp"],
         "@cli:message-composer": [
           "@domain:workspace",
           "@domain:skills:agent",

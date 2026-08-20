@@ -9,8 +9,22 @@
  * detail lives in the trace (hence no useStandardStreaming either).
  */
 
-import { createAgent, equipInstruction, equipSystem, promptAgent } from "@rejelly/core";
+import {
+  createAgent,
+  equipInstruction,
+  equipSystem,
+  equipTool,
+  expectResource,
+  promptAgent,
+} from "@rejelly/core";
 import { z } from "zod";
+import {
+  createAuditMcpGatewayTools,
+  MCP_AUDIT_PROVENANCE_RESOURCE_KEY,
+  type McpAuditProvenanceCollector,
+} from "../../domains/mcp/gateway/auditDispatch";
+import { MCP_RUNTIME_RESOURCE_KEY } from "../../domains/mcp/mcpServerKit";
+import type { McpRuntimeManager } from "../../domains/mcp/runtime/runtimeManager";
 import {
   equipReadOnlyWorkspaceKit,
   READ_ONLY_WORKSPACE_TOOL_NAMES,
@@ -76,6 +90,16 @@ export function makeSeedEvaluatorAgent<TNative, TVerdict extends SeedVerdict>(
       equipInstruction(await config.buildInstruction(native));
 
       await equipReadOnlyWorkspaceKit({ quiet: true });
+      const mcpRuntime = expectResource<McpRuntimeManager>(MCP_RUNTIME_RESOURCE_KEY, {
+        optional: true,
+      });
+      const mcpProvenance = expectResource<McpAuditProvenanceCollector>(
+        MCP_AUDIT_PROVENANCE_RESOURCE_KEY,
+        { optional: true },
+      );
+      if (mcpRuntime && mcpProvenance) {
+        for (const tool of createAuditMcpGatewayTools(mcpRuntime, mcpProvenance)) equipTool(tool);
+      }
       // Read-only fan-out with no auto-compaction: a hard per-seed intake ceiling is this worker's
       // top-level context/cost bound. Declared explicitly here rather than hidden inside the kit.
       equipContextIntakeBudgetMiddleware({

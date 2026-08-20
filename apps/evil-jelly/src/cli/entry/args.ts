@@ -119,6 +119,11 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
     return { ...common, ...parseInitArgs(options) };
   }
   if (commandName === "audit") {
+    if (options.devtool) {
+      failArgs(
+        "--devtool is not supported by audit; configure a server with use.audit.exposure=always instead",
+      );
+    }
     return { ...common, ...parseAuditArgs(args, options) };
   }
   if (commandName === "mcp") {

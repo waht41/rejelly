@@ -3,6 +3,11 @@ import {
   createDevtoolMcpDesiredServer,
   resolveMcpSettingsLayers,
 } from "../../../../domains/mcp/configuration/configuration";
+import { isMcpToolAllowed, type McpDesiredConfig } from "../../../../domains/mcp/contracts";
+import type {
+  McpSessionControl,
+  McpSessionStatusRow,
+} from "../../../../domains/mcp/management/sessionControl";
 import {
   createMcpDispatchBindingFactory,
   createMcpRuntimeProviders,
@@ -18,9 +23,10 @@ import {
   getEnvironmentValue,
   getReviewEndpointFromEnv,
 } from "../../../../shared/configuration/env";
-import { getSettings } from "../../../../shared/configuration/settings";
+import { getSettings, invalidateSettingsCache } from "../../../../shared/configuration/settings";
 import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
+import { grantMcpWorkspaceTrust, readMcpTrustGrants } from "../../../../shared/mcp/trustRepository";
 import { buildConfiguredSkillRuntimeSnapshot } from "../../../skill-runtime/configuredRuntime";
 import { formatSkillRuntimeStartupSummary } from "../../../skill-runtime/startupSummary";
 import { buildSessionResumeSeed, hydrateResumeSeed, type SessionResumeSeed } from "./resume";
@@ -119,20 +125,84 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
   // Connect optional MCP servers (e.g. devtool introspection) once, above the run loop, so the
   // connection is reused across resume segments. Best-effort: empty when disabled/unreachable.
   // The framework borrows these via runWith({ providers }); disposal stays here (finally).
-  const settings = getSettings();
-  const dynamicMcpServers = settings.mcp.devtool
-    ? [createDevtoolMcpDesiredServer(`${new URL(getReviewEndpointFromEnv()).origin}/mcp`)]
-    : [];
+  const workspaceRoot = getWorkspaceFsPolicy().getRoot();
+  const resolveDesiredMcp = (): McpDesiredConfig => {
+    const settings = getSettings();
+    const dynamicMcpServers = settings.mcp.devtool
+      ? [createDevtoolMcpDesiredServer(`${new URL(getReviewEndpointFromEnv()).origin}/mcp`)]
+      : [];
+    return resolveMcpSettingsLayers(settings.mcp, dynamicMcpServers);
+  };
   const mcpRuntime = new McpRuntimeManager(
     new SdkMcpRuntimeConnector({
-      workspaceRoot: getWorkspaceFsPolicy().getRoot(),
+      workspaceRoot,
       resolveEnvironment: getEnvironmentValue,
     }),
   );
-  const desiredMcp = resolveMcpSettingsLayers(settings.mcp, dynamicMcpServers);
-  await mcpRuntime.reconcile(desiredMcp);
+  let desiredMcp = resolveDesiredMcp();
+  let trustGrants = readMcpTrustGrants(workspaceRoot);
+  await mcpRuntime.reconcile(desiredMcp, trustGrants);
   const mcpProviders = createMcpRuntimeProviders(mcpRuntime);
   const mcpBindingFactory = createMcpDispatchBindingFactory(mcpRuntime, bindings.confirmTool);
+  const publishMcpInventory = () =>
+    bindings.setAvailableMcpServers?.(
+      desiredMcp.servers
+        .filter((server) => server.definition.use.chat.exposure !== "off")
+        .map((server) => ({ serverId: server.id })),
+    );
+  const mcpSessionControl: McpSessionControl = {
+    status: (selectedServerIds): readonly McpSessionStatusRow[] => {
+      const selected = new Set(selectedServerIds);
+      const runtimeById = new Map(
+        mcpRuntime.getSnapshot().servers.map((server) => [server.serverId, server]),
+      );
+      return desiredMcp.servers.map((server) => {
+        const runtime = runtimeById.get(server.id);
+        const exposure = server.definition.use.chat.exposure;
+        const isSelected = selected.has(server.id);
+        return {
+          serverId: server.id,
+          source: server.source,
+          exposure,
+          selected: isSelected,
+          routable:
+            runtime?.status === "ready" &&
+            exposure !== "off" &&
+            (exposure === "always" || isSelected),
+          connection: runtime?.status ?? "failed",
+          toolCount:
+            mcpRuntime
+              .getCatalog(server.id)
+              ?.tools.filter((tool) => isMcpToolAllowed(server.definition, "chat", tool.name))
+              .length ?? 0,
+          configFingerprint: runtime?.configFingerprint ?? "unavailable",
+          ...(runtime?.error ? { error: runtime.error } : {}),
+        };
+      });
+    },
+    reload: async (serverId) => {
+      invalidateSettingsCache();
+      desiredMcp = resolveDesiredMcp();
+      trustGrants = readMcpTrustGrants(workspaceRoot);
+      await mcpRuntime.reconcile(desiredMcp, trustGrants);
+      publishMcpInventory();
+      await mcpRuntime.reload(serverId);
+    },
+    grantTrust: async (serverId) => {
+      const server = desiredMcp.servers.find((candidate) => candidate.id === serverId);
+      const runtime = mcpRuntime
+        .getSnapshot()
+        .servers.find((candidate) => candidate.serverId === serverId);
+      if (!server || !runtime) throw new Error(`Unknown MCP server: ${serverId}`);
+      if (server.source.kind !== "workspace") return;
+      grantMcpWorkspaceTrust(workspaceRoot, {
+        serverId,
+        configFingerprint: runtime.configFingerprint,
+      });
+      trustGrants = readMcpTrustGrants(workspaceRoot);
+      await mcpRuntime.reconcile(desiredMcp, trustGrants);
+    },
+  };
   const resolveMcpUserInput = (serverId: string) => {
     const state = mcpRuntime.getSnapshot().servers.find((server) => server.serverId === serverId);
     if (!state) return { status: "unavailable" as const };
@@ -145,11 +215,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
     return { status, configFingerprint: state.configFingerprint };
   };
   try {
-    bindings.setAvailableMcpServers?.(
-      desiredMcp.servers
-        .filter((server) => server.definition.use.chat.exposure !== "off")
-        .map((server) => ({ serverId: server.id })),
-    );
+    publishMcpInventory();
     const skillRuntime = await buildConfiguredSkillRuntimeSnapshot();
     bindings.setAvailableSkills?.(
       (skillRuntime.snapshot.catalog.entries ?? []).map((skill) => ({
@@ -179,6 +245,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
         seedMcpSelection: state.resumeSeed?.mcpSelection,
         mcpProviders,
         mcpBindingFactory,
+        mcpSessionControl,
         resolveMcpUserInput,
         skillSnapshot: skillRuntime.snapshot,
         mockSourceTraceId,

@@ -355,6 +355,8 @@ export type McpCallRejectionCode =
   | "call_failed"
   | "arguments_too_large"
   | "arguments_too_deep"
+  | "call_budget_exceeded"
+  | "result_too_large"
   | "invalid_tool_schema"
   | "invalid_arguments";
 

@@ -241,6 +241,22 @@ export class McpRuntimeManager {
     );
   }
 
+  getDesiredServer(serverId: string): McpDesiredServer | undefined {
+    return this.entries.get(serverId)?.server;
+  }
+
+  getAuditLimits(
+    serverId: string,
+  ): { readonly maxCallsPerSeed: number; readonly maxResultBytesPerSeed: number } | undefined {
+    const policy = this.entries.get(serverId)?.server.definition.use.audit;
+    return policy
+      ? {
+          maxCallsPerSeed: policy.maxCallsPerSeed,
+          maxResultBytesPerSeed: policy.maxResultBytesPerSeed,
+        }
+      : undefined;
+  }
+
   /** Capture one immutable authorization/catalog view for a single model dispatch. */
   captureDispatchBinding(
     consumer: McpConsumer,
@@ -436,17 +452,40 @@ export class McpRuntimeManager {
   }
 
   /** Required-policy barrier for a later composition boundary; non-required servers never block. */
-  requiredServerIds(consumer: McpConsumer): readonly string[] {
+  requiredServerIds(
+    consumer: McpConsumer,
+    selectedServerIds: readonly string[] = [],
+  ): readonly string[] {
+    const selected = new Set(selectedServerIds);
     return Object.freeze(
       [...this.entries.values()]
         .filter(
           (entry) =>
             entry.server.definition.use[consumer].required &&
-            entry.server.definition.use[consumer].exposure !== "off",
+            selectedForConsumer(entry.server, consumer, selected),
         )
         .map((entry) => entry.server.id)
         .sort(),
     );
+  }
+
+  async waitForRequiredServers(
+    consumer: McpConsumer,
+    selectedServerIds: readonly string[] = [],
+  ): Promise<readonly McpServerRuntimeState[]> {
+    const required = this.requiredServerIds(consumer, selectedServerIds);
+    if (required.length === 0) return Object.freeze([]);
+    const requiredSet = new Set(required);
+    while (true) {
+      const states = this.snapshot.servers.filter((server) => requiredSet.has(server.serverId));
+      if (states.every((server) => server.status !== "pending")) return Object.freeze(states);
+      await new Promise<void>((resolve) => {
+        const unsubscribe = this.subscribe(() => {
+          unsubscribe();
+          resolve();
+        });
+      });
+    }
   }
 
   async dispose(): Promise<void> {

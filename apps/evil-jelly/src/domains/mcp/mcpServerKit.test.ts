@@ -31,7 +31,12 @@ describe("MCP dispatch composition", () => {
       ok: true as const,
       result: { content: [{ type: "text", text: "ok" }] },
     }));
-    const manager = { captureDispatchBinding, callBoundTool } as unknown as McpRuntimeManager;
+    const waitForRequiredServers = vi.fn(async () => []);
+    const manager = {
+      captureDispatchBinding,
+      callBoundTool,
+      waitForRequiredServers,
+    } as unknown as McpRuntimeManager;
     const confirmTool = vi
       .fn<ToolConfirmationHandler>()
       .mockResolvedValueOnce({ action: "reject" })
@@ -51,5 +56,26 @@ describe("MCP dispatch composition", () => {
     expect(captureDispatchBinding).toHaveBeenCalledTimes(2);
     expect(captureDispatchBinding).toHaveBeenNthCalledWith(1, "chat", ["docs"]);
     expect(captureDispatchBinding).toHaveBeenNthCalledWith(2, "chat", ["github", "docs"]);
+    expect(waitForRequiredServers).toHaveBeenNthCalledWith(1, "chat", ["docs"]);
+    expect(waitForRequiredServers).toHaveBeenNthCalledWith(2, "chat", ["github", "docs"]);
+  });
+
+  it("rejects a dispatch when a required server finishes unavailable", async () => {
+    const manager = {
+      waitForRequiredServers: vi.fn(async () => [
+        {
+          serverId: "docs",
+          status: "failed",
+          configFingerprint: "config-1",
+          error: "offline",
+        },
+      ]),
+      captureDispatchBinding: vi.fn(),
+    } as unknown as McpRuntimeManager;
+
+    await expect(createMcpDispatchBindingFactory(manager, vi.fn())(["docs"])).rejects.toThrow(
+      "docs (failed: offline)",
+    );
+    expect(manager.captureDispatchBinding).not.toHaveBeenCalled();
   });
 });

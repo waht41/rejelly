@@ -19,7 +19,19 @@ export function createMcpDispatchBindingFactory(
   manager: McpRuntimeManager,
   confirmTool: ToolConfirmationHandler,
 ): McpDispatchBindingFactory {
-  return (selectedServerIds = []) => {
+  return async (selectedServerIds = []) => {
+    const required = await manager.waitForRequiredServers("chat", selectedServerIds);
+    const failures = required.filter((server) => server.status !== "ready");
+    if (failures.length > 0) {
+      throw new Error(
+        `Required MCP server(s) unavailable: ${failures
+          .map(
+            (server) =>
+              `${server.serverId} (${server.status}${server.error ? `: ${server.error}` : ""})`,
+          )
+          .join(", ")}`,
+      );
+    }
     const binding = manager.captureDispatchBinding("chat", selectedServerIds);
     return Object.freeze({
       binding,

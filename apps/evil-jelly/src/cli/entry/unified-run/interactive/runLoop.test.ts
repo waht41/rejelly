@@ -29,6 +29,9 @@ vi.mock("../../../../domains/mcp/runtime/runtimeManager", () => ({
   McpRuntimeManager: class {
     reconcile = runtimeMocks.reconcileMcp;
     dispose = runtimeMocks.disposeMcp;
+    getSnapshot = () => ({ servers: [] });
+    getCatalog = () => undefined;
+    reload = vi.fn(async () => undefined);
   },
 }));
 
@@ -48,6 +51,12 @@ vi.mock("../../../../shared/configuration/settings", () => ({
       devtool: false,
     },
   }),
+  invalidateSettingsCache: vi.fn(),
+}));
+
+vi.mock("../../../../shared/mcp/trustRepository", () => ({
+  readMcpTrustGrants: () => [],
+  grantMcpWorkspaceTrust: vi.fn(),
 }));
 
 vi.mock("../../../skill-runtime/configuredRuntime", () => ({
@@ -103,7 +112,7 @@ describe("runInteractiveLoop mock session isolation", () => {
       isolateSessionState: true,
     });
 
-    expect(runtimeMocks.reconcileMcp).toHaveBeenCalledWith({ servers: [] });
+    expect(runtimeMocks.reconcileMcp).toHaveBeenCalledWith({ servers: [] }, []);
     expect(setAvailableMcpServers).toHaveBeenCalledWith([]);
     expect(createMcpRuntimeProvidersMock).toHaveBeenCalledOnce();
   });

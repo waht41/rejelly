@@ -267,10 +267,15 @@ describe("parseCliArgs", () => {
   });
 
   it("parses settings-override flags into common settings", () => {
-    const args = parseCliArgs([
+    const unifiedArgs = parseCliArgs(["node", "evil", "--devtool", "--doc-map", "docs/map.jsonc"]);
+    expect(unifiedArgs.settings).toEqual({
+      docMap: "docs/map.jsonc",
+      devtoolMcp: true,
+    });
+
+    const auditArgs = parseCliArgs([
       "node",
       "evil",
-      "--devtool",
       "--doc-map",
       "docs/map.jsonc",
       "audit",
@@ -282,9 +287,8 @@ describe("parseCliArgs", () => {
       "10",
       "--no-ledger-gc",
     ]);
-    expect(args.settings).toEqual({
+    expect(auditArgs.settings).toEqual({
       docMap: "docs/map.jsonc",
-      devtoolMcp: true,
       auditMaxSeeds: 48,
       auditLedgerGcDays: 10,
       auditDisableLedgerGc: true,
@@ -461,6 +465,18 @@ describe("parseCliArgs", () => {
     });
 
     expect(() => parseCliArgs(["node", "evil", "--family", "fragmentation"])).toThrow("exit 1");
+  });
+
+  it("rejects DevTool MCP for the Audit workflow", () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+
+    expect(() => parseCliArgs(["node", "evil", "audit", "--family", "clone", "--devtool"])).toThrow(
+      "exit 1",
+    );
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("not supported by audit"));
   });
 
   it.each([

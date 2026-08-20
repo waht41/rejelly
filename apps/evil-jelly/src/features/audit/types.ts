@@ -9,6 +9,7 @@
  * decides whether a candidate is actionable and proposes a concrete refactor.
  */
 
+import type { McpAuditProvenance } from "../../domains/mcp/gateway/auditDispatch";
 import type { AuditFindingKind } from "./contracts";
 
 export type { AuditFindingKind } from "./contracts";
@@ -143,6 +144,8 @@ export interface AuditReportData {
   };
   evaluatedCount: number;
   findings: AuditFinding[];
+  /** Actual native MCP calls observed during this run; schemas and responses are not copied. */
+  mcp?: readonly McpAuditProvenance[];
 }
 
 export interface AuditReportRenderOptions {

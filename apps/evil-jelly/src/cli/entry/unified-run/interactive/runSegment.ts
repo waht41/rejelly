@@ -2,6 +2,7 @@
 
 import { type AgentSnapshot, isAbortError, type Message, type ModelAdapter } from "@rejelly/core";
 import type { ReviewOptions } from "@rejelly/core/debugger";
+import type { McpSessionControl } from "../../../../domains/mcp/management/sessionControl";
 import { LazySessionRecorder } from "../../../../domains/session/recorder/lazySessionRecorder";
 import {
   openSessionRecorder,
@@ -58,6 +59,8 @@ export interface RunEvilJellyHostOptions {
   mcpProviders?: Record<string, unknown>;
   /** Captures one immutable MCP binding for every model boundary. */
   mcpBindingFactory?: ConversationAgentProps["mcpBindingFactory"];
+  /** Interactive lifecycle over the process-owned MCP runtime. */
+  mcpSessionControl?: McpSessionControl;
   /** Borrowed process-lifetime loose Skill snapshot, reused across run segments. */
   skillSnapshot?: SkillRuntimeSnapshot;
   /**
@@ -212,6 +215,7 @@ export async function runEvilJellyHost(
           isolateSessionState: options.isolateSessionState,
           sessionRecorder: recorder,
           mcpBindingFactory: options.mcpBindingFactory,
+          mcpSessionControl: options.mcpSessionControl,
         }),
       runWithOptions: {
         snapshot,

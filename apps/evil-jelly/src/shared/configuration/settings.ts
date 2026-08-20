@@ -114,6 +114,11 @@ export function initSettings(overrides: SettingsCliOverrides): void {
   cache = undefined;
 }
 
+/** Re-read user/workspace files while preserving this process's CLI override layer. */
+export function invalidateSettingsCache(): void {
+  cache = undefined;
+}
+
 function readSettingsFile(filePath: string): EvilJellySettingsFile {
   let raw: string;
   try {

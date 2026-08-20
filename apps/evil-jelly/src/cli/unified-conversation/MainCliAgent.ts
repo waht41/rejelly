@@ -13,6 +13,7 @@ import {
   type Message,
   reborn,
 } from "@rejelly/core";
+import type { McpSessionControl } from "../../domains/mcp/management/sessionControl";
 import type { SessionRecorder } from "../../domains/session/recorder/sessionRecorder";
 import {
   listSessions,
@@ -56,6 +57,7 @@ import { materializeSkillAwareUserInput } from "../message-composer/message-mate
 import { withAbort } from "../runtime/withAbort";
 import { drainSteers } from "../submission-dispatch/steerQueue";
 import { combineSessionBudget } from "./budget";
+import { handleMcpCommand } from "./mcpCommands";
 
 const UnifiedAgentWithAbort = UnifiedAgent.fork({ middlewares: [withAbort()] });
 
@@ -147,6 +149,8 @@ export interface MainCliAgentProps extends EvilJellyBindings {
   sessionRecorder?: SessionRecorder;
   /** Composition-root factory for immutable per-model-dispatch MCP bindings. */
   mcpBindingFactory?: ConversationAgentProps["mcpBindingFactory"];
+  /** Interactive status/reload/trust operations over the process-owned MCP runtime. */
+  mcpSessionControl?: McpSessionControl;
 }
 
 type RouterIntent =
@@ -156,6 +160,7 @@ type RouterIntent =
   | { kind: "status" }
   | { kind: "compress" }
   | { kind: "resume"; rawInput: string }
+  | { kind: "mcp"; rawInput: string }
   | { kind: "message"; promptInput: PromptInput; userInput: string };
 
 interface RouterRuntime {
@@ -168,6 +173,7 @@ interface RouterRuntime {
   skillSnapshot?: SkillRuntimeSnapshot;
   resolveMcpUserInput?: MainCliAgentProps["resolveMcpUserInput"];
   sessionMcpSelection: readonly string[];
+  setSessionMcpSelection: (selectedServerIds: readonly string[]) => void;
   mcpBindingFactory?: ConversationAgentProps["mcpBindingFactory"];
 }
 
@@ -196,6 +202,9 @@ function classifyRouterIntent(promptInput: PromptInput): RouterIntent {
   }
   if (normalized === "/resume" || normalized?.startsWith("/resume ")) {
     return { kind: "resume", rawInput: commandText! };
+  }
+  if (normalized === "/mcp" || normalized?.startsWith("/mcp ")) {
+    return { kind: "mcp", rawInput: commandText! };
   }
   return { kind: "message", promptInput, userInput: promptInputPlainText(promptInput).trim() };
 }
@@ -352,6 +361,19 @@ async function handleResume(runtime: RouterRuntime, rawInput: string): Promise<b
   return true;
 }
 
+async function handleMcp(runtime: RouterRuntime, rawInput: string): Promise<void> {
+  await handleMcpCommand(rawInput, {
+    control: runtime.props.mcpSessionControl,
+    selectedServerIds: runtime.sessionMcpSelection,
+    setSelectedServerIds: runtime.setSessionMcpSelection,
+    recordSelection: async (selectedServerIds) => {
+      await runtime.props.sessionRecorder?.recordMcpSelection(selectedServerIds, "command");
+    },
+    requestChoice: runtime.host.requestChoice,
+    logSystem: runtime.host.logSystemEvent,
+  });
+}
+
 function formatPersistenceError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -486,7 +508,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
       "main_cli:last_cache_tokens",
       props.seedBudget?.lastCacheReadTokens ?? 0,
     );
-    const [sessionMcpSelection] = equipMemory<readonly string[]>(
+    const [sessionMcpSelection, setSessionMcpSelection] = equipMemory<readonly string[]>(
       "main_cli:mcp_selection",
       props.seedMcpSelection ?? [],
     );
@@ -534,6 +556,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
       }),
       resolveMcpUserInput: props.resolveMcpUserInput,
       sessionMcpSelection,
+      setSessionMcpSelection,
       mcpBindingFactory: props.mcpBindingFactory,
     };
 
@@ -561,6 +584,9 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
           if (await handleResume(runtime, intent.rawInput)) {
             return;
           }
+          return reborn();
+        case "mcp":
+          await handleMcp(runtime, intent.rawInput);
           return reborn();
         case "message":
           await runConversationTurn(runtime, intent.promptInput, intent.userInput);
