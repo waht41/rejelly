@@ -10,7 +10,7 @@ import {
 } from "../../../shared/model/prompt/pseudoXml";
 
 const READ_FILE_TOOL_NAME = "read_file";
-const FILE_OPENING = /(?:^|\n)<(file(?:-[a-f0-9]{8}(?:-\d+)?)?)((?: [^>\n]*)?)>\n/g;
+const FILE_OPENING = /(?:^|\n)<(file(?:-[a-f0-9]{8}(?:-\d+)?)?)((?: [^>\n]*)?)(?<!\/)>\n/g;
 
 interface FileEnvelope {
   full: string;
