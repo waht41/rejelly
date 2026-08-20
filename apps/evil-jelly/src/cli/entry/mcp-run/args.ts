@@ -58,7 +58,7 @@ export function registerMcpArgs(cli: CAC): void {
     .usage("mcp list|get|add|remove|enable|disable [serverId] [options]")
     .option("--scope <scope>", "user, project, or effective (read commands only)")
     .option("--url <url>", "add: Streamable HTTP endpoint")
-    .option("--cwd <path>", "add stdio: working directory (default: workspace root)")
+    .option("--server-cwd <path>", "add stdio: working directory (default: workspace root)")
     .option(
       "--server-env <KEY=env:NAME|KEY=value:TEXT>",
       "add stdio: environment value source (repeatable)",
@@ -127,13 +127,13 @@ function parseAddSettings(
   options: Record<string, unknown>,
 ): McpServerSettings {
   const url = resolveOptionalString(options.url);
-  const cwd = resolveOptionalString(options.cwd);
+  const cwd = resolveOptionalString(options.serverCwd);
   const environment = parseValueSources(options.serverEnv, "--server-env");
   const headers = parseValueSources(options.header, "--header");
   if (url !== undefined) {
     if (command.length > 0) failArgs("mcp add accepts either --url or a stdio command, not both.");
     if (cwd !== undefined || Object.keys(environment).length > 0) {
-      failArgs("--cwd/--server-env apply only to stdio MCP servers.");
+      failArgs("--server-cwd/--server-env apply only to stdio MCP servers.");
     }
     return {
       transport: {
