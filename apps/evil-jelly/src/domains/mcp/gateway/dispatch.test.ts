@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { McpBoundRoute, McpDispatchBinding } from "../contracts";
-import { createMcpGatewayToolsForDispatch, referenceMcpTools } from "./dispatch";
+import {
+  createMcpGatewayToolsForDispatch,
+  createUnavailableMcpDispatch,
+  referenceMcpTools,
+} from "./dispatch";
 
 function route(serverId: string, nativeToolName: string): McpBoundRoute {
   return {
@@ -65,6 +69,23 @@ function binding(): McpDispatchBinding {
 }
 
 describe("MCP dispatch gateway", () => {
+  it("keeps stable unavailable gateway tools without an MCP runtime", async () => {
+    const tools = createMcpGatewayToolsForDispatch(createUnavailableMcpDispatch());
+
+    expect(tools.map((tool) => tool.name)).toEqual(["mcp_reference", "mcp_call"]);
+    await expect(tools[0].handler({ query: "typescript" })).resolves.toEqual({
+      type: "mcp_reference_v1",
+      matches: [],
+    });
+    await expect(
+      tools[1].handler({
+        tool: { serverId: "typescript", nativeToolName: "get_definition" },
+        catalogRevision: "catalog-1",
+        arguments: {},
+      }),
+    ).resolves.toMatchObject({ status: "rejected", code: "tool_unavailable" });
+  });
+
   it("references same-named tools by structured identity and reports pending servers", () => {
     const result = referenceMcpTools(binding(), { query: "read documentation" });
 

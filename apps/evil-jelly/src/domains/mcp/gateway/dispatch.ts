@@ -93,7 +93,7 @@ const EMPTY_MCP_BINDING: McpDispatchBinding = Object.freeze({
   route: () => undefined,
 });
 
-/** Keeps provider schemas stable even when no MCP runtime was configured. */
+/** Keeps the provider tool surface stable even when no MCP runtime is configured. */
 export function createUnavailableMcpDispatch(): McpGatewayDispatch {
   return Object.freeze({
     binding: EMPTY_MCP_BINDING,
