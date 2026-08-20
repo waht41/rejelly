@@ -53,7 +53,6 @@ describe("settings resolution", () => {
       disableLedgerGc: false,
     });
     expect(s.skills).toEqual({ enabled: true, overrides: {} });
-    expect(s.mcp.devtool).toBe(false);
     expect(resolveMcpSettingsLayers(s.mcp)).toEqual({ servers: [] });
   });
 
@@ -144,14 +143,12 @@ describe("settings resolution", () => {
     }`);
     initSettings({
       docMap: "other/map.jsonc",
-      devtoolMcp: true,
       auditMaxSeeds: 32,
       auditLedgerGcDays: 7,
       auditDisableLedgerGc: true,
     });
     const s = getSettings();
     expect(s.docMap).toBe("other/map.jsonc");
-    expect(s.mcp.devtool).toBe(true);
     expect(s.audit).toMatchObject({
       maxSeeds: 32,
       ledgerGcDays: 7,

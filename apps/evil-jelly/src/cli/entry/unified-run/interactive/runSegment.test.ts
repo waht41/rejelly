@@ -150,13 +150,13 @@ describe("runEvilJellyHost session teardown", () => {
     await runEvilJellyHost({ logSystemEvent: vi.fn() } as unknown as EvilJellyBindings, {
       runControl: createInteractiveRunControl(),
       model: { id: "test-model" } as ModelAdapter,
-      mcpProviders: { "mcp:devtool": { id: "client" } },
+      mcpProviders: { "mcp:runtime": { id: "manager" } },
       skillSnapshot: snapshot,
     });
 
     const runWithOptions = mocks.runWithReview.mock.calls[0]?.[0].runWithOptions;
     expect(runWithOptions.providers).toMatchObject({
-      "mcp:devtool": { id: "client" },
+      "mcp:runtime": { id: "manager" },
       "evil-jelly:skill-runtime:v1": snapshot,
     });
     expect(runWithOptions.trace.attributes).toMatchObject({

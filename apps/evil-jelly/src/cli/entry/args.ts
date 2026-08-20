@@ -18,7 +18,6 @@ import {
   parseUnifiedRunArgs,
   registerUnifiedRunArgs,
   type UnifiedRunCommandArgs,
-  unifiedSettingsOverrides,
 } from "./unified-run/args";
 
 export type ParsedInitArgs = CommonParsedArgs & InitCommandArgs;
@@ -106,7 +105,6 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
     workspace: resolveOptionalPath(options.workspace),
     settings: {
       ...auditSettingsOverrides(options),
-      ...unifiedSettingsOverrides(options),
     },
   };
 

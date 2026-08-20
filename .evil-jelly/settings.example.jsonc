@@ -16,4 +16,27 @@
   //     "project:release": { "enabled": true },
   //   },
   // },
+  // MCP servers are replaced as a whole across user, workspace, and dynamic layers.
+  // This TypeScript server analyzes the current workspace. Audit receives only the listed tools.
+  // "mcp": {
+  //   "servers": {
+  //     "typescript": {
+  //       "transport": {
+  //         "type": "stdio",
+  //         "command": "npx",
+  //         "args": ["-y", "ts-language-mcp", "."],
+  //       },
+  //       "use": {
+  //         "chat": { "exposure": "explicit", "required": false },
+  //         "audit": {
+  //           "exposure": "always",
+  //           "required": false,
+  //           "allow": ["get_definition", "get_references", "get_diagnostics", "get_all_diagnostics"],
+  //           "maxCallsPerSeed": 4,
+  //           "maxResultBytesPerSeed": 65536,
+  //         },
+  //       },
+  //     },
+  //   },
+  // },
 }

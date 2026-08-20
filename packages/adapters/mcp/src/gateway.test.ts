@@ -115,6 +115,49 @@ describe("MCP gateway protocol helpers", () => {
     }
   });
 
+  it("accepts arbitrary nested JSON arguments without flattening their structure", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        request: {
+          type: "object",
+          properties: {
+            batches: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  filters: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: { field: { type: "string" }, values: { type: "array" } },
+                      required: ["field", "values"],
+                    },
+                  },
+                },
+                required: ["filters"],
+              },
+            },
+          },
+          required: ["batches"],
+        },
+      },
+      required: ["request"],
+    } as const;
+    const argumentsValue = {
+      request: {
+        batches: [
+          {
+            filters: [{ field: "labels", values: ["bug", 3, true, null, { nested: [1, 2] }] }],
+          },
+        ],
+      },
+    };
+
+    expect(validateMcpToolArguments(schema, argumentsValue)).toEqual({ ok: true });
+  });
+
   it("reports invalid server schemas separately from invalid arguments", () => {
     const result = validateMcpToolArguments({ type: "not-a-json-schema-type" }, {});
     expect(result.ok).toBe(false);

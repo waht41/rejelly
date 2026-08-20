@@ -140,7 +140,7 @@ describe("parseCliArgs", () => {
       "local",
       "--scope",
       "project",
-      "--env",
+      "--server-env",
       "TOKEN=env:MCP_TOKEN",
       "--",
       "npx",
@@ -270,8 +270,8 @@ describe("parseCliArgs", () => {
     const unifiedArgs = parseCliArgs(["node", "evil", "--devtool", "--doc-map", "docs/map.jsonc"]);
     expect(unifiedArgs.settings).toEqual({
       docMap: "docs/map.jsonc",
-      devtoolMcp: true,
     });
+    expect(unifiedArgs).toMatchObject({ kind: "unified", devtool: true });
 
     const auditArgs = parseCliArgs([
       "node",
@@ -299,7 +299,6 @@ describe("parseCliArgs", () => {
     const args = parseCliArgs(["node", "evil"]);
     expect(args.settings).toEqual({
       docMap: undefined,
-      devtoolMcp: undefined,
       auditMaxSeeds: undefined,
       auditLedgerGcDays: undefined,
       auditDisableLedgerGc: undefined,
@@ -477,6 +476,20 @@ describe("parseCliArgs", () => {
       "exit 1",
     );
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining("not supported by audit"));
+  });
+
+  it("rejects DevTool MCP outside the interactive coding workflow", () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+
+    expect(() =>
+      parseCliArgs(["node", "evil", "--headless", "--input", "task", "--devtool"]),
+    ).toThrow("exit 1");
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining("supported only by the interactive coding run"),
+    );
   });
 
   it.each([

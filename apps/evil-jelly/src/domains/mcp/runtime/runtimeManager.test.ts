@@ -25,6 +25,7 @@ function server(
   options: {
     command?: string;
     enabled?: boolean;
+    maxConcurrency?: number;
     source?: McpDesiredServer["source"];
     transport?: "stdio" | "streamableHttp";
   } = {},
@@ -39,6 +40,7 @@ function server(
     definition: defaultMcpServerDefinition({
       transport,
       ...(options.enabled === undefined ? {} : { enabled: options.enabled }),
+      ...(options.maxConcurrency === undefined ? {} : { maxConcurrency: options.maxConcurrency }),
     }),
   };
 }
@@ -212,6 +214,82 @@ describe("McpRuntimeManager", () => {
     await manager.dispose();
   });
 
+  it("limits twelve concurrent Audit calls through the shared server semaphore", async () => {
+    const connector = new ControlledConnector();
+    const manager = new McpRuntimeManager(connector);
+    const base = server("docs", { maxConcurrency: 2 });
+    const auditServer: McpDesiredServer = {
+      ...base,
+      definition: {
+        ...base.definition,
+        use: {
+          ...base.definition.use,
+          audit: {
+            ...base.definition.use.audit,
+            exposure: "always",
+            allow: ["read"],
+          },
+        },
+      },
+    };
+    await manager.reconcile(desired(auditServer));
+    const connection = new FakeConnection([{ name: "read", inputSchema: { type: "object" } }]);
+    const gate = deferred<void>();
+    let active = 0;
+    let maximumActive = 0;
+    connection.callTool.mockImplementation(async () => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await gate.promise;
+      active -= 1;
+      return { content: [{ type: "text", text: "ok" }] };
+    });
+    connector.attempts[0]!.result.resolve(connection);
+    await waitForStatus(manager, "docs", "ready");
+    const route = manager
+      .captureDispatchBinding("audit")
+      .route({ serverId: "docs", nativeToolName: "read" })!;
+
+    const calls = Array.from({ length: 12 }, (_, index) =>
+      manager.callBoundTool("audit", route, { index }),
+    );
+    await vi.waitFor(() => expect(connection.callTool).toHaveBeenCalledTimes(2));
+    expect(maximumActive).toBe(2);
+    gate.resolve();
+    await expect(Promise.all(calls)).resolves.toEqual(
+      Array.from({ length: 12 }, () => expect.objectContaining({ ok: true })),
+    );
+    expect(maximumActive).toBe(2);
+    await manager.dispose();
+  });
+
+  it("lets an in-flight call finish when its server is removed and rejects later calls", async () => {
+    const connector = new ControlledConnector();
+    const manager = new McpRuntimeManager(connector);
+    await manager.reconcile(desired(server("docs")));
+    const connection = new FakeConnection([{ name: "read", inputSchema: { type: "object" } }]);
+    const result = deferred<{ content: { type: "text"; text: string }[] }>();
+    connection.callTool.mockImplementation(() => result.promise);
+    connector.attempts[0]!.result.resolve(connection);
+    await waitForStatus(manager, "docs", "ready");
+    const route = manager
+      .captureDispatchBinding("chat", ["docs"])
+      .route({ serverId: "docs", nativeToolName: "read" })!;
+
+    const inFlight = manager.callBoundTool("chat", route, {});
+    await vi.waitFor(() => expect(connection.callTool).toHaveBeenCalledOnce());
+    await manager.reconcile(desired());
+    expect(connection.close).toHaveBeenCalledOnce();
+    result.resolve({ content: [{ type: "text", text: "finished" }] });
+
+    await expect(inFlight).resolves.toMatchObject({ ok: true });
+    await expect(manager.callBoundTool("chat", route, {})).resolves.toMatchObject({
+      ok: false,
+      code: "tool_unavailable",
+    });
+    await manager.dispose();
+  });
+
   it("publishes immutable ready state and refreshes one server catalog", async () => {
     const connector = new ControlledConnector();
     const manager = new McpRuntimeManager(connector);
@@ -347,6 +425,22 @@ describe("McpRuntimeManager", () => {
     retry.result.resolve(new FakeConnection());
     await waitForStatus(manager, "remote", "ready");
     expect(connector.attempts.filter((attempt) => attempt.server.id === "local")).toHaveLength(1);
+    await manager.dispose();
+  });
+
+  it("does not restart stdio after an established connection exits", async () => {
+    const connector = new ControlledConnector();
+    const scheduler = new ControlledScheduler();
+    const manager = new McpRuntimeManager(connector, { scheduler });
+    await manager.reconcile(desired(server("local")));
+    connector.attempts[0]!.result.resolve(new FakeConnection());
+    await waitForStatus(manager, "local", "ready");
+
+    connector.attempts[0]!.callbacks.onClose();
+    await waitForStatus(manager, "local", "failed");
+
+    expect(connector.attempts).toHaveLength(1);
+    expect(scheduler.pending.size).toBe(0);
     await manager.dispose();
   });
 

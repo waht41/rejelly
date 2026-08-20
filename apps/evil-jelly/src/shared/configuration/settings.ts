@@ -73,7 +73,6 @@ export type EvilJellySettingsFile = z.infer<typeof SettingsFileSchema>;
 /** CLI overrides (highest precedence). */
 export interface SettingsCliOverrides {
   docMap?: string;
-  devtoolMcp?: boolean;
   auditMaxSeeds?: number;
   auditLedgerGcDays?: number;
   auditDisableLedgerGc?: boolean;
@@ -98,7 +97,6 @@ export interface ResolvedSettings {
   mcp: {
     user: { readonly path: string; readonly value: unknown };
     workspace: { readonly path: string; readonly value: unknown };
-    devtool: boolean;
   };
 }
 
@@ -169,7 +167,6 @@ export function getSettings(): ResolvedSettings {
     mcp: {
       user: { path: userPath, value: userFile.mcp },
       workspace: { path: workspacePath, value: workspaceFile.mcp },
-      devtool: cliOverrides.devtoolMcp ?? false,
     },
   };
   cache = { root, resolved };

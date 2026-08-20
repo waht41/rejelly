@@ -44,7 +44,7 @@ export function registerMcpArgs(cli: CAC): void {
     .option("--url <url>", "add: Streamable HTTP endpoint")
     .option("--cwd <path>", "add stdio: working directory (default: workspace root)")
     .option(
-      "--env <KEY=env:NAME|KEY=value:TEXT>",
+      "--server-env <KEY=env:NAME|KEY=value:TEXT>",
       "add stdio: environment value source (repeatable)",
     )
     .option("--header <KEY=env:NAME|KEY=value:TEXT>", "add HTTP: header value source (repeatable)");
@@ -80,7 +80,7 @@ function optionValues(raw: unknown): string[] {
 
 function parseValueSources(
   raw: unknown,
-  flag: "--env" | "--header",
+  flag: "--server-env" | "--header",
 ): Record<string, McpValueSource> {
   const result: Record<string, McpValueSource> = {};
   for (const assignment of optionValues(raw)) {
@@ -112,12 +112,12 @@ function parseAddSettings(
 ): McpServerSettings {
   const url = resolveOptionalString(options.url);
   const cwd = resolveOptionalString(options.cwd);
-  const environment = parseValueSources(options.env, "--env");
+  const environment = parseValueSources(options.serverEnv, "--server-env");
   const headers = parseValueSources(options.header, "--header");
   if (url !== undefined) {
     if (command.length > 0) failArgs("mcp add accepts either --url or a stdio command, not both.");
     if (cwd !== undefined || Object.keys(environment).length > 0) {
-      failArgs("--cwd/--env apply only to stdio MCP servers.");
+      failArgs("--cwd/--server-env apply only to stdio MCP servers.");
     }
     return {
       transport: {

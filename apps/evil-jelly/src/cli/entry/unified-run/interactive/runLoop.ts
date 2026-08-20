@@ -1,9 +1,10 @@
 import type { AgentSnapshot, ModelAdapter } from "@rejelly/core";
+import { resolveMcpSettingsLayers } from "../../../../domains/mcp/configuration/configuration";
 import {
-  createDevtoolMcpDesiredServer,
-  resolveMcpSettingsLayers,
-} from "../../../../domains/mcp/configuration/configuration";
-import { isMcpToolAllowed, type McpDesiredConfig } from "../../../../domains/mcp/contracts";
+  isMcpToolAllowed,
+  type McpDesiredConfig,
+  type McpDesiredServer,
+} from "../../../../domains/mcp/contracts";
 import type {
   McpSessionControl,
   McpSessionStatusRow,
@@ -19,10 +20,7 @@ import {
   resumeSession,
 } from "../../../../domains/session/repository/sessionStore";
 import { qualifiedSkillName } from "../../../../domains/skills/definition/skillDefinition";
-import {
-  getEnvironmentValue,
-  getReviewEndpointFromEnv,
-} from "../../../../shared/configuration/env";
+import { getEnvironmentValue } from "../../../../shared/configuration/env";
 import { getSettings, invalidateSettingsCache } from "../../../../shared/configuration/settings";
 import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
@@ -47,6 +45,8 @@ export interface RunInteractiveLoopParams {
   isolateSessionState?: boolean;
   /** Durable Session writer configuration. */
   session?: RunEvilJellyHostOptions["session"];
+  /** CLI/host overlays already normalized to the same desired-server contract as settings. */
+  dynamicMcpServers?: readonly McpDesiredServer[];
 }
 
 interface InteractiveSessionState {
@@ -128,10 +128,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
   const workspaceRoot = getWorkspaceFsPolicy().getRoot();
   const resolveDesiredMcp = (): McpDesiredConfig => {
     const settings = getSettings();
-    const dynamicMcpServers = settings.mcp.devtool
-      ? [createDevtoolMcpDesiredServer(`${new URL(getReviewEndpointFromEnv()).origin}/mcp`)]
-      : [];
-    return resolveMcpSettingsLayers(settings.mcp, dynamicMcpServers);
+    return resolveMcpSettingsLayers(settings.mcp, params.dynamicMcpServers);
   };
   const mcpRuntime = new McpRuntimeManager(
     new SdkMcpRuntimeConnector({

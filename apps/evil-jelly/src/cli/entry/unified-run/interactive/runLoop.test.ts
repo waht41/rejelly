@@ -1,5 +1,6 @@
 import type { AgentSnapshot, Message, ModelAdapter } from "@rejelly/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { defaultMcpServerDefinition } from "../../../../domains/mcp/configuration/configuration";
 import { createMcpRuntimeProviders } from "../../../../domains/mcp/mcpServerKit";
 import * as sessionStore from "../../../../domains/session/repository/sessionStore";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
@@ -48,7 +49,6 @@ vi.mock("../../../../shared/configuration/settings", () => ({
     mcp: {
       user: { path: "user-settings", value: undefined },
       workspace: { path: "workspace-settings", value: undefined },
-      devtool: false,
     },
   }),
   invalidateSettingsCache: vi.fn(),
@@ -115,6 +115,31 @@ describe("runInteractiveLoop mock session isolation", () => {
     expect(runtimeMocks.reconcileMcp).toHaveBeenCalledWith({ servers: [] }, []);
     expect(setAvailableMcpServers).toHaveBeenCalledWith([]);
     expect(createMcpRuntimeProvidersMock).toHaveBeenCalledOnce();
+  });
+
+  it("reconciles host dynamic MCP servers through the ordinary desired-server contract", async () => {
+    const { bindings } = createBindings();
+    runHostMock.mockResolvedValueOnce(undefined);
+    const devtool = {
+      id: "evil.devtool",
+      source: { kind: "dynamic" as const, sourceId: "cli:--devtool" },
+      definition: defaultMcpServerDefinition({
+        transport: { type: "streamableHttp", url: "http://localhost:5789/mcp" },
+        use: { chat: { exposure: "always" } },
+      }),
+    };
+
+    await runInteractiveLoop({
+      bindings,
+      runControl,
+      model: {} as ModelAdapter,
+      enableReview: false,
+      snapshot: undefined,
+      isolateSessionState: true,
+      dynamicMcpServers: [devtool],
+    });
+
+    expect(runtimeMocks.reconcileMcp).toHaveBeenCalledWith({ servers: [devtool] }, []);
   });
 
   it("publishes the path-free enabled Skill catalog through the host boundary", async () => {

@@ -51,11 +51,7 @@ export interface RunEvilJellyHostOptions {
   seedMcpSelection?: readonly string[];
   /** Resolve non-secret token metadata at submit time. */
   resolveMcpUserInput?: MainCliAgentProps["resolveMcpUserInput"];
-  /**
-   * MCP clients seeded as root providers (key `mcp:<id>`), read in-agent via expectResource.
-   * Connected once at the run-loop boundary and reused across segments; the framework borrows
-   * them (never closes), so disposal stays with the caller.
-   */
+  /** Single process-owned MCP runtime provider, borrowed across run segments. */
   mcpProviders?: Record<string, unknown>;
   /** Captures one immutable MCP binding for every model boundary. */
   mcpBindingFactory?: ConversationAgentProps["mcpBindingFactory"];

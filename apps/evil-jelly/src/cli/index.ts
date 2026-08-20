@@ -60,6 +60,7 @@ async function main() {
         autoAccept: args.autoAccept,
         review: args.review,
         appVersion,
+        devtool: args.devtool,
         createModel: createOpenAIModelFromEnv,
         createBackgroundBindings: createBackgroundHostBindings,
         createInteractiveBindings: createCliHostBindings,

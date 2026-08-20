@@ -1,12 +1,10 @@
 import {
-  createDevtoolMcpDesiredServer,
   evaluateMcpTrust,
   projectMcpServerForDisplay,
   resolveMcpDesiredConfig,
   resolveMcpSettingsLayers,
 } from "../../../domains/mcp/configuration/configuration";
 import type { McpDesiredConfig, McpDesiredServer } from "../../../domains/mcp/contracts";
-import { getReviewEndpointFromEnv } from "../../../shared/configuration/env";
 import { getSettings, type ResolvedSettings } from "../../../shared/configuration/settings";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
 import type { McpManagementCommand, McpReadScope } from "./args";
@@ -24,10 +22,7 @@ function configForScope(scope: McpReadScope, workspaceRoot: string): McpDesiredC
 }
 
 function effectiveMcpConfig(settings: ResolvedSettings): McpDesiredConfig {
-  const dynamic = settings.mcp.devtool
-    ? [createDevtoolMcpDesiredServer(`${new URL(getReviewEndpointFromEnv()).origin}/mcp`)]
-    : [];
-  return resolveMcpSettingsLayers(settings.mcp, dynamic);
+  return resolveMcpSettingsLayers(settings.mcp);
 }
 
 function statusProjection(server: McpDesiredServer): object {
