@@ -13,7 +13,12 @@ import {
   registerAuditArgs,
 } from "./audit-run/args";
 import { type InitCommandArgs, parseInitArgs, registerInitArgs } from "./init-run/args";
-import { type McpCommandArgs, parseMcpArgs, registerMcpArgs } from "./mcp-run/args";
+import {
+  extractMcpAddCommand,
+  type McpCommandArgs,
+  parseMcpArgs,
+  registerMcpArgs,
+} from "./mcp-run/args";
 import {
   parseUnifiedRunArgs,
   registerUnifiedRunArgs,
@@ -125,7 +130,7 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
     return { ...common, ...parseAuditArgs(args, options) };
   }
   if (commandName === "mcp") {
-    return { ...common, ...parseMcpArgs(args, options) };
+    return { ...common, ...parseMcpArgs(args, options, extractMcpAddCommand(argv)) };
   }
   if (hasAuditOnlyArgs(options)) {
     failArgs(

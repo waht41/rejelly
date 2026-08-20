@@ -36,6 +36,36 @@ export interface McpCommandArgs {
   readonly mcpCommand: McpManagementCommand;
 }
 
+const MCP_ADD_VALUE_OPTIONS = new Set(["--scope", "--url", "--cwd", "--server-env", "--header"]);
+
+/**
+ * Read the stdio command from raw argv before CAC can interpret its flags as Evil options.
+ * PowerShell pnpm shims consume a bare `--`, so the delimiter may legitimately be absent by the
+ * time Node starts. MCP options must precede the executable; everything after it belongs to the
+ * child process.
+ */
+export function extractMcpAddCommand(argv: readonly string[]): readonly string[] | undefined {
+  const mcpIndex = argv.findIndex(
+    (argument, index) => argument === "mcp" && argv[index + 1] === "add",
+  );
+  if (mcpIndex < 0) return undefined;
+
+  const tail = argv.slice(mcpIndex + 3);
+  for (let index = 0; index < tail.length; index += 1) {
+    const argument = tail[index];
+    if (argument === "--") return tail.slice(index + 1);
+    if (MCP_ADD_VALUE_OPTIONS.has(argument ?? "")) {
+      index += 1;
+      continue;
+    }
+    if ([...MCP_ADD_VALUE_OPTIONS].some((option) => argument?.startsWith(`${option}=`))) {
+      continue;
+    }
+    return tail.slice(index);
+  }
+  return undefined;
+}
+
 export function registerMcpArgs(cli: CAC): void {
   cli
     .command("mcp [...mcpArgs]", "Manage MCP server settings")
@@ -146,6 +176,7 @@ function parseAddSettings(
 export function parseMcpArgs(
   args: readonly string[],
   options: Record<string, unknown>,
+  rawAddCommand?: readonly string[],
 ): McpCommandArgs {
   const [rawAction = "list", rawServerId, ...rest] = args;
   const trailingCommand = optionValues(options["--"]);
@@ -170,7 +201,7 @@ export function parseMcpArgs(
           action: "add",
           serverId,
           scope: parseWriteScope(options.scope),
-          settings: parseAddSettings([...rest, ...trailingCommand], options),
+          settings: parseAddSettings(rawAddCommand ?? [...rest, ...trailingCommand], options),
         },
       };
     }

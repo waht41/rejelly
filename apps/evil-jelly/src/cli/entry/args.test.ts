@@ -164,6 +164,37 @@ describe("parseCliArgs", () => {
     });
   });
 
+  it("preserves stdio flags when a PowerShell pnpm shim consumes the separator", () => {
+    const args = parseCliArgs([
+      "node",
+      "evil",
+      "mcp",
+      "add",
+      "typescript",
+      "--scope",
+      "project",
+      "npx",
+      "-y",
+      "ts-language-mcp",
+      ".",
+    ]);
+
+    expect(args.kind).toBe("mcp");
+    if (args.kind !== "mcp") throw new Error("expected mcp args");
+    expect(args.mcpCommand).toMatchObject({
+      action: "add",
+      serverId: "typescript",
+      scope: "project",
+      settings: {
+        transport: {
+          type: "stdio",
+          command: "npx",
+          args: ["-y", "ts-language-mcp", "."],
+        },
+      },
+    });
+  });
+
   it("requires explicit writable scope for MCP mutations", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.spyOn(process, "exit").mockImplementation((code) => {
