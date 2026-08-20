@@ -83,6 +83,33 @@ describe("read_file dedup middleware", () => {
     expect(output[0]?.content).toBe(current);
   });
 
+  it("skips unchanged markers while indexing later full envelopes", async () => {
+    const prior =
+      '<file path="a.ts" path-scope="workspace" status="unchanged" reference="previous-read" />\n' +
+      '<file path="b.ts" path-scope="workspace">\ncode\n</file>';
+    const current = '<file path="b.ts" path-scope="workspace">\ncode\n</file>';
+    const calls: ToolCall[] = [
+      { id: "current", name: "read_file", arguments: '{"filePaths":["b.ts"]}' },
+    ];
+    const messages: Message[] = [
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [{ id: "prior", name: "read_file", arguments: "{}" }],
+      },
+      { role: "tool", tool_call_id: "prior", content: prior },
+    ];
+    const middleware = createReadFileDedupMiddleware();
+
+    const output = await middleware.handler(context(messages, calls), calls, async () => [
+      { callId: "current", content: current },
+    ]);
+
+    expect(output[0]?.content).toBe(
+      '<file path="b.ts" path-scope="workspace" status="unchanged" reference="previous-read" />',
+    );
+  });
+
   it("round-trips escaped attributes through the shared XML-like renderer", async () => {
     const current = '<file path="a&amp;&quot;b.ts" path-scope="workspace">\ncode\n</file>';
     const calls: ToolCall[] = [
