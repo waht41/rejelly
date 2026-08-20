@@ -63,7 +63,8 @@ export function buildUnifiedSystemPrompt(options?: {
     [
       "When asked to introduce, explain, or summarize a module/project at a high level, prioritize README.md, package.json descriptions, and docs/ before source code.",
       "Use AST/symbol tools for low-token file structure, exports, symbol snippets, and local dependency summaries before reading full files.",
-      "For semantic TypeScript tasks such as references, definitions, hover, and implementations, use grep + read_file. There is no language-server/`ts_` tool available; grep over the workspace is the reliable way to find usages and declarations.",
+      "When the user explicitly asks to use or search MCP, call mcp_reference before inspecting the workspace. Do not inspect MCP configuration files or search for MCP executables to infer availability; mcp_reference is authoritative for the current dispatch.",
+      "For semantic TypeScript tasks such as references, definitions, hover, and implementations, call mcp_reference first. If it returns a matching selected MCP tool, use mcp_call; otherwise fall back to grep + read_file. MCP native tools are available only through these gateways, never as direct `ts_` tools.",
       "Do not treat AST tools as semantic language-server answers for references, definitions, hover, or implementations.",
       "Use read_file only for implementation details after structural skimming or when documentation/AST/search output is insufficient.",
       "Do not recursively read every imported module. Stop after the core files needed to answer the user's request.",
