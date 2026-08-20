@@ -31,12 +31,16 @@ function biomeScope(value: unknown, all: boolean): BiomeScope {
 export function normalizeVerifyOptions(options: Record<string, unknown>): VerifyOptions {
   const filters = strings(options.filter);
   const all = options.all === true;
+  const biome = biomeScope(options.biome, all);
+  const fix = options.fix === true;
   if (all && filters.length > 0) throw new Error("--all cannot be combined with --filter");
+  if (fix && biome === "skip") throw new Error("--fix cannot be combined with --biome skip");
   return {
     allowMany: options.allowMany === true,
     base: typeof options.base === "string" ? options.base : undefined,
-    biome: biomeScope(options.biome, all),
+    biome,
     dryRun: options.dryRun === true,
+    fix,
     maxFiles: positiveInteger(options.maxFiles, "--max-files", 100),
     scope: all
       ? { kind: "all" }
@@ -44,6 +48,7 @@ export function normalizeVerifyOptions(options: Record<string, unknown>): Verify
         ? { filters, kind: "filtered" }
         : { kind: "affected" },
     tests: options.tests !== false,
+    verbose: options.verbose === true,
   };
 }
 
@@ -54,12 +59,14 @@ export function main(argv = process.argv.slice(2)): void {
     .command("verify", "Run repository verification as one high-level operation")
     .option("--filter <package>", "Turbo package filter (repeatable)")
     .option("--all", "Verify every workspace package and all Biome files")
+    .option("--fix", "Apply Biome safe fixes, formatting, and import sorting before verification")
     .option("--no-tests", "Skip test tasks")
     .option("--biome <scope>", "Biome scope: changed, all, or skip")
     .option("--base <ref>", "Base ref used by the changed-file Biome check")
-    .option("--max-files <count>", "Changed-file safety limit", { default: 100 })
-    .option("--allow-many", "Bypass the changed-file safety limit")
+    .option("--max-files <count>", "Changed-file write safety limit", { default: 100 })
+    .option("--allow-many", "Bypass the changed-file write safety limit")
     .option("--dry-run", "Print the verification plan without running it")
+    .option("--verbose", "List files selected or modified by Biome")
     .action((options: Record<string, unknown>) => {
       process.exitCode = runVerify(findRepoRoot(), normalizeVerifyOptions(options));
     });
@@ -79,13 +86,15 @@ export function main(argv = process.argv.slice(2)): void {
     .command("biome-changed", "Check or format changed files with Biome")
     .option("--write", "Apply safe fixes and formatting")
     .option("--base <ref>", "Comparison base (default: origin/main or main)")
-    .option("--max-files <count>", "Changed-file safety limit", { default: 100 })
-    .option("--allow-many", "Bypass the changed-file safety limit")
+    .option("--max-files <count>", "Changed-file write safety limit", { default: 100 })
+    .option("--allow-many", "Bypass the changed-file write safety limit")
+    .option("--verbose", "List files selected or modified by Biome")
     .action((options: Record<string, unknown>) => {
       process.exitCode = runBiomeChanged(findRepoRoot(), {
         allowMany: options.allowMany === true,
         base: typeof options.base === "string" ? options.base : undefined,
         maxFiles: positiveInteger(options.maxFiles, "--max-files", 100),
+        verbose: options.verbose === true,
         write: options.write === true,
       });
     });

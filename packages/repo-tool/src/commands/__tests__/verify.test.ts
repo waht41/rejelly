@@ -6,9 +6,11 @@ const defaults: VerifyOptions = {
   allowMany: false,
   biome: "changed",
   dryRun: false,
+  fix: false,
   maxFiles: 100,
   scope: { kind: "affected" },
   tests: true,
+  verbose: false,
 };
 
 describe("createVerifyPlan", () => {
@@ -27,6 +29,11 @@ describe("createVerifyPlan", () => {
       },
       steps: [
         {
+          kind: "biome-changed",
+          label: "Biome check (changed files)",
+          write: false,
+        },
+        {
           command: "pnpm",
           args: [
             "exec",
@@ -42,7 +49,6 @@ describe("createVerifyPlan", () => {
           kind: "process",
           label: "workspace tasks",
         },
-        { kind: "biome-changed", label: "Biome (changed files)" },
       ],
     });
   });
@@ -83,6 +89,12 @@ describe("createVerifyPlan", () => {
     expect(plan.steps).toEqual([
       {
         command: "pnpm",
+        args: ["exec", "biome", "check", "."],
+        kind: "process",
+        label: "Biome check (all files)",
+      },
+      {
+        command: "pnpm",
         args: [
           "exec",
           "turbo",
@@ -96,17 +108,27 @@ describe("createVerifyPlan", () => {
         kind: "process",
         label: "workspace tasks",
       },
-      {
-        command: "pnpm",
-        args: ["exec", "biome", "check", "."],
-        kind: "process",
-        label: "Biome (all files)",
-      },
     ]);
+  });
+
+  it("writes with Biome before running workspace tasks when --fix is enabled", () => {
+    const plan = createVerifyPlan(
+      { ...defaults, fix: true },
+      { filters: ["@rejelly/repo-tool"], kind: "packages", source: "explicit" },
+    );
+
+    expect(plan.steps[0]).toEqual({
+      kind: "biome-changed",
+      label: "Biome write (changed files)",
+      write: true,
+    });
+    expect(plan.steps[1]?.label).toBe("workspace tasks");
   });
 
   it("skips Turbo when no changed file belongs to a workspace package", () => {
     const plan = createVerifyPlan(defaults, { kind: "none", source: "affected" });
-    expect(plan.steps).toEqual([{ kind: "biome-changed", label: "Biome (changed files)" }]);
+    expect(plan.steps).toEqual([
+      { kind: "biome-changed", label: "Biome check (changed files)", write: false },
+    ]);
   });
 });

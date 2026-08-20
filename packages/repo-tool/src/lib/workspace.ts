@@ -11,6 +11,12 @@ export interface AffectedPackages {
   unmappedFiles: string[];
 }
 
+interface TurboPackageList {
+  packages?: {
+    items?: unknown[];
+  };
+}
+
 export function loadWorkspacePackages(repoRoot: string): WorkspacePackage[] {
   const result = capture("pnpm", ["list", "--recursive", "--depth", "-1", "--json"], repoRoot);
   if (result.status !== 0) {
@@ -26,6 +32,30 @@ export function loadWorkspacePackages(repoRoot: string): WorkspacePackage[] {
     if (typeof name !== "string" || typeof packagePath !== "string") return [];
     const resolvedPath = path.resolve(packagePath);
     return resolvedPath === resolvedRoot ? [] : [{ name, path: resolvedPath }];
+  });
+}
+
+export function resolveTurboFilteredPackages(
+  repoRoot: string,
+  filters: readonly string[],
+): WorkspacePackage[] {
+  const result = capture(
+    "pnpm",
+    ["exec", "turbo", "ls", "--output=json", ...filters.map((filter) => `--filter=${filter}`)],
+    repoRoot,
+  );
+  if (result.status !== 0) {
+    throw new Error(result.stderr.trim() || "turbo ls failed while resolving --filter");
+  }
+  const parsed: TurboPackageList = JSON.parse(result.stdout);
+  const items = parsed.packages?.items;
+  if (!Array.isArray(items)) throw new Error("turbo ls returned an invalid package list");
+  return items.flatMap((entry): WorkspacePackage[] => {
+    if (!entry || typeof entry !== "object") return [];
+    const name = "name" in entry ? entry.name : undefined;
+    const packagePath = "path" in entry ? entry.path : undefined;
+    if (typeof name !== "string" || typeof packagePath !== "string") return [];
+    return [{ name, path: path.resolve(repoRoot, packagePath) }];
   });
 }
 
@@ -54,4 +84,21 @@ export function mapChangedPathsToPackages(
     else unmappedFiles.push(file);
   }
   return { packages: [...selected].sort(), unmappedFiles };
+}
+
+export function filterChangedPathsForPackages(
+  repoRoot: string,
+  files: readonly string[],
+  workspacePackages: readonly WorkspacePackage[],
+  selectedPackages: readonly WorkspacePackage[],
+): string[] {
+  const packagesByDepth = [...workspacePackages].sort(
+    (left, right) => right.path.length - left.path.length,
+  );
+  const selectedNames = new Set(selectedPackages.map((entry) => entry.name));
+  return files.filter((file) => {
+    const absolute = path.resolve(repoRoot, file);
+    const owner = packagesByDepth.find((entry) => containsPath(entry.path, absolute));
+    return owner === undefined || selectedNames.has(owner.name);
+  });
 }
