@@ -2,6 +2,7 @@ import type { AgentSnapshot, ModelAdapter } from "@rejelly/core";
 import { resolveMcpSettingsLayers } from "../../../../domains/mcp/configuration/configuration";
 import {
   isMcpToolAllowed,
+  type McpBoundRoute,
   type McpDesiredConfig,
   type McpDesiredServer,
 } from "../../../../domains/mcp/contracts";
@@ -13,6 +14,7 @@ import {
   createMcpDispatchBindingFactory,
   createMcpRuntimeProviders,
 } from "../../../../domains/mcp/mcpServerKit";
+import { fingerprintMcpToolSchema } from "../../../../domains/mcp/permissions";
 import { McpRuntimeManager } from "../../../../domains/mcp/runtime/runtimeManager";
 import { SdkMcpRuntimeConnector } from "../../../../domains/mcp/runtime/sdkConnector";
 import {
@@ -24,7 +26,14 @@ import { getEnvironmentValue } from "../../../../shared/configuration/env";
 import { getSettings, invalidateSettingsCache } from "../../../../shared/configuration/settings";
 import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
-import { grantMcpWorkspaceTrust, readMcpTrustGrants } from "../../../../shared/mcp/trustRepository";
+import {
+  grantMcpPersistentServerAccess,
+  grantMcpPersistentToolAccess,
+  grantMcpWorkspaceTrust,
+  readMcpPersistentPermissions,
+  readMcpTrustGrants,
+  revokeMcpPersistentPermissions,
+} from "../../../../shared/mcp/trustRepository";
 import { buildConfiguredSkillRuntimeSnapshot } from "../../../skill-runtime/configuredRuntime";
 import { formatSkillRuntimeStartupSummary } from "../../../skill-runtime/startupSummary";
 import { buildSessionResumeSeed, hydrateResumeSeed, type SessionResumeSeed } from "./resume";
@@ -138,9 +147,28 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
   );
   let desiredMcp = resolveDesiredMcp();
   let trustGrants = readMcpTrustGrants(workspaceRoot);
+  let persistentPermissions = readMcpPersistentPermissions(workspaceRoot);
   await mcpRuntime.reconcile(desiredMcp, trustGrants);
   const mcpProviders = createMcpRuntimeProviders(mcpRuntime);
-  const mcpBindingFactory = createMcpDispatchBindingFactory(mcpRuntime, bindings.confirmTool);
+  const currentPersistentPermission = (serverId: string) => {
+    const runtime = mcpRuntime
+      .getSnapshot()
+      .servers.find((candidate) => candidate.serverId === serverId);
+    return persistentPermissions.find(
+      (permission) =>
+        permission.serverId === serverId &&
+        permission.configFingerprint === runtime?.configFingerprint,
+    );
+  };
+  const persistentServerIds = () =>
+    persistentPermissions
+      .filter(
+        (permission) => permission.chatAccess && currentPersistentPermission(permission.serverId),
+      )
+      .map((permission) => permission.serverId);
+  const mcpBindingFactory = createMcpDispatchBindingFactory(mcpRuntime, bindings.confirmTool, {
+    persistentServerIds,
+  });
   const publishMcpInventory = () =>
     bindings.setAvailableMcpServers?.(
       desiredMcp.servers
@@ -157,15 +185,17 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
         const runtime = runtimeById.get(server.id);
         const exposure = server.definition.use.chat.exposure;
         const isSelected = selected.has(server.id);
+        const persistentAccess = currentPersistentPermission(server.id)?.chatAccess ?? false;
         return {
           serverId: server.id,
           source: server.source,
           exposure,
           selected: isSelected,
+          persistentAccess,
           routable:
             runtime?.status === "ready" &&
             exposure !== "off" &&
-            (exposure === "always" || isSelected),
+            (exposure === "always" || persistentAccess || isSelected),
           connection: runtime?.status ?? "failed",
           toolCount:
             mcpRuntime
@@ -181,6 +211,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
       invalidateSettingsCache();
       desiredMcp = resolveDesiredMcp();
       trustGrants = readMcpTrustGrants(workspaceRoot);
+      persistentPermissions = readMcpPersistentPermissions(workspaceRoot);
       await mcpRuntime.reconcile(desiredMcp, trustGrants);
       publishMcpInventory();
       await mcpRuntime.reload(serverId);
@@ -200,6 +231,41 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
       await mcpRuntime.reconcile(desiredMcp, trustGrants);
     },
     waitForServer: (serverId) => mcpRuntime.waitForServer(serverId),
+    grantPersistentServerAccess: async (serverId) => {
+      const runtime = mcpRuntime
+        .getSnapshot()
+        .servers.find((candidate) => candidate.serverId === serverId);
+      if (!runtime) throw new Error(`Unknown MCP server: ${serverId}`);
+      grantMcpPersistentServerAccess(workspaceRoot, {
+        serverId,
+        configFingerprint: runtime.configFingerprint,
+      });
+      persistentPermissions = readMcpPersistentPermissions(workspaceRoot);
+    },
+    grantPersistentToolAccess: async (grant) => {
+      grantMcpPersistentToolAccess(workspaceRoot, grant);
+      persistentPermissions = readMcpPersistentPermissions(workspaceRoot);
+    },
+    isPersistentToolAllowed: (route: McpBoundRoute) => {
+      const permission = currentPersistentPermission(route.identity.serverId);
+      return (
+        permission?.tools.some(
+          (tool) =>
+            tool.nativeToolName === route.identity.nativeToolName &&
+            tool.toolSchemaFingerprint === fingerprintMcpToolSchema(route),
+        ) ?? false
+      );
+    },
+    persistentPermissions: () =>
+      persistentPermissions.map((permission) => ({
+        serverId: permission.serverId,
+        chatAccess: permission.chatAccess,
+        nativeToolNames: permission.tools.map((tool) => tool.nativeToolName),
+      })),
+    revokePersistentPermissions: async (serverId, nativeToolName) => {
+      revokeMcpPersistentPermissions(workspaceRoot, serverId, nativeToolName);
+      persistentPermissions = readMcpPersistentPermissions(workspaceRoot);
+    },
   };
   const resolveMcpUserInput = (serverId: string) => {
     const state = mcpRuntime.getSnapshot().servers.find((server) => server.serverId === serverId);
@@ -241,6 +307,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
         seedContext: state.resumeSeed?.activeContext,
         seedBudget: state.resumeSeed?.budget,
         seedMcpSelection: state.resumeSeed?.mcpSelection,
+        seedMcpToolGrants: state.resumeSeed?.mcpToolGrants,
         mcpProviders,
         mcpBindingFactory,
         mcpSessionControl,

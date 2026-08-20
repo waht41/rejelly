@@ -69,6 +69,12 @@ export class LazySessionRecorder implements SessionRecorder {
     await (await this.#ensureOpen()).recordMcpSelection(...args);
   }
 
+  async recordMcpToolGrants(
+    ...args: Parameters<SessionRecorder["recordMcpToolGrants"]>
+  ): Promise<void> {
+    await (await this.#ensureOpen()).recordMcpToolGrants(...args);
+  }
+
   async recordMessages(...args: Parameters<SessionRecorder["recordMessages"]>): Promise<void> {
     await (await this.#ensureOpen()).recordMessages(...args);
   }

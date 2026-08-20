@@ -15,7 +15,10 @@ export interface McpCommandPorts {
 }
 
 function usage(): string {
-  return "Usage: /mcp | /mcp use <serverId> | /mcp unuse <serverId> | /mcp reload [serverId]";
+  return (
+    "Usage: /mcp | /mcp use <serverId> | /mcp unuse <serverId> | " +
+    "/mcp reload [serverId] | /mcp permissions | /mcp revoke <serverId>[/<tool>]"
+  );
 }
 
 function errorMessage(error: unknown): string {
@@ -35,6 +38,37 @@ export async function handleMcpCommand(rawInput: string, ports: McpCommandPorts)
   }
   const [rawAction, serverId, ...extra] = args;
   const action = rawAction?.toLocaleLowerCase();
+  if (action === "permissions" && !serverId && extra.length === 0) {
+    const permissions = control.persistentPermissions();
+    ports.logSystem(
+      permissions.length === 0
+        ? "MCP persistent permissions: none.\n"
+        : `MCP persistent permissions:\n${permissions
+            .map(
+              (permission) =>
+                `  ${permission.serverId}: server=${permission.chatAccess ? "allow" : "ask"}; ` +
+                `tools=${permission.nativeToolNames.join(",") || "none"}`,
+            )
+            .join("\n")}\n`,
+    );
+    return;
+  }
+  if (action === "revoke" && serverId && extra.length === 0) {
+    const separator = serverId.indexOf("/");
+    const targetServerId = separator < 0 ? serverId : serverId.slice(0, separator);
+    const nativeToolName = separator < 0 ? undefined : serverId.slice(separator + 1);
+    if (!targetServerId || (separator >= 0 && !nativeToolName)) {
+      ports.logSystem(`${usage()}\n`);
+      return;
+    }
+    await control.revokePersistentPermissions(targetServerId, nativeToolName);
+    ports.logSystem(
+      nativeToolName
+        ? `Revoked persistent MCP tool permission ${targetServerId}/${nativeToolName}.\n`
+        : `Revoked persistent MCP permissions for ${targetServerId}.\n`,
+    );
+    return;
+  }
   if (action === "reload" && extra.length === 0) {
     try {
       await control.reload(serverId);
@@ -60,7 +94,7 @@ export async function handleMcpCommand(rawInput: string, ports: McpCommandPorts)
         control,
         selectedServerIds: () => ports.selectedServerIds,
         approve: async (proposal) => {
-          if (!proposal.requiresTrust) return true;
+          if (!proposal.requiresTrust) return "session";
           const source =
             proposal.source.kind === "dynamic"
               ? `dynamic:${proposal.source.sourceId}`
@@ -75,7 +109,7 @@ export async function handleMcpCommand(rawInput: string, ports: McpCommandPorts)
             ],
             cancelValue: "cancel",
           });
-          return selected === "trust";
+          return selected === "trust" ? "session" : false;
         },
         commitSelection: async (selectedServerIds) => {
           await ports.recordSelection(selectedServerIds);

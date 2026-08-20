@@ -56,6 +56,7 @@ export function readLegacySession(
         },
         messages: parsed.messages,
         mcpSelection: [],
+        mcpToolGrants: [],
         ...(parsed.messages.some(isCompactionBridgeMessage)
           ? {
               warnings: [

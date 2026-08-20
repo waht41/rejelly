@@ -11,6 +11,7 @@ function row(overrides: Partial<McpSessionStatusRow> = {}): McpSessionStatusRow 
     source: { kind: "user" },
     exposure: "explicit",
     selected: false,
+    persistentAccess: false,
     routable: false,
     connection: "ready",
     toolCount: 2,
@@ -24,6 +25,11 @@ function ports(overrides: Partial<McpCommandPorts> = {}) {
     status: vi.fn(() => [row()]),
     reload: vi.fn(async () => undefined),
     grantTrust: vi.fn(async () => undefined),
+    grantPersistentServerAccess: vi.fn(async () => undefined),
+    grantPersistentToolAccess: vi.fn(async () => undefined),
+    isPersistentToolAllowed: vi.fn(() => false),
+    persistentPermissions: vi.fn(() => []),
+    revokePersistentPermissions: vi.fn(async () => undefined),
     waitForServer: vi.fn(async () => ({
       serverId: "docs",
       configFingerprint: "a".repeat(64),
@@ -57,6 +63,11 @@ describe("MCP interactive commands", () => {
         status: () => [row({ source: { kind: "workspace" }, connection: "untrusted" })],
         reload: vi.fn(async () => undefined),
         grantTrust: vi.fn(async () => undefined),
+        grantPersistentServerAccess: vi.fn(async () => undefined),
+        grantPersistentToolAccess: vi.fn(async () => undefined),
+        isPersistentToolAllowed: vi.fn(() => false),
+        persistentPermissions: vi.fn(() => []),
+        revokePersistentPermissions: vi.fn(async () => undefined),
         waitForServer: vi.fn(async () => ({
           serverId: "docs",
           configFingerprint: "a".repeat(64),
@@ -79,5 +90,18 @@ describe("MCP interactive commands", () => {
     await handleMcpCommand("/mcp reload docs", command);
     expect(command.control?.reload).toHaveBeenCalledWith("docs");
     expect(command.recordSelection).not.toHaveBeenCalled();
+  });
+
+  it("lists and revokes persistent permissions", async () => {
+    const command = ports();
+    vi.mocked(command.control!.persistentPermissions).mockReturnValue([
+      { serverId: "docs", chatAccess: true, nativeToolNames: ["search"] },
+    ]);
+
+    await handleMcpCommand("/mcp permissions", command);
+    expect(command.logSystem).toHaveBeenCalledWith(expect.stringContaining("docs"));
+
+    await handleMcpCommand("/mcp revoke docs/search", command);
+    expect(command.control?.revokePersistentPermissions).toHaveBeenCalledWith("docs", "search");
   });
 });

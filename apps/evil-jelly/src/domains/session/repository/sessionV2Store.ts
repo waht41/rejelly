@@ -122,6 +122,7 @@ export async function readV2Session(
         messages: buildStoredActiveContext(replay),
         transcript: buildTranscript(replay, { tailTurns: 10 }),
         mcpSelection: [],
+        mcpToolGrants: [],
         ...(warnings ? { warnings } : {}),
       },
     };

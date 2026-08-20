@@ -55,9 +55,9 @@ describe("MCP dispatch composition", () => {
     expect(callBoundTool).toHaveBeenCalledWith("chat", route, { path: "guide.md" });
     expect(captureDispatchBinding).toHaveBeenCalledTimes(2);
     expect(captureDispatchBinding).toHaveBeenNthCalledWith(1, "chat", ["docs"]);
-    expect(captureDispatchBinding).toHaveBeenNthCalledWith(2, "chat", ["github", "docs"]);
+    expect(captureDispatchBinding).toHaveBeenNthCalledWith(2, "chat", ["docs", "github"]);
     expect(waitForRequiredServers).toHaveBeenNthCalledWith(1, "chat", ["docs"]);
-    expect(waitForRequiredServers).toHaveBeenNthCalledWith(2, "chat", ["github", "docs"]);
+    expect(waitForRequiredServers).toHaveBeenNthCalledWith(2, "chat", ["docs", "github"]);
   });
 
   it("rejects a dispatch when a required server finishes unavailable", async () => {
@@ -77,5 +77,20 @@ describe("MCP dispatch composition", () => {
       "docs (failed: offline)",
     );
     expect(manager.captureDispatchBinding).not.toHaveBeenCalled();
+  });
+
+  it("adds persistently authorized servers to every captured chat binding", async () => {
+    const manager = {
+      waitForRequiredServers: vi.fn(async () => []),
+      captureDispatchBinding: vi.fn(() => binding("persistent")),
+    } as unknown as McpRuntimeManager;
+    const factory = createMcpDispatchBindingFactory(manager, vi.fn(), {
+      persistentServerIds: () => ["docs"],
+    });
+
+    await factory(["github"]);
+
+    expect(manager.waitForRequiredServers).toHaveBeenCalledWith("chat", ["docs", "github"]);
+    expect(manager.captureDispatchBinding).toHaveBeenCalledWith("chat", ["docs", "github"]);
   });
 });

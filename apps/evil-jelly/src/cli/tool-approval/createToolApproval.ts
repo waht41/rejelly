@@ -165,13 +165,17 @@ async function confirmMcpCall(
   const selected = await decision.requestChoice({
     message: `Allow MCP tool ${identity}?\nArguments:\n${JSON.stringify(params.arguments, null, 2)}`,
     options: [
-      { key: "y", label: "Allow", value: "accept" },
+      { key: "y", label: "Allow once", value: "accept" },
+      { key: "s", label: "Allow this tool for this session", value: "accept_session" },
+      { key: "A", label: "Always allow this tool in this workspace", value: "accept_always" },
       { key: "n", label: "Reject", value: "reject" },
     ],
     cancelValue: "reject",
   });
   useOutputStore.getState().resumeWork("Running…");
-  return selected === "accept" ? { action: "accept" } : { action: "reject" };
+  if (selected === "accept_session") return { action: "accept", scope: "session" };
+  if (selected === "accept_always") return { action: "accept", scope: "always" };
+  return selected === "accept" ? { action: "accept", scope: "once" } : { action: "reject" };
 }
 
 async function confirmMcpAccess(
@@ -185,18 +189,20 @@ async function confirmMcpAccess(
   const reasonLine = params.reason ? `\nReason: ${params.reason}` : "";
   const selected = await decision.requestChoice({
     message:
-      `Allow MCP server ${params.serverId} for this session?\n` +
+      `Allow MCP server ${params.serverId}?\n` +
       `Source: ${params.source}\nFingerprint: ${params.configFingerprint}` +
       trustLine +
       reasonLine,
     options: [
       { key: "y", label: "Allow for this session", value: "accept" },
+      { key: "A", label: "Always allow this server in this workspace", value: "accept_always" },
       { key: "n", label: "Reject", value: "reject" },
     ],
     cancelValue: "reject",
   });
   useOutputStore.getState().resumeWork("Running…");
-  return selected === "accept" ? { action: "accept" } : { action: "reject" };
+  if (selected === "accept_always") return { action: "accept", scope: "always" };
+  return selected === "accept" ? { action: "accept", scope: "session" } : { action: "reject" };
 }
 
 type ShellAutoAllowCheck = {

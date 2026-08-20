@@ -11,6 +11,7 @@ import {
 import { isKnownSessionEvent } from "../model/sessionEvents";
 import type { SessionMeta, SessionRecord } from "../model/sessionTypes";
 import { projectMcpSessionSelection } from "../projection/mcpSelectionProjection";
+import { projectMcpSessionToolGrants } from "../projection/mcpToolGrantProjection";
 import { buildStoredActiveContext, buildTranscript } from "../projection/sessionHistoryProjection";
 import {
   projectSessionSummary,
@@ -112,6 +113,7 @@ export async function readV3Session(
         messages: buildStoredActiveContext(replay),
         transcript: buildTranscript(replay, { tailTurns: 10 }),
         mcpSelection: projectMcpSessionSelection(replay),
+        mcpToolGrants: projectMcpSessionToolGrants(replay),
         ...(warnings ? { warnings } : {}),
       },
     };

@@ -12,7 +12,7 @@ export interface McpAccessApprovalProposal {
 export interface McpAccessRequestPorts {
   readonly control?: McpSessionControl;
   readonly selectedServerIds: () => readonly string[];
-  readonly approve: (proposal: McpAccessApprovalProposal) => Promise<boolean>;
+  readonly approve: (proposal: McpAccessApprovalProposal) => Promise<"session" | "always" | false>;
   readonly commitSelection: (selectedServerIds: readonly string[]) => Promise<void>;
 }
 
@@ -55,14 +55,14 @@ export async function requestMcpAccess(
     };
   }
 
-  const approved = await ports.approve({
+  const approvalScope = await ports.approve({
     serverId: row.serverId,
     source: row.source,
     configFingerprint: row.configFingerprint,
     requiresTrust: row.connection === "untrusted",
     ...(input.reason ? { reason: input.reason } : {}),
   });
-  if (!approved) {
+  if (!approvalScope) {
     return {
       type: "mcp_request_v1",
       serverId: row.serverId,
@@ -74,10 +74,11 @@ export async function requestMcpAccess(
   try {
     if (row.connection === "untrusted") await control.grantTrust(row.serverId);
     const selectedServerIds = [...new Set([...ports.selectedServerIds(), row.serverId])].sort();
-    await ports.commitSelection(selectedServerIds);
+    if (approvalScope === "always") await control.grantPersistentServerAccess(row.serverId);
+    else await ports.commitSelection(selectedServerIds);
     await control.waitForServer(row.serverId);
     const finalRow = control
-      .status(selectedServerIds)
+      .status(approvalScope === "always" ? ports.selectedServerIds() : selectedServerIds)
       .find((candidate) => candidate.serverId === row.serverId);
     if (!finalRow) {
       return unavailable(row.serverId, "request_failed", "MCP server disappeared after approval.");

@@ -152,6 +152,28 @@ export const mcpSelectionChangedEventSchema = z
   })
   .passthrough();
 
+const mcpToolGrantSchema = z
+  .object({
+    serverId: z
+      .string()
+      .min(1)
+      .refine((value) => validateMcpServerId(value).ok),
+    configFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+    nativeToolName: z.string().min(1),
+    toolSchemaFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict();
+
+export const mcpToolGrantsChangedEventSchema = z
+  .object({
+    ...eventBaseFields,
+    type: z.literal("mcp_tool_grants_changed"),
+    /** Complete session-level set. Array order has no semantic meaning. */
+    grants: z.array(mcpToolGrantSchema),
+    reason: z.enum(["command", "tool"]),
+  })
+  .passthrough();
+
 export const turnCompletedEventSchema = z
   .object({
     ...eventBaseFields,
@@ -260,6 +282,7 @@ export const knownSessionEventSchema = z.discriminatedUnion("type", [
   messageRecordedEventSchema,
   userInputRecordedEventSchema,
   mcpSelectionChangedEventSchema,
+  mcpToolGrantsChangedEventSchema,
   turnCompletedEventSchema,
   contextCompactedEventSchema,
   sessionStateEventSchema,
@@ -283,6 +306,7 @@ export type RunSegmentEndedEvent = z.infer<typeof runSegmentEndedEventSchema>;
 export type MessageRecordedEvent = z.infer<typeof messageRecordedEventSchema>;
 export type UserInputRecordedEvent = z.infer<typeof userInputRecordedEventSchema>;
 export type McpSelectionChangedEvent = z.infer<typeof mcpSelectionChangedEventSchema>;
+export type McpToolGrantsChangedEvent = z.infer<typeof mcpToolGrantsChangedEventSchema>;
 export type TurnCompletedEvent = z.infer<typeof turnCompletedEventSchema>;
 export type ContextCompactedEvent = z.infer<typeof contextCompactedEventSchema>;
 export type SessionStatus = z.infer<typeof sessionStatusSchema>;
@@ -299,6 +323,7 @@ const newSessionEventSchema = z.discriminatedUnion("type", [
   v3MessageRecordedEventSchema.omit({ seq: true, timestamp: true }),
   userInputRecordedEventSchema.omit({ seq: true, timestamp: true }),
   mcpSelectionChangedEventSchema.omit({ seq: true, timestamp: true }),
+  mcpToolGrantsChangedEventSchema.omit({ seq: true, timestamp: true }),
   turnCompletedEventSchema.omit({ seq: true, timestamp: true }),
   contextCompactedEventSchema.omit({ seq: true, timestamp: true }),
   sessionStateEventSchema.omit({ seq: true, timestamp: true }),
@@ -349,7 +374,9 @@ export function parseSessionEvent(
   }
   if (
     schemaVersion === LEGACY_JSONL_SESSION_SCHEMA_VERSION &&
-    (parsed.data.type === "user_input_recorded" || parsed.data.type === "mcp_selection_changed")
+    (parsed.data.type === "user_input_recorded" ||
+      parsed.data.type === "mcp_selection_changed" ||
+      parsed.data.type === "mcp_tool_grants_changed")
   ) {
     throw new SessionSchemaError(`Session V2 cannot contain ${parsed.data.type} events`);
   }
@@ -362,6 +389,7 @@ export function parseSessionEvent(
   }
   assertValidCompactionTurnAssociation(parsed.data);
   assertValidMcpSelection(parsed.data);
+  assertValidMcpToolGrants(parsed.data);
   return parsed.data;
 }
 
@@ -372,7 +400,18 @@ export function parseNewSessionEvent(value: unknown): NewSessionEvent {
   }
   assertValidCompactionTurnAssociation(parsed.data);
   assertValidMcpSelection(parsed.data);
+  assertValidMcpToolGrants(parsed.data);
   return parsed.data;
+}
+
+function assertValidMcpToolGrants(event: KnownSessionEvent | NewSessionEvent): void {
+  if (event.type !== "mcp_tool_grants_changed") return;
+  const identities = event.grants.map((grant) =>
+    JSON.stringify([grant.serverId, grant.nativeToolName]),
+  );
+  if (new Set(identities).size !== identities.length) {
+    throw new SessionSchemaError("Invalid mcp_tool_grants_changed event: duplicate tool identity");
+  }
 }
 
 function assertValidMcpSelection(event: KnownSessionEvent | NewSessionEvent): void {

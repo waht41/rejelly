@@ -429,6 +429,8 @@ describe("createToolApproval", () => {
     const pending = confirmTool({
       type: "mcp_call",
       tool: { serverId: "docs", nativeToolName: "read" },
+      configFingerprint: "a".repeat(64),
+      toolSchemaFingerprint: "b".repeat(64),
       arguments: { path: "guide.md" },
     });
 
@@ -436,9 +438,13 @@ describe("createToolApproval", () => {
     expect(useDecisionStore.getState().decision).toMatchObject({
       type: "choice",
       message: 'Allow MCP tool docs/read?\nArguments:\n{\n  "path": "guide.md"\n}',
+      options: expect.arrayContaining([
+        expect.objectContaining({ value: "accept_session" }),
+        expect.objectContaining({ value: "accept_always" }),
+      ]),
     });
     useDecisionStore.getState().submitChoice("accept");
-    await expect(pending).resolves.toEqual({ action: "accept" });
+    await expect(pending).resolves.toEqual({ action: "accept", scope: "once" });
   });
 
   it("prompts for session MCP access with the host-owned fingerprint", async () => {
@@ -457,12 +463,13 @@ describe("createToolApproval", () => {
     await flushMicrotasks();
     expect(useDecisionStore.getState().decision).toMatchObject({
       type: "choice",
-      message: expect.stringContaining("Allow MCP server typescript for this session?"),
+      message: expect.stringContaining("Allow MCP server typescript?"),
+      options: expect.arrayContaining([expect.objectContaining({ value: "accept_always" })]),
     });
     expect(useDecisionStore.getState().decision).toMatchObject({
       message: expect.stringContaining("Find symbol references"),
     });
     useDecisionStore.getState().submitChoice("accept");
-    await expect(pending).resolves.toEqual({ action: "accept" });
+    await expect(pending).resolves.toEqual({ action: "accept", scope: "session" });
   });
 });

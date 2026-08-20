@@ -2,15 +2,24 @@ import { describe, expect, it, vi } from "vitest";
 import { requestMcpAccess } from "./requestAccess";
 import type { McpSessionControl, McpSessionStatusRow } from "./sessionControl";
 
-function createHarness(options: { trusted?: boolean; selected?: boolean; approve?: boolean } = {}) {
+function createHarness(
+  options: {
+    trusted?: boolean;
+    selected?: boolean;
+    persistent?: boolean;
+    approve?: "session" | "always" | false;
+  } = {},
+) {
   let trusted = options.trusted ?? false;
   let selected = options.selected ?? false;
+  let persistent = options.persistent ?? false;
   const row = (selectedServerIds: readonly string[]): McpSessionStatusRow => ({
     serverId: "typescript",
     source: { kind: "workspace" },
     exposure: "explicit",
     selected: selectedServerIds.includes("typescript"),
-    routable: trusted && selectedServerIds.includes("typescript"),
+    persistentAccess: persistent,
+    routable: trusted && (persistent || selectedServerIds.includes("typescript")),
     connection: trusted ? "ready" : "untrusted",
     toolCount: trusted ? 4 : 0,
     configFingerprint: "f".repeat(64),
@@ -21,13 +30,20 @@ function createHarness(options: { trusted?: boolean; selected?: boolean; approve
     grantTrust: vi.fn(async () => {
       trusted = true;
     }),
+    grantPersistentServerAccess: vi.fn(async () => {
+      persistent = true;
+    }),
+    grantPersistentToolAccess: vi.fn(async () => undefined),
+    isPersistentToolAllowed: vi.fn(() => false),
+    persistentPermissions: vi.fn(() => []),
+    revokePersistentPermissions: vi.fn(async () => undefined),
     waitForServer: vi.fn(async () => ({
       serverId: "typescript",
       configFingerprint: "f".repeat(64),
       status: "ready" as const,
     })),
   };
-  const approve = vi.fn(async () => options.approve ?? true);
+  const approve = vi.fn(async () => options.approve ?? "session");
   const commitSelection = vi.fn(async (serverIds: readonly string[]) => {
     selected = serverIds.includes("typescript");
   });
@@ -67,6 +83,17 @@ describe("MCP access requests", () => {
       status: "denied",
     });
     expect(harness.control.grantTrust).not.toHaveBeenCalled();
+    expect(harness.commitSelection).not.toHaveBeenCalled();
+  });
+
+  it("persists workspace access without adding a session selection", async () => {
+    const harness = createHarness({ approve: "always" });
+
+    await expect(requestMcpAccess({ serverId: "typescript" }, harness)).resolves.toMatchObject({
+      status: "granted",
+      callable: true,
+    });
+    expect(harness.control.grantPersistentServerAccess).toHaveBeenCalledWith("typescript");
     expect(harness.commitSelection).not.toHaveBeenCalled();
   });
 

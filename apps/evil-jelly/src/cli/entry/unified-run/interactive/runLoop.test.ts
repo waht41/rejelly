@@ -56,7 +56,11 @@ vi.mock("../../../../shared/configuration/settings", () => ({
 
 vi.mock("../../../../shared/mcp/trustRepository", () => ({
   readMcpTrustGrants: () => [],
+  readMcpPersistentPermissions: () => [],
   grantMcpWorkspaceTrust: vi.fn(),
+  grantMcpPersistentServerAccess: vi.fn(),
+  grantMcpPersistentToolAccess: vi.fn(),
+  revokeMcpPersistentPermissions: vi.fn(),
 }));
 
 vi.mock("../../../skill-runtime/configuredRuntime", () => ({
@@ -282,6 +286,7 @@ describe("runInteractiveLoop mock session isolation", () => {
         totalTurns: 1,
         budget,
         mcpSelection: [],
+        mcpToolGrants: [],
       },
     });
 
@@ -333,6 +338,7 @@ describe("runInteractiveLoop mock session isolation", () => {
       },
       messages,
       mcpSelection: ["docs"],
+      mcpToolGrants: [],
     });
     runHostMock
       .mockImplementationOnce(async () => {

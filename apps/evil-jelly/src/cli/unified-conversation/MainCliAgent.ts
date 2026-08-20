@@ -16,6 +16,7 @@ import {
 import type { McpRequestInput } from "../../domains/mcp/contracts";
 import { requestMcpAccess } from "../../domains/mcp/management/requestAccess";
 import type { McpSessionControl } from "../../domains/mcp/management/sessionControl";
+import { mcpToolGrantForRoute, mcpToolGrantMatchesRoute } from "../../domains/mcp/permissions";
 import type { SessionRecorder } from "../../domains/session/recorder/sessionRecorder";
 import {
   listSessions,
@@ -38,6 +39,7 @@ import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy
 import type { EvilJellyBindings } from "../../shared/host/bindings";
 import { getBinding, setBinding } from "../../shared/host/context";
 import { releasePromptResources } from "../../shared/host/promptResourceLifecycle";
+import type { McpToolGrant } from "../../shared/model/mcp/toolGrant";
 import {
   type FrozenUserInputV1,
   frozenUserInputMcpServerIds,
@@ -141,6 +143,8 @@ export interface MainCliAgentProps extends EvilJellyBindings {
   seedBudget?: SessionBudget;
   /** Session-level selection recovered from its dedicated V3 projection. */
   seedMcpSelection?: readonly string[];
+  /** Session tool approvals recovered from their dedicated V3 projection. */
+  seedMcpToolGrants?: readonly McpToolGrant[];
   resolveMcpUserInput?: (serverId: string) => {
     status: "selected" | "unavailable" | "disabled" | "untrusted";
     configFingerprint?: string;
@@ -176,6 +180,8 @@ interface RouterRuntime {
   resolveMcpUserInput?: MainCliAgentProps["resolveMcpUserInput"];
   sessionMcpSelection: () => readonly string[];
   setSessionMcpSelection: (selectedServerIds: readonly string[]) => void;
+  sessionMcpToolGrants: () => readonly McpToolGrant[];
+  setSessionMcpToolGrants: (grants: readonly McpToolGrant[]) => void;
   mcpBindingFactory?: ConversationAgentProps["mcpBindingFactory"];
 }
 
@@ -424,7 +430,45 @@ async function runConversationTurn(
       [...new Set([...runtime.sessionMcpSelection(), ...turnMcpSelection])].sort();
     const mcpBindingFactory = runtime.mcpBindingFactory
       ? async () => {
-          const dispatch = await runtime.mcpBindingFactory!(selectedServerIds());
+          const dispatch = await runtime.mcpBindingFactory!(
+            selectedServerIds(),
+            async (route, argumentsValue) => {
+              if (
+                runtime
+                  .sessionMcpToolGrants()
+                  .some((grant) => mcpToolGrantMatchesRoute(grant, route)) ||
+                runtime.props.mcpSessionControl?.isPersistentToolAllowed(route)
+              ) {
+                return true;
+              }
+              const grant = mcpToolGrantForRoute(route);
+              const decision = await runtime.host.confirmTool({
+                type: "mcp_call",
+                tool: route.identity,
+                configFingerprint: grant.configFingerprint,
+                toolSchemaFingerprint: grant.toolSchemaFingerprint,
+                arguments: argumentsValue,
+              });
+              if (decision.action !== "accept") return false;
+              if (decision.scope === "session") {
+                const next = [
+                  ...runtime
+                    .sessionMcpToolGrants()
+                    .filter(
+                      (existing) =>
+                        existing.serverId !== grant.serverId ||
+                        existing.nativeToolName !== grant.nativeToolName,
+                    ),
+                  grant,
+                ];
+                await runtime.props.sessionRecorder?.recordMcpToolGrants(next, "tool");
+                runtime.setSessionMcpToolGrants(next);
+              } else if (decision.scope === "always") {
+                await runtime.props.mcpSessionControl?.grantPersistentToolAccess(grant);
+              }
+              return true;
+            },
+          );
           return Object.freeze({
             ...dispatch,
             request: (input: McpRequestInput) =>
@@ -444,7 +488,8 @@ async function runConversationTurn(
                     requiresTrust: proposal.requiresTrust,
                     ...(proposal.reason ? { reason: proposal.reason } : {}),
                   });
-                  return decision.action === "accept";
+                  if (decision.action !== "accept") return false;
+                  return decision.scope === "always" ? "always" : "session";
                 },
                 commitSelection: async (next) => {
                   await runtime.props.sessionRecorder?.recordMcpSelection(next, "tool");
@@ -543,14 +588,22 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
       "main_cli:mcp_selection",
       props.seedMcpSelection ?? [],
     );
+    const [storedSessionMcpToolGrants, storeSessionMcpToolGrants] = equipMemory<
+      readonly McpToolGrant[]
+    >("main_cli:mcp_tool_grants", props.seedMcpToolGrants ?? []);
     // Local mirrors initialized from the carried values and updated live during the turn (the
     // equipMemory getters are frozen at entry, so we mirror writes here for same-turn reads).
     let liveContextTokens = storedContextTokens;
     let liveCacheTokens = storedCacheTokens;
     let liveSessionMcpSelection = storedSessionMcpSelection;
+    let liveSessionMcpToolGrants = storedSessionMcpToolGrants;
     const setSessionMcpSelection = (selectedServerIds: readonly string[]) => {
       liveSessionMcpSelection = selectedServerIds;
       storeSessionMcpSelection(selectedServerIds);
+    };
+    const setSessionMcpToolGrants = (grants: readonly McpToolGrant[]) => {
+      liveSessionMcpToolGrants = grants;
+      storeSessionMcpToolGrants(grants);
     };
     // Root-context budget config fires for every model call in descendant agents (the update walks
     // the parent chain), so delta.promptTokens of the latest call tracks current context occupancy.
@@ -593,6 +646,8 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
       resolveMcpUserInput: props.resolveMcpUserInput,
       sessionMcpSelection: () => liveSessionMcpSelection,
       setSessionMcpSelection,
+      sessionMcpToolGrants: () => liveSessionMcpToolGrants,
+      setSessionMcpToolGrants,
       mcpBindingFactory: props.mcpBindingFactory,
     };
 

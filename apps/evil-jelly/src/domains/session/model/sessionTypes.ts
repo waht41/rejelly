@@ -1,4 +1,5 @@
 import type { Message } from "@rejelly/core";
+import type { McpToolGrant } from "../../../shared/model/mcp/toolGrant";
 import type { TranscriptItem } from "../../../shared/session/transcript";
 import type { LegacySessionMeta, SessionBudgetData } from "./sessionEvents";
 
@@ -23,6 +24,8 @@ export interface SessionRecord {
   transcript?: TranscriptItem[];
   /** Canonical V3 projection; V1/V2 sources project the empty set. */
   mcpSelection: readonly string[];
+  /** Canonical V3 projection; V1/V2 sources project the empty set. */
+  mcpToolGrants: readonly McpToolGrant[];
   /** Non-blocking compatibility notices to show when hydrating a resumed session. */
   warnings?: string[];
 }

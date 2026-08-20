@@ -17,6 +17,7 @@ import {
 import type { ConversationAgentProps } from "../../../../features/unified/conversationRun";
 import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
+import type { McpToolGrant } from "../../../../shared/model/mcp/toolGrant";
 import { runWithReview } from "../../../runtime/runWithReview";
 import { generateTraceId } from "../../../runtime/traceId";
 import { MainCliAgent, type MainCliAgentProps } from "../../../unified-conversation/MainCliAgent";
@@ -49,6 +50,8 @@ export interface RunEvilJellyHostOptions {
   seedBudget?: SessionBudget;
   /** Session-level MCP selection recovered independently of compacted model history. */
   seedMcpSelection?: readonly string[];
+  /** Session tool approvals recovered independently of compacted model history. */
+  seedMcpToolGrants?: readonly McpToolGrant[];
   /** Resolve non-secret token metadata at submit time. */
   resolveMcpUserInput?: MainCliAgentProps["resolveMcpUserInput"];
   /** Single process-owned MCP runtime provider, borrowed across run segments. */
@@ -206,6 +209,7 @@ export async function runEvilJellyHost(
           seedContext: preparedSeedContext,
           seedBudget,
           seedMcpSelection: options.seedMcpSelection,
+          seedMcpToolGrants: options.seedMcpToolGrants,
           resolveMcpUserInput: options.resolveMcpUserInput,
           sessionBlobRoot: options.session?.blobRoot,
           isolateSessionState: options.isolateSessionState,

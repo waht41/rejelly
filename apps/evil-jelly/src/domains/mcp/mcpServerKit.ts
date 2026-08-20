@@ -2,7 +2,8 @@
 
 import type { ToolConfirmationHandler } from "../../shared/host/toolConfirmationBindings";
 import type { McpBoundRoute, McpRequestInput } from "./contracts";
-import type { McpDispatchBindingFactory } from "./gateway/dispatch";
+import type { McpCallAuthorizationHandler, McpDispatchBindingFactory } from "./gateway/dispatch";
+import { fingerprintMcpToolSchema } from "./permissions";
 import type { McpRuntimeManager } from "./runtime/runtimeManager";
 
 export const MCP_RUNTIME_RESOURCE_KEY = "mcp:runtime";
@@ -18,9 +19,13 @@ export function createMcpRuntimeProviders(manager: McpRuntimeManager): Record<st
 export function createMcpDispatchBindingFactory(
   manager: McpRuntimeManager,
   confirmTool: ToolConfirmationHandler,
+  options: { readonly persistentServerIds?: () => readonly string[] } = {},
 ): McpDispatchBindingFactory {
-  return async (selectedServerIds = []) => {
-    const required = await manager.waitForRequiredServers("chat", selectedServerIds);
+  return async (selectedServerIds = [], authorizeCall?: McpCallAuthorizationHandler) => {
+    const effectiveServerIds = [
+      ...new Set([...selectedServerIds, ...(options.persistentServerIds?.() ?? [])]),
+    ].sort();
+    const required = await manager.waitForRequiredServers("chat", effectiveServerIds);
     const failures = required.filter((server) => server.status !== "ready");
     if (failures.length > 0) {
       throw new Error(
@@ -32,7 +37,7 @@ export function createMcpDispatchBindingFactory(
           .join(", ")}`,
       );
     }
-    const binding = manager.captureDispatchBinding("chat", selectedServerIds);
+    const binding = manager.captureDispatchBinding("chat", effectiveServerIds);
     return Object.freeze({
       binding,
       request: async (input: McpRequestInput) => ({
@@ -43,9 +48,21 @@ export function createMcpDispatchBindingFactory(
         message: "MCP access requests are unavailable in this host.",
       }),
       invoke: async (route: McpBoundRoute, argumentsValue: Record<string, unknown>) => {
+        if (authorizeCall) {
+          if (await authorizeCall(route, argumentsValue)) {
+            return manager.callBoundTool("chat", route, argumentsValue);
+          }
+          return {
+            ok: false as const,
+            code: "approval_denied" as const,
+            message: "The MCP tool call was denied by the user.",
+          };
+        }
         const decision = await confirmTool({
           type: "mcp_call",
           tool: route.identity,
+          configFingerprint: route.configFingerprint,
+          toolSchemaFingerprint: fingerprintMcpToolSchema(route),
           arguments: argumentsValue,
         });
         if (decision.action !== "accept") {

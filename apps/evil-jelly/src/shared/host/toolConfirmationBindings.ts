@@ -41,6 +41,8 @@ export interface McpCallConfirmationPayload {
     serverId: string;
     nativeToolName: string;
   };
+  configFingerprint: string;
+  toolSchemaFingerprint: string;
   arguments: Record<string, unknown>;
 }
 
@@ -61,7 +63,7 @@ export type ToolConfirmationRequest =
   | McpCallConfirmationPayload;
 
 export type ToolConfirmationResult =
-  | { action: "accept" }
+  | { action: "accept"; scope?: "once" | "session" | "always" }
   | { action: "reject" }
   | { action: "retry"; feedback: string }
   | { action: "edit"; modifiedContent: string };

@@ -392,10 +392,13 @@ ready, its result reports `unavailableServers` with an `untrusted`, `pending`, `
 `disabled` status and a `suggestedAction`; these states are not search misses.
 
 For `request_access` or a relevant non-callable match, the Agent uses the fixed `mcp_request`
-gateway. The CLI asks whether to trust the current host-owned fingerprint and enable that server
-for the session; acceptance updates the existing Session V3 selection event and waits for startup.
-The next model dispatch can reference the fresh catalog without requiring a manual `/mcp use`.
-Native `mcp_call` approval remains a separate decision.
+gateway. The CLI offers server access for this Session or permanently for this workspace. A
+Session grant updates the Session V3 selection event; a permanent grant is stored with the exact
+host-owned configuration fingerprint. Native `mcp_call` approval is separate and offers once,
+this Session, or permanently for this tool in this workspace. Permanent tool grants also bind the
+native tool's schema fingerprint, so configuration or schema drift automatically requires a new
+decision. The next model dispatch can reference the fresh catalog without requiring a manual
+`/mcp use`.
 
 ```bash
 evil mcp list
@@ -410,10 +413,14 @@ evil mcp remove typescript --scope project
 Mutations require an explicit `user` or `project` scope and update only that file. During an
 interactive session, `/mcp` shows source, exposure, selection, connection, tool count and
 fingerprint; `/mcp use <id>`, `/mcp unuse <id>`, and `/mcp reload [id]` manage the live session.
+`/mcp permissions` lists permanent workspace grants, while `/mcp revoke <id>` clears permanent
+server and tool grants and `/mcp revoke <id>/<tool>` clears one permanent tool grant.
 Type `$` and select an MCP server to insert a structured `$mcp:<id>` turn token. Chat models always
 see only the stable `mcp_reference`, `mcp_request`, and `mcp_call` gateways; native schemas are
 referenced through conversation history and validated again immediately before the native call.
-Audit remains non-interactive and exposes only `mcp_reference` and `mcp_call` when configured.
+Audit remains non-interactive and exposes only `mcp_reference` and `mcp_call` when configured; it
+does not prompt for or write chat grants. Non-interactive hosts likewise never promote a decision
+to a permanent grant implicitly.
 
 A stdio `mcp add` requires the explicit `--` separator before its executable. PowerShell's pnpm
 shim consumes a bare separator, so quote that token there: `evil mcp add typescript --scope project

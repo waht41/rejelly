@@ -26,8 +26,14 @@ export interface McpGatewayDispatch extends McpGatewayCallDispatch {
   readonly request: (input: McpRequestInput) => Promise<McpRequestResult>;
 }
 
+export type McpCallAuthorizationHandler = (
+  route: McpBoundRoute,
+  argumentsValue: Record<string, unknown>,
+) => Promise<boolean>;
+
 export type McpDispatchBindingFactory = (
   selectedServerIds?: readonly string[],
+  authorizeCall?: McpCallAuthorizationHandler,
 ) => McpGatewayDispatch | Promise<McpGatewayDispatch>;
 
 function matchScore(route: McpBoundRoute, terms: readonly string[]): number {
