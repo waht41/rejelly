@@ -84,10 +84,10 @@ async function toolsForMcpDispatch(
   const withoutGateways = baseTools.filter(
     (tool) => tool.name !== MCP_REFERENCE_TOOL_NAME && tool.name !== MCP_CALL_TOOL_NAME,
   );
-  return [
-    ...withoutGateways,
-    ...createMcpGatewayToolsForDispatch(dispatch),
-  ] as unknown as ToolDefinition[];
+  const gatewayTools = createMcpGatewayToolsForDispatch(dispatch).map((tool) =>
+    augmentTool(tool as unknown as ToolDefinition, [evilJellyToolLoggerMiddleware]),
+  );
+  return [...withoutGateways, ...gatewayTools] as unknown as ToolDefinition[];
 }
 
 async function useUnifiedPrompts(props: ConversationAgentProps): Promise<void> {

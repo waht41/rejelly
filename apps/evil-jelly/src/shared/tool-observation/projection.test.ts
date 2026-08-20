@@ -27,6 +27,19 @@ describe("tool observation projection", () => {
     expect(projected.args).not.toContain("first\\nsecond\\nthird");
   });
 
+  it("projects MCP gateway queries and structured tool identities", () => {
+    expect(
+      projectToolStart(context("mcp_reference", { query: "typescript references" })).summary,
+    ).toBe('[Tools] mcp_reference → "typescript references"');
+    expect(
+      projectToolStart(
+        context("mcp_call", {
+          tool: { serverId: "typescript", nativeToolName: "get_references" },
+        }),
+      ).summary,
+    ).toBe("[Tools] mcp_call → typescript/get_references");
+  });
+
   it("serializes results and bounds their preview", () => {
     const result = stringifyToolResult({ lines: Array.from({ length: 10 }, (_, i) => i + 1) });
     expect(result).toContain('"lines"');

@@ -126,6 +126,21 @@ function formatToolProgressLine(ctx: ToolContext): string {
     const cwd = typeof input.cwd === "string" ? input.cwd : "";
     return `[Tools] run_command → ${command}${cwd ? ` (cwd: ${cwd})` : ""}\n`;
   }
+  if (ctx.toolName === "mcp_reference") {
+    const query = typeof input.query === "string" ? input.query.trim() : "";
+    return `[Tools] mcp_reference → "${query || "(empty query)"}"…\n`;
+  }
+  if (ctx.toolName === "mcp_call") {
+    const tool =
+      typeof input.tool === "object" && input.tool !== null
+        ? (input.tool as Record<string, unknown>)
+        : {};
+    const serverId = typeof tool.serverId === "string" ? tool.serverId : "";
+    const nativeToolName = typeof tool.nativeToolName === "string" ? tool.nativeToolName : "";
+    const identity =
+      serverId && nativeToolName ? `${serverId}/${nativeToolName}` : serverId || "(MCP tool)";
+    return `[Tools] mcp_call → ${identity}…\n`;
+  }
 
   return `[Tools] ${ctx.toolName}…\n`;
 }
