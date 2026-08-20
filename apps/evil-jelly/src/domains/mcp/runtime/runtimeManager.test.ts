@@ -51,6 +51,7 @@ class FakeConnection implements McpRuntimeConnection {
   readonly client = { id: Math.random() };
   readonly close = vi.fn<() => Promise<void>>(async () => undefined);
   readonly listTools = vi.fn<() => Promise<readonly McpNativeToolDescriptor[]>>();
+  readonly callTool = vi.fn(async () => ({ content: [{ type: "text", text: "ok" }] }));
 
   constructor(tools: readonly McpNativeToolDescriptor[] = []) {
     this.listTools.mockResolvedValue(tools);
@@ -112,6 +113,80 @@ async function waitForStatus(
 }
 
 describe("McpRuntimeManager", () => {
+  it("captures structured routes for always and explicitly selected servers", async () => {
+    const connector = new ControlledConnector();
+    const manager = new McpRuntimeManager(connector);
+    const baseAlways = server("always");
+    const always: McpDesiredServer = {
+      ...baseAlways,
+      definition: {
+        ...baseAlways.definition,
+        use: {
+          ...baseAlways.definition.use,
+          chat: { exposure: "always", required: false },
+        },
+      },
+    };
+    await manager.reconcile(desired(always, server("selected")));
+    for (const attempt of connector.attempts) {
+      attempt.result.resolve(
+        new FakeConnection([
+          {
+            name: "read",
+            description: `Read ${attempt.server.id}`,
+            inputSchema: { type: "object" },
+          },
+        ]),
+      );
+    }
+    await waitForStatus(manager, "always", "ready");
+    await waitForStatus(manager, "selected", "ready");
+
+    const first = manager.captureDispatchBinding("chat");
+    const second = manager.captureDispatchBinding("chat", ["selected"]);
+
+    expect(first.servers.map((item) => item.serverId)).toEqual(["always"]);
+    expect(second.servers.map((item) => item.serverId)).toEqual(["always", "selected"]);
+    expect(second.route({ serverId: "always", nativeToolName: "read" })?.description).toBe(
+      "Read always",
+    );
+    expect(second.route({ serverId: "selected", nativeToolName: "read" })?.description).toBe(
+      "Read selected",
+    );
+    expect(second.bindingId).not.toBe(first.bindingId);
+    expect(Object.isFrozen(second.servers)).toBe(true);
+    await manager.dispose();
+  });
+
+  it("rejects a captured route when the live catalog changes before call", async () => {
+    const connector = new ControlledConnector();
+    const manager = new McpRuntimeManager(connector);
+    await manager.reconcile(desired(server("docs")));
+    const connection = new FakeConnection([{ name: "read", inputSchema: { type: "object" } }]);
+    connector.attempts[0]!.result.resolve(connection);
+    await waitForStatus(manager, "docs", "ready");
+    const route = manager
+      .captureDispatchBinding("chat", ["docs"])
+      .route({ serverId: "docs", nativeToolName: "read" })!;
+
+    connector.attempts[0]!.callbacks.onToolsChanged(null, [
+      {
+        name: "read",
+        inputSchema: { type: "object", properties: { path: { type: "string" } } },
+      },
+    ]);
+    await vi.waitFor(() =>
+      expect(manager.getCatalog("docs")?.revision).not.toBe(route.catalogRevision),
+    );
+
+    await expect(manager.callBoundTool("chat", route, {})).resolves.toMatchObject({
+      ok: false,
+      code: "catalog_changed",
+    });
+    expect(connection.callTool).not.toHaveBeenCalled();
+    await manager.dispose();
+  });
+
   it("publishes immutable ready state and refreshes one server catalog", async () => {
     const connector = new ControlledConnector();
     const manager = new McpRuntimeManager(connector);

@@ -3,7 +3,10 @@ import {
   createDevtoolMcpDesiredServer,
   resolveMcpSettingsLayers,
 } from "../../../../domains/mcp/configuration/configuration";
-import { createMcpRuntimeProviders } from "../../../../domains/mcp/mcpServerKit";
+import {
+  createMcpDispatchBindingFactory,
+  createMcpRuntimeProviders,
+} from "../../../../domains/mcp/mcpServerKit";
 import { McpRuntimeManager } from "../../../../domains/mcp/runtime/runtimeManager";
 import { SdkMcpRuntimeConnector } from "../../../../domains/mcp/runtime/sdkConnector";
 import {
@@ -128,6 +131,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
   );
   await mcpRuntime.reconcile(resolveMcpSettingsLayers(settings.mcp, dynamicMcpServers));
   const mcpProviders = createMcpRuntimeProviders(mcpRuntime);
+  const mcpBindingFactory = createMcpDispatchBindingFactory(mcpRuntime, bindings.confirmTool);
   try {
     const skillRuntime = await buildConfiguredSkillRuntimeSnapshot();
     bindings.setAvailableSkills?.(
@@ -156,6 +160,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
         seedContext: state.resumeSeed?.activeContext,
         seedBudget: state.resumeSeed?.budget,
         mcpProviders,
+        mcpBindingFactory,
         skillSnapshot: skillRuntime.snapshot,
         mockSourceTraceId,
         isolateSessionState,

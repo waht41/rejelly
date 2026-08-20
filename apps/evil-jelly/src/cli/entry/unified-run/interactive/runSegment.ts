@@ -13,6 +13,7 @@ import {
   SKILL_RUNTIME_PROVIDER_KEY,
   type SkillRuntimeSnapshot,
 } from "../../../../domains/skills/agent/skillRuntime";
+import type { ConversationAgentProps } from "../../../../features/unified/conversationRun";
 import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 import { runWithReview } from "../../../runtime/runWithReview";
@@ -51,6 +52,8 @@ export interface RunEvilJellyHostOptions {
    * them (never closes), so disposal stays with the caller.
    */
   mcpProviders?: Record<string, unknown>;
+  /** Captures one immutable MCP binding for every model boundary. */
+  mcpBindingFactory?: ConversationAgentProps["mcpBindingFactory"];
   /** Borrowed process-lifetime loose Skill snapshot, reused across run segments. */
   skillSnapshot?: SkillRuntimeSnapshot;
   /**
@@ -202,6 +205,7 @@ export async function runEvilJellyHost(
           sessionBlobRoot: options.session?.blobRoot,
           isolateSessionState: options.isolateSessionState,
           sessionRecorder: recorder,
+          mcpBindingFactory: options.mcpBindingFactory,
         }),
       runWithOptions: {
         snapshot,

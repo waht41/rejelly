@@ -34,7 +34,21 @@ export interface ShellCommandPayload {
   supportedActions?: ("accept" | "reject")[];
 }
 
-export type ToolConfirmationRequest = FsWritePayload | FsOutsideAccessPayload | ShellCommandPayload;
+/** Ephemeral approval projection; routing still uses the domain-owned structured identity. */
+export interface McpCallConfirmationPayload {
+  type: "mcp_call";
+  tool: {
+    serverId: string;
+    nativeToolName: string;
+  };
+  arguments: Record<string, unknown>;
+}
+
+export type ToolConfirmationRequest =
+  | FsWritePayload
+  | FsOutsideAccessPayload
+  | ShellCommandPayload
+  | McpCallConfirmationPayload;
 
 export type ToolConfirmationResult =
   | { action: "accept" }

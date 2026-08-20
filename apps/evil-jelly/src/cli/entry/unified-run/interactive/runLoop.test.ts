@@ -21,6 +21,7 @@ vi.mock("./runSegment", () => ({
 }));
 
 vi.mock("../../../../domains/mcp/mcpServerKit", () => ({
+  createMcpDispatchBindingFactory: vi.fn(() => vi.fn()),
   createMcpRuntimeProviders: vi.fn(() => ({})),
 }));
 

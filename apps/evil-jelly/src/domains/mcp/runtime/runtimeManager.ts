@@ -4,11 +4,18 @@ import { evaluateMcpTrust, type McpTrustGrant } from "../configuration/configura
 import {
   fingerprintMcpConnectionDefinition,
   fingerprintMcpServerDefinition,
+  isMcpToolAllowed,
+  type McpBoundNativeTool,
+  type McpBoundRoute,
   type McpConsumer,
   type McpDesiredConfig,
   type McpDesiredServer,
+  type McpDispatchBinding,
+  type McpJsonValue,
   type McpRuntimeSnapshot,
+  type McpSelectedServerBinding,
   type McpServerRuntimeState,
+  type McpToolIdentity,
 } from "../contracts";
 
 export interface McpRuntimeCatalog {
@@ -21,8 +28,18 @@ export interface McpRuntimeConnection {
   /** SDK/client facade borrowed by T2's compatibility kit and T3's gateway adapter. */
   readonly client: unknown;
   listTools(): Promise<readonly McpNativeToolDescriptor[]>;
+  callTool(name: string, argumentsValue: Record<string, unknown>): Promise<unknown>;
   close(): Promise<void>;
 }
+
+export type McpRuntimeCallOutcome =
+  | { readonly ok: true; readonly result: unknown }
+  | {
+      readonly ok: false;
+      readonly code: "tool_unavailable" | "catalog_changed" | "call_failed";
+      readonly message: string;
+      readonly currentCatalogRevision?: string;
+    };
 
 export interface McpRuntimeConnectionCallbacks {
   readonly onClose: () => void;
@@ -74,6 +91,8 @@ interface RuntimeEntry {
   abortController?: AbortController;
   retryAttempt: number;
   retryTimer?: unknown;
+  activeCalls: number;
+  readonly callWaiters: Array<() => void>;
 }
 
 export type McpRuntimeSnapshotListener = (snapshot: McpRuntimeSnapshot) => void;
@@ -110,6 +129,14 @@ function catalogRevision(tools: readonly McpNativeToolDescriptor[]): string {
   return createHash("sha256").update(canonicalJson(projection)).digest("hex");
 }
 
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value)) deepFreeze(child);
+  }
+  return value;
+}
+
 function freezeCatalog(
   serverId: string,
   tools: readonly McpNativeToolDescriptor[],
@@ -119,7 +146,7 @@ function freezeCatalog(
       Object.freeze({
         name: tool.name,
         ...(tool.description === undefined ? {} : { description: tool.description }),
-        inputSchema: Object.freeze(structuredClone(tool.inputSchema)),
+        inputSchema: deepFreeze(structuredClone(tool.inputSchema)),
       }),
     )
     .sort((left, right) => left.name.localeCompare(right.name));
@@ -151,6 +178,21 @@ function initialStatus(target: EntryTarget): McpServerRuntimeState["status"] {
   return target === "untrusted" ? "untrusted" : "pending";
 }
 
+function identityKey(serverId: string, nativeToolName: string): string {
+  return JSON.stringify([serverId, nativeToolName]);
+}
+
+function selectedForConsumer(
+  server: McpDesiredServer,
+  consumer: McpConsumer,
+  selectedServerIds: ReadonlySet<string>,
+): boolean {
+  const policy = server.definition.use[consumer];
+  if (policy.exposure === "off") return false;
+  if (consumer === "audit") return policy.exposure === "always";
+  return policy.exposure === "always" || selectedServerIds.has(server.id);
+}
+
 export class McpRuntimeManager {
   private readonly entries = new Map<string, RuntimeEntry>();
   private readonly listeners = new Set<McpRuntimeSnapshotListener>();
@@ -159,6 +201,7 @@ export class McpRuntimeManager {
   private readonly closeTimeoutMs: number;
   private serial: Promise<void> = Promise.resolve();
   private tokenSequence = 0;
+  private bindingSequence = 0;
   private generation = 0;
   private disposed = false;
   private snapshot: McpRuntimeSnapshot = Object.freeze({
@@ -196,6 +239,103 @@ export class McpRuntimeManager {
         .map((entry) => entry.server.id)
         .sort(),
     );
+  }
+
+  /** Capture one immutable authorization/catalog view for a single model dispatch. */
+  captureDispatchBinding(
+    consumer: McpConsumer,
+    selectedServerIds: readonly string[] = [],
+  ): McpDispatchBinding {
+    this.assertActive();
+    const selected = new Set(selectedServerIds);
+    const servers: McpSelectedServerBinding[] = [...this.entries.values()]
+      .filter((entry) => selectedForConsumer(entry.server, consumer, selected))
+      .map((entry) => {
+        const tools: McpBoundNativeTool[] = (entry.catalog?.tools ?? [])
+          .filter((tool) => isMcpToolAllowed(entry.server.definition, consumer, tool.name))
+          .map((tool) =>
+            Object.freeze({
+              nativeToolName: tool.name,
+              description: tool.description ?? `MCP tool ${entry.server.id}/${tool.name}`,
+              inputSchema: tool.inputSchema as Readonly<Record<string, McpJsonValue>>,
+            }),
+          );
+        return Object.freeze({
+          serverId: entry.server.id,
+          configFingerprint: entry.configFingerprint,
+          status: entry.status,
+          ...(entry.catalog ? { catalogRevision: entry.catalog.revision } : {}),
+          tools: Object.freeze(tools),
+        });
+      })
+      .sort((left, right) => left.serverId.localeCompare(right.serverId));
+    const frozenServers = Object.freeze(servers);
+    const bindingId = `mcp-dispatch-${this.generation}-${++this.bindingSequence}`;
+    return Object.freeze({
+      bindingId,
+      generation: this.generation,
+      servers: frozenServers,
+      route: (identity: McpToolIdentity) => {
+        const requestedKey = identityKey(identity.serverId, identity.nativeToolName);
+        for (const server of frozenServers) {
+          if (server.status !== "ready" || !server.catalogRevision) continue;
+          for (const tool of server.tools) {
+            if (identityKey(server.serverId, tool.nativeToolName) !== requestedKey) continue;
+            return Object.freeze({
+              identity: Object.freeze({ ...identity }),
+              description: tool.description,
+              inputSchema: tool.inputSchema,
+              configFingerprint: server.configFingerprint,
+              catalogRevision: server.catalogRevision,
+            });
+          }
+        }
+        return undefined;
+      },
+    });
+  }
+
+  /** Re-check current runtime state immediately before crossing the native call boundary. */
+  async callBoundTool(
+    consumer: McpConsumer,
+    route: McpBoundRoute,
+    argumentsValue: Record<string, unknown>,
+  ): Promise<McpRuntimeCallOutcome> {
+    const initial = this.resolveCallableEntry(consumer, route);
+    if (!initial.ok) return initial;
+    const { entry } = initial;
+    await this.acquireCallPermit(entry);
+    try {
+      const current = this.resolveCallableEntry(consumer, route);
+      if (!current.ok) return current;
+      if (current.entry !== entry) {
+        return {
+          ok: false,
+          code: "catalog_changed",
+          message: "The MCP runtime changed before the native call started.",
+          ...(current.entry.catalog
+            ? { currentCatalogRevision: current.entry.catalog.revision }
+            : {}),
+        };
+      }
+      try {
+        return {
+          ok: true,
+          result: await current.entry.connection!.callTool(
+            route.identity.nativeToolName,
+            argumentsValue,
+          ),
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          code: "call_failed",
+          message: error instanceof Error ? error.message : String(error),
+        };
+      }
+    } finally {
+      this.releaseCallPermit(entry);
+    }
   }
 
   subscribe(listener: McpRuntimeSnapshotListener): () => void {
@@ -255,6 +395,8 @@ export class McpRuntimeManager {
           target,
           status: initialStatus(target),
           retryAttempt: 0,
+          activeCalls: 0,
+          callWaiters: [],
         };
         this.entries.set(server.id, entry);
         if (target === "active") this.beginConnect(entry);
@@ -281,6 +423,8 @@ export class McpRuntimeManager {
           target: previous.target,
           status: initialStatus(previous.target),
           retryAttempt: 0,
+          activeCalls: 0,
+          callWaiters: [],
         };
         this.entries.set(previous.server.id, replacement);
         await this.stopEntry(previous);
@@ -332,6 +476,64 @@ export class McpRuntimeManager {
 
   private isCurrent(entry: RuntimeEntry): boolean {
     return !this.disposed && this.entries.get(entry.server.id)?.token === entry.token;
+  }
+
+  private resolveCallableEntry(
+    consumer: McpConsumer,
+    route: McpBoundRoute,
+  ):
+    | { readonly ok: true; readonly entry: RuntimeEntry }
+    | Exclude<McpRuntimeCallOutcome, { ok: true }> {
+    const entry = this.entries.get(route.identity.serverId);
+    if (
+      !entry ||
+      entry.status !== "ready" ||
+      !entry.connection ||
+      !entry.catalog ||
+      !isMcpToolAllowed(entry.server.definition, consumer, route.identity.nativeToolName)
+    ) {
+      return {
+        ok: false,
+        code: "tool_unavailable",
+        message: "The MCP tool is no longer available in the current runtime.",
+      };
+    }
+    if (
+      entry.configFingerprint !== route.configFingerprint ||
+      entry.catalog.revision !== route.catalogRevision
+    ) {
+      return {
+        ok: false,
+        code: "catalog_changed",
+        message: "The MCP configuration or catalog changed before the native call.",
+        currentCatalogRevision: entry.catalog.revision,
+      };
+    }
+    if (!entry.catalog.tools.some((tool) => tool.name === route.identity.nativeToolName)) {
+      return {
+        ok: false,
+        code: "catalog_changed",
+        message: "The referenced MCP tool is absent from the current catalog.",
+        currentCatalogRevision: entry.catalog.revision,
+      };
+    }
+    return { ok: true, entry };
+  }
+
+  private async acquireCallPermit(entry: RuntimeEntry): Promise<void> {
+    while (entry.activeCalls >= entry.server.definition.maxConcurrency && this.isCurrent(entry)) {
+      await new Promise<void>((resolve) => entry.callWaiters.push(resolve));
+    }
+    entry.activeCalls += 1;
+  }
+
+  private releaseCallPermit(entry: RuntimeEntry): void {
+    entry.activeCalls = Math.max(0, entry.activeCalls - 1);
+    entry.callWaiters.shift()?.();
+  }
+
+  private releaseAllCallWaiters(entry: RuntimeEntry): void {
+    for (const resolve of entry.callWaiters.splice(0)) resolve();
   }
 
   private beginConnect(entry: RuntimeEntry): void {
@@ -485,6 +687,7 @@ export class McpRuntimeManager {
 
   private async stopEntry(entry: RuntimeEntry): Promise<void> {
     this.clearRetry(entry);
+    this.releaseAllCallWaiters(entry);
     entry.abortController?.abort();
     entry.abortController = undefined;
     const connection = entry.connection;

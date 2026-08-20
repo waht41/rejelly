@@ -1,4 +1,4 @@
-import type { Message } from "@rejelly/core";
+import type { Message, ToolDefinition } from "@rejelly/core";
 import {
   createAgentPolicy,
   createJsonOutputParser,
@@ -45,6 +45,9 @@ export interface PromptChatResilientOptions<TSchema extends z.ZodTypeAny = z.Zod
   message?: PromptChatResilientMessage;
   schema?: TSchema;
   pendingUserMessages?: () => Message[] | Promise<Message[]>;
+  toolsForDispatch?: (
+    baseTools: readonly ToolDefinition[],
+  ) => readonly ToolDefinition[] | Promise<readonly ToolDefinition[]>;
   compaction?: PromptChatCompactionConfig;
   sessionRecorder?: SessionMessageSink;
   turnId?: string;
@@ -82,6 +85,7 @@ export const promptChatResilient = createAgentPolicy({
       jsonSchema,
       parser: options?.schema ? createJsonOutputParser(options.schema) : undefined,
       pendingUserMessages: options?.pendingUserMessages,
+      toolsForDispatch: options?.toolsForDispatch,
       compaction: options?.compaction,
       sessionRecorder: options?.sessionRecorder,
       turnId: options?.turnId,

@@ -8,14 +8,27 @@ import {
   type McpBoundRoute,
   type McpCallInput,
   type McpCallPolicyResult,
+  type McpCallRejectionCode,
   type McpToolIdentity,
 } from "../contracts";
+
+export type McpCallInvocationOutcome =
+  | { readonly ok: true; readonly result: unknown }
+  | {
+      readonly ok: false;
+      readonly code: McpCallRejectionCode;
+      readonly message: string;
+      readonly currentCatalogRevision?: string;
+    };
 
 export interface McpCallPolicyPorts {
   /** The dispatch binding decides visibility and routing; display names never participate. */
   resolveRoute(identity: McpToolIdentity): McpBoundRoute | undefined;
   /** T4 supplies approval, freshness, timeout, and client I/O behind this boundary. */
-  invoke(route: McpBoundRoute, argumentsValue: Record<string, unknown>): Promise<unknown>;
+  invoke(
+    route: McpBoundRoute,
+    argumentsValue: Record<string, unknown>,
+  ): Promise<McpCallInvocationOutcome>;
 }
 
 type McpRejectedCallResult = Extract<
@@ -113,12 +126,20 @@ export class McpCallPolicy {
       );
     }
 
+    const invocation = await this.ports.invoke(route, input.arguments);
+    if (!invocation.ok) {
+      return reject(input, invocation.code, invocation.message, {
+        ...(invocation.currentCatalogRevision
+          ? { currentCatalogRevision: invocation.currentCatalogRevision }
+          : {}),
+      });
+    }
     return {
       type: "mcp_call_result_v1",
       status: "completed",
       tool: input.tool,
       catalogRevision: route.catalogRevision,
-      result: normalizeMcpCallResult(await this.ports.invoke(route, input.arguments)),
+      result: normalizeMcpCallResult(invocation.result),
     };
   }
 }

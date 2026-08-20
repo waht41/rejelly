@@ -7,6 +7,7 @@ import type { AgentMode } from "../../shared/host/modeBindings";
 import type {
   FsOutsideAccessPayload,
   FsWritePayload,
+  McpCallConfirmationPayload,
   ShellCommandPayload,
   ToolConfirmationHandler,
   ToolConfirmationResult,
@@ -148,6 +149,24 @@ async function confirmOutsideAccess(
   const selected = await decision.requestChoice({
     message: `Allow ${params.mode} outside workspace?\n${params.targetPath}\n\nApprove directory for this session:\n${params.approveDir}`,
     options: menuOptions,
+    cancelValue: "reject",
+  });
+  useOutputStore.getState().resumeWork("Running…");
+  return selected === "accept" ? { action: "accept" } : { action: "reject" };
+}
+
+async function confirmMcpCall(
+  params: McpCallConfirmationPayload,
+  decision: OperatorDecisionSession,
+): Promise<ToolConfirmationResult> {
+  const identity = `${params.tool.serverId}/${params.tool.nativeToolName}`;
+  useOutputStore.getState().setPhase("awaiting_user", `MCP → ${identity}`);
+  const selected = await decision.requestChoice({
+    message: `Allow MCP tool ${identity}?\nArguments:\n${JSON.stringify(params.arguments, null, 2)}`,
+    options: [
+      { key: "y", label: "Allow", value: "accept" },
+      { key: "n", label: "Reject", value: "reject" },
+    ],
     cancelValue: "reject",
   });
   useOutputStore.getState().resumeWork("Running…");
@@ -350,6 +369,9 @@ export function createToolApproval(
     }
     if (params.type === "fs_outside_access") {
       return decision.run((session) => confirmOutsideAccess(params, session));
+    }
+    if (params.type === "mcp_call") {
+      return decision.run((session) => confirmMcpCall(params, session));
     }
 
     recordActiveToolDetail({

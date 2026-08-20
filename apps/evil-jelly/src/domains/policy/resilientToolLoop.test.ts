@@ -1,6 +1,7 @@
 import type { Message } from "@rejelly/core";
 import type { PromptContext } from "@rejelly/core/policy";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import type { NonUserMessageSource } from "../../shared/session/messageSource";
 import type { SessionRecorder } from "../session/recorder/sessionRecorder";
 
@@ -65,12 +66,22 @@ describe("runResilientToolCallLoopPolicy session recorder", () => {
       maxTurnSteps: 3,
       maxRetries: 0,
       messages: [],
+      tools: [],
       fork: vi.fn(function (this: PromptContext, overrides) {
         return { ...this, ...overrides };
       }),
       span: { setAttribute: vi.fn() },
     } as unknown as PromptContext;
     let pendingRound = 0;
+    let dispatchRound = 0;
+    const toolsForDispatch = vi.fn(async () => [
+      {
+        name: `dispatch_${++dispatchRound}`,
+        description: "dispatch-scoped tool",
+        parameters: z.object({}),
+        handler: async () => "ok",
+      },
+    ]);
     const pendingUserMessage: Message = {
       role: "user",
       content: "prepared: also inspect tests",
@@ -80,6 +91,7 @@ describe("runResilientToolCallLoopPolicy session recorder", () => {
       turnId: "turn-1",
       sessionRecorder: recorder,
       pendingUserMessages: async () => (pendingRound++ === 0 ? [pendingUserMessage] : []),
+      toolsForDispatch,
     });
 
     expect(result).toMatchObject({ aborted: false, data: "done" });
@@ -88,5 +100,13 @@ describe("runResilientToolCallLoopPolicy session recorder", () => {
       pendingUserMessage,
     );
     expect(recorded).toEqual(["model:assistant", "tool:tool", "model:assistant"]);
+    expect(policyMocks.executeValidatedLoopTurn.mock.calls[0]?.[0].runtime.tools[0]?.name).toBe(
+      "dispatch_1",
+    );
+    expect(policyMocks.executeTools.mock.calls[0]?.[1].runtime.tools[0]?.name).toBe("dispatch_1");
+    expect(policyMocks.executeValidatedLoopTurn.mock.calls[1]?.[0].runtime.tools[0]?.name).toBe(
+      "dispatch_2",
+    );
+    expect(toolsForDispatch).toHaveBeenCalledTimes(2);
   });
 });

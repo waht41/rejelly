@@ -1,4 +1,4 @@
-import type { JsonSchema, Message } from "@rejelly/core";
+import type { JsonSchema, Message, ToolDefinition } from "@rejelly/core";
 import { isAbortError, ToolLoopExceededError } from "@rejelly/core";
 import {
   executeTools,
@@ -28,6 +28,9 @@ export interface ToolCallLoopPolicySnapshot {
   jsonSchema?: JsonSchema;
   parser?: OutputParser;
   pendingUserMessages?: () => Message[] | Promise<Message[]>;
+  toolsForDispatch?: (
+    baseTools: readonly ToolDefinition[],
+  ) => readonly ToolDefinition[] | Promise<readonly ToolDefinition[]>;
   compaction?: PromptChatCompactionConfig;
   sessionRecorder?: SessionMessageSink;
   turnId?: string;
@@ -177,8 +180,15 @@ export async function runResilientToolCallLoopPolicy<T = unknown>(
 
       await compaction.maybeCompact(deltaMessages);
 
+      const dispatchTools = snapshot.toolsForDispatch
+        ? await snapshot.toolsForDispatch(ctx.tools)
+        : ctx.tools;
+      const dispatchRuntime = ctx.fork({
+        messages: compaction.messages(deltaMessages),
+        tools: [...dispatchTools],
+      });
       const result: LoopTurnResult = await executeValidatedLoopTurn({
-        runtime: ctx.fork({ messages: compaction.messages(deltaMessages) }),
+        runtime: dispatchRuntime,
         jsonSchema: snapshot.jsonSchema,
         parser: snapshot.parser,
         maxRetries: ctx.maxRetries,
@@ -207,7 +217,7 @@ export async function runResilientToolCallLoopPolicy<T = unknown>(
         break;
       }
 
-      const toolRuntime = ctx.fork({ messages: compaction.messages(deltaMessages) });
+      const toolRuntime = dispatchRuntime.fork({ messages: compaction.messages(deltaMessages) });
       const toolOutputs = await executeTools(result.calls, { runtime: toolRuntime });
       deltaMessages.push(...toolOutputs);
       if (snapshot.sessionRecorder && snapshot.turnId) {

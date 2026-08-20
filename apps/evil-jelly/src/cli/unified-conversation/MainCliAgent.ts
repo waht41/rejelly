@@ -27,6 +27,7 @@ import {
   SKILL_RUNTIME_PROVIDER_KEY,
   type SkillRuntimeSnapshot,
 } from "../../domains/skills/agent/skillRuntime";
+import type { ConversationAgentProps } from "../../features/unified/conversationRun";
 import { UnifiedAgent } from "../../features/unified/UnifiedAgent";
 import { env } from "../../shared/configuration/env";
 import { countConversationTurns } from "../../shared/conversation/compactionMessages";
@@ -35,6 +36,7 @@ import type { EvilJellyBindings } from "../../shared/host/bindings";
 import { getBinding, setBinding } from "../../shared/host/context";
 import { releasePromptResources } from "../../shared/host/promptResourceLifecycle";
 import {
+  type FrozenUserInputV1,
   projectFrozenUserInputDisplay,
   type ResolvedUserInputV1,
 } from "../../shared/model/prompt/frozenUserInput";
@@ -136,6 +138,8 @@ export interface MainCliAgentProps extends EvilJellyBindings {
   isolateSessionState?: boolean;
   /** Session V3 writer. Undefined only for ephemeral or isolated runs. */
   sessionRecorder?: SessionRecorder;
+  /** Composition-root factory for immutable per-model-dispatch MCP bindings. */
+  mcpBindingFactory?: ConversationAgentProps["mcpBindingFactory"];
 }
 
 type RouterIntent =
@@ -155,6 +159,7 @@ interface RouterRuntime {
   currentBudget: () => SessionBudget;
   appendTurn: (userMessage: Message, reply: string, delta?: Message[]) => void;
   skillSnapshot?: SkillRuntimeSnapshot;
+  mcpBindingFactory?: ConversationAgentProps["mcpBindingFactory"];
 }
 
 /** Short, session-local correlation ID with 96 bits of entropy and URL-safe characters. */
@@ -272,7 +277,8 @@ async function drainAndPrepareSteerMessages(
             ),
           ),
       );
-      messages.push(await commitUserInput(runtime, turnId, "steer", resolved));
+      const committed = await commitUserInput(runtime, turnId, "steer", resolved);
+      messages.push(committed.message);
     }
   } catch (error) {
     await Promise.all(inputs.map((input) => releasePromptResources(input).catch(() => undefined)));
@@ -286,14 +292,17 @@ async function commitUserInput(
   turnId: string,
   inputKind: "initial" | "steer",
   resolved: ResolvedUserInputV1,
-): Promise<Message> {
+): Promise<{ readonly frozen: FrozenUserInputV1; readonly message: Message }> {
   const frozen = runtime.props.sessionRecorder
     ? await runtime.props.sessionRecorder.recordUserInput(turnId, inputKind, resolved)
     : await commitResolvedUserInput(resolved, { blobRoot: runtime.props.sessionBlobRoot });
   runtime.host.logUserMessage(formatUserInputDisplay(projectFrozenUserInputDisplay(frozen)));
-  return materializeFrozenUserInputMessage(frozen, {
-    blobRoot: runtime.props.sessionBlobRoot,
-  });
+  return {
+    frozen,
+    message: await materializeFrozenUserInputMessage(frozen, {
+      blobRoot: runtime.props.sessionBlobRoot,
+    }),
+  };
 }
 
 async function handleResume(runtime: RouterRuntime, rawInput: string): Promise<boolean> {
@@ -364,7 +373,8 @@ async function runConversationTurn(
     // timer must anchor at exactly this point so steers and maintenance commands never
     // start (or restart) a turn.
     runtime.host.onTurnStart?.();
-    submittedUserMessage = await commitUserInput(runtime, activeTurnId, "initial", resolved);
+    const committed = await commitUserInput(runtime, activeTurnId, "initial", resolved);
+    submittedUserMessage = committed.message;
 
     const result = await UnifiedAgentWithAbort({
       message: submittedUserMessage,
@@ -373,6 +383,7 @@ async function runConversationTurn(
       sessionBlobRoot: runtime.props.sessionBlobRoot,
       sessionRecorder: runtime.props.sessionRecorder,
       turnId: activeTurnId,
+      mcpBindingFactory: runtime.mcpBindingFactory,
     });
 
     if (result.compactHistory) {
@@ -490,6 +501,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
       skillSnapshot: expectResource<SkillRuntimeSnapshot>(SKILL_RUNTIME_PROVIDER_KEY, {
         optional: true,
       }),
+      mcpBindingFactory: props.mcpBindingFactory,
     };
 
     try {

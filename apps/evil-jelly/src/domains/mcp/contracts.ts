@@ -376,6 +376,8 @@ export interface McpReferenceResult {
 export type McpCallRejectionCode =
   | "tool_unavailable"
   | "catalog_changed"
+  | "approval_denied"
+  | "call_failed"
   | "arguments_too_large"
   | "arguments_too_deep"
   | "invalid_tool_schema"

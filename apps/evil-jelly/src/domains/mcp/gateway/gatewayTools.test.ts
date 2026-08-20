@@ -48,7 +48,7 @@ describe("MCP gateway tools", () => {
       reference: async () => ({ type: "mcp_reference_v1", matches: [route()] }),
       callPolicy: new McpCallPolicy({
         resolveRoute: () => route(),
-        invoke: async () => ({ content: [] }),
+        invoke: async () => ({ ok: true, result: { content: [] } }),
       }),
     });
     const second = createMcpGatewayToolDefinitions({
@@ -58,7 +58,10 @@ describe("MCP gateway tools", () => {
       }),
       callPolicy: new McpCallPolicy({
         resolveRoute: () => route({ catalogRevision: "catalog-2" }),
-        invoke: async () => ({ content: [{ type: "text", text: "changed" }] }),
+        invoke: async () => ({
+          ok: true,
+          result: { content: [{ type: "text", text: "changed" }] },
+        }),
       }),
     });
 
@@ -67,7 +70,7 @@ describe("MCP gateway tools", () => {
   });
 
   it("rejects stale revisions before native I/O", async () => {
-    const invoke = vi.fn(async () => ({ content: [] }));
+    const invoke = vi.fn(async () => ({ ok: true as const, result: { content: [] } }));
     const policy = new McpCallPolicy({ resolveRoute: () => route(), invoke });
 
     const result = await policy.execute(input({ catalogRevision: "old" }));
@@ -81,7 +84,7 @@ describe("MCP gateway tools", () => {
   });
 
   it("does not trust a route resolved for a different structured identity", async () => {
-    const invoke = vi.fn(async () => ({ content: [] }));
+    const invoke = vi.fn(async () => ({ ok: true as const, result: { content: [] } }));
     const policy = new McpCallPolicy({
       resolveRoute: () => route({ identity: { serverId: "other", nativeToolName: "dangerous" } }),
       invoke,
@@ -94,7 +97,7 @@ describe("MCP gateway tools", () => {
   });
 
   it("returns native JSON Schema issues before native I/O", async () => {
-    const invoke = vi.fn(async () => ({ content: [] }));
+    const invoke = vi.fn(async () => ({ ok: true as const, result: { content: [] } }));
     const policy = new McpCallPolicy({ resolveRoute: () => route(), invoke });
 
     const result = await policy.execute(input({ arguments: { path: "x", extra: true } }));
@@ -110,8 +113,11 @@ describe("MCP gateway tools", () => {
 
   it("normalizes an authorized native result", async () => {
     const invoke = vi.fn(async () => ({
-      content: [{ type: "text", text: "done" }],
-      structuredContent: { path: "guide.md" },
+      ok: true as const,
+      result: {
+        content: [{ type: "text", text: "done" }],
+        structuredContent: { path: "guide.md" },
+      },
     }));
     const policy = new McpCallPolicy({ resolveRoute: () => route(), invoke });
 

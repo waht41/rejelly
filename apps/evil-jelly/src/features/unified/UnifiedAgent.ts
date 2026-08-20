@@ -12,8 +12,14 @@ import {
   equipTool,
   isAbortError,
   isToolLoopExceededError,
+  type ToolDefinition,
 } from "@rejelly/core";
-import { equipMcpServerKit } from "../../domains/mcp/mcpServerKit";
+import { MCP_CALL_TOOL_NAME, MCP_REFERENCE_TOOL_NAME } from "../../domains/mcp/contracts";
+import {
+  createMcpGatewayToolsForDispatch,
+  createUnavailableMcpDispatch,
+  type McpDispatchBindingFactory,
+} from "../../domains/mcp/gateway/dispatch";
 import { promptChatResilient } from "../../domains/policy/promptChatResilient";
 import { promptCompactHistory } from "../../domains/policy/promptCompactHistory";
 import { materializeMessageHistory } from "../../domains/session/repository/sessionMessageMaterializer";
@@ -63,16 +69,25 @@ async function useUnifiedTools(): Promise<void> {
   // Ad-hoc web lookups (web_search + read_webpage) during normal coding/chat. INV-0009 §2: the kit
   // may be equipped on UnifiedAgent; the standalone research agent stays the fan-out-ready unit.
   equipWebResearchKit();
-  // Opt-in (--devtool), best-effort: lets evil introspect its own run via the
-  // devtool MCP. Skipped silently when disabled; warns and continues without the
-  // tools when the server is down (the user explicitly asked for them).
-  await equipMcpServerKit();
-
   useArtifact();
 
   equipTool(editTool);
   equipTool(createTool);
   equipTool(deleteTool);
+}
+
+async function toolsForMcpDispatch(
+  baseTools: readonly ToolDefinition[],
+  factory: McpDispatchBindingFactory | undefined,
+): Promise<readonly ToolDefinition[]> {
+  const dispatch = factory ? await factory() : createUnavailableMcpDispatch();
+  const withoutGateways = baseTools.filter(
+    (tool) => tool.name !== MCP_REFERENCE_TOOL_NAME && tool.name !== MCP_CALL_TOOL_NAME,
+  );
+  return [
+    ...withoutGateways,
+    ...createMcpGatewayToolsForDispatch(dispatch),
+  ] as unknown as ToolDefinition[];
 }
 
 async function useUnifiedPrompts(props: ConversationAgentProps): Promise<void> {
@@ -141,6 +156,7 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
       const result = await promptChatResilient({
         message: messages,
         pendingUserMessages: props.pendingUserMessages,
+        toolsForDispatch: (baseTools) => toolsForMcpDispatch(baseTools, props.mcpBindingFactory),
         compaction: buildAutoCompactionConfig(),
         sessionRecorder: props.sessionRecorder,
         turnId: props.turnId,

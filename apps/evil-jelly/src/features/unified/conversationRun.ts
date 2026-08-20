@@ -1,4 +1,5 @@
 import type { Message } from "@rejelly/core";
+import type { McpDispatchBindingFactory } from "../../domains/mcp/gateway/dispatch";
 import type { SessionMessageSink } from "../../shared/session/recorderPort";
 import type { UserReplySurface } from "./outputSurface";
 
@@ -13,6 +14,8 @@ interface ConversationAgentBaseProps {
   sessionRecorder?: SessionMessageSink;
   /** Stable id shared by the initial input, steers, model rounds, and tool results. */
   turnId?: string;
+  /** Captures one immutable MCP route/catalog view at each model dispatch boundary. */
+  mcpBindingFactory?: McpDispatchBindingFactory;
 }
 
 export type ConversationAgentProps =

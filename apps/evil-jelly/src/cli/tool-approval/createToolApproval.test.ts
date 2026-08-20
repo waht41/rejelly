@@ -421,4 +421,23 @@ describe("createToolApproval", () => {
     useDecisionStore.getState().submitChoice("reject");
     await expect(pending).resolves.toEqual({ action: "reject" });
   });
+
+  it("prompts with structured MCP identity and arguments", async () => {
+    resetCliStores();
+    const confirmTool = createToolApproval({ getMode: () => "auto" });
+
+    const pending = confirmTool({
+      type: "mcp_call",
+      tool: { serverId: "docs", nativeToolName: "read" },
+      arguments: { path: "guide.md" },
+    });
+
+    await flushMicrotasks();
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      type: "choice",
+      message: 'Allow MCP tool docs/read?\nArguments:\n{\n  "path": "guide.md"\n}',
+    });
+    useDecisionStore.getState().submitChoice("accept");
+    await expect(pending).resolves.toEqual({ action: "accept" });
+  });
 });

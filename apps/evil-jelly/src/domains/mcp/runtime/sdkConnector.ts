@@ -4,7 +4,7 @@ import {
   StdioClientTransport,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { loadMcpToolCatalog, normalizeMcpToolCatalog } from "@rejelly/adapter-mcp";
+import { callMcpTool, loadMcpToolCatalog, normalizeMcpToolCatalog } from "@rejelly/adapter-mcp";
 import { resolveWorkspaceCwd } from "../../../shared/fs-policy/workspace-fs-policy";
 import {
   type McpEnvironmentResolver,
@@ -174,6 +174,22 @@ export class SdkMcpRuntimeConnector implements McpRuntimeConnector {
                   timeout: server.definition.toolTimeoutMs,
                 }),
             });
+          } catch (error) {
+            throw safeConnectionError(error, resolvedSecrets);
+          }
+        },
+        callTool: async (name, argumentsValue) => {
+          try {
+            return await callMcpTool(
+              {
+                callTool: (params) =>
+                  client.callTool(params, undefined, {
+                    timeout: server.definition.toolTimeoutMs,
+                  }),
+              },
+              name,
+              argumentsValue,
+            );
           } catch (error) {
             throw safeConnectionError(error, resolvedSecrets);
           }
