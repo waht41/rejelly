@@ -177,6 +177,25 @@ describe("WorkspaceFsPolicy workspace root", () => {
     expect(allowedFile.ok).toBe(true);
   });
 
+  it("allowGitignored relaxes only the gitignore guard", async () => {
+    const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(path.join(root, ".gitignore"), "AGENTS.override.md\nnode_modules/\n", "utf-8");
+    fs.mkdirSync(path.join(root, "node_modules"), { recursive: true });
+    fs.writeFileSync(path.join(root, "AGENTS.override.md"), "Override rule", "utf-8");
+    fs.writeFileSync(path.join(root, ".env"), "TOKEN=secret", "utf-8");
+    fs.writeFileSync(path.join(root, "node_modules", "pkg.js"), "export {}", "utf-8");
+    const policy = new WorkspaceFsPolicy(root);
+
+    expect(policy.tryResolve("AGENTS.override.md").ok).toBe(false);
+    expect(policy.tryResolve("AGENTS.override.md", { allowGitignored: true }).ok).toBe(true);
+    expect(policy.tryResolve("node_modules/pkg.js", { allowGitignored: true }).ok).toBe(false);
+    expect(policy.tryResolve(".env", { allowGitignored: true }).ok).toBe(false);
+    expect(await policy.readFile("AGENTS.override.md", { allowGitignored: true })).toBe(
+      "Override rule",
+    );
+  });
+
   it("centralizes traversal skip rules for inside and outside directories", () => {
     const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
     const outsideDir = path.resolve(root, "../shared-zone");

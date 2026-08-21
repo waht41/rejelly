@@ -19,11 +19,14 @@ interface WorkspaceRule {
 async function resolveWorkspaceRule(policy: WorkspaceFsPolicy): Promise<WorkspaceRule | undefined> {
   for (const fileName of AGENTS_RULE_FILES) {
     try {
-      const stat = await policy.stat(fileName);
+      // Rule files stay readable even when gitignored: ignoring AGENTS.override.md while
+      // keeping it tracked is a Codex convention. Only the gitignore guard is relaxed;
+      // sensitive-file and system-hidden checks still apply in the policy.
+      const stat = await policy.stat(fileName, { allowGitignored: true });
       if (!stat.isFile()) {
         continue;
       }
-      const markdown = (await policy.readFile(fileName)).trim();
+      const markdown = (await policy.readFile(fileName, { allowGitignored: true })).trim();
       if (markdown.length > 0) {
         return { fileName, markdown };
       }
