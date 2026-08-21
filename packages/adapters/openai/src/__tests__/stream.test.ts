@@ -6,21 +6,21 @@
 import { runFrameworkStreamTests } from "@rejelly/test-utils";
 import { describe } from "vitest";
 import { createOpenAIAdapter } from "../index";
-import { streamTestMatrix } from "./stream.matrix";
+import { resolveOpenAIStreamTestConfig, streamTestMatrix } from "./stream.matrix";
 
 streamTestMatrix.forEach((config) => {
-  const apiKey = process.env[config.envVarKey];
-  const runE2E = apiKey ? describe : describe.skip;
+  const resolved = resolveOpenAIStreamTestConfig(config);
+  const runE2E = resolved ? describe : describe.skip;
 
-  runE2E(`E2E Test: ${config.provider} - ${config.modelId}`, () => {
-    if (!apiKey) return;
+  runE2E(`E2E Test: ${config.envId}`, () => {
+    if (!resolved) return;
     runFrameworkStreamTests(
       () =>
         createOpenAIAdapter({
-          modelId: config.modelId,
-          apiKey,
-          baseURL: config.baseURL,
-          provider: config.provider,
+          modelId: resolved.modelId,
+          apiKey: resolved.apiKey,
+          baseURL: resolved.baseURL,
+          provider: resolved.provider,
           schemaMode: config.capabilities.nativeSchema ? "json_schema" : "prompt",
         }),
       config.capabilities,
