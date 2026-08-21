@@ -23,7 +23,7 @@ describe("MCP configuration", () => {
       maxConcurrency: 4,
       tools: { deny: [] },
       use: {
-        chat: { exposure: "explicit", required: false },
+        chat: { exposure: "explicit", required: false, autoApproveTools: [] },
         audit: {
           exposure: "off",
           required: false,

@@ -43,6 +43,8 @@ export interface McpCallConfirmationPayload {
   };
   configFingerprint: string;
   toolSchemaFingerprint: string;
+  /** Exact config policy matched this tool; Auto mode may allow only this call. */
+  autoApprovedByPolicy: boolean;
   arguments: Record<string, unknown>;
 }
 

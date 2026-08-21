@@ -40,6 +40,7 @@ export function createAuthorizedMcpBindingFactory(options: {
           tool: route.identity,
           configFingerprint: grant.configFingerprint,
           toolSchemaFingerprint: grant.toolSchemaFingerprint,
+          autoApprovedByPolicy: options.control?.isToolAutoApproved(route) ?? false,
           arguments: argumentsValue,
         });
         if (decision.action !== "accept") return false;

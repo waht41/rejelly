@@ -125,7 +125,7 @@ describe("McpRuntimeManager", () => {
         ...baseAlways.definition,
         use: {
           ...baseAlways.definition.use,
-          chat: { exposure: "always", required: false },
+          chat: { exposure: "always", required: false, autoApproveTools: [] },
         },
       },
     };
@@ -173,7 +173,7 @@ describe("McpRuntimeManager", () => {
         ...base.definition,
         use: {
           ...base.definition.use,
-          chat: { exposure: "explicit", required: true },
+          chat: { exposure: "explicit", required: true, autoApproveTools: [] },
         },
       },
     };

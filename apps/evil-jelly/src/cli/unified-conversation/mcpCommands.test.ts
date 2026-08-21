@@ -42,6 +42,7 @@ function ports(overrides: Partial<McpCommandPorts> = {}) {
     sessionToolGrants: () => [],
     setSessionToolGrants: vi.fn(),
     recordToolGrants: vi.fn(async () => undefined),
+    agentMode: () => "normal" as const,
     requestChoice: vi.fn(async () => "cancel"),
     logSystem: vi.fn(),
     ...overrides,
@@ -143,6 +144,7 @@ describe("MCP interactive commands", () => {
         inputSchema: { type: "object" },
         grant,
         approval: "ask" as const,
+        autoApprovedByPolicy: false,
       })),
     );
     const revokePersistentToolPermissions = vi.fn(async () => undefined);

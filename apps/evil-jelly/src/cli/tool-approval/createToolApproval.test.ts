@@ -431,6 +431,7 @@ describe("createToolApproval", () => {
       tool: { serverId: "docs", nativeToolName: "read" },
       configFingerprint: "a".repeat(64),
       toolSchemaFingerprint: "b".repeat(64),
+      autoApprovedByPolicy: false,
       arguments: { path: "guide.md" },
     });
 
@@ -445,6 +446,23 @@ describe("createToolApproval", () => {
     });
     useDecisionStore.getState().submitChoice("accept");
     await expect(pending).resolves.toEqual({ action: "accept", scope: "once" });
+  });
+
+  it("auto-allows only policy-listed MCP tool calls without creating a reusable grant", async () => {
+    resetCliStores();
+    const confirmTool = createToolApproval({ getMode: () => "auto" });
+
+    await expect(
+      confirmTool({
+        type: "mcp_call",
+        tool: { serverId: "docs", nativeToolName: "read" },
+        configFingerprint: "a".repeat(64),
+        toolSchemaFingerprint: "b".repeat(64),
+        autoApprovedByPolicy: true,
+        arguments: { path: "guide.md" },
+      }),
+    ).resolves.toEqual({ action: "accept", scope: "once" });
+    expect(useDecisionStore.getState().decision).toEqual({ type: "idle" });
   });
 
   it("prompts for session MCP access with the host-owned fingerprint", async () => {
@@ -471,5 +489,21 @@ describe("createToolApproval", () => {
     });
     useDecisionStore.getState().submitChoice("accept");
     await expect(pending).resolves.toEqual({ action: "accept", scope: "session" });
+  });
+
+  it("auto-selects an already trusted MCP server for the current session", async () => {
+    resetCliStores();
+    const confirmTool = createToolApproval({ getMode: () => "auto" });
+
+    await expect(
+      confirmTool({
+        type: "mcp_access",
+        serverId: "typescript",
+        source: "user",
+        configFingerprint: "f".repeat(64),
+        requiresTrust: false,
+      }),
+    ).resolves.toEqual({ action: "accept", scope: "session" });
+    expect(useDecisionStore.getState().decision).toEqual({ type: "idle" });
   });
 });

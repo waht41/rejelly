@@ -27,7 +27,12 @@
   //         "args": ["-y", "ts-language-mcp", "."],
   //       },
   //       "use": {
-  //         "chat": { "exposure": "explicit", "required": false },
+  //         "chat": {
+  //           "exposure": "explicit",
+  //           "required": false,
+  //           // Exact tool names only; Auto mode allows each matching call once without a prompt.
+  //           "autoApproveTools": ["get_definition", "get_references", "get_diagnostics"],
+  //         },
   //         "audit": {
   //           "exposure": "always",
   //           "required": false,

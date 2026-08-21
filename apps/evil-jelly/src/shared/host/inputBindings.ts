@@ -51,7 +51,7 @@ export interface McpManagerToolRow {
   nativeToolName: string;
   description: string;
   inputSchema: Readonly<Record<string, unknown>>;
-  approval: "ask" | "session" | "always";
+  approval: "ask" | "auto" | "session" | "always";
   configFingerprint: string;
   toolSchemaFingerprint: string;
 }

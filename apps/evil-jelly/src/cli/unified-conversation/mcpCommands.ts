@@ -19,6 +19,7 @@ export interface McpCommandPorts {
   sessionToolGrants(): readonly McpToolGrant[];
   setSessionToolGrants(grants: readonly McpToolGrant[]): void;
   recordToolGrants(grants: readonly McpToolGrant[]): Promise<void>;
+  agentMode(): "normal" | "auto";
   requestChoice(request: PromptChoiceRequest): Promise<string>;
   requestManager?: (request: McpManagerRequest) => Promise<McpManagerAction>;
   dismissManager?: () => void;
@@ -79,6 +80,7 @@ function managerRequest(
 function toolPanel(
   serverId: string,
   rows: readonly McpToolPermissionRow[],
+  autoMode: boolean,
 ): NonNullable<McpManagerRequest["toolPanel"]> {
   return {
     serverId,
@@ -86,7 +88,10 @@ function toolPanel(
       nativeToolName: row.nativeToolName,
       description: row.description,
       inputSchema: row.inputSchema,
-      approval: row.approval,
+      approval:
+        autoMode && row.approval === "ask" && row.autoApprovedByPolicy
+          ? ("auto" as const)
+          : row.approval,
       configFingerprint: row.grant.configFingerprint,
       toolSchemaFingerprint: row.grant.toolSchemaFingerprint,
     })),
@@ -322,7 +327,11 @@ async function runManager(ports: McpCommandPorts): Promise<void> {
   let toolServerId: string | undefined;
   while (true) {
     const tools = toolServerId
-      ? toolPanel(toolServerId, control.toolPermissions(toolServerId, ports.sessionToolGrants()))
+      ? toolPanel(
+          toolServerId,
+          control.toolPermissions(toolServerId, ports.sessionToolGrants()),
+          ports.agentMode() === "auto",
+        )
       : undefined;
     const request = managerRequest(
       control.status(ports.selectedServerIds()),

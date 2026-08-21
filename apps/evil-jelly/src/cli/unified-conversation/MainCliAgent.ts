@@ -385,6 +385,7 @@ async function handleMcp(runtime: RouterRuntime, rawInput: string): Promise<void
     recordToolGrants: async (toolGrants) => {
       await runtime.props.sessionRecorder?.recordMcpToolGrants(toolGrants, "command");
     },
+    agentMode: () => runtime.host.getAgentMode?.() ?? "normal",
     requestChoice: runtime.host.requestChoice,
     ...(runtime.host.requestMcpManager ? { requestManager: runtime.host.requestMcpManager } : {}),
     ...(runtime.host.dismissMcpManager ? { dismissManager: runtime.host.dismissMcpManager } : {}),

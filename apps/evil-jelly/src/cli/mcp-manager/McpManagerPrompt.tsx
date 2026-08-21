@@ -27,9 +27,12 @@ function connectionColor(
   return undefined;
 }
 
-function approvalColor(approval: McpManagerToolRow["approval"]): "green" | "yellow" | undefined {
+function approvalColor(
+  approval: McpManagerToolRow["approval"],
+): "cyan" | "green" | "yellow" | undefined {
   if (approval === "always") return "green";
   if (approval === "session") return "yellow";
+  if (approval === "auto") return "cyan";
   return undefined;
 }
 
@@ -358,7 +361,7 @@ export function McpManagerPrompt({
   });
 
   if (toolsVisible && request.toolPanel) {
-    const counts = { ask: 0, session: 0, always: 0 };
+    const counts = { ask: 0, auto: 0, session: 0, always: 0 };
     for (const row of request.toolPanel.rows) counts[row.approval] += 1;
     if (inspectedTool) {
       const visibleSchemaRows = Math.max(3, Math.min(12, terminalRows - 12));
@@ -401,7 +404,7 @@ export function McpManagerPrompt({
       <Box flexDirection="column" marginTop={1}>
         <Text bold>MCP · {request.toolPanel.serverId} · Tools & approvals</Text>
         <Text dimColor>
-          {counts.always} always · {counts.session} session · {counts.ask} ask
+          {counts.always} always · {counts.session} session · {counts.auto} auto · {counts.ask} ask
         </Text>
         {searchQuery || searching ? (
           <Text color={searching ? "cyan" : undefined}>Search: {searchQuery || "_"}</Text>

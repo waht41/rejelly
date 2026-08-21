@@ -25,13 +25,17 @@ describe("MCP chat authorization", () => {
     const commitToolGrants = vi.fn(async (next) => {
       state = next;
     });
+    const confirmTool = vi.fn(async () => ({
+      action: "accept" as const,
+      scope: "session" as const,
+    }));
     const factory = createAuthorizedMcpBindingFactory({
       bindingFactory: async (_selected, handler) => {
         authorize = handler;
         return unavailableDispatch();
       },
-      control: mcpSessionControlStub(),
-      confirmTool: vi.fn(async () => ({ action: "accept" as const, scope: "session" as const })),
+      control: mcpSessionControlStub({ isToolAutoApproved: () => true }),
+      confirmTool,
       state: {
         get: () => state,
         commitSelection: vi.fn(async () => undefined),
@@ -42,6 +46,9 @@ describe("MCP chat authorization", () => {
 
     await factory();
     expect(await authorize?.(mcpBoundRouteFixture(), { path: "README.md" })).toBe(true);
+    expect(confirmTool).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "mcp_call", autoApprovedByPolicy: true }),
+    );
     expect(commitToolGrants).toHaveBeenCalledOnce();
     expect(state.toolGrants).toEqual([
       expect.objectContaining({ serverId: "docs", nativeToolName: "read" }),

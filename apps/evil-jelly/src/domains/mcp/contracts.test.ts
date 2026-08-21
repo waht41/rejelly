@@ -4,6 +4,7 @@ import {
   fingerprintMcpConnectionDefinition,
   fingerprintMcpServerDefinition,
   isMcpToolAllowed,
+  isMcpToolAutoApproved,
   isReservedMcpServerId,
   MCP_CALL_TOOL_DESCRIPTION,
   MCP_CALL_TOOL_NAME,
@@ -41,7 +42,7 @@ function server(overrides: Partial<McpServerDefinition> = {}): McpServerDefiniti
       deny: ["delete_repository"],
     },
     use: {
-      chat: { exposure: "explicit", required: false },
+      chat: { exposure: "explicit", required: false, autoApproveTools: [] },
       audit: {
         exposure: "always",
         required: false,
@@ -110,10 +111,26 @@ describe("MCP consumer policy", () => {
     expect(isMcpToolAllowed(definition, "audit", "get_file_contents")).toBe(false);
   });
 
+  it("auto-approves only exact chat tools that remain inside the global ceiling", () => {
+    const definition = server({
+      use: {
+        ...server().use,
+        chat: {
+          exposure: "explicit",
+          required: false,
+          autoApproveTools: ["get_file_contents", "delete_repository"],
+        },
+      },
+    });
+    expect(isMcpToolAutoApproved(definition, "get_file_contents")).toBe(true);
+    expect(isMcpToolAutoApproved(definition, "delete_repository")).toBe(false);
+    expect(isMcpToolAutoApproved(definition, "get_file")).toBe(false);
+  });
+
   it("keeps chat always independent from Audit off", () => {
     const definition = server({
       use: {
-        chat: { exposure: "always", required: false },
+        chat: { exposure: "always", required: false, autoApproveTools: [] },
         audit: {
           exposure: "off",
           required: false,
@@ -147,7 +164,7 @@ describe("MCP definition fingerprint", () => {
         deny: ["delete_repository", "delete_repository"],
       },
       use: {
-        chat: { exposure: "explicit", required: false },
+        chat: { exposure: "explicit", required: false, autoApproveTools: [] },
         audit: {
           exposure: "always",
           required: false,
@@ -195,7 +212,7 @@ describe("MCP definition fingerprint", () => {
         server({
           use: {
             ...server().use,
-            chat: { exposure: "always", required: false },
+            chat: { exposure: "always", required: false, autoApproveTools: [] },
           },
         }),
       ),

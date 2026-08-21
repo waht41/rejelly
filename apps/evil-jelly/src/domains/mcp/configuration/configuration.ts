@@ -67,6 +67,7 @@ export const McpServerSettingsSchema = z
           .object({
             exposure: z.enum(["off", "explicit", "always"]).optional(),
             required: z.boolean().optional(),
+            autoApproveTools: z.array(z.string().min(1)).optional(),
           })
           .strict()
           .optional(),
@@ -124,6 +125,7 @@ export function defaultMcpServerDefinition(settings: McpServerSettings): McpServ
       chat: {
         exposure: settings.use?.chat?.exposure ?? "explicit",
         required: settings.use?.chat?.required ?? false,
+        autoApproveTools: settings.use?.chat?.autoApproveTools ?? [],
       },
       audit: {
         exposure: settings.use?.audit?.exposure ?? "off",

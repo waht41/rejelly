@@ -78,6 +78,8 @@ export type McpAuditExposure = "off" | "always";
 export interface McpChatUsePolicy {
   readonly exposure: McpChatExposure;
   readonly required: boolean;
+  /** Exact native names eligible for one-call auto approval while the host is in Auto mode. */
+  readonly autoApproveTools: readonly string[];
 }
 
 export interface McpAuditUsePolicy {
@@ -121,6 +123,16 @@ export function isMcpToolAllowed(
   if (!server.enabled || server.use[consumer].exposure === "off") return false;
   if (!filterAllows(server.tools, nativeToolName)) return false;
   return consumer === "chat" || server.use.audit.allow.includes(nativeToolName);
+}
+
+export function isMcpToolAutoApproved(
+  server: McpServerDefinition,
+  nativeToolName: string,
+): boolean {
+  return (
+    isMcpToolAllowed(server, "chat", nativeToolName) &&
+    server.use.chat.autoApproveTools.includes(nativeToolName)
+  );
 }
 
 export type McpConfigSource =
@@ -177,6 +189,7 @@ function fingerprintProjection(serverId: string, server: McpServerDefinition): o
       chat: {
         exposure: server.use.chat.exposure,
         required: server.use.chat.required,
+        autoApproveTools: sortedUnique(server.use.chat.autoApproveTools),
       },
       audit: {
         exposure: server.use.audit.exposure,

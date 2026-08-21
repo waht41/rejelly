@@ -1,6 +1,7 @@
 import { resolveMcpSettingsLayers } from "../../domains/mcp/configuration/configuration";
 import {
   isMcpToolAllowed,
+  isMcpToolAutoApproved,
   type McpBoundRoute,
   type McpDesiredConfig,
   type McpDesiredServer,
@@ -132,7 +133,8 @@ export async function createMcpChatRuntime(options: {
     toolPermissions: (serverId, sessionGrants) => {
       const binding = manager.captureDispatchBinding("chat", [serverId]);
       const server = binding.servers.find((candidate) => candidate.serverId === serverId);
-      if (!server || server.status !== "ready") return [];
+      const desiredServer = manager.getDesiredServer(serverId);
+      if (!server || server.status !== "ready" || !desiredServer) return [];
       return server.tools.flatMap((tool) => {
         const route = binding.route({ serverId, nativeToolName: tool.nativeToolName });
         if (!route) return [];
@@ -148,6 +150,10 @@ export async function createMcpChatRuntime(options: {
               : sessionGrants.some((candidate) => mcpToolGrantMatchesRoute(candidate, route))
                 ? ("session" as const)
                 : ("ask" as const),
+            autoApprovedByPolicy: isMcpToolAutoApproved(
+              desiredServer.definition,
+              tool.nativeToolName,
+            ),
           },
         ];
       });
@@ -195,6 +201,17 @@ export async function createMcpChatRuntime(options: {
       persistentPermissions = readMcpPersistentPermissions(workspaceRoot);
     },
     isPersistentToolAllowed: persistentToolAllowed,
+    isToolAutoApproved: (route) => {
+      const server = manager.getDesiredServer(route.identity.serverId);
+      const runtime = manager
+        .getSnapshot()
+        .servers.find((candidate) => candidate.serverId === route.identity.serverId);
+      return (
+        server !== undefined &&
+        runtime?.configFingerprint === route.configFingerprint &&
+        isMcpToolAutoApproved(server.definition, route.identity.nativeToolName)
+      );
+    },
     persistentPermissions: () =>
       persistentPermissions.map((permission) => ({
         serverId: permission.serverId,

@@ -403,9 +403,19 @@ export function createToolApproval(
       return decision.run((session) => confirmOutsideAccess(params, session));
     }
     if (params.type === "mcp_access") {
+      if (getMode() === "auto" && !params.requiresTrust) {
+        logNotice(`[Auto-allowed] MCP server ${params.serverId} for this session (auto mode)`);
+        return { action: "accept", scope: "session" };
+      }
       return decision.run((session) => confirmMcpAccess(params, session));
     }
     if (params.type === "mcp_call") {
+      if (getMode() === "auto" && params.autoApprovedByPolicy) {
+        logNotice(
+          `[Auto-allowed] MCP tool ${params.tool.serverId}/${params.tool.nativeToolName} (auto mode policy)`,
+        );
+        return { action: "accept", scope: "once" };
+      }
       return decision.run((session) => confirmMcpCall(params, session));
     }
 

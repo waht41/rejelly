@@ -123,7 +123,7 @@ describe("McpManagerPrompt", () => {
     );
 
     expect(output).toContain("Tools & approvals");
-    expect(output).toContain("1 always · 0 session · 1 ask");
+    expect(output).toContain("1 always · 0 session · 0 auto · 1 ask");
     expect(output).toContain("Tool");
     expect(output).toContain("Access");
     expect(output).toContain("find_references");

@@ -25,6 +25,7 @@ export interface McpToolPermissionRow {
   readonly inputSchema: McpBoundRoute["inputSchema"];
   readonly grant: McpToolGrant;
   readonly approval: "ask" | "session" | "always";
+  readonly autoApprovedByPolicy: boolean;
 }
 
 export interface McpSessionControl {
@@ -40,6 +41,7 @@ export interface McpSessionControl {
   grantPersistentServerAccess(serverId: string): Promise<void>;
   grantPersistentToolAccess(grants: readonly McpToolGrant[]): Promise<void>;
   isPersistentToolAllowed(route: McpBoundRoute): boolean;
+  isToolAutoApproved(route: McpBoundRoute): boolean;
   persistentPermissions(): readonly {
     readonly serverId: string;
     readonly chatAccess: boolean;

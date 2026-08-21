@@ -63,6 +63,7 @@ export function createMcpDispatchBindingFactory(
           tool: route.identity,
           configFingerprint: route.configFingerprint,
           toolSchemaFingerprint: fingerprintMcpToolSchema(route),
+          autoApprovedByPolicy: false,
           arguments: argumentsValue,
         });
         if (decision.action !== "accept") {

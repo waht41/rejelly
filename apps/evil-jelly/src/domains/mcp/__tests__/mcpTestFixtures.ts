@@ -29,6 +29,7 @@ export function mcpSessionControlStub(
     grantPersistentServerAccess: async () => undefined,
     grantPersistentToolAccess: async () => undefined,
     isPersistentToolAllowed: () => false,
+    isToolAutoApproved: () => false,
     persistentPermissions: () => [],
     revokePersistentServerAccess: async () => undefined,
     revokePersistentPermissions: async () => undefined,
