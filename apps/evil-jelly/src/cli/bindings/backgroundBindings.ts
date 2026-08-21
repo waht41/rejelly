@@ -50,6 +50,12 @@ function createStubHostBindings(
     onDetailUpdate: (detail: string) => {
       console.log(`[${logPrefix}][detail] ${detail}`);
     },
+    requestMemoryConfirmation: async (params) => {
+      console.warn(
+        `[${logPrefix}] memory confirmation unavailable: ${params.operation} ${params.id}`,
+      );
+      return { action: "unavailable", reason: "Interactive memory confirmation is unavailable." };
+    },
     confirmTool: async (params) => {
       if (autoAcceptWrite) {
         if (params.type === "fs_write") {

@@ -199,6 +199,7 @@
         "@cli:unified-conversation": ["@feature:unified", "@domain:mcp"],
         "@cli:mcp-runtime": ["@domain:mcp"],
         "@feature:unified": [
+          "@domain:memory",
           "@domain:workspace",
           "@domain:web",
           "@domain:skills:agent",

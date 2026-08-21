@@ -25,6 +25,7 @@ import {
   createUnavailableMcpDispatch,
   type McpDispatchBindingFactory,
 } from "../../domains/mcp/gateway/dispatch";
+import { equipMemoryKit } from "../../domains/memory/agent/memoryTools";
 import { promptChatResilient } from "../../domains/policy/promptChatResilient";
 import { promptCompactHistory } from "../../domains/policy/promptCompactHistory";
 import { materializeMessageHistory } from "../../domains/session/repository/sessionMessageMaterializer";
@@ -37,6 +38,7 @@ import {
   createDeleteFileTool,
   createEditFileTool,
 } from "../../domains/workspace/write/WriteTools";
+import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import { getBinding } from "../../shared/host/context";
 import { evilJellyToolLoggerMiddleware } from "../../shared/tool-observation/middleware";
 import { buildAutoCompactionConfig } from "./contextControl";
@@ -59,8 +61,8 @@ import { useArtifact } from "./useArtifact";
  */
 const UNIFIED_MAX_TURN_STEPS = 500;
 
-async function useUnifiedTools(): Promise<void> {
-  const { confirmTool } = getBinding();
+async function useUnifiedTools(props: ConversationAgentProps): Promise<void> {
+  const { confirmTool, requestMemoryConfirmation } = getBinding();
   const editTool = augmentTool(createEditFileTool(confirmTool), [evilJellyToolLoggerMiddleware]);
   const createTool = augmentTool(createCreateFileTool(confirmTool), [
     evilJellyToolLoggerMiddleware,
@@ -75,6 +77,14 @@ async function useUnifiedTools(): Promise<void> {
   // may be equipped on UnifiedAgent; the standalone research agent stays the fan-out-ready unit.
   equipWebResearchKit();
   useArtifact();
+  equipMemoryKit({
+    workspaceRoot: getWorkspaceFsPolicy().getRoot(),
+    source: {
+      source: "agent_tool",
+      ...(props.turnId ? { turnId: props.turnId } : {}),
+    },
+    requestConfirmation: requestMemoryConfirmation,
+  });
 
   equipTool(editTool);
   equipTool(createTool);
@@ -147,7 +157,7 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
   id: "evil_jelly_unified_agent",
   maxTurnSteps: UNIFIED_MAX_TURN_STEPS,
   handler: async (props) => {
-    await useUnifiedTools();
+    await useUnifiedTools(props);
     await useUnifiedPrompts(props);
     equipMcpCatalog();
     equipSkillKit();
