@@ -32,6 +32,7 @@ describe("filterSlashCommands", () => {
     expect(filterSlashCommands("res").map((c) => c.name)).toEqual(["/resume", "/compress"]);
     expect(filterSlashCommands("e").map((c) => c.name)).toEqual([
       "/resume",
+      "/memory",
       "/clear",
       "/compress",
       "/mode",

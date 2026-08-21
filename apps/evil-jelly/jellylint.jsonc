@@ -244,6 +244,7 @@
           "@cli:message-composer",
           "@cli:runtime",
           "@cli:submission-dispatch",
+          "@domain:memory",
           "@domain:session:model",
           "@domain:session:recorder",
           "@domain:session:repository",

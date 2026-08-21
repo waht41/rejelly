@@ -74,7 +74,7 @@ export type ToolConfirmationHandler = (
   params: ToolConfirmationRequest,
 ) => Promise<ToolConfirmationResult>;
 
-/** Redacted, model-independent preview used by the memory confirmation surface. */
+/** Model-independent preview used by the memory confirmation surface. */
 export interface MemoryMutationEntryPreview {
   id: string;
   scope: "user" | "project";
@@ -94,7 +94,7 @@ export interface MemoryMutationConfirmationPayload {
   after?: MemoryMutationEntryPreview;
   proposalSha256: string;
   source: {
-    source: "agent_tool";
+    source: "agent_tool" | "slash_command";
     sessionId?: string;
     turnId?: string;
   };
