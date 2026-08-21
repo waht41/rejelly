@@ -1,4 +1,9 @@
-import type { McpConfigSource, McpRequestInput, McpRequestResult } from "../contracts";
+import type {
+  McpConfigSource,
+  McpRequestInput,
+  McpRequestResult,
+  McpServerRuntimeState,
+} from "../contracts";
 import type { McpSessionControl } from "./sessionControl";
 
 export interface McpAccessApprovalProposal {
@@ -14,6 +19,10 @@ export interface McpAccessRequestPorts {
   readonly selectedServerIds: () => readonly string[];
   readonly approve: (proposal: McpAccessApprovalProposal) => Promise<"session" | "always" | false>;
   readonly commitSelection: (selectedServerIds: readonly string[]) => Promise<void>;
+  readonly awaitServer?: (
+    serverId: string,
+    wait: () => Promise<McpServerRuntimeState>,
+  ) => Promise<McpServerRuntimeState>;
 }
 
 function unavailable(
@@ -76,7 +85,11 @@ export async function requestMcpAccess(
     const selectedServerIds = [...new Set([...ports.selectedServerIds(), row.serverId])].sort();
     if (approvalScope === "always") await control.grantPersistentServerAccess(row.serverId);
     else await ports.commitSelection(selectedServerIds);
-    await control.waitForServer(row.serverId);
+    if (ports.awaitServer) {
+      await ports.awaitServer(row.serverId, () => control.waitForServer(row.serverId));
+    } else {
+      await control.waitForServer(row.serverId);
+    }
     const finalRow = control
       .status(approvalScope === "always" ? ports.selectedServerIds() : selectedServerIds)
       .find((candidate) => candidate.serverId === row.serverId);

@@ -379,6 +379,7 @@ async function handleMcp(runtime: RouterRuntime, rawInput: string): Promise<void
     },
     requestChoice: runtime.host.requestChoice,
     ...(runtime.host.requestMcpManager ? { requestManager: runtime.host.requestMcpManager } : {}),
+    ...(runtime.host.dismissMcpManager ? { dismissManager: runtime.host.dismissMcpManager } : {}),
     logSystem: runtime.host.logSystemEvent,
   });
 }

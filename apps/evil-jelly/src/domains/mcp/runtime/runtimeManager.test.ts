@@ -517,6 +517,26 @@ describe("McpRuntimeManager", () => {
     await expect(manager.reconcile(desired())).rejects.toThrow(/disposed/);
   });
 
+  it("aborts one pending startup without disposing the runtime", async () => {
+    const connector = new ControlledConnector();
+    const manager = new McpRuntimeManager(connector);
+    await manager.reconcile(desired(server("docs")));
+    const attempt = connector.attempts[0]!;
+
+    await manager.cancelStartup("docs");
+
+    expect(attempt.signal.aborted).toBe(true);
+    expect(manager.getSnapshot().servers[0]).toMatchObject({
+      serverId: "docs",
+      status: "failed",
+      error: "MCP startup cancelled by user.",
+    });
+    const late = new FakeConnection();
+    attempt.result.resolve(late);
+    await vi.waitFor(() => expect(late.close).toHaveBeenCalledOnce());
+    await manager.dispose();
+  });
+
   it("bounds shutdown when a client close is stuck", async () => {
     const connector = new ControlledConnector();
     const scheduler = new ControlledScheduler();

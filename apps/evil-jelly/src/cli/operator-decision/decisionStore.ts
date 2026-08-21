@@ -109,7 +109,8 @@ export const useDecisionStore = create<DecisionState>((set, get) => ({
   submitMcpManager: (action) => {
     const pending = get().pending;
     if (pending.type !== "mcp_manager") return;
-    set(idleState());
+    if (action.action === "close") set(idleState());
+    else set({ pending: idleDecision });
     pending.resolve(action);
   },
 }));

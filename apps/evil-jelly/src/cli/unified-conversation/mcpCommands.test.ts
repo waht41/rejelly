@@ -70,6 +70,61 @@ describe("MCP interactive commands", () => {
     expect(command.recordSelection).toHaveBeenCalledWith(["docs"]);
   });
 
+  it("keeps startup in the manager and lets Esc cancel the connection", async () => {
+    let selectedServerIds: readonly string[] = [];
+    type StartupResult = {
+      serverId: string;
+      configFingerprint: string;
+      status: "failed";
+    };
+    let resolveStartup!: (result: StartupResult) => void;
+    const startup = new Promise<StartupResult>((resolve) => {
+      resolveStartup = resolve;
+    });
+    const requestManager = vi
+      .fn()
+      .mockResolvedValueOnce({ action: "toggle", serverId: "docs" })
+      .mockResolvedValueOnce({ action: "cancel" })
+      .mockResolvedValueOnce({ action: "close" });
+    const cancelStartup = vi.fn(async () => {
+      resolveStartup({
+        serverId: "docs",
+        configFingerprint: "a".repeat(64),
+        status: "failed",
+      });
+    });
+    const command = ports({
+      control: mcpSessionControlStub({
+        status: () => [
+          row({
+            selected: selectedServerIds.includes("docs"),
+            connection: "pending",
+          }),
+        ],
+        cancelStartup,
+        waitForServer: () => startup,
+      }),
+      selectedServerIds: () => selectedServerIds,
+      setSelectedServerIds: (next) => {
+        selectedServerIds = next;
+      },
+      requestManager,
+      dismissManager: vi.fn(),
+    });
+
+    await handleMcpCommand("/mcp", command);
+
+    expect(requestManager).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        detailServerId: "docs",
+        activity: { serverId: "docs", label: "Starting docs…" },
+      }),
+    );
+    expect(cancelStartup).toHaveBeenCalledWith("docs");
+    expect(selectedServerIds).toEqual([]);
+  });
+
   it("persists a sorted session selection without mutating runtime config", async () => {
     const command = ports({ selectedServerIds: () => ["search"] });
     await handleMcpCommand("/mcp use docs", command);

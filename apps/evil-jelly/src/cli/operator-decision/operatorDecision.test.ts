@@ -66,7 +66,7 @@ describe("operator decision", () => {
     useDecisionStore.getState().submitMcpManager({ action: "toggle", serverId: "docs" });
 
     await expect(pending).resolves.toEqual({ action: "toggle", serverId: "docs" });
-    expect(useDecisionStore.getState().decision).toEqual({ type: "idle" });
+    expect(useDecisionStore.getState().decision).toMatchObject({ type: "mcp_manager" });
   });
 
   it("resolves cancellation only through the explicit cancel value", async () => {

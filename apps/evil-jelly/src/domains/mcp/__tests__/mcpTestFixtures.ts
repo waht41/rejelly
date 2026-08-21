@@ -18,6 +18,7 @@ export function mcpSessionControlStub(
   return {
     status: () => [],
     reload: async () => undefined,
+    cancelStartup: async () => undefined,
     grantTrust: async () => undefined,
     waitForServer: async (serverId) => ({
       serverId,

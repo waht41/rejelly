@@ -473,6 +473,33 @@ export class McpRuntimeManager {
     });
   }
 
+  /** Abort one transient connection attempt and leave it stopped until an explicit reload. */
+  async cancelStartup(serverId: string): Promise<McpRuntimeSnapshot> {
+    return this.enqueue(async () => {
+      this.assertActive();
+      const previous = this.entries.get(serverId);
+      if (!previous) throw new Error(`Unknown MCP server: ${serverId}`);
+      if (previous.status !== "pending") return this.snapshot;
+      const replacement: RuntimeEntry = {
+        server: previous.server,
+        configFingerprint: previous.configFingerprint,
+        connectionFingerprint: previous.connectionFingerprint,
+        sourceIdentity: previous.sourceIdentity,
+        token: ++this.tokenSequence,
+        target: previous.target,
+        status: "failed",
+        error: "MCP startup cancelled by user.",
+        retryAttempt: 0,
+        activeCalls: 0,
+        callWaiters: [],
+      };
+      this.entries.set(serverId, replacement);
+      await this.stopEntry(previous);
+      this.publish();
+      return this.snapshot;
+    });
+  }
+
   /** Required-policy barrier for a later composition boundary; non-required servers never block. */
   requiredServerIds(
     consumer: McpConsumer,

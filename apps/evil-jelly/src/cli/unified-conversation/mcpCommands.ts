@@ -16,6 +16,7 @@ export interface McpCommandPorts {
   recordSelection(selectedServerIds: readonly string[]): Promise<void>;
   requestChoice(request: PromptChoiceRequest): Promise<string>;
   requestManager?: (request: McpManagerRequest) => Promise<McpManagerAction>;
+  dismissManager?: () => void;
   logSystem(message: string): void;
 }
 
@@ -47,6 +48,8 @@ function sourceLabel(row: McpSessionStatusRow): string {
 function managerRequest(
   rows: readonly McpSessionStatusRow[],
   selectedServerId?: string,
+  detailServerId?: string,
+  activity?: McpManagerRequest["activity"],
 ): McpManagerRequest {
   return {
     rows: rows.map((row) => ({
@@ -61,6 +64,8 @@ function managerRequest(
       ...(row.error ? { detail: row.error.replace(/\s+/g, " ").trim() } : {}),
     })),
     ...(selectedServerId ? { selectedServerId } : {}),
+    ...(detailServerId ? { detailServerId } : {}),
+    ...(activity ? { activity } : {}),
   };
 }
 
@@ -109,6 +114,42 @@ async function commitSelection(
   ports.setSelectedServerIds(selectedServerIds);
 }
 
+async function awaitServerInManager(
+  ports: McpCommandPorts,
+  serverId: string,
+  wait: () => ReturnType<McpSessionControl["waitForServer"]>,
+) {
+  const { control, requestManager, dismissManager } = ports;
+  const connection = control
+    ?.status(ports.selectedServerIds())
+    .find((row) => row.serverId === serverId)?.connection;
+  if (!control || !requestManager || !dismissManager || connection !== "pending") return wait();
+
+  const manager = requestManager(
+    managerRequest(control.status(ports.selectedServerIds()), serverId, serverId, {
+      serverId,
+      label: `Starting ${serverId}…`,
+    }),
+  );
+  const startup = Promise.resolve().then(wait);
+  const winner = await Promise.race([
+    startup.then((state) => ({ type: "complete" as const, state })),
+    manager.then((action) => ({ type: "action" as const, action })),
+  ]);
+  if (winner.type === "complete") {
+    dismissManager();
+    await manager;
+    return winner.state;
+  }
+  if (winner.action.action === "cancel") {
+    await control.cancelStartup(serverId);
+    await unuseServer(ports, serverId);
+    await startup;
+    throw new Error(`MCP startup cancelled by user: ${serverId}`);
+  }
+  return startup;
+}
+
 async function useServer(ports: McpCommandPorts, serverId: string): Promise<void> {
   const result = await requestMcpAccess(
     { serverId, reason: "Explicit MCP manager selection" },
@@ -134,6 +175,7 @@ async function useServer(ports: McpCommandPorts, serverId: string): Promise<void
         return selected === "trust" ? "session" : false;
       },
       commitSelection: (selectedServerIds) => commitSelection(ports, selectedServerIds),
+      awaitServer: (targetServerId, wait) => awaitServerInManager(ports, targetServerId, wait),
     },
   );
   if (result.status !== "granted") {
@@ -188,13 +230,20 @@ async function runManager(ports: McpCommandPorts): Promise<void> {
     return;
   }
   let selectedServerId: string | undefined;
+  let detailServerId: string | undefined;
   while (true) {
-    const request = managerRequest(control.status(ports.selectedServerIds()), selectedServerId);
+    const request = managerRequest(
+      control.status(ports.selectedServerIds()),
+      selectedServerId,
+      detailServerId,
+    );
     const action = ports.requestManager
       ? await ports.requestManager(request)
       : await requestManagerFallback(request, ports.requestChoice);
     if (action.action === "close") return;
+    if (!("serverId" in action)) continue;
     selectedServerId = action.serverId;
+    detailServerId = action.serverId;
     if (action.action === "reload") {
       try {
         await control.reload(action.serverId);

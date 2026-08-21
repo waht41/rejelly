@@ -50,10 +50,16 @@ export interface McpManagerRow {
 export interface McpManagerRequest {
   rows: McpManagerRow[];
   selectedServerId?: string;
+  detailServerId?: string;
+  activity?: {
+    serverId: string;
+    label: string;
+  };
 }
 
 export type McpManagerAction =
   | { action: "close" }
+  | { action: "cancel" | "refresh" }
   | { action: "toggle" | "reload" | "permissions"; serverId: string };
 
 /** User input, picker inventory, and general prompt choices supplied to the agent runtime. */
@@ -64,4 +70,6 @@ export interface PromptInputBindings {
   requestChoice: (request: PromptChoiceRequest) => Promise<string>;
   /** Rich interactive MCP manager; non-Ink hosts may omit it and use the choice fallback. */
   requestMcpManager?: (request: McpManagerRequest) => Promise<McpManagerAction>;
+  /** Resolves an active MCP manager request after an asynchronous refresh completes. */
+  dismissMcpManager?: () => void;
 }

@@ -11,11 +11,33 @@ import { moveListSelection } from "../terminal-ui/picker/listNavigation";
 const VISIBLE_ROWS = 10;
 const PAGE_STEP = 9;
 
-function connectionColor(connection: McpManagerRow["connection"]): string | undefined {
+interface DetailAction {
+  label: string;
+  action: "toggle" | "reload" | "permissions";
+}
+
+function connectionColor(
+  connection: McpManagerRow["connection"],
+): "green" | "yellow" | "red" | undefined {
   if (connection === "ready") return "green";
   if (connection === "pending") return "yellow";
   if (connection === "failed" || connection === "untrusted") return "red";
   return undefined;
+}
+
+function detailActions(row: McpManagerRow): DetailAction[] {
+  return [
+    ...(row.persistentAccess && !row.selected
+      ? []
+      : [
+          {
+            label: row.selected ? "Remove from this session" : "Allow for this session",
+            action: "toggle" as const,
+          },
+        ]),
+    { label: "Reload connection", action: "reload" },
+    { label: "Persistent permissions", action: "permissions" },
+  ];
 }
 
 export function McpManagerPrompt({
@@ -34,11 +56,47 @@ export function McpManagerPrompt({
     [request.rows, request.selectedServerId],
   );
   const [selectedIndex, setSelectedIndex] = useState(initialIndex);
+  const [detailServerId, setDetailServerId] = useState(request.detailServerId);
+  const [detailActionIndex, setDetailActionIndex] = useState(0);
   const serverWidth = Math.min(28, Math.max(8, ...request.rows.map((row) => row.serverId.length)));
+  const activeDetailServerId = request.activity?.serverId ?? detailServerId;
+  const detailRow = request.rows.find((row) => row.serverId === activeDetailServerId);
+  const actions = detailRow ? detailActions(detailRow) : [];
 
   useEffect(() => setSelectedIndex(initialIndex), [initialIndex]);
+  useEffect(() => {
+    setDetailServerId(request.detailServerId);
+    setDetailActionIndex(0);
+  }, [request.detailServerId]);
 
-  useInput((input, key) => {
+  useInput((_input, key) => {
+    if (request.activity) {
+      if (key.escape) onAction({ action: "cancel" });
+      return;
+    }
+    if (detailRow) {
+      if (key.escape) {
+        setDetailServerId(undefined);
+        setDetailActionIndex(0);
+        return;
+      }
+      if (key.upArrow || key.downArrow || key.home || key.end) {
+        setDetailActionIndex((previous) =>
+          moveListSelection({
+            selectedIndex: previous,
+            itemCount: actions.length,
+            command: key.home ? "home" : key.end ? "end" : key.upArrow ? "up" : "down",
+            mode: key.upArrow || key.downArrow ? "wrap" : undefined,
+          }),
+        );
+        return;
+      }
+      const selectedAction = actions[detailActionIndex];
+      if (key.return && selectedAction) {
+        onAction({ action: selectedAction.action, serverId: detailRow.serverId });
+      }
+      return;
+    }
     if (key.escape) {
       onAction({ action: "close" });
       return;
@@ -67,15 +125,49 @@ export function McpManagerPrompt({
       return;
     }
     const selected = request.rows[selectedIndex];
-    if (!selected) return;
-    if (key.return || input === " ") {
-      onAction({ action: "toggle", serverId: selected.serverId });
-    } else if (input.toLowerCase() === "r") {
-      onAction({ action: "reload", serverId: selected.serverId });
-    } else if (input.toLowerCase() === "p") {
-      onAction({ action: "permissions", serverId: selected.serverId });
+    if (key.return && selected) {
+      setDetailServerId(selected.serverId);
+      setDetailActionIndex(0);
     }
   });
+
+  if (detailRow) {
+    return (
+      <Box flexDirection="column" marginTop={1}>
+        <Text bold>MCP · {detailRow.serverId}</Text>
+        <Box flexDirection="column" marginTop={1}>
+          <Text>
+            Status:{" "}
+            <Text color={connectionColor(detailRow.connection)}>{detailRow.connection}</Text>
+          </Text>
+          <Text>Source: {detailRow.source}</Text>
+          <Text>Tools: {detailRow.toolCount}</Text>
+          {detailRow.persistentAccess ? <Text>Access: persistent</Text> : null}
+          {detailRow.detail ? <Text color="red">{detailRow.detail}</Text> : null}
+        </Box>
+        {request.activity ? (
+          <Box flexDirection="column" marginTop={1}>
+            <Text color="yellow">◌ {request.activity.label}</Text>
+            <Text dimColor>Esc cancel startup</Text>
+          </Box>
+        ) : (
+          <Box flexDirection="column" marginTop={1}>
+            {actions.map((action, index) => (
+              <Text
+                key={action.action}
+                color={index === detailActionIndex ? "cyan" : undefined}
+                bold={index === detailActionIndex}
+              >
+                {index === detailActionIndex ? "▸ " : "  "}
+                {action.label}
+              </Text>
+            ))}
+            <Text dimColor>↑/↓ move · Enter select · Esc back</Text>
+          </Box>
+        )}
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column" marginTop={1}>
@@ -107,9 +199,7 @@ export function McpManagerPrompt({
           }}
         />
       </Box>
-      <Text dimColor>
-        ↑/↓ move · Enter/Space use or remove · R reload · P permissions · Esc close
-      </Text>
+      <Text dimColor>↑/↓ move · Enter details · Esc close</Text>
     </Box>
   );
 }

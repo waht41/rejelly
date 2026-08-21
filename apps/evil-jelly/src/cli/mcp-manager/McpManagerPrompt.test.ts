@@ -44,6 +44,44 @@ describe("McpManagerPrompt", () => {
     expect(output).toContain("ready");
     expect(output).toContain("12 tools");
     expect(output).toContain("○ github");
-    expect(output).toContain("Enter/Space use or remove");
+    expect(output).toContain("Enter details");
+  });
+
+  it("renders server actions and a cancellable startup state in the detail panel", () => {
+    const row = {
+      serverId: "typescript",
+      source: "project",
+      exposure: "explicit" as const,
+      selected: true,
+      persistentAccess: false,
+      routable: false,
+      connection: "pending" as const,
+      toolCount: 0,
+    };
+    const detail = stripAnsi(
+      renderToString(
+        createElement(McpManagerPrompt, {
+          request: { rows: [row], detailServerId: "typescript" },
+          onAction: vi.fn(),
+        }),
+      ),
+    );
+    const loading = stripAnsi(
+      renderToString(
+        createElement(McpManagerPrompt, {
+          request: {
+            rows: [row],
+            detailServerId: "typescript",
+            activity: { serverId: "typescript", label: "Starting typescript…" },
+          },
+          onAction: vi.fn(),
+        }),
+      ),
+    );
+
+    expect(detail).toContain("Remove from this session");
+    expect(detail).toContain("Reload connection");
+    expect(loading).toContain("Starting typescript…");
+    expect(loading).toContain("Esc cancel startup");
   });
 });

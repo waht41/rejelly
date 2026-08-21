@@ -22,6 +22,7 @@ export interface McpSessionStatusRow {
 export interface McpSessionControl {
   status(selectedServerIds: readonly string[]): readonly McpSessionStatusRow[];
   reload(serverId?: string): Promise<void>;
+  cancelStartup(serverId: string): Promise<void>;
   grantTrust(serverId: string): Promise<void>;
   waitForServer(serverId: string): Promise<McpServerRuntimeState>;
   grantPersistentServerAccess(serverId: string): Promise<void>;

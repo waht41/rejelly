@@ -122,6 +122,9 @@ export async function createMcpChatRuntime(options: {
       publishInventory();
       await manager.reload(serverId);
     },
+    cancelStartup: async (serverId) => {
+      await manager.cancelStartup(serverId);
+    },
     grantTrust: async (serverId) => {
       const server = desired.servers.find((candidate) => candidate.id === serverId);
       const runtime = manager

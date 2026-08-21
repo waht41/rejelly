@@ -27,6 +27,7 @@ import {
   resetComposerSession,
   useComposerSession,
 } from "../message-composer/session/composerSession";
+import { useDecisionStore } from "../operator-decision/decisionStore";
 import type { DecisionView } from "../operator-decision/model";
 import {
   createOperatorDecision,
@@ -168,6 +169,7 @@ function createPromptBindings(options: {
     getAgentMode: () => useModeStore.getState().mode,
     requestChoice: createInkRequestChoice(),
     requestMcpManager: createInkRequestMcpManager(),
+    dismissMcpManager: () => useDecisionStore.getState().submitMcpManager({ action: "refresh" }),
     setAvailableSkills: (skills) => {
       useComposerSession.getState().setAvailableSkills(skills);
     },
