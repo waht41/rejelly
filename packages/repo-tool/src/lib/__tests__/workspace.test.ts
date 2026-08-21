@@ -5,6 +5,7 @@ import {
   downstreamPackageFilters,
   filterChangedPathsForPackages,
   mapChangedPathsToPackages,
+  resolveExactWorkspaceFilters,
 } from "../workspace.js";
 
 describe("classifyRootImpact", () => {
@@ -29,6 +30,22 @@ describe("downstreamPackageFilters", () => {
       "...@rejelly/core",
       "...@rejelly/shared",
     ]);
+  });
+});
+
+describe("resolveExactWorkspaceFilters", () => {
+  const packages = [
+    { name: "@rejelly/core", path: "packages/core" },
+    { name: "@rejelly/repo-tool", path: "packages/repo-tool" },
+  ];
+
+  it("resolves exact package names without a Turbo fallback", () => {
+    expect(resolveExactWorkspaceFilters(["@rejelly/repo-tool"], packages)).toEqual([packages[1]]);
+  });
+
+  it("defers globs and missing names to Turbo", () => {
+    expect(resolveExactWorkspaceFilters(["@rejelly/*"], packages)).toBeUndefined();
+    expect(resolveExactWorkspaceFilters(["missing"], packages)).toBeUndefined();
   });
 });
 

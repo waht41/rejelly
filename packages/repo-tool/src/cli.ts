@@ -34,6 +34,10 @@ export function normalizeVerifyOptions(options: Record<string, unknown>): Verify
   const biome = biomeScope(options.biome, all);
   const fix = options.fix === true;
   const fixBranch = options.branch === true;
+  const timeoutMs =
+    options.timeout === undefined
+      ? undefined
+      : positiveInteger(options.timeout, "--timeout", 1) * 1_000;
   if (all && filters.length > 0) throw new Error("--all cannot be combined with --filter");
   if (fix && biome === "skip") throw new Error("--fix cannot be combined with --biome skip");
   if (fixBranch && !fix) throw new Error("--branch requires --fix");
@@ -44,6 +48,7 @@ export function normalizeVerifyOptions(options: Record<string, unknown>): Verify
     dryRun: options.dryRun === true,
     fix,
     fixBranch,
+    json: options.json === true,
     maxFiles: positiveInteger(options.maxFiles, "--max-files", 100),
     scope: all
       ? { kind: "all" }
@@ -51,11 +56,12 @@ export function normalizeVerifyOptions(options: Record<string, unknown>): Verify
         ? { filters, kind: "filtered" }
         : { kind: "affected" },
     tests: options.tests !== false,
+    timeoutMs,
     verbose: options.verbose === true,
   };
 }
 
-export function main(argv = process.argv.slice(2)): void {
+export async function main(argv = process.argv.slice(2)): Promise<void> {
   const cli = cac("repo-tool");
 
   cli
@@ -70,9 +76,12 @@ export function main(argv = process.argv.slice(2)): void {
     .option("--max-files <count>", "Changed-file write safety limit", { default: 100 })
     .option("--allow-many", "Bypass the changed-file write safety limit")
     .option("--dry-run", "Print the verification plan without running it")
+    .option("--json", "Print one structured verification result")
+    .option("--timeout <seconds>", "Optional timeout for each verification step")
     .option("--verbose", "List files selected or modified by Biome")
-    .action((options: Record<string, unknown>) => {
-      process.exitCode = runVerify(findRepoRoot(), normalizeVerifyOptions(options));
+    .action(async (options: Record<string, unknown>) => {
+      const result = await runVerify(findRepoRoot(), normalizeVerifyOptions(options));
+      process.exitCode = result.exitCode;
     });
 
   cli
@@ -95,25 +104,25 @@ export function main(argv = process.argv.slice(2)): void {
     .option("--max-files <count>", "Changed-file write safety limit", { default: 100 })
     .option("--allow-many", "Bypass the changed-file write safety limit")
     .option("--verbose", "List files selected or modified by Biome")
-    .action((options: Record<string, unknown>) => {
-      process.exitCode = runBiomeChanged(findRepoRoot(), {
+    .action(async (options: Record<string, unknown>) => {
+      const result = await runBiomeChanged(findRepoRoot(), {
         allowMany: options.allowMany === true,
         base: typeof options.base === "string" ? options.base : undefined,
         maxFiles: positiveInteger(options.maxFiles, "--max-files", 100),
         verbose: options.verbose === true,
         write: options.write === true,
       });
+      process.exitCode = result.status;
     });
 
   cli.help();
-  cli.parse(["node", "repo-tool", ...argv]);
+  cli.parse(["node", "repo-tool", ...argv], { run: false });
+  await cli.runMatchedCommand();
 }
 
 if (isEntrypoint(import.meta.url)) {
-  try {
-    main();
-  } catch (error) {
+  void main().catch((error: unknown) => {
     console.error(`[repo-tool] ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
-  }
+  });
 }

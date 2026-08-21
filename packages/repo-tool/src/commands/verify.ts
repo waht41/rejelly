@@ -3,18 +3,23 @@ import type {
   ProcessVerifyStep,
   ResolvedVerifyScope,
   VerifyChangeSummary,
+  VerifyExecutionReport,
+  VerifyExecutionStepResult,
+  VerifyFailureReport,
   VerifyOptions,
   VerifyPlan,
+  VerifyRunResult,
   VerifyStep,
 } from "../contracts.js";
 import { collectChangedPaths } from "../lib/changes.js";
-import { run } from "../lib/process.js";
+import { type RunResult, run } from "../lib/process.js";
 import {
   classifyRootImpact,
   downstreamPackageFilters,
   filterChangedPathsForPackages,
   loadWorkspacePackages,
   mapChangedPathsToPackages,
+  resolveExactWorkspaceFilters,
   resolveTurboFilteredPackages,
 } from "../lib/workspace.js";
 import { existingBiomeCandidateFiles, runBiomeChanged } from "./biome-changed.js";
@@ -120,7 +125,9 @@ export function resolveVerifyPlan(repoRoot: string, options: VerifyOptions): Ver
   if (options.scope.kind === "all") return createVerifyPlan(options, { kind: "all" });
   if (options.scope.kind === "filtered") {
     const workspacePackages = loadWorkspacePackages(repoRoot);
-    const selectedPackages = resolveTurboFilteredPackages(repoRoot, options.scope.filters);
+    const selectedPackages =
+      resolveExactWorkspaceFilters(options.scope.filters, workspacePackages) ??
+      resolveTurboFilteredPackages(repoRoot, options.scope.filters);
     assertFiltersMatched(options.scope.filters, selectedPackages);
     if (options.biome !== "changed") {
       return createVerifyPlan(options, {
@@ -211,8 +218,15 @@ function printableCommand(step: VerifyStep): string {
     : `repo-tool biome-changed${step.write ? " --write" : ""}`;
 }
 
-function runProcessStep(repoRoot: string, step: ProcessVerifyStep): number {
-  return run(step.command, step.args, repoRoot);
+function runProcessStep(
+  repoRoot: string,
+  step: ProcessVerifyStep,
+  options: Pick<VerifyOptions, "timeoutMs">,
+): Promise<RunResult> {
+  return run(step.command, step.args, repoRoot, {
+    output: "capture",
+    timeoutMs: options.timeoutMs,
+  });
 }
 
 function printScope(plan: VerifyPlan, verbose: boolean): void {
@@ -256,33 +270,180 @@ function printScope(plan: VerifyPlan, verbose: boolean): void {
   }
 }
 
-export function runVerify(repoRoot: string, options: VerifyOptions): number {
-  const plan = resolveVerifyPlan(repoRoot, options);
-  printScope(plan, options.verbose);
-  console.log(`repo-tool verify: ${plan.steps.length} step(s)`);
-  for (const [index, step] of plan.steps.entries()) {
-    console.log(`  ${index + 1}. ${step.label}: ${printableCommand(step)}`);
-  }
-  if (options.dryRun) return 0;
-
-  for (const step of plan.steps) {
-    console.log(`\n[repo-tool] ${step.label}`);
-    const status =
-      step.kind === "biome-changed"
-        ? runBiomeChanged(repoRoot, {
-            allowMany: options.allowMany,
-            base: options.base,
-            maxFiles: options.maxFiles,
-            ...(step.selection ? { selection: step.selection } : {}),
-            verbose: options.verbose,
-            write: step.write,
-          })
-        : runProcessStep(repoRoot, step);
-    if (status !== 0) {
-      console.error(`[repo-tool] failed: ${step.label} (exit ${status})`);
-      return status;
+function stripAnsiControlSequences(value: string): string {
+  let result = "";
+  for (let index = 0; index < value.length; index += 1) {
+    if (value.charCodeAt(index) !== 0x1b || value[index + 1] !== "[") {
+      result += value[index];
+      continue;
+    }
+    index += 2;
+    while (index < value.length) {
+      const code = value.charCodeAt(index);
+      if (code >= 0x40 && code <= 0x7e) break;
+      index += 1;
     }
   }
-  console.log("\nrepo-tool verify: ok");
-  return 0;
+  return result;
+}
+
+export function compactProcessOutput(
+  value: string,
+  limits: { maxChars?: number; maxLines?: number } = {},
+): { text: string; truncated: boolean } {
+  const maxChars = limits.maxChars ?? 20_000;
+  const maxLines = limits.maxLines ?? 100;
+  const lines = value.trimEnd().split(/\r?\n/);
+  const omittedLines = Math.max(0, lines.length - maxLines);
+  let text = lines.slice(-maxLines).join("\n");
+  let truncated = omittedLines > 0;
+  if (text.length > maxChars) {
+    text = text.slice(-maxChars);
+    truncated = true;
+  }
+  if (truncated) {
+    text = `[repo-tool] earlier child output omitted\n${text}`;
+  }
+  return { text, truncated };
+}
+
+export function extractFailureFacts(output: string): {
+  failedTasks: string[];
+  failedTestFiles: string[];
+} {
+  const plain = stripAnsiControlSequences(output);
+  const failedTasks = [
+    ...new Set(
+      [...plain.matchAll(/\bFailed:\s+([^\r\n]+)/g)]
+        .map((match) => match[1]?.trim())
+        .filter((value): value is string => Boolean(value)),
+    ),
+  ];
+  const failedTestFiles = [
+    ...new Set(
+      [...plain.matchAll(/\bFAIL\s+([^\s]+\.(?:test|spec)\.[cm]?[jt]sx?)/g)]
+        .map((match) => match[1]?.replaceAll("\\", "/"))
+        .filter((value): value is string => Boolean(value)),
+    ),
+  ];
+  return { failedTasks, failedTestFiles };
+}
+
+function executionStatus(
+  result: Pick<RunResult, "cancelled" | "status" | "timedOut">,
+): VerifyExecutionReport["status"] {
+  if (result.cancelled) return "cancelled";
+  if (result.timedOut) return "timed_out";
+  return result.status === 0 ? "passed" : "failed";
+}
+
+function failureReport(step: VerifyStep, output: string): VerifyFailureReport {
+  const diagnostics = compactProcessOutput(stripAnsiControlSequences(output));
+  return {
+    ...extractFailureFacts(output),
+    diagnostics: diagnostics.text,
+    diagnosticsTruncated: diagnostics.truncated,
+    step: step.label,
+  };
+}
+
+function printChildOutput(output: string, failed: boolean): void {
+  const compact = compactProcessOutput(output, {
+    maxChars: failed ? 20_000 : 8_000,
+    maxLines: failed ? 100 : 30,
+  });
+  if (compact.text) console.log(compact.text);
+}
+
+function reportFor(
+  plan: VerifyPlan,
+  steps: readonly VerifyExecutionStepResult[],
+  exitCode: number,
+  status: VerifyExecutionReport["status"],
+  failure?: VerifyFailureReport,
+): VerifyExecutionReport {
+  return {
+    ...(plan.changeSummary ? { changeSummary: plan.changeSummary } : {}),
+    exitCode,
+    ...(failure ? { failure } : {}),
+    plan,
+    schemaVersion: 1,
+    scope: plan.scope,
+    status,
+    steps: [...steps],
+  };
+}
+
+export async function runVerify(
+  repoRoot: string,
+  options: VerifyOptions,
+): Promise<VerifyRunResult> {
+  const plan = resolveVerifyPlan(repoRoot, options);
+  if (!options.json) {
+    printScope(plan, options.verbose);
+    console.log(`repo-tool verify: ${plan.steps.length} step(s)`);
+    for (const [index, step] of plan.steps.entries()) {
+      console.log(`  ${index + 1}. ${step.label}: ${printableCommand(step)}`);
+    }
+  }
+  if (options.dryRun) {
+    const report = reportFor(plan, [], 0, "passed");
+    if (options.json) console.log(JSON.stringify(report, null, 2));
+    return { exitCode: 0, report };
+  }
+
+  const stepResults: VerifyExecutionStepResult[] = [];
+  for (const step of plan.steps) {
+    if (!options.json) console.log(`\n[repo-tool] ${step.label}`);
+    const startedAt = Date.now();
+    let processResult: RunResult;
+    if (step.kind === "biome-changed") {
+      const result = await runBiomeChanged(repoRoot, {
+        allowMany: options.allowMany,
+        base: options.base,
+        maxFiles: options.maxFiles,
+        output: options.json ? "capture" : "inherit",
+        quiet: options.json,
+        ...(step.selection ? { selection: step.selection } : {}),
+        timeoutMs: options.timeoutMs,
+        verbose: options.verbose,
+        write: step.write,
+      });
+      processResult = {
+        cancelled: result.failures.some((failure) => failure.result.cancelled),
+        output: result.failures.map((failure) => failure.result.output).join("\n"),
+        status: result.status,
+        stderr: result.failures.map((failure) => failure.result.stderr).join("\n"),
+        stdout: result.failures.map((failure) => failure.result.stdout).join("\n"),
+        timedOut: result.failures.some((failure) => failure.result.timedOut),
+      };
+    } else {
+      processResult = await runProcessStep(repoRoot, step, options);
+    }
+    stepResults.push({
+      cancelled: processResult.cancelled,
+      durationMs: Date.now() - startedAt,
+      exitCode: processResult.status,
+      label: step.label,
+      timedOut: processResult.timedOut,
+    });
+    if (step.kind === "process" && !options.json) {
+      printChildOutput(processResult.output, processResult.status !== 0);
+    }
+    if (processResult.status !== 0) {
+      const status = executionStatus(processResult);
+      const failure = failureReport(step, processResult.output);
+      const report = reportFor(plan, stepResults, processResult.status, status, failure);
+      if (options.json) {
+        console.log(JSON.stringify(report, null, 2));
+      } else {
+        console.error(`[repo-tool] failed: ${step.label} (exit ${processResult.status})`);
+      }
+      return { exitCode: processResult.status, report };
+    }
+  }
+  const report = reportFor(plan, stepResults, 0, "passed");
+  if (options.json) console.log(JSON.stringify(report, null, 2));
+  else console.log("\nrepo-tool verify: ok");
+  return { exitCode: 0, report };
 }

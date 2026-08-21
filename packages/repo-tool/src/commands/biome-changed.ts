@@ -3,15 +3,28 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { BiomeChangedSelection } from "../contracts.js";
 import { collectChangedPaths } from "../lib/changes.js";
-import { run } from "../lib/process.js";
+import { type RunOptions, type RunResult, run } from "../lib/process.js";
 
 export interface BiomeChangedOptions {
   allowMany: boolean;
   base?: string;
   maxFiles: number;
+  output?: RunOptions["output"];
+  quiet?: boolean;
   selection?: BiomeChangedSelection;
+  timeoutMs?: number;
   verbose: boolean;
   write: boolean;
+}
+
+export interface BiomeBatchFailure {
+  batch: number;
+  result: RunResult;
+}
+
+export interface BiomeChangedRunResult {
+  failures: BiomeBatchFailure[];
+  status: number;
 }
 
 const BIOME_PATH_ARGUMENT_BUDGET = 6_000;
@@ -78,18 +91,39 @@ function changedByWrite(
   });
 }
 
-export function runBiomeChanged(repoRoot: string, options: BiomeChangedOptions): number {
+export async function runBiomeBatches(
+  batches: readonly string[][],
+  execute: (batch: readonly string[], index: number) => Promise<RunResult>,
+): Promise<BiomeChangedRunResult> {
+  const failures: BiomeBatchFailure[] = [];
+  for (const [index, batch] of batches.entries()) {
+    const result = await execute(batch, index);
+    if (result.status !== 0) failures.push({ batch: index + 1, result });
+    if (result.cancelled || result.timedOut) break;
+  }
+  const interrupted = failures.find(
+    (failure) => failure.result.cancelled || failure.result.timedOut,
+  );
+  return { failures, status: interrupted?.result.status ?? failures[0]?.result.status ?? 0 };
+}
+
+export async function runBiomeChanged(
+  repoRoot: string,
+  options: BiomeChangedOptions,
+): Promise<BiomeChangedRunResult> {
   const candidate = options.selection ?? collectBiomeChangedFiles(repoRoot, options.base);
   const base = candidate.base;
   const resolvedRoot = path.resolve(repoRoot);
   const files = existingBiomeCandidateFiles(repoRoot, candidate.files);
-  console.log(
-    `Biome ${options.write ? "write" : "check"}: ${files.length} changed candidate(s), base ${base}`,
-  );
-  if (options.verbose) {
+  if (!options.quiet) {
+    console.log(
+      `Biome ${options.write ? "write" : "check"}: ${files.length} changed candidate(s), base ${base}`,
+    );
+  }
+  if (options.verbose && !options.quiet) {
     for (const file of files) console.log(`  ${file}`);
   }
-  if (files.length === 0) return 0;
+  if (files.length === 0) return { failures: [], status: 0 };
   if (exceedsBiomeWriteLimit(files.length, options)) {
     throw new Error(
       `Refusing to modify ${files.length} files (limit ${options.maxFiles}); inspect the scope or pass --allow-many`,
@@ -99,10 +133,11 @@ export function runBiomeChanged(repoRoot: string, options: BiomeChangedOptions):
     ? new Map(files.map((file) => [file, contentHash(path.join(resolvedRoot, file))]))
     : new Map<string, string>();
   const batches = chunkBiomePaths(files);
-  let status = 0;
-  for (const [index, batch] of batches.entries()) {
-    if (batches.length > 1) console.log(`Biome batch ${index + 1}/${batches.length}`);
-    status = run(
+  const result = await runBiomeBatches(batches, async (batch, index) => {
+    if (batches.length > 1 && !options.quiet) {
+      console.log(`Biome batch ${index + 1}/${batches.length}`);
+    }
+    return run(
       "pnpm",
       [
         "exec",
@@ -113,15 +148,15 @@ export function runBiomeChanged(repoRoot: string, options: BiomeChangedOptions):
         ...batch,
       ],
       repoRoot,
+      { output: options.output, timeoutMs: options.timeoutMs },
     );
-    if (status !== 0) break;
-  }
+  });
   if (options.write) {
     const modified = changedByWrite(resolvedRoot, files, before);
-    console.log(`Biome write: modified ${modified.length} file(s)`);
-    if (options.verbose) {
+    if (!options.quiet) console.log(`Biome write: modified ${modified.length} file(s)`);
+    if (options.verbose && !options.quiet) {
       for (const file of modified) console.log(`  ${file}`);
     }
   }
-  return status;
+  return result;
 }
