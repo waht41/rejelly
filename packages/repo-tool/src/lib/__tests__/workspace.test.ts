@@ -1,6 +1,36 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { filterChangedPathsForPackages, mapChangedPathsToPackages } from "../workspace.js";
+import {
+  classifyRootImpact,
+  downstreamPackageFilters,
+  filterChangedPathsForPackages,
+  mapChangedPathsToPackages,
+} from "../workspace.js";
+
+describe("classifyRootImpact", () => {
+  it("treats configuration and unknown root files as global, while docs stay neutral", () => {
+    expect(
+      classifyRootImpact([
+        "pnpm-lock.yaml",
+        "custom.config.json",
+        ".changeset/quiet.md",
+        "README.md",
+      ]),
+    ).toEqual({
+      globalFiles: ["pnpm-lock.yaml", "custom.config.json"],
+      neutralFiles: [".changeset/quiet.md", "README.md"],
+    });
+  });
+});
+
+describe("downstreamPackageFilters", () => {
+  it("expands affected owners through Turbo's dependent selector", () => {
+    expect(downstreamPackageFilters(["@rejelly/core", "@rejelly/shared"])).toEqual([
+      "...@rejelly/core",
+      "...@rejelly/shared",
+    ]);
+  });
+});
 
 describe("mapChangedPathsToPackages", () => {
   it("selects the deepest workspace owner and leaves root files unmapped", () => {

@@ -11,6 +11,11 @@ export interface AffectedPackages {
   unmappedFiles: string[];
 }
 
+export interface RootImpact {
+  globalFiles: string[];
+  neutralFiles: string[];
+}
+
 interface TurboPackageList {
   packages?: {
     items?: unknown[];
@@ -65,6 +70,39 @@ function containsPath(directory: string, candidate: string): boolean {
     relative === "" ||
     (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))
   );
+}
+
+function isNeutralRootPath(file: string): boolean {
+  const normalized = file.replaceAll("\\", "/");
+  const name = normalized.toLowerCase();
+  return (
+    name.startsWith(".changeset/") ||
+    name.startsWith(".github/") ||
+    name.startsWith("docs/") ||
+    name === ".editorconfig" ||
+    name === ".gitattributes" ||
+    name === ".gitignore" ||
+    name === "license" ||
+    name.startsWith("license.") ||
+    name === "readme.md" ||
+    name === "agents.md" ||
+    name.endsWith("/agents.md") ||
+    name === "agents.override.md"
+  );
+}
+
+/** Unknown root files are global by default; only explicitly neutral paths may skip tasks. */
+export function classifyRootImpact(files: readonly string[]): RootImpact {
+  const globalFiles: string[] = [];
+  const neutralFiles: string[] = [];
+  for (const file of files) {
+    (isNeutralRootPath(file) ? neutralFiles : globalFiles).push(file);
+  }
+  return { globalFiles, neutralFiles };
+}
+
+export function downstreamPackageFilters(packageNames: readonly string[]): string[] {
+  return packageNames.map((name) => `...${name}`);
 }
 
 export function mapChangedPathsToPackages(

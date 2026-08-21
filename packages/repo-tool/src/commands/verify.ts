@@ -2,6 +2,7 @@ import type {
   BiomeChangedSelection,
   ProcessVerifyStep,
   ResolvedVerifyScope,
+  VerifyChangeSummary,
   VerifyOptions,
   VerifyPlan,
   VerifyStep,
@@ -9,12 +10,14 @@ import type {
 import { collectChangedPaths } from "../lib/changes.js";
 import { run } from "../lib/process.js";
 import {
+  classifyRootImpact,
+  downstreamPackageFilters,
   filterChangedPathsForPackages,
   loadWorkspacePackages,
   mapChangedPathsToPackages,
   resolveTurboFilteredPackages,
 } from "../lib/workspace.js";
-import { runBiomeChanged } from "./biome-changed.js";
+import { existingBiomeCandidateFiles, runBiomeChanged } from "./biome-changed.js";
 
 export function createVerifyPlan(
   options: VerifyOptions,
@@ -22,6 +25,7 @@ export function createVerifyPlan(
   context: {
     biomeSelection?: BiomeChangedSelection;
     changedFileCount?: number;
+    changeSummary?: VerifyChangeSummary;
     unmappedFiles?: string[];
   } = {},
 ): VerifyPlan {
@@ -51,6 +55,7 @@ export function createVerifyPlan(
     steps.push({ command: "pnpm", args: turboArgs, kind: "process", label: "workspace tasks" });
   }
   return {
+    ...(context.changeSummary ? { changeSummary: context.changeSummary } : {}),
     ...(context.changedFileCount === undefined
       ? {}
       : { changedFileCount: context.changedFileCount }),
@@ -60,9 +65,63 @@ export function createVerifyPlan(
   };
 }
 
+function changeSummary(input: {
+  biomeFiles: readonly string[];
+  directPackages: readonly string[];
+  globalFiles: readonly string[];
+  neutralRootFiles: readonly string[];
+  totalFiles: readonly string[];
+  workingTreeFiles: readonly string[];
+}): VerifyChangeSummary {
+  return {
+    biomeFiles: input.biomeFiles.length,
+    directPackages: [...input.directPackages],
+    excludedFiles: input.totalFiles.length - input.biomeFiles.length,
+    globalFiles: [...input.globalFiles],
+    neutralRootFiles: [...input.neutralRootFiles],
+    totalFiles: input.totalFiles.length,
+    workingTreeFiles: input.workingTreeFiles.length,
+  };
+}
+
+export function selectBiomeFiles(
+  options: Pick<VerifyOptions, "fix" | "fixBranch">,
+  branchFiles: readonly string[],
+  workingTreeFiles: readonly string[],
+): readonly string[] {
+  return options.fix && !options.fixBranch ? workingTreeFiles : branchFiles;
+}
+
+export function assertFiltersMatched(
+  filters: readonly string[],
+  selectedPackages: readonly { name: string }[],
+): void {
+  if (selectedPackages.length === 0) {
+    throw new Error(`No workspace package matched --filter ${filters.join(", ")}`);
+  }
+}
+
+export function resolveAffectedScope(
+  globalFiles: readonly string[],
+  expandedPackages: readonly { name: string }[],
+): ResolvedVerifyScope {
+  if (globalFiles.length > 0) return { kind: "all" };
+  if (expandedPackages.length > 0) {
+    return {
+      filters: expandedPackages.map((entry) => entry.name).sort(),
+      kind: "packages",
+      source: "affected",
+    };
+  }
+  return { kind: "none", source: "affected" };
+}
+
 export function resolveVerifyPlan(repoRoot: string, options: VerifyOptions): VerifyPlan {
   if (options.scope.kind === "all") return createVerifyPlan(options, { kind: "all" });
   if (options.scope.kind === "filtered") {
+    const workspacePackages = loadWorkspacePackages(repoRoot);
+    const selectedPackages = resolveTurboFilteredPackages(repoRoot, options.scope.filters);
+    assertFiltersMatched(options.scope.filters, selectedPackages);
     if (options.biome !== "changed") {
       return createVerifyPlan(options, {
         filters: options.scope.filters,
@@ -71,9 +130,24 @@ export function resolveVerifyPlan(repoRoot: string, options: VerifyOptions): Ver
       });
     }
     const changed = collectChangedPaths(repoRoot, options.base);
-    const workspacePackages = loadWorkspacePackages(repoRoot);
-    const selectedPackages = resolveTurboFilteredPackages(repoRoot, options.scope.filters);
     const affected = mapChangedPathsToPackages(repoRoot, changed.files, workspacePackages);
+    const rootImpact = classifyRootImpact(affected.unmappedFiles);
+    const branchBiomeFiles = filterChangedPathsForPackages(
+      repoRoot,
+      changed.files,
+      workspacePackages,
+      selectedPackages,
+    );
+    const workingTreeBiomeFiles = filterChangedPathsForPackages(
+      repoRoot,
+      changed.workingTreeFiles,
+      workspacePackages,
+      selectedPackages,
+    );
+    const biomeFiles = existingBiomeCandidateFiles(
+      repoRoot,
+      selectBiomeFiles(options, branchBiomeFiles, workingTreeBiomeFiles),
+    );
     return createVerifyPlan(
       options,
       {
@@ -84,13 +158,16 @@ export function resolveVerifyPlan(repoRoot: string, options: VerifyOptions): Ver
       {
         biomeSelection: {
           base: changed.base,
-          files: filterChangedPathsForPackages(
-            repoRoot,
-            changed.files,
-            workspacePackages,
-            selectedPackages,
-          ),
+          files: biomeFiles,
         },
+        changeSummary: changeSummary({
+          biomeFiles,
+          directPackages: selectedPackages.map((entry) => entry.name),
+          globalFiles: rootImpact.globalFiles,
+          neutralRootFiles: rootImpact.neutralFiles,
+          totalFiles: changed.files,
+          workingTreeFiles: changed.workingTreeFiles,
+        }),
         changedFileCount: changed.files.length,
         unmappedFiles: affected.unmappedFiles,
       },
@@ -103,12 +180,26 @@ export function resolveVerifyPlan(repoRoot: string, options: VerifyOptions): Ver
     changed.files,
     loadWorkspacePackages(repoRoot),
   );
-  const scope: ResolvedVerifyScope =
+  const rootImpact = classifyRootImpact(affected.unmappedFiles);
+  const expandedPackages =
     affected.packages.length > 0
-      ? { filters: affected.packages, kind: "packages", source: "affected" }
-      : { kind: "none", source: "affected" };
+      ? resolveTurboFilteredPackages(repoRoot, downstreamPackageFilters(affected.packages))
+      : [];
+  const scope = resolveAffectedScope(rootImpact.globalFiles, expandedPackages);
+  const biomeFiles = existingBiomeCandidateFiles(
+    repoRoot,
+    selectBiomeFiles(options, changed.files, changed.workingTreeFiles),
+  );
   return createVerifyPlan(options, scope, {
-    biomeSelection: { base: changed.base, files: changed.files },
+    biomeSelection: { base: changed.base, files: biomeFiles },
+    changeSummary: changeSummary({
+      biomeFiles,
+      directPackages: affected.packages,
+      globalFiles: rootImpact.globalFiles,
+      neutralRootFiles: rootImpact.neutralFiles,
+      totalFiles: changed.files,
+      workingTreeFiles: changed.workingTreeFiles,
+    }),
     changedFileCount: changed.files.length,
     unmappedFiles: affected.unmappedFiles,
   });
@@ -136,9 +227,30 @@ function printScope(plan: VerifyPlan, verbose: boolean): void {
       `repo-tool verify: scope=${plan.scope.source}, packages=${plan.scope.filters.join(", ")}`,
     );
   }
-  if (plan.unmappedFiles && plan.unmappedFiles.length > 0) {
-    console.log(`repo-tool verify: ${plan.unmappedFiles.length} root/unmapped changed file(s)`);
-    if (verbose) {
+  const summary = plan.changeSummary;
+  if (summary) {
+    console.log(
+      `repo-tool verify: changes total=${summary.totalFiles}, working-tree=${summary.workingTreeFiles}, ` +
+        `biome=${summary.biomeFiles}, excluded=${summary.excludedFiles}`,
+    );
+    if (summary.directPackages.length > 0) {
+      console.log(`repo-tool verify: direct packages=${summary.directPackages.join(", ")}`);
+    }
+    if (summary.globalFiles.length > 0) {
+      const effect =
+        plan.scope.kind === "all"
+          ? "expanded scope to all"
+          : plan.scope.kind === "packages" && plan.scope.source === "explicit"
+            ? "explicit scope retained"
+            : "";
+      console.log(
+        `repo-tool verify: global/root impact=${summary.globalFiles.length}${effect ? ` (${effect})` : ""}`,
+      );
+    }
+    if (summary.neutralRootFiles.length > 0) {
+      console.log(`repo-tool verify: neutral root files=${summary.neutralRootFiles.length}`);
+    }
+    if (verbose && plan.unmappedFiles) {
       for (const file of plan.unmappedFiles) console.log(`  ${file}`);
     }
   }

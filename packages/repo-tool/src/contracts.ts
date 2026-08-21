@@ -16,6 +16,7 @@ export interface VerifyOptions {
   biome: BiomeScope;
   dryRun: boolean;
   fix: boolean;
+  fixBranch: boolean;
   maxFiles: number;
   scope: VerifyScope;
   tests: boolean;
@@ -44,10 +45,21 @@ export interface BiomeChangedSelection {
 export type VerifyStep = BiomeChangedVerifyStep | ProcessVerifyStep;
 
 export interface VerifyPlan {
+  changeSummary?: VerifyChangeSummary;
   changedFileCount?: number;
   scope: ResolvedVerifyScope;
   steps: VerifyStep[];
   unmappedFiles?: string[];
+}
+
+export interface VerifyChangeSummary {
+  biomeFiles: number;
+  directPackages: string[];
+  excludedFiles: number;
+  globalFiles: string[];
+  neutralRootFiles: string[];
+  totalFiles: number;
+  workingTreeFiles: number;
 }
 
 export interface BranchCommit {
@@ -62,17 +74,27 @@ export interface BranchDiffStat {
   insertions: number;
 }
 
+export type BranchStatusCode = "A" | "C" | "D" | "M" | "R" | "T" | "U" | "X";
+
+export interface BranchWorkingTreeChange {
+  indexStatus?: BranchStatusCode;
+  originalPath?: string;
+  path: string;
+  untracked?: true;
+  worktreeStatus?: BranchStatusCode;
+}
+
 export interface BranchReport {
   ahead: number;
   base: string;
   behind: number;
   branch: string;
   commits: BranchCommit[];
+  commitsTruncated: boolean;
   diff: BranchDiffStat;
   head: string;
   mergeBase: string;
-  staged: string[];
-  unstaged: string[];
-  untracked: string[];
+  schemaVersion: 2;
   upstream?: string;
+  workingTree: BranchWorkingTreeChange[];
 }
