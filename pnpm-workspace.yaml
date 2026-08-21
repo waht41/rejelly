@@ -5,6 +5,7 @@ packages:
   - packages/limit-model
   - packages/test-utils
   - packages/release-tools
+  - packages/repo-tool
   - packages/devtool-contracts
   - packages/adapters/*
   - packages/create
