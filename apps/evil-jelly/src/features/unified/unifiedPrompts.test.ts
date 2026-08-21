@@ -40,7 +40,7 @@ describe("buildUnifiedSystemPrompt", () => {
     );
     expect(prompt).toContain("matching callable MCP tool");
     expect(prompt).toContain(
-      "If mcp_reference returns request_access or a relevant match with callable=false, call mcp_request once",
+      'If mcp_reference returns suggested_action="request_access" or a relevant server with callable="false", call mcp_request once',
     );
     expect(prompt).toContain("do not ask the user to run /mcp manually");
     expect(prompt).toContain("Do not retry synonyms");

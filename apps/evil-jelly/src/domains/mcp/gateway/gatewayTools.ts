@@ -16,6 +16,7 @@ import {
   mcpRequestInputSchema,
 } from "../contracts";
 import type { McpCallPolicy } from "./mcpCallPolicy";
+import { projectMcpReferenceForModel } from "./referenceProjection";
 
 export interface McpGatewayToolPorts {
   readonly reference: (input: McpReferenceInput) => Promise<McpReferenceResult>;
@@ -45,7 +46,8 @@ export function createMcpGatewayToolDefinitions(
     name: MCP_REFERENCE_TOOL_NAME,
     description: MCP_REFERENCE_TOOL_DESCRIPTION,
     parameters: mcpReferenceInputSchema,
-    handler: (input: McpReferenceInput) => ports.reference(input),
+    handler: async (input: McpReferenceInput) =>
+      projectMcpReferenceForModel(await ports.reference(input)),
   });
   const callTool: ToolDefinition<typeof mcpCallInputSchema> = Object.freeze({
     name: MCP_CALL_TOOL_NAME,

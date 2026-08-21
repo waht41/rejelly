@@ -82,7 +82,14 @@ export function referenceMcpTools(
       if (score > 0) matches.push({ route, score });
     }
   }
-  matches.sort(
+  const exactNameMatches =
+    !listAll && terms.length === 1
+      ? matches.filter(
+          (match) => match.route.identity.nativeToolName.toLocaleLowerCase() === terms[0],
+        )
+      : [];
+  const rankedMatches = exactNameMatches.length > 0 ? exactNameMatches : matches;
+  rankedMatches.sort(
     (left, right) =>
       right.score - left.score ||
       left.route.identity.serverId.localeCompare(right.route.identity.serverId) ||
@@ -111,7 +118,8 @@ export function referenceMcpTools(
     .sort((left, right) => left.serverId.localeCompare(right.serverId));
   return Object.freeze({
     type: "mcp_reference_v1",
-    matches: Object.freeze(matches.slice(0, maxResults).map((match) => match.route)),
+    matchedCount: rankedMatches.length,
+    matches: Object.freeze(rankedMatches.slice(0, maxResults).map((match) => match.route)),
     ...(unavailableServers.length > 0
       ? { unavailableServers: Object.freeze(unavailableServers) }
       : {}),

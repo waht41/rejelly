@@ -14,6 +14,8 @@ export const MCP_CONTRACT_LIMITS = Object.freeze({
   requestReasonChars: 256,
   referenceServerIds: 32,
   referenceMaxResults: 20,
+  referenceOutputBytes: 32 * 1024,
+  referenceSingleToolOutputBytes: 128 * 1024,
   gatewayArgumentsBytes: 256 * 1024,
   gatewayArgumentsDepth: 32,
 });
@@ -356,7 +358,7 @@ export const MCP_REQUEST_TOOL_NAME = "mcp_request";
 export const MCP_CALL_TOOL_NAME = "mcp_call";
 
 export const MCP_REFERENCE_TOOL_DESCRIPTION =
-  "Find configured MCP tools and return their descriptions, input schemas, callability, and availability; use query `*` to list visible tools.";
+  "Find configured MCP tools through a server-grouped XML-like projection. Exact single-tool matches include JSON Schema; broad results may omit schemas and ask for a narrower query.";
 export const MCP_REQUEST_TOOL_DESCRIPTION =
   "Ask the user to trust and enable one configured MCP server for this chat session.";
 export const MCP_CALL_TOOL_DESCRIPTION =
@@ -412,6 +414,8 @@ export interface McpReferenceUnavailableServer {
 
 export interface McpReferenceResult {
   readonly type: "mcp_reference_v1";
+  /** All ranked matches before maxResults limits the returned prefix. */
+  readonly matchedCount: number;
   readonly matches: readonly McpReferenceMatch[];
   readonly unavailableServers?: readonly McpReferenceUnavailableServer[];
 }

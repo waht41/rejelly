@@ -53,7 +53,11 @@ describe("MCP gateway tools", () => {
   it("keeps provider schemas byte-stable across catalog and handler changes", () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const first = createMcpChatGatewayToolDefinitions({
-      reference: async () => ({ type: "mcp_reference_v1", matches: [referenceMatch()] }),
+      reference: async () => ({
+        type: "mcp_reference_v1",
+        matchedCount: 1,
+        matches: [referenceMatch()],
+      }),
       request: async (request) => ({
         type: "mcp_request_v1",
         serverId: request.serverId,
@@ -68,6 +72,7 @@ describe("MCP gateway tools", () => {
     const second = createMcpChatGatewayToolDefinitions({
       reference: async () => ({
         type: "mcp_reference_v1",
+        matchedCount: 1,
         matches: [referenceMatch({ catalogRevision: "catalog-2" })],
       }),
       request: async (request) => ({

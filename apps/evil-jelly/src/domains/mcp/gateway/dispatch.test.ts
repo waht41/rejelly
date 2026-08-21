@@ -81,10 +81,9 @@ describe("MCP dispatch gateway", () => {
     const tools = createMcpGatewayToolsForDispatch(createUnavailableMcpDispatch());
 
     expect(tools.map((tool) => tool.name)).toEqual(["mcp_reference", "mcp_request", "mcp_call"]);
-    await expect(tools[0].handler({ query: "typescript" })).resolves.toEqual({
-      type: "mcp_reference_v1",
-      matches: [],
-    });
+    await expect(tools[0].handler({ query: "typescript" })).resolves.toContain(
+      '<mcp_reference version="1" detail="full" matched="0" returned="0">',
+    );
     await expect(
       tools[1].handler({
         serverId: "typescript",
