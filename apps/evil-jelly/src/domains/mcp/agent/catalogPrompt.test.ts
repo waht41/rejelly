@@ -10,7 +10,7 @@ describe("MCP server catalog prompt", () => {
     expect(prompt).toContain("Use `mcp_reference` to load matching native tool descriptions");
     expect(prompt).toContain("query `*` lists visible tools");
     expect(prompt).toContain("`suggested_action`");
-    expect(prompt).toContain("use `mcp_request` for `request_access`");
+    expect(prompt).toContain("use `mcp_request` for `request_access`, `reload`");
     expect(prompt).not.toContain("transport");
   });
 

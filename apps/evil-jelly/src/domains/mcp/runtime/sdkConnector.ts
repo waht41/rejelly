@@ -12,6 +12,11 @@ import {
   resolveMcpValueSources,
 } from "../configuration/configuration";
 import type { McpDesiredServer, McpValueSource } from "../contracts";
+import {
+  McpRuntimeEventError,
+  mcpStartupCancelledError,
+  mcpStartupTimeoutError,
+} from "./runtimeFailure";
 import type {
   McpRuntimeConnection,
   McpRuntimeConnectionCallbacks,
@@ -42,10 +47,12 @@ function secretValues(sources: Readonly<Record<string, McpValueSource>>): string
     .filter((value) => value.length >= 3);
 }
 
-function safeConnectionError(error: unknown, secrets: readonly string[]): Error {
-  let message = error instanceof Error ? error.message : String(error);
+function safeConnectionError(error: unknown, secrets: readonly string[], suffix?: string): Error {
+  let message = `${error instanceof Error ? error.message : String(error)}${suffix ?? ""}`;
   for (const secret of secrets) message = message.replaceAll(secret, "<redacted>");
-  return new Error(message);
+  return error instanceof McpRuntimeEventError
+    ? new McpRuntimeEventError(error.failureCode, message)
+    : new Error(message);
 }
 
 function resolveValues(
@@ -68,18 +75,15 @@ async function connectWithBoundary(
   signal: AbortSignal,
   timeoutMs: number,
 ): Promise<void> {
-  if (signal.aborted) throw new Error("MCP connection cancelled");
+  if (signal.aborted) throw mcpStartupCancelledError();
   let timeout: ReturnType<typeof setTimeout> | undefined;
   let onAbort: (() => void) | undefined;
   try {
     await Promise.race([
       client.connect(transport),
       new Promise<never>((_resolve, reject) => {
-        timeout = setTimeout(
-          () => reject(new Error(`MCP startup timed out after ${timeoutMs}ms`)),
-          timeoutMs,
-        );
-        onAbort = () => reject(new Error("MCP connection cancelled"));
+        timeout = setTimeout(() => reject(mcpStartupTimeoutError(timeoutMs)), timeoutMs);
+        onAbort = () => reject(mcpStartupCancelledError());
         signal.addEventListener("abort", onAbort, { once: true });
       }),
     ]);
@@ -92,7 +96,7 @@ async function connectWithBoundary(
   }
   if (signal.aborted) {
     await client.close().catch(() => undefined);
-    throw new Error("MCP connection cancelled");
+    throw mcpStartupCancelledError();
   }
 }
 
@@ -149,7 +153,17 @@ export class SdkMcpRuntimeConnector implements McpRuntimeConnector {
           },
         },
       );
-      client.onclose = callbacks.onClose;
+      client.onclose = () => {
+        const stderrTail = readStderrTail();
+        callbacks.onClose(
+          stderrTail
+            ? safeConnectionError(
+                new Error(`MCP connection closed\nMCP server stderr:\n${stderrTail}`),
+                resolvedSecrets,
+              )
+            : undefined,
+        );
+      };
       client.onerror = (error) => callbacks.onError(safeConnectionError(error, resolvedSecrets));
 
       const transport = (() => {
@@ -216,10 +230,10 @@ export class SdkMcpRuntimeConnector implements McpRuntimeConnector {
       };
     } catch (error) {
       const stderrTail = readStderrTail();
-      const message = error instanceof Error ? error.message : String(error);
       throw safeConnectionError(
-        stderrTail ? new Error(`${message}\nMCP server stderr:\n${stderrTail}`) : error,
+        error,
         resolvedSecrets,
+        stderrTail ? `\nMCP server stderr:\n${stderrTail}` : undefined,
       );
     }
   }

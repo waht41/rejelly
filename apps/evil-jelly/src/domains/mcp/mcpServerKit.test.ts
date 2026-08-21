@@ -70,7 +70,11 @@ describe("MCP dispatch composition", () => {
           serverId: "docs",
           status: "failed",
           configFingerprint: "config-1",
-          error: "offline",
+          failure: {
+            code: "runtime_error",
+            messageExcerpt: "offline",
+            messageTruncated: false,
+          },
         },
       ]),
       captureDispatchBinding: vi.fn(),

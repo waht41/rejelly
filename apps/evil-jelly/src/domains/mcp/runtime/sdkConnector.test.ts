@@ -5,6 +5,7 @@ import { SdkMcpRuntimeConnector } from "./sdkConnector";
 
 const sdkMocks = vi.hoisted(() => ({
   stdioParameters: [] as unknown[],
+  clients: [] as Array<{ onclose?: () => void }>,
   connectError: undefined as Error | undefined,
 }));
 
@@ -26,6 +27,10 @@ vi.mock("@modelcontextprotocol/sdk/client/index.js", () => ({
   Client: class {
     onclose: (() => void) | undefined;
     onerror: ((error: Error) => void) | undefined;
+
+    constructor() {
+      sdkMocks.clients.push(this);
+    }
 
     async connect(transport: { stderr: { write(chunk: string): void } }): Promise<void> {
       transport.stderr.write("server diagnostic\n");
@@ -49,6 +54,7 @@ function server(): McpDesiredServer {
 describe("SDK MCP connector stdio boundary", () => {
   beforeEach(() => {
     sdkMocks.stdioParameters.length = 0;
+    sdkMocks.clients.length = 0;
     sdkMocks.connectError = undefined;
   });
 
@@ -83,5 +89,26 @@ describe("SDK MCP connector stdio boundary", () => {
         onToolsChanged: vi.fn(),
       }),
     ).rejects.toThrow("handshake failed\nMCP server stderr:\nserver diagnostic");
+  });
+
+  it("attaches the stderr tail when an established connection closes", async () => {
+    const connector = new SdkMcpRuntimeConnector({
+      workspaceRoot: process.cwd(),
+      resolveEnvironment: () => undefined,
+    });
+    const onClose = vi.fn();
+
+    await connector.connect(server(), new AbortController().signal, {
+      onClose,
+      onError: vi.fn(),
+      onToolsChanged: vi.fn(),
+    });
+    sdkMocks.clients[0]!.onclose?.();
+
+    expect(onClose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: "MCP connection closed\nMCP server stderr:\nserver diagnostic",
+      }),
+    );
   });
 });

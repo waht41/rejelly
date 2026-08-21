@@ -108,6 +108,7 @@ export function referenceMcpTools(
         {
           serverId: server.serverId,
           status: server.status,
+          ...(server.failure ? { failure: server.failure } : {}),
           suggestedAction:
             server.status === "disabled"
               ? "enable"

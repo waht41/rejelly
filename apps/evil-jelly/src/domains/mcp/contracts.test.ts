@@ -262,7 +262,7 @@ describe("stable MCP gateway contract", () => {
       request: {
         name: "mcp_request",
         description:
-          "Ask the user to trust and enable one configured MCP server for this chat session.",
+          "Ensure one configured MCP server is authorized and ready. Failed servers with existing access are reloaded once without replaying the failed native call.",
       },
       call: {
         name: "mcp_call",

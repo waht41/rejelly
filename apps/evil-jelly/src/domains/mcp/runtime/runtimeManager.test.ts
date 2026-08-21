@@ -504,11 +504,23 @@ describe("McpRuntimeManager", () => {
     connector.attempts[0]!.result.resolve(new FakeConnection());
     await waitForStatus(manager, "local", "ready");
 
-    connector.attempts[0]!.callbacks.onClose();
+    connector.attempts[0]!.callbacks.onClose(
+      new Error(
+        "MCP connection closed\nMCP server stderr:\nFATAL ERROR: Ineffective mark-compacts near heap limit Allocation failed - JavaScript heap out of memory",
+      ),
+    );
     await waitForStatus(manager, "local", "failed");
 
     expect(connector.attempts).toHaveLength(1);
     expect(scheduler.pending.size).toBe(0);
+    expect(manager.getSnapshot().servers[0]?.failure).toMatchObject({
+      code: "runtime_error",
+      messageExcerpt: expect.stringContaining("JavaScript heap out of memory"),
+      messageTruncated: false,
+    });
+    expect(manager.getSnapshot().servers[0]?.failure?.detail).toContain(
+      "JavaScript heap out of memory",
+    );
     await manager.dispose();
   });
 
@@ -594,7 +606,12 @@ describe("McpRuntimeManager", () => {
     expect(manager.getSnapshot().servers[0]).toMatchObject({
       serverId: "docs",
       status: "failed",
-      error: "MCP startup cancelled by user.",
+      failure: {
+        code: "startup_cancelled",
+        messageExcerpt: "MCP server startup was cancelled.",
+        messageTruncated: false,
+        detail: "MCP server startup was cancelled.",
+      },
     });
     const late = new FakeConnection();
     attempt.result.resolve(late);

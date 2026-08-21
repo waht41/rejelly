@@ -44,7 +44,12 @@ export interface McpManagerRow {
   routable: boolean;
   connection: "disabled" | "stopped" | "untrusted" | "pending" | "ready" | "failed";
   toolCount: number;
-  detail?: string;
+  failure?: {
+    code: string;
+    messageExcerpt: string;
+    messageTruncated: boolean;
+    detail?: string;
+  };
 }
 
 export interface McpManagerToolRow {

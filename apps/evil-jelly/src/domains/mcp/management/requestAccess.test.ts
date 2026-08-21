@@ -9,27 +9,32 @@ function createHarness(
     selected?: boolean;
     persistent?: boolean;
     approve?: "session" | "always" | false;
+    connection?: McpSessionStatusRow["connection"];
   } = {},
 ) {
-  let trusted = options.trusted ?? false;
+  const trusted = options.trusted ?? false;
   let selected = options.selected ?? false;
   let persistent = options.persistent ?? false;
+  let connection = options.connection ?? (trusted ? "ready" : "untrusted");
   const row = (selectedServerIds: readonly string[]): McpSessionStatusRow => ({
     serverId: "typescript",
     source: { kind: "workspace" },
     exposure: "explicit",
     selected: selectedServerIds.includes("typescript"),
     persistentAccess: persistent,
-    routable: trusted && (persistent || selectedServerIds.includes("typescript")),
-    connection: trusted ? "ready" : "untrusted",
-    toolCount: trusted ? 4 : 0,
+    routable: connection === "ready" && (persistent || selectedServerIds.includes("typescript")),
+    connection,
+    toolCount: connection === "ready" ? 4 : 0,
     configFingerprint: "f".repeat(64),
   });
   const control = mcpSessionControlStub({
     status: (selectedServerIds) => [row(selectedServerIds)],
-    reload: vi.fn(async () => undefined),
+    activateServers: vi.fn(async () => undefined),
+    reload: vi.fn(async () => {
+      connection = "pending";
+    }),
     grantTrust: vi.fn(async () => {
-      trusted = true;
+      connection = "ready";
     }),
     grantPersistentServerAccess: vi.fn(async () => {
       persistent = true;
@@ -38,11 +43,14 @@ function createHarness(
     isPersistentToolAllowed: vi.fn(() => false),
     persistentPermissions: vi.fn(() => []),
     revokePersistentPermissions: vi.fn(async () => undefined),
-    waitForServer: vi.fn(async () => ({
-      serverId: "typescript",
-      configFingerprint: "f".repeat(64),
-      status: "ready" as const,
-    })),
+    waitForServer: vi.fn(async () => {
+      connection = "ready";
+      return {
+        serverId: "typescript",
+        configFingerprint: "f".repeat(64),
+        status: "ready" as const,
+      };
+    }),
   });
   const approve = vi.fn(async () => options.approve ?? "session");
   const commitSelection = vi.fn(async (serverIds: readonly string[]) => {
@@ -107,5 +115,18 @@ describe("MCP access requests", () => {
     });
     expect(harness.approve).not.toHaveBeenCalled();
     expect(harness.commitSelection).not.toHaveBeenCalled();
+  });
+
+  it("reloads an already authorized failed server without asking again", async () => {
+    const harness = createHarness({ trusted: true, selected: true, connection: "failed" });
+
+    await expect(requestMcpAccess({ serverId: "typescript" }, harness)).resolves.toMatchObject({
+      status: "granted",
+      callable: true,
+      reloaded: true,
+    });
+    expect(harness.approve).not.toHaveBeenCalled();
+    expect(harness.control.reload).toHaveBeenCalledWith("typescript");
+    expect(harness.control.activateServers).not.toHaveBeenCalled();
   });
 });

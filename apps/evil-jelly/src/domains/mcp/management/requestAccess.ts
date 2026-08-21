@@ -33,7 +33,7 @@ function unavailable(
   return { type: "mcp_request_v1", serverId, status: "unavailable", code, message };
 }
 
-/** One mutation path shared by `/mcp use` and the model-facing request gateway. */
+/** One authorization/recovery path shared by `/mcp use` and the model-facing gateway. */
 export async function requestMcpAccess(
   input: McpRequestInput,
   ports: McpAccessRequestPorts,
@@ -64,28 +64,40 @@ export async function requestMcpAccess(
     };
   }
 
-  const approvalScope = await ports.approve({
-    serverId: row.serverId,
-    source: row.source,
-    configFingerprint: row.configFingerprint,
-    requiresTrust: row.connection === "untrusted",
-    ...(input.reason ? { reason: input.reason } : {}),
-  });
-  if (!approvalScope) {
-    return {
-      type: "mcp_request_v1",
+  const alreadyAuthorized =
+    row.connection !== "untrusted" &&
+    (row.exposure === "always" || row.selected || row.persistentAccess);
+  let approvalScope: "session" | "always" | undefined;
+  let selectedServerIds = currentSelection;
+  if (!alreadyAuthorized) {
+    const decision = await ports.approve({
       serverId: row.serverId,
-      status: "denied",
-      message: "The user denied MCP access for this session.",
-    };
+      source: row.source,
+      configFingerprint: row.configFingerprint,
+      requiresTrust: row.connection === "untrusted",
+      ...(input.reason ? { reason: input.reason } : {}),
+    });
+    if (!decision) {
+      return {
+        type: "mcp_request_v1",
+        serverId: row.serverId,
+        status: "denied",
+        message: "The user denied MCP access for this session.",
+      };
+    }
+    approvalScope = decision;
   }
 
+  const reloaded = row.connection === "failed";
   try {
-    if (row.connection === "untrusted") await control.grantTrust(row.serverId);
-    const selectedServerIds = [...new Set([...ports.selectedServerIds(), row.serverId])].sort();
-    if (approvalScope === "always") await control.grantPersistentServerAccess(row.serverId);
-    else await ports.commitSelection(selectedServerIds);
-    await control.activateServers([row.serverId]);
+    if (approvalScope) {
+      if (row.connection === "untrusted") await control.grantTrust(row.serverId);
+      selectedServerIds = [...new Set([...ports.selectedServerIds(), row.serverId])].sort();
+      if (approvalScope === "always") await control.grantPersistentServerAccess(row.serverId);
+      else await ports.commitSelection(selectedServerIds);
+    }
+    if (reloaded) await control.reload(row.serverId);
+    else await control.activateServers([row.serverId]);
     if (ports.awaitServer) {
       await ports.awaitServer(row.serverId, () => control.waitForServer(row.serverId));
     } else {
@@ -97,6 +109,13 @@ export async function requestMcpAccess(
     if (!finalRow) {
       return unavailable(row.serverId, "request_failed", "MCP server disappeared after approval.");
     }
+    if (!finalRow.routable) {
+      return unavailable(
+        row.serverId,
+        "request_failed",
+        `MCP server did not become callable (${finalRow.connection}${finalRow.failure ? `: ${finalRow.failure.messageExcerpt}` : ""}).`,
+      );
+    }
     return {
       type: "mcp_request_v1",
       serverId: finalRow.serverId,
@@ -105,6 +124,7 @@ export async function requestMcpAccess(
       callable: finalRow.routable,
       connection: finalRow.connection,
       configFingerprint: finalRow.configFingerprint,
+      ...(reloaded ? { reloaded: true } : {}),
     };
   } catch (error) {
     return unavailable(

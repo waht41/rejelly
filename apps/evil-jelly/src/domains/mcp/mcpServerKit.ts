@@ -40,7 +40,7 @@ export function createMcpDispatchBindingFactory(
         `Required MCP server(s) unavailable: ${failures
           .map(
             (server) =>
-              `${server.serverId} (${server.status}${server.error ? `: ${server.error}` : ""})`,
+              `${server.serverId} (${server.status}${server.failure ? `: ${server.failure.messageExcerpt}` : ""})`,
           )
           .join(", ")}`,
       );

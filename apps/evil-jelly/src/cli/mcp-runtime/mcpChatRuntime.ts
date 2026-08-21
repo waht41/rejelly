@@ -155,7 +155,7 @@ export async function createMcpChatRuntime(options: {
               ?.tools.filter((tool) => isMcpToolAllowed(server.definition, "chat", tool.name))
               .length ?? 0,
           configFingerprint: runtime?.configFingerprint ?? "unavailable",
-          ...(runtime?.error ? { error: runtime.error } : {}),
+          ...(runtime?.failure ? { failure: runtime.failure } : {}),
         };
       });
     },

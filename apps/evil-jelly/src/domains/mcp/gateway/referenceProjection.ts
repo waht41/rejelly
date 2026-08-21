@@ -93,13 +93,27 @@ function renderServer(group: MatchGroup, detail: ReferenceDetail): string {
 }
 
 function renderUnavailable(result: McpReferenceResult): readonly string[] {
-  return (result.unavailableServers ?? []).map((server) =>
-    renderPseudoXmlEmptyElement("server", {
+  return (result.unavailableServers ?? []).map((server) => {
+    const attributes = {
       id: server.serverId,
       status: server.status,
       suggested_action: server.suggestedAction,
-    }),
-  );
+      ...(server.failure
+        ? {
+            error_code: server.failure.code,
+          }
+        : {}),
+    };
+    return server.failure
+      ? renderPseudoXmlElement(
+          "server",
+          renderPseudoXmlElement("error_excerpt", server.failure.messageExcerpt, {
+            truncated: String(server.failure.messageTruncated),
+          }),
+          attributes,
+        )
+      : renderPseudoXmlEmptyElement("server", attributes);
+  });
 }
 
 function renderOmittedTools(

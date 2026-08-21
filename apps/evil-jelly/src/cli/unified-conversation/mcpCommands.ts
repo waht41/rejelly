@@ -68,7 +68,7 @@ function managerRequest(
       routable: row.routable,
       connection: row.connection,
       toolCount: row.toolCount,
-      ...(row.error ? { detail: row.error.replace(/\s+/g, " ").trim() } : {}),
+      ...(row.failure ? { failure: row.failure } : {}),
     })),
     ...(selectedServerId ? { selectedServerId } : {}),
     ...(detailServerId ? { detailServerId } : {}),

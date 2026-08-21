@@ -17,6 +17,11 @@ import {
   type McpServerRuntimeState,
   type McpToolIdentity,
 } from "../contracts";
+import {
+  captureMcpRuntimeFailure,
+  mcpStartupCancelledError,
+  projectMcpRuntimeFailure,
+} from "./runtimeFailure";
 
 export interface McpRuntimeCatalog {
   readonly serverId: string;
@@ -42,7 +47,7 @@ export type McpRuntimeCallOutcome =
     };
 
 export interface McpRuntimeConnectionCallbacks {
-  readonly onClose: () => void;
+  readonly onClose: (error?: Error) => void;
   readonly onError: (error: Error) => void;
   readonly onToolsChanged: (
     error: Error | null,
@@ -87,7 +92,7 @@ interface RuntimeEntry {
   readonly token: number;
   target: EntryTarget;
   status: McpServerRuntimeState["status"];
-  error?: string;
+  failure?: ReturnType<typeof captureMcpRuntimeFailure>;
   catalog?: McpRuntimeCatalog;
   connection?: McpRuntimeConnection;
   abortController?: AbortController;
@@ -103,10 +108,6 @@ function sourceIdentity(server: McpDesiredServer): string {
   return server.source.kind === "dynamic"
     ? `${server.source.kind}:${server.source.sourceId}`
     : server.source.kind;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function canonicalJson(value: unknown): string {
@@ -325,6 +326,7 @@ export class McpRuntimeManager {
           configFingerprint: entry.configFingerprint,
           status: entry.status,
           ...(entry.catalog ? { catalogRevision: entry.catalog.revision } : {}),
+          ...(entry.failure ? { failure: projectMcpRuntimeFailure(entry.failure) } : {}),
           tools: Object.freeze(tools),
         });
       })
@@ -493,7 +495,7 @@ export class McpRuntimeManager {
         if (entry.target === nextTarget) continue;
         entry.target = nextTarget;
         entry.status = initialStatus(nextTarget);
-        entry.error = undefined;
+        entry.failure = undefined;
         changed = true;
         if (nextTarget === "active") this.beginConnect(entry);
       }
@@ -546,7 +548,7 @@ export class McpRuntimeManager {
         token: ++this.tokenSequence,
         target: previous.target,
         status: "failed",
-        error: "MCP startup cancelled by user.",
+        failure: captureMcpRuntimeFailure(mcpStartupCancelledError()),
         retryAttempt: 0,
         activeCalls: 0,
         callWaiters: [],
@@ -756,10 +758,10 @@ export class McpRuntimeManager {
     const abortController = new AbortController();
     entry.abortController = abortController;
     entry.status = "pending";
-    entry.error = undefined;
+    entry.failure = undefined;
     const callbacks: McpRuntimeConnectionCallbacks = {
-      onClose: () => {
-        void this.enqueue(() => this.handleConnectionClosed(entry));
+      onClose: (error) => {
+        void this.enqueue(() => this.handleConnectionClosed(entry, error));
       },
       onError: (error) => {
         void this.enqueue(() => this.handleConnectionError(entry, error));
@@ -809,7 +811,7 @@ export class McpRuntimeManager {
     }
     entry.catalog = freezeCatalog(entry.server.id, tools);
     entry.status = "ready";
-    entry.error = undefined;
+    entry.failure = undefined;
     entry.retryAttempt = 0;
     this.publish();
   }
@@ -839,21 +841,21 @@ export class McpRuntimeManager {
     entry.connection = undefined;
     entry.catalog = undefined;
     entry.status = "failed";
-    entry.error = errorMessage(error);
+    entry.failure = captureMcpRuntimeFailure(error);
     this.scheduleRetry(entry);
     this.publish();
   }
 
-  private async handleConnectionClosed(entry: RuntimeEntry): Promise<void> {
+  private async handleConnectionClosed(entry: RuntimeEntry, error?: Error): Promise<void> {
     if (!this.isCurrent(entry) || !entry.connection) return;
     entry.connection = undefined;
     entry.catalog = undefined;
-    this.failEntry(entry, new Error("MCP connection closed"));
+    this.failEntry(entry, error ?? new Error("MCP connection closed"));
   }
 
   private handleConnectionError(entry: RuntimeEntry, error: Error): void {
     if (!this.isCurrent(entry) || entry.status !== "ready") return;
-    entry.error = errorMessage(error);
+    entry.failure = captureMcpRuntimeFailure(error);
     this.publish();
   }
 
@@ -864,12 +866,14 @@ export class McpRuntimeManager {
   ): void {
     if (!this.isCurrent(entry) || entry.status !== "ready" || !entry.connection) return;
     if (error || !tools) {
-      entry.error = error ? errorMessage(error) : "MCP tools/list refresh returned no catalog";
+      entry.failure = captureMcpRuntimeFailure(
+        error ?? new Error("MCP tools/list refresh returned no catalog"),
+      );
       this.publish();
       return;
     }
     entry.catalog = freezeCatalog(entry.server.id, tools);
-    entry.error = undefined;
+    entry.failure = undefined;
     this.publish();
   }
 
@@ -930,7 +934,7 @@ export class McpRuntimeManager {
             configFingerprint: entry.configFingerprint,
             status: entry.status,
             ...(entry.catalog ? { catalogRevision: entry.catalog.revision } : {}),
-            ...(entry.error ? { error: entry.error } : {}),
+            ...(entry.failure ? { failure: entry.failure } : {}),
           }),
       )
       .sort((left, right) => left.serverId.localeCompare(right.serverId));

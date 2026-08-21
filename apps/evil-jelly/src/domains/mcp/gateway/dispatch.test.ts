@@ -65,6 +65,17 @@ function binding(): McpDispatchBinding {
         status: "untrusted",
         tools: [],
       },
+      {
+        serverId: "failed",
+        configFingerprint: "config-failed",
+        status: "failed",
+        failure: {
+          code: "runtime_error",
+          messageExcerpt: "JavaScript heap out of memory",
+          messageTruncated: false,
+        },
+        tools: [],
+      },
     ],
     route: (identity) =>
       routes.find(
@@ -110,6 +121,16 @@ describe("MCP dispatch gateway", () => {
     ]);
     expect(result.matches.map((match) => match.callable)).toEqual([true, false]);
     expect(result.unavailableServers).toEqual([
+      {
+        serverId: "failed",
+        status: "failed",
+        suggestedAction: "reload",
+        failure: {
+          code: "runtime_error",
+          messageExcerpt: "JavaScript heap out of memory",
+          messageTruncated: false,
+        },
+      },
       { serverId: "pending", status: "pending", suggestedAction: "wait" },
       { serverId: "workspace", status: "untrusted", suggestedAction: "request_access" },
     ]);

@@ -109,4 +109,31 @@ describe("MCP reference model projection", () => {
     expect(output).toContain('descriptions_omitted="2"');
     expect(output).toContain("Descriptions for 2 returned tool(s) were also omitted.");
   });
+
+  it("shows a bounded error excerpt without inferring an external failure cause", () => {
+    const output = projectMcpReferenceForModel({
+      type: "mcp_reference_v1",
+      matchedCount: 0,
+      matches: [],
+      unavailableServers: [
+        {
+          serverId: "typescript",
+          status: "failed",
+          suggestedAction: "reload",
+          failure: {
+            code: "runtime_error",
+            messageExcerpt: "FATAL ERROR: JavaScript heap out of memory",
+            messageTruncated: false,
+          },
+        },
+      ],
+    });
+
+    expect(output).toContain(
+      '<server id="typescript" status="failed" suggested_action="reload" error_code="runtime_error">',
+    );
+    expect(output).toContain('<error_excerpt truncated="false">');
+    expect(output).toContain("FATAL ERROR: JavaScript heap out of memory");
+    expect(output).not.toContain("Native stack trace");
+  });
 });

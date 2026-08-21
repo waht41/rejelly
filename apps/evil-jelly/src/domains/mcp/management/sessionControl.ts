@@ -2,6 +2,7 @@ import type { McpToolGrant } from "../../../shared/model/mcp/toolGrant";
 import type {
   McpBoundRoute,
   McpConfigSource,
+  McpRuntimeFailure,
   McpServerRuntimeState,
   McpServerRuntimeStatus,
 } from "../contracts";
@@ -16,7 +17,7 @@ export interface McpSessionStatusRow {
   readonly connection: McpServerRuntimeStatus;
   readonly toolCount: number;
   readonly configFingerprint: string;
-  readonly error?: string;
+  readonly failure?: McpRuntimeFailure;
 }
 
 export interface McpToolPermissionRow {
@@ -67,8 +68,8 @@ export function formatMcpSessionStatus(rows: readonly McpSessionStatusRow[]): st
     "  server  source  exposure  selected  persistent  routable  connection  tools  detail",
   ];
   for (const row of rows) {
-    const detail = row.error
-      ? row.error.replace(/\s+/g, " ").trim()
+    const detail = row.failure
+      ? `${row.failure.code}: ${row.failure.messageExcerpt}`
       : `fingerprint ${row.configFingerprint.slice(0, 12)}`;
     lines.push(
       `  ${row.serverId}  ${sourceLabel(row.source)}  ${row.exposure}  ` +

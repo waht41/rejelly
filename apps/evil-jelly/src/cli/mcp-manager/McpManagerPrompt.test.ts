@@ -88,6 +88,49 @@ describe("McpManagerPrompt", () => {
     expect(loading).toContain("Esc cancel startup");
   });
 
+  it("keeps raw failure diagnostics out of the list and detail rendering", () => {
+    const row = {
+      serverId: "typescript",
+      source: "project",
+      exposure: "explicit" as const,
+      selected: true,
+      persistentAccess: false,
+      routable: false,
+      connection: "failed" as const,
+      toolCount: 0,
+      failure: {
+        code: "runtime_error",
+        messageExcerpt: "FATAL ERROR: JavaScript heap out of memory",
+        messageTruncated: false,
+        detail: "very long native stack trace",
+      },
+    };
+    const list = stripAnsi(
+      renderToString(
+        createElement(McpManagerPrompt, {
+          request: { rows: [row] },
+          onAction: vi.fn(),
+          copyText: vi.fn(async () => undefined),
+        }),
+      ),
+    );
+    const detail = stripAnsi(
+      renderToString(
+        createElement(McpManagerPrompt, {
+          request: { rows: [row], detailServerId: "typescript" },
+          onAction: vi.fn(),
+          copyText: vi.fn(async () => undefined),
+        }),
+      ),
+    );
+
+    expect(list).toContain("runtime_error");
+    expect(list).not.toContain("very long native stack trace");
+    expect(detail).toContain("FATAL ERROR: JavaScript heap out of memory");
+    expect(detail).toContain("Y copy failure diagnostics");
+    expect(detail).not.toContain("very long native stack trace");
+  });
+
   it("renders the terminal tool panel with inline batch actions", () => {
     const output = stripAnsi(
       renderToString(

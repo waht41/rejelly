@@ -309,6 +309,15 @@ export function McpManagerPrompt({
         setDetailActionIndex(0);
         return;
       }
+      if (input.toLocaleLowerCase() === "y" && detailRow.failure?.detail) {
+        setCopyStatus("Copying…");
+        void copyText(detailRow.failure.detail).then(
+          () => setCopyStatus("✓ Failure diagnostics copied"),
+          (error: unknown) =>
+            setCopyStatus(`Copy failed: ${error instanceof Error ? error.message : String(error)}`),
+        );
+        return;
+      }
       if (key.upArrow || key.downArrow || key.home || key.end) {
         setDetailActionIndex((previous) =>
           moveListSelection({
@@ -465,7 +474,19 @@ export function McpManagerPrompt({
           <Text>Source: {detailRow.source}</Text>
           <Text>Tools: {detailRow.toolCount}</Text>
           {detailRow.persistentAccess ? <Text>Access: persistent</Text> : null}
-          {detailRow.detail ? <Text color="red">{detailRow.detail}</Text> : null}
+          {detailRow.failure ? (
+            <Box flexDirection="column">
+              <Text color="red">Failure: {detailRow.failure.code}</Text>
+              <Text color="red">{detailRow.failure.messageExcerpt}</Text>
+              {detailRow.failure.messageTruncated ? (
+                <Text dimColor>Message excerpt truncated</Text>
+              ) : null}
+              {detailRow.failure.detail ? <Text dimColor>Y copy failure diagnostics</Text> : null}
+            </Box>
+          ) : null}
+          {copyStatus ? (
+            <Text color={copyStatus.startsWith("Copy failed") ? "red" : "green"}>{copyStatus}</Text>
+          ) : null}
         </Box>
         {request.activity ? (
           <Box flexDirection="column" marginTop={1}>
@@ -515,7 +536,7 @@ export function McpManagerPrompt({
                 {row.selected || row.routable ? "●" : "○"} {row.serverId.padEnd(serverWidth)}{" "}
                 <Text color={connectionColor(row.connection)}>{row.connection.padEnd(9)}</Text>{" "}
                 {access.padEnd(10)} {String(row.toolCount).padStart(3)} tools {row.source}
-                {row.detail ? ` · ${row.detail}` : ""}
+                {row.failure ? ` · ${row.failure.code}` : ""}
               </Text>
             );
           }}

@@ -270,12 +270,25 @@ export type McpServerRuntimeStatus =
   | "ready"
   | "failed";
 
+export type McpRuntimeFailureCode = "startup_timeout" | "startup_cancelled" | "runtime_error";
+
+export interface McpRuntimeFailureProjection {
+  readonly code: McpRuntimeFailureCode;
+  readonly messageExcerpt: string;
+  readonly messageTruncated: boolean;
+}
+
+export interface McpRuntimeFailure extends McpRuntimeFailureProjection {
+  /** Human-only diagnostic detail; never project this field into a model prompt. */
+  readonly detail?: string;
+}
+
 export interface McpServerRuntimeState {
   readonly serverId: string;
   readonly configFingerprint: string;
   readonly status: McpServerRuntimeStatus;
   readonly catalogRevision?: string;
-  readonly error?: string;
+  readonly failure?: McpRuntimeFailure;
 }
 
 export interface McpRuntimeSnapshot {
@@ -290,6 +303,7 @@ export interface McpSelectedServerBinding {
   readonly configFingerprint: string;
   readonly status: McpServerRuntimeStatus;
   readonly catalogRevision?: string;
+  readonly failure?: McpRuntimeFailureProjection;
   /** Set semantics; tool ordering is only a presentation concern. */
   readonly tools: readonly McpBoundNativeTool[];
 }
@@ -362,7 +376,7 @@ export const MCP_CALL_TOOL_NAME = "mcp_call";
 export const MCP_REFERENCE_TOOL_DESCRIPTION =
   "Find configured MCP tools through a server-grouped XML-like projection. Exact single-tool matches include JSON Schema; broad results may omit schemas and ask for a narrower query.";
 export const MCP_REQUEST_TOOL_DESCRIPTION =
-  "Ask the user to trust and enable one configured MCP server for this chat session.";
+  "Ensure one configured MCP server is authorized and ready. Failed servers with existing access are reloaded once without replaying the failed native call.";
 export const MCP_CALL_TOOL_DESCRIPTION =
   "Call one previously referenced MCP tool and return a bounded XML-like projection containing native text, JSON structured content, and explicit omission metadata.";
 
@@ -412,6 +426,7 @@ export interface McpReferenceUnavailableServer {
   readonly serverId: string;
   readonly status: McpReferenceUnavailableStatus;
   readonly suggestedAction: "enable" | "request_access" | "wait" | "reload";
+  readonly failure?: McpRuntimeFailureProjection;
 }
 
 export interface McpReferenceResult {
@@ -433,6 +448,7 @@ export type McpRequestResult =
       readonly callable: boolean;
       readonly connection: McpServerRuntimeStatus;
       readonly configFingerprint: string;
+      readonly reloaded?: boolean;
     }
   | {
       readonly type: "mcp_request_v1";
