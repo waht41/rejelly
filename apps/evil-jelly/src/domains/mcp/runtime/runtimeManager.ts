@@ -615,7 +615,10 @@ export class McpRuntimeManager {
     consumer: McpConsumer,
     selectedServerIds: readonly string[] = [],
     requestedServerIds?: readonly string[],
-    timeoutMs = 10_000,
+    options: {
+      readonly timeoutMs?: number;
+      readonly onWaitStart?: (serverIds: readonly string[]) => (() => void) | undefined;
+    } = {},
   ): Promise<readonly McpServerRuntimeState[]> {
     const selected = new Set(selectedServerIds);
     const requested = requestedServerIds ? new Set(requestedServerIds) : undefined;
@@ -633,22 +636,31 @@ export class McpRuntimeManager {
     if (targetIds.size === 0 || current().every((server) => server.status !== "pending")) {
       return current();
     }
-    return new Promise((resolve) => {
-      let settled = false;
-      let unsubscribe: () => void = () => undefined;
-      const finish = () => {
-        if (settled) return;
-        settled = true;
-        unsubscribe();
-        this.scheduler.clearTimeout(timeout);
-        resolve(current());
-      };
-      const timeout = this.scheduler.setTimeout(finish, Math.max(0, timeoutMs));
-      unsubscribe = this.subscribe(() => {
+    const finishActivity = options.onWaitStart?.(
+      current()
+        .filter((server) => server.status === "pending")
+        .map((server) => server.serverId),
+    );
+    try {
+      return await new Promise((resolve) => {
+        let settled = false;
+        let unsubscribe: () => void = () => undefined;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          unsubscribe();
+          this.scheduler.clearTimeout(timeout);
+          resolve(current());
+        };
+        const timeout = this.scheduler.setTimeout(finish, Math.max(0, options.timeoutMs ?? 10_000));
+        unsubscribe = this.subscribe(() => {
+          if (current().every((server) => server.status !== "pending")) finish();
+        });
         if (current().every((server) => server.status !== "pending")) finish();
       });
-      if (current().every((server) => server.status !== "pending")) finish();
-    });
+    } finally {
+      finishActivity?.();
+    }
   }
 
   async dispose(): Promise<void> {

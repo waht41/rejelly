@@ -102,4 +102,11 @@ describe("RuntimeStatusLine", () => {
     setRuntime({ phase: "awaiting_user", detail: "Waiting for input" });
     expect(statusLine()).not.toContain("Waiting for input");
   });
+
+  it("names MCP startup instead of showing the generic tool activity", () => {
+    setRuntime({ phase: "tool", detail: "Starting MCP typescript…" });
+
+    expect(statusLine()).toContain("Starting MCP typescript…");
+    expect(statusLine()).not.toContain("running tools");
+  });
 });

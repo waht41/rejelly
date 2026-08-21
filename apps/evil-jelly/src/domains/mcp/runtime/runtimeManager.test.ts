@@ -212,12 +212,19 @@ describe("McpRuntimeManager", () => {
     };
     await manager.reconcile(desired(always));
 
-    const waiting = manager.waitForReferenceServers("chat", [], undefined, 25);
+    const finishActivity = vi.fn();
+    const onWaitStart = vi.fn(() => finishActivity);
+    const waiting = manager.waitForReferenceServers("chat", [], undefined, {
+      timeoutMs: 25,
+      onWaitStart,
+    });
     scheduler.fireAll();
 
     await expect(waiting).resolves.toEqual([
       expect.objectContaining({ serverId: "docs", status: "pending" }),
     ]);
+    expect(onWaitStart).toHaveBeenCalledWith(["docs"]);
+    expect(finishActivity).toHaveBeenCalledOnce();
     await manager.dispose();
   });
 

@@ -134,6 +134,8 @@ describe("MCP dispatch composition", () => {
         expect.objectContaining({ identity: { serverId: "docs", nativeToolName: "read" } }),
       ],
     });
-    expect(waitForReferenceServers).toHaveBeenCalledWith("chat", ["docs"], ["docs"]);
+    expect(waitForReferenceServers).toHaveBeenCalledWith("chat", ["docs"], ["docs"], {
+      onWaitStart: undefined,
+    });
   });
 });

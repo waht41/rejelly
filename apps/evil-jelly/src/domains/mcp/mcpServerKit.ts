@@ -23,7 +23,10 @@ export function createMcpRuntimeProviders(manager: McpRuntimeManager): Record<st
 export function createMcpDispatchBindingFactory(
   manager: McpRuntimeManager,
   confirmTool: ToolConfirmationHandler,
-  options: { readonly persistentServerIds?: () => readonly string[] } = {},
+  options: {
+    readonly persistentServerIds?: () => readonly string[];
+    readonly onStartupWait?: (serverIds: readonly string[]) => (() => void) | undefined;
+  } = {},
 ): McpDispatchBindingFactory {
   return async (selectedServerIds = [], authorizeCall?: McpCallAuthorizationHandler) => {
     const effectiveServerIds = [
@@ -46,7 +49,9 @@ export function createMcpDispatchBindingFactory(
     return Object.freeze({
       binding,
       reference: async (input: McpReferenceInput) => {
-        await manager.waitForReferenceServers("chat", effectiveServerIds, input.serverIds);
+        await manager.waitForReferenceServers("chat", effectiveServerIds, input.serverIds, {
+          onWaitStart: options.onStartupWait,
+        });
         return referenceMcpTools(manager.captureDispatchBinding("chat", effectiveServerIds), input);
       },
       request: async (input: McpRequestInput) => ({

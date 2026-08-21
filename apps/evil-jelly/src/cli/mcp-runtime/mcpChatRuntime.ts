@@ -64,6 +64,34 @@ export async function createMcpChatRuntime(options: {
   let desired = resolveDesired();
   let trustGrants = readMcpTrustGrants(workspaceRoot);
   let persistentPermissions = readMcpPersistentPermissions(workspaceRoot);
+  const startupActivity = new Map<string, number>();
+  const publishStartupActivity = () => {
+    const serverIds = [...startupActivity.keys()].sort();
+    bindings.onDetailUpdate?.(
+      serverIds.length === 0
+        ? "Running…"
+        : serverIds.length === 1
+          ? `Starting MCP ${serverIds[0]}…`
+          : `Starting MCP servers: ${serverIds.join(", ")}…`,
+    );
+  };
+  const trackStartup = (serverIds: readonly string[]) => {
+    for (const serverId of serverIds) {
+      startupActivity.set(serverId, (startupActivity.get(serverId) ?? 0) + 1);
+    }
+    publishStartupActivity();
+    let finished = false;
+    return () => {
+      if (finished) return;
+      finished = true;
+      for (const serverId of serverIds) {
+        const count = startupActivity.get(serverId) ?? 0;
+        if (count <= 1) startupActivity.delete(serverId);
+        else startupActivity.set(serverId, count - 1);
+      }
+      publishStartupActivity();
+    };
+  };
   await manager.reconcile(desired, trustGrants);
 
   const currentPersistentPermission = (serverId: string) => {
@@ -188,7 +216,17 @@ export async function createMcpChatRuntime(options: {
       trustGrants = readMcpTrustGrants(workspaceRoot);
       await manager.reconcile(desired, trustGrants);
     },
-    waitForServer: (serverId) => manager.waitForServer(serverId),
+    waitForServer: async (serverId) => {
+      const pending = manager
+        .getSnapshot()
+        .servers.some((server) => server.serverId === serverId && server.status === "pending");
+      const finishStartup = pending ? trackStartup([serverId]) : undefined;
+      try {
+        return await manager.waitForServer(serverId);
+      } finally {
+        finishStartup?.();
+      }
+    },
     grantPersistentServerAccess: async (serverId) => {
       const runtime = manager
         .getSnapshot()
@@ -241,6 +279,7 @@ export async function createMcpChatRuntime(options: {
     providers: createMcpRuntimeProviders(manager),
     bindingFactory: createMcpDispatchBindingFactory(manager, bindings.confirmTool, {
       persistentServerIds,
+      onStartupWait: trackStartup,
     }),
     sessionControl,
     resolveUserInput: (serverId: string) => {
