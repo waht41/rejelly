@@ -30,6 +30,7 @@ import { TextDecisionPrompt } from "../operator-decision/TextDecisionPrompt";
 import { getQueuedSteers, subscribeSteers } from "../submission-dispatch/steerQueue";
 import { MODE_META, useModeStore } from "../tool-approval/approvalModeStore";
 import { saveClipboardImage } from "./clipboard/clipboardImage";
+import { copyTextToClipboard } from "./clipboard/clipboardText";
 import { handleLocalCommand } from "./interactiveCommandBinding";
 import { type CtrlCAbortHandler, useCtrlCAbort } from "./useCtrlCAbort";
 
@@ -198,7 +199,11 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
               <RuntimeStatusLine />
             </Box>
             {decision.type === "mcp_manager" ? (
-              <McpManagerPrompt request={decision.request} onAction={submitMcpManager} />
+              <McpManagerPrompt
+                request={decision.request}
+                onAction={submitMcpManager}
+                copyText={copyTextToClipboard}
+              />
             ) : decision.type === "confirm" ? (
               <ConfirmPrompt message={decision.message} defaultYes={decision.defaultYes} />
             ) : decision.type === "choice" ? (

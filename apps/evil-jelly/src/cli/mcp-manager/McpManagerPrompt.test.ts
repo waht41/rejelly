@@ -2,7 +2,7 @@ import { renderToString } from "ink";
 import { createElement } from "react";
 import stripAnsi from "strip-ansi";
 import { describe, expect, it, vi } from "vitest";
-import { McpManagerPrompt } from "./McpManagerPrompt";
+import { McpManagerPrompt, mcpToolClipboardText } from "./McpManagerPrompt";
 
 describe("McpManagerPrompt", () => {
   it("renders connection, access, tool count, and keyboard affordances", () => {
@@ -34,6 +34,7 @@ describe("McpManagerPrompt", () => {
             ],
           },
           onAction: vi.fn(),
+          copyText: vi.fn(async () => undefined),
         }),
         { columns: 100 },
       ),
@@ -63,6 +64,7 @@ describe("McpManagerPrompt", () => {
         createElement(McpManagerPrompt, {
           request: { rows: [row], detailServerId: "typescript" },
           onAction: vi.fn(),
+          copyText: vi.fn(async () => undefined),
         }),
       ),
     );
@@ -75,6 +77,7 @@ describe("McpManagerPrompt", () => {
             activity: { serverId: "typescript", label: "Starting typescript…" },
           },
           onAction: vi.fn(),
+          copyText: vi.fn(async () => undefined),
         }),
       ),
     );
@@ -114,6 +117,7 @@ describe("McpManagerPrompt", () => {
             },
           },
           onAction: vi.fn(),
+          copyText: vi.fn(async () => undefined),
         }),
       ),
     );
@@ -125,5 +129,26 @@ describe("McpManagerPrompt", () => {
     expect(output).toContain("find_references");
     expect(output).toContain("│ ask");
     expect(output).toContain("Enter details · Space select · S session · A always · R revoke");
+  });
+
+  it("projects schema and full descriptor clipboard payloads", () => {
+    const tool = {
+      nativeToolName: "find_references",
+      description: "Find symbol references",
+      inputSchema: { type: "object", properties: { symbol: { type: "string" } } },
+      approval: "ask" as const,
+      configFingerprint: "a".repeat(64),
+      toolSchemaFingerprint: "b".repeat(64),
+    };
+
+    expect(JSON.parse(mcpToolClipboardText("typescript", tool, "schema"))).toEqual(
+      tool.inputSchema,
+    );
+    expect(JSON.parse(mcpToolClipboardText("typescript", tool, "descriptor"))).toEqual({
+      serverId: "typescript",
+      nativeToolName: "find_references",
+      description: "Find symbol references",
+      inputSchema: tool.inputSchema,
+    });
   });
 });

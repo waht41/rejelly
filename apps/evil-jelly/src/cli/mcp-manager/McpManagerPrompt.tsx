@@ -83,12 +83,31 @@ function approvalAction(
   };
 }
 
+export function mcpToolClipboardText(
+  serverId: string,
+  tool: McpManagerToolRow,
+  kind: "schema" | "descriptor",
+): string {
+  const value =
+    kind === "schema"
+      ? tool.inputSchema
+      : {
+          serverId,
+          nativeToolName: tool.nativeToolName,
+          description: tool.description,
+          inputSchema: tool.inputSchema,
+        };
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
 export function McpManagerPrompt({
   request,
   onAction,
+  copyText,
 }: {
   request: McpManagerRequest;
   onAction: (action: McpManagerAction) => void;
+  copyText: (text: string) => Promise<void>;
 }) {
   const { columns, rows: terminalRows } = useWindowSize();
   const initialIndex = useMemo(
@@ -110,6 +129,7 @@ export function McpManagerPrompt({
   const [confirmAlways, setConfirmAlways] = useState<readonly McpManagerToolRow[]>();
   const [inspectedToolName, setInspectedToolName] = useState<string>();
   const [schemaLineIndex, setSchemaLineIndex] = useState(0);
+  const [copyStatus, setCopyStatus] = useState<string>();
   const serverWidth = Math.min(28, Math.max(8, ...request.rows.map((row) => row.serverId.length)));
   const activeDetailServerId = request.activity?.serverId ?? detailServerId;
   const detailRow = request.rows.find((row) => row.serverId === activeDetailServerId);
@@ -151,6 +171,11 @@ export function McpManagerPrompt({
     setSchemaLineIndex(0);
   }, [request.toolPanel]);
   useEffect(() => setToolIndex(0), [searchQuery]);
+  useEffect(() => {
+    if (!copyStatus) return;
+    const timer = setTimeout(() => setCopyStatus(undefined), 2_500);
+    return () => clearTimeout(timer);
+  }, [copyStatus]);
 
   useInput((input, key) => {
     if (request.activity) {
@@ -162,6 +187,17 @@ export function McpManagerPrompt({
         if (key.escape) {
           setInspectedToolName(undefined);
           setSchemaLineIndex(0);
+          setCopyStatus(undefined);
+        } else if (input.toLocaleLowerCase() === "y") {
+          const kind = key.shift || input === "Y" ? "descriptor" : "schema";
+          setCopyStatus("Copying…");
+          void copyText(mcpToolClipboardText(request.toolPanel.serverId, inspectedTool, kind)).then(
+            () => setCopyStatus(kind === "schema" ? "✓ Schema copied" : "✓ Full tool JSON copied"),
+            (error: unknown) =>
+              setCopyStatus(
+                `Copy failed: ${error instanceof Error ? error.message : String(error)}`,
+              ),
+          );
         } else if (
           key.upArrow ||
           key.downArrow ||
@@ -348,8 +384,16 @@ export function McpManagerPrompt({
           </Box>
           <Text dimColor>
             Schema lines {schemaLineIndex + 1}-{lastSchemaLine} of {schemaLines.length} · ↑/↓ scroll
-            · Esc back
+            · Y schema · Shift+Y full tool JSON · Esc back
           </Text>
+          {copyStatus ? (
+            <Text
+              color={copyStatus.startsWith("Copy failed") ? "red" : "green"}
+              wrap="truncate-end"
+            >
+              {copyStatus}
+            </Text>
+          ) : null}
         </Box>
       );
     }
