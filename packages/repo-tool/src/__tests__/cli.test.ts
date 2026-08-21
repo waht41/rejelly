@@ -43,6 +43,13 @@ describe("normalizeVerifyOptions", () => {
     });
   });
 
+  it("enables structured output and converts the step timeout to milliseconds", () => {
+    expect(normalizeVerifyOptions({ json: true, timeout: "12" })).toMatchObject({
+      json: true,
+      timeoutMs: 12_000,
+    });
+  });
+
   it("requires --fix before widening writes to the whole branch", () => {
     expect(() => normalizeVerifyOptions({ branch: true })).toThrow("--branch requires --fix");
     expect(normalizeVerifyOptions({ branch: true, fix: true }).fixBranch).toBe(true);

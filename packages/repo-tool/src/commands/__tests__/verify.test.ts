@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { VerifyOptions } from "../../contracts.js";
 import {
   assertFiltersMatched,
+  compactProcessOutput,
   createVerifyPlan,
+  extractFailureFacts,
   resolveAffectedScope,
   selectBiomeFiles,
 } from "../verify.js";
@@ -13,6 +15,7 @@ const defaults: VerifyOptions = {
   dryRun: false,
   fix: false,
   fixBranch: false,
+  json: false,
   maxFiles: 100,
   scope: { kind: "affected" },
   tests: true,
@@ -158,5 +161,29 @@ describe("verify scope guards", () => {
     expect(
       selectBiomeFiles({ fix: true, fixBranch: true }, ["old.ts", "new.ts"], ["new.ts"]),
     ).toEqual(["old.ts", "new.ts"]);
+  });
+});
+
+describe("verify failure projection", () => {
+  it("keeps a bounded tail and marks omitted child output", () => {
+    const compact = compactProcessOutput(
+      Array.from({ length: 20 }, (_, index) => `line ${index + 1}`).join("\n"),
+      { maxLines: 3 },
+    );
+    expect(compact).toEqual({
+      text: "[repo-tool] earlier child output omitted\nline 18\nline 19\nline 20",
+      truncated: true,
+    });
+  });
+
+  it("extracts Turbo tasks and Vitest files without depending on ANSI formatting", () => {
+    expect(
+      extractFailureFacts(
+        "\u001b[31mFAIL\u001b[39m src/a.test.ts > example\nFailed: @rejelly/app#test\n",
+      ),
+    ).toEqual({
+      failedTasks: ["@rejelly/app#test"],
+      failedTestFiles: ["src/a.test.ts"],
+    });
   });
 });

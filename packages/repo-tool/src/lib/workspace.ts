@@ -64,6 +64,18 @@ export function resolveTurboFilteredPackages(
   });
 }
 
+/** Resolve the common exact-name case without starting a second Turbo process. */
+export function resolveExactWorkspaceFilters(
+  filters: readonly string[],
+  workspacePackages: readonly WorkspacePackage[],
+): WorkspacePackage[] | undefined {
+  const byName = new Map(workspacePackages.map((entry) => [entry.name, entry]));
+  const selected = filters.map((filter) => byName.get(filter));
+  return selected.every((entry): entry is WorkspacePackage => entry !== undefined)
+    ? [...new Map(selected.map((entry) => [entry.name, entry])).values()]
+    : undefined;
+}
+
 function containsPath(directory: string, candidate: string): boolean {
   const relative = path.relative(directory, candidate);
   return (

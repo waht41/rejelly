@@ -17,9 +17,11 @@ export interface VerifyOptions {
   dryRun: boolean;
   fix: boolean;
   fixBranch: boolean;
+  json: boolean;
   maxFiles: number;
   scope: VerifyScope;
   tests: boolean;
+  timeoutMs?: number;
   verbose: boolean;
 }
 
@@ -60,6 +62,38 @@ export interface VerifyChangeSummary {
   neutralRootFiles: string[];
   totalFiles: number;
   workingTreeFiles: number;
+}
+
+export interface VerifyExecutionStepResult {
+  cancelled: boolean;
+  durationMs: number;
+  exitCode: number;
+  label: string;
+  timedOut: boolean;
+}
+
+export interface VerifyFailureReport {
+  diagnostics: string;
+  diagnosticsTruncated: boolean;
+  failedTasks: string[];
+  failedTestFiles: string[];
+  step: string;
+}
+
+export interface VerifyExecutionReport {
+  changeSummary?: VerifyChangeSummary;
+  exitCode: number;
+  failure?: VerifyFailureReport;
+  plan: VerifyPlan;
+  schemaVersion: 1;
+  scope: ResolvedVerifyScope;
+  status: "cancelled" | "failed" | "passed" | "timed_out";
+  steps: VerifyExecutionStepResult[];
+}
+
+export interface VerifyRunResult {
+  exitCode: number;
+  report: VerifyExecutionReport;
 }
 
 export interface BranchCommit {
