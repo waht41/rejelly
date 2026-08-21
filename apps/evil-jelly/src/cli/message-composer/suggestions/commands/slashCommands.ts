@@ -15,7 +15,7 @@ export interface SlashCommand {
 export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/resume", description: "Switch to a saved session" },
   { name: "/status", description: "Show workspace, token usage, and context window" },
-  { name: "/mcp", description: "Show or change MCP session selection and connection status" },
+  { name: "/mcp", description: "Open the MCP server manager" },
   { name: "/clear", description: "Start a new empty session" },
   { name: "/compress", description: "Compress the current session history" },
   { name: "/mode", description: "Toggle interaction mode (normal ⇄ auto)" },

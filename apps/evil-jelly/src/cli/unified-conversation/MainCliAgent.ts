@@ -62,7 +62,7 @@ import { materializeSkillAwareUserInput } from "../message-composer/message-mate
 import { withAbort } from "../runtime/withAbort";
 import { drainSteers } from "../submission-dispatch/steerQueue";
 import { combineSessionBudget } from "./budget";
-import { handleMcpCommand } from "./mcpCommands";
+import { handleMcpCommand, isMcpLocalCommand } from "./mcpCommands";
 
 const UnifiedAgentWithAbort = UnifiedAgent.fork({ middlewares: [withAbort()] });
 
@@ -208,7 +208,7 @@ function classifyRouterIntent(promptInput: PromptInput): RouterIntent {
   if (normalized === "/resume" || normalized?.startsWith("/resume ")) {
     return { kind: "resume", rawInput: commandText! };
   }
-  if (normalized === "/mcp" || normalized?.startsWith("/mcp ")) {
+  if (commandText && isMcpLocalCommand(commandText)) {
     return { kind: "mcp", rawInput: commandText! };
   }
   return { kind: "message", promptInput, userInput: promptInputPlainText(promptInput).trim() };
@@ -367,16 +367,18 @@ async function handleResume(runtime: RouterRuntime, rawInput: string): Promise<b
 }
 
 async function handleMcp(runtime: RouterRuntime, rawInput: string): Promise<void> {
-  const current = runtime.sessionMcpState();
   await handleMcpCommand(rawInput, {
     control: runtime.props.mcpSessionControl,
-    selectedServerIds: current.selectedServerIds,
+    selectedServerIds: () => runtime.sessionMcpState().selectedServerIds,
     setSelectedServerIds: (selectedServerIds) =>
-      runtime.setSessionMcpState(createSessionMcpState({ ...current, selectedServerIds })),
+      runtime.setSessionMcpState(
+        createSessionMcpState({ ...runtime.sessionMcpState(), selectedServerIds }),
+      ),
     recordSelection: async (selectedServerIds) => {
       await runtime.props.sessionRecorder?.recordMcpSelection(selectedServerIds, "command");
     },
     requestChoice: runtime.host.requestChoice,
+    ...(runtime.host.requestMcpManager ? { requestManager: runtime.host.requestMcpManager } : {}),
     logSystem: runtime.host.logSystemEvent,
   });
 }

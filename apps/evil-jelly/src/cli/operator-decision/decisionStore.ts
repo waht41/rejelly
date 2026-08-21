@@ -1,10 +1,18 @@
 import { create } from "zustand";
-import type { ChoiceRequest, DecisionOption, DecisionSnapshot, DecisionView } from "./model";
+import type {
+  ChoiceRequest,
+  DecisionOption,
+  DecisionSnapshot,
+  DecisionView,
+  ManagerAction,
+  ManagerRequest,
+} from "./model";
 
 type PendingDecision =
   | { type: "idle" }
   | { type: "text"; resolve: (value: string) => void }
   | { type: "confirm"; resolve: (value: boolean) => void }
+  | { type: "mcp_manager"; resolve: (value: ManagerAction) => void }
   | {
       type: "choice";
       options: DecisionOption[];
@@ -25,6 +33,8 @@ interface DecisionState {
   requestChoice(request: ChoiceRequest): Promise<string>;
   submitChoice(value: string): void;
   cancelChoice(): void;
+  requestMcpManager(request: ManagerRequest): Promise<ManagerAction>;
+  submitMcpManager(action: ManagerAction): void;
 }
 
 function idleState(): Pick<DecisionState, "view" | "decision" | "pending"> {
@@ -87,6 +97,20 @@ export const useDecisionStore = create<DecisionState>((set, get) => ({
     }
     set(idleState());
     pending.resolve(pending.cancelValue);
+  },
+  requestMcpManager: (request) =>
+    new Promise((resolve) => {
+      set({
+        view: { type: "none" },
+        decision: { type: "mcp_manager", request },
+        pending: { type: "mcp_manager", resolve },
+      });
+    }),
+  submitMcpManager: (action) => {
+    const pending = get().pending;
+    if (pending.type !== "mcp_manager") return;
+    set(idleState());
+    pending.resolve(action);
   },
 }));
 

@@ -45,6 +45,30 @@ describe("operator decision", () => {
     await expect(pending).resolves.toBe("allowed");
   });
 
+  it("routes a rich MCP manager action through the serialized decision channel", async () => {
+    const pending = createOperatorDecision().requestMcpManager({
+      rows: [
+        {
+          serverId: "docs",
+          source: "project",
+          exposure: "explicit",
+          selected: false,
+          persistentAccess: false,
+          routable: false,
+          connection: "ready",
+          toolCount: 2,
+        },
+      ],
+    });
+    await Promise.resolve();
+
+    expect(useDecisionStore.getState().decision).toMatchObject({ type: "mcp_manager" });
+    useDecisionStore.getState().submitMcpManager({ action: "toggle", serverId: "docs" });
+
+    await expect(pending).resolves.toEqual({ action: "toggle", serverId: "docs" });
+    expect(useDecisionStore.getState().decision).toEqual({ type: "idle" });
+  });
+
   it("resolves cancellation only through the explicit cancel value", async () => {
     const pending = createOperatorDecision().requestChoice({
       message: "Pick",

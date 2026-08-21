@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { mcpSessionControlStub } from "../../domains/mcp/__tests__/mcpTestFixtures";
 import type { McpSessionStatusRow } from "../../domains/mcp/management/sessionControl";
-import { handleMcpCommand, type McpCommandPorts } from "./mcpCommands";
+import { handleMcpCommand, isMcpLocalCommand, type McpCommandPorts } from "./mcpCommands";
 
 function row(overrides: Partial<McpSessionStatusRow> = {}): McpSessionStatusRow {
   return {
@@ -36,7 +36,7 @@ function ports(overrides: Partial<McpCommandPorts> = {}) {
   });
   return {
     control,
-    selectedServerIds: [],
+    selectedServerIds: () => [],
     setSelectedServerIds: vi.fn(),
     recordSelection: vi.fn(async () => undefined),
     requestChoice: vi.fn(async () => "cancel"),
@@ -46,8 +46,32 @@ function ports(overrides: Partial<McpCommandPorts> = {}) {
 }
 
 describe("MCP interactive commands", () => {
+  it("reserves only the manager and complete legacy grammar as local commands", () => {
+    expect(isMcpLocalCommand("/mcp")).toBe(true);
+    expect(isMcpLocalCommand("/mcp reload docs")).toBe(true);
+    expect(isMcpLocalCommand("/mcp 是如何实现的？")).toBe(false);
+    expect(isMcpLocalCommand("/mcp use")).toBe(false);
+  });
+
+  it("opens the manager and applies context actions against refreshed status", async () => {
+    const requestManager = vi
+      .fn()
+      .mockResolvedValueOnce({ action: "toggle", serverId: "docs" })
+      .mockResolvedValueOnce({ action: "close" });
+    const command = ports({ requestManager });
+
+    await handleMcpCommand("/mcp", command);
+
+    expect(requestManager).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rows: [expect.objectContaining({ serverId: "docs", connection: "ready" })],
+      }),
+    );
+    expect(command.recordSelection).toHaveBeenCalledWith(["docs"]);
+  });
+
   it("persists a sorted session selection without mutating runtime config", async () => {
-    const command = ports({ selectedServerIds: ["search"] });
+    const command = ports({ selectedServerIds: () => ["search"] });
     await handleMcpCommand("/mcp use docs", command);
 
     expect(command.setSelectedServerIds).toHaveBeenCalledWith(["docs", "search"]);

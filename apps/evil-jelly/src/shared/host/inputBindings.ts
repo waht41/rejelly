@@ -35,10 +35,33 @@ export interface PromptChoiceRequest {
   cancelValue?: string;
 }
 
+export interface McpManagerRow {
+  serverId: string;
+  source: string;
+  exposure: "off" | "explicit" | "always";
+  selected: boolean;
+  persistentAccess: boolean;
+  routable: boolean;
+  connection: "disabled" | "untrusted" | "pending" | "ready" | "failed";
+  toolCount: number;
+  detail?: string;
+}
+
+export interface McpManagerRequest {
+  rows: McpManagerRow[];
+  selectedServerId?: string;
+}
+
+export type McpManagerAction =
+  | { action: "close" }
+  | { action: "toggle" | "reload" | "permissions"; serverId: string };
+
 /** User input, picker inventory, and general prompt choices supplied to the agent runtime. */
 export interface PromptInputBindings {
   getInput: () => Promise<PromptInput>;
   setAvailableSkills?: (skills: UserSkillListItem[]) => void;
   setAvailableMcpServers?: (servers: UserMcpListItem[]) => void;
   requestChoice: (request: PromptChoiceRequest) => Promise<string>;
+  /** Rich interactive MCP manager; non-Ink hosts may omit it and use the choice fallback. */
+  requestMcpManager?: (request: McpManagerRequest) => Promise<McpManagerAction>;
 }

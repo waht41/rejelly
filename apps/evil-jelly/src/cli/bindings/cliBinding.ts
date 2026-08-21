@@ -71,6 +71,18 @@ function createInkRequestChoice(): PromptInputBindings["requestChoice"] {
   };
 }
 
+function createInkRequestMcpManager(): NonNullable<PromptInputBindings["requestMcpManager"]> {
+  const decision = createOperatorDecision();
+  return async (request) => {
+    return decision.run(async (session) => {
+      useOutputStore.getState().setPhase("awaiting_user", "Managing MCP servers…");
+      const action = await session.requestMcpManager(request);
+      useOutputStore.getState().resumeWork("Running…");
+      return action;
+    });
+  };
+}
+
 function createOutputBindings(): ConversationPresentationBindings {
   const out = () => useOutputStore.getState();
 
@@ -155,6 +167,7 @@ function createPromptBindings(options: {
     }),
     getAgentMode: () => useModeStore.getState().mode,
     requestChoice: createInkRequestChoice(),
+    requestMcpManager: createInkRequestMcpManager(),
     setAvailableSkills: (skills) => {
       useComposerSession.getState().setAvailableSkills(skills);
     },
