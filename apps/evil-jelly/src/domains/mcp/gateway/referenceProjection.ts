@@ -2,7 +2,12 @@ import {
   renderPseudoXmlElement,
   renderPseudoXmlEmptyElement,
 } from "../../../shared/model/prompt/pseudoXml";
-import { MCP_CONTRACT_LIMITS, type McpReferenceMatch, type McpReferenceResult } from "../contracts";
+import {
+  MCP_CONTRACT_LIMITS,
+  type McpReferenceMatch,
+  type McpReferenceResult,
+  type McpToolIdentity,
+} from "../contracts";
 
 type ReferenceDetail = "full" | "summary" | "names";
 
@@ -97,10 +102,39 @@ function renderUnavailable(result: McpReferenceResult): readonly string[] {
   );
 }
 
+function renderOmittedTools(
+  reason: "max_results" | "output_budget",
+  count: number,
+  identities: readonly McpToolIdentity[],
+): string | undefined {
+  if (count <= 0) return undefined;
+  const byServer = new Map<string, string[]>();
+  for (const identity of identities) {
+    const names = byServer.get(identity.serverId) ?? [];
+    names.push(identity.nativeToolName);
+    byServer.set(identity.serverId, names);
+  }
+  const body = [...byServer].map(([serverId, names]) =>
+    renderPseudoXmlElement(
+      "server",
+      renderPseudoXmlElement("tools", names.map((name) => `- ${markdownName(name)}`).join("\n"), {
+        format: "markdown",
+        detail: "names",
+      }),
+      { id: serverId },
+    ),
+  );
+  return renderPseudoXmlElement("omitted_tools", body.join("\n"), {
+    reason,
+    count: String(count),
+    listed: String(identities.length),
+    ...(count > identities.length ? { unlisted: String(count - identities.length) } : {}),
+  });
+}
+
 function renderNotice(
   detail: ReferenceDetail,
   returned: number,
-  matchesOmitted: number,
   hardLimit: boolean,
 ): string | undefined {
   const lines: string[] = [];
@@ -115,11 +149,6 @@ function renderNotice(
   if (detail === "names" && returned > 0) {
     lines.push(`Descriptions for ${returned} returned tool(s) were also omitted.`);
   }
-  if (matchesOmitted > 0) {
-    lines.push(
-      `${matchesOmitted} additional matching tool(s) were omitted by maxResults or the output budget.`,
-    );
-  }
   return lines.length > 0 ? renderPseudoXmlElement("notice", lines.join("\n")) : undefined;
 }
 
@@ -130,13 +159,27 @@ function renderProjection(
   hardLimit = false,
 ): string {
   const returned = matches.length;
-  const matchesOmitted = Math.max(0, result.matchedCount - returned);
+  const maxResultsOmitted = Math.max(0, result.matchedCount - result.matches.length);
+  const outputBudgetOmitted = Math.max(0, result.matches.length - returned);
+  const matchesOmitted = maxResultsOmitted + outputBudgetOmitted;
   const schemasOmitted = detail === "full" ? 0 : returned;
   const descriptionsOmitted = detail === "names" ? returned : 0;
-  const notice = renderNotice(detail, returned, matchesOmitted, hardLimit);
+  const maxResultsBlock = renderOmittedTools(
+    "max_results",
+    maxResultsOmitted,
+    result.omittedToolIdentities ?? [],
+  );
+  const outputBudgetBlock = renderOmittedTools(
+    "output_budget",
+    outputBudgetOmitted,
+    result.matches.slice(returned).map((match) => match.identity),
+  );
+  const notice = renderNotice(detail, returned, hardLimit);
   const body = [
     ...groupMatches(matches).map((group) => renderServer(group, detail)),
     ...renderUnavailable(result),
+    ...(maxResultsBlock ? [maxResultsBlock] : []),
+    ...(outputBudgetBlock ? [outputBudgetBlock] : []),
     ...(notice ? [notice] : []),
   ].join("\n");
   return renderPseudoXmlElement("mcp_reference", body, {
@@ -147,7 +190,7 @@ function renderProjection(
     ...(schemasOmitted > 0 ? { schemas_omitted: String(schemasOmitted) } : {}),
     ...(descriptionsOmitted > 0 ? { descriptions_omitted: String(descriptionsOmitted) } : {}),
     ...(matchesOmitted > 0 ? { matches_omitted: String(matchesOmitted) } : {}),
-    ...(notice ? { truncated: "true" } : {}),
+    ...(notice || matchesOmitted > 0 ? { truncated: "true" } : {}),
   });
 }
 

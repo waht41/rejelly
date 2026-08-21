@@ -27,8 +27,9 @@ function match(
 function result(
   matches: readonly McpReferenceMatch[],
   matchedCount = matches.length,
+  omittedToolIdentities: McpReferenceResult["omittedToolIdentities"] = [],
 ): McpReferenceResult {
-  return { type: "mcp_reference_v1", matchedCount, matches };
+  return { type: "mcp_reference_v1", matchedCount, matches, omittedToolIdentities };
 }
 
 describe("MCP reference model projection", () => {
@@ -76,6 +77,11 @@ describe("MCP reference model projection", () => {
           }),
         ],
         4,
+        [
+          { serverId: "typescript", nativeToolName: "get_hover" },
+          { serverId: "typescript", nativeToolName: "get_implementations" },
+          { serverId: "typescript", nativeToolName: "rename_symbol" },
+        ],
       ),
       { singleToolOutputBytes: 500 },
     );
@@ -84,7 +90,9 @@ describe("MCP reference model projection", () => {
     expect(output).toContain('schemas_omitted="1"');
     expect(output).toContain('matches_omitted="3"');
     expect(output).toContain("single-tool output limit");
-    expect(output).toContain("3 additional matching tool(s)");
+    expect(output).toContain('<omitted_tools reason="max_results" count="3" listed="3">');
+    expect(output).toContain("- `get_hover`");
+    expect(output).toContain("- `rename_symbol`");
   });
 
   it("falls back to names-only with an explicit description omission marker", () => {

@@ -126,6 +126,8 @@ describe("MCP dispatch gateway", () => {
 
     expect(result.matches).toHaveLength(1);
     expect(result.matches[0]?.identity).toEqual({ serverId: "alpha", nativeToolName: "read" });
+    expect(result.matchedCount).toBe(2);
+    expect(result.omittedToolIdentities).toEqual([{ serverId: "beta", nativeToolName: "read" }]);
   });
 
   it("keeps a dispatched call bound to the invocation port from its own tool batch", async () => {

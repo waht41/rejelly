@@ -14,6 +14,7 @@ export const MCP_CONTRACT_LIMITS = Object.freeze({
   requestReasonChars: 256,
   referenceServerIds: 32,
   referenceMaxResults: 20,
+  referenceOmittedIdentities: 64,
   referenceOutputBytes: 32 * 1024,
   referenceSingleToolOutputBytes: 128 * 1024,
   gatewayArgumentsBytes: 256 * 1024,
@@ -417,6 +418,8 @@ export interface McpReferenceResult {
   /** All ranked matches before maxResults limits the returned prefix. */
   readonly matchedCount: number;
   readonly matches: readonly McpReferenceMatch[];
+  /** Bounded ranked identities omitted specifically by maxResults. */
+  readonly omittedToolIdentities?: readonly McpToolIdentity[];
   readonly unavailableServers?: readonly McpReferenceUnavailableServer[];
 }
 

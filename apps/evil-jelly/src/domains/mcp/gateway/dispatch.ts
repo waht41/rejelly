@@ -96,6 +96,10 @@ export function referenceMcpTools(
       left.route.identity.nativeToolName.localeCompare(right.route.identity.nativeToolName),
   );
   const maxResults = input.maxResults ?? Math.min(8, MCP_CONTRACT_LIMITS.referenceMaxResults);
+  const returnedMatches = rankedMatches.slice(0, maxResults);
+  const omittedToolIdentities = rankedMatches
+    .slice(maxResults, maxResults + MCP_CONTRACT_LIMITS.referenceOmittedIdentities)
+    .map((match) => match.route.identity);
   const unavailableServers: McpReferenceUnavailableServer[] = binding.servers
     .flatMap((server): McpReferenceUnavailableServer[] => {
       if (requestedServers && !requestedServers.has(server.serverId)) return [];
@@ -119,7 +123,10 @@ export function referenceMcpTools(
   return Object.freeze({
     type: "mcp_reference_v1",
     matchedCount: rankedMatches.length,
-    matches: Object.freeze(rankedMatches.slice(0, maxResults).map((match) => match.route)),
+    matches: Object.freeze(returnedMatches.map((match) => match.route)),
+    ...(omittedToolIdentities.length > 0
+      ? { omittedToolIdentities: Object.freeze(omittedToolIdentities) }
+      : {}),
     ...(unavailableServers.length > 0
       ? { unavailableServers: Object.freeze(unavailableServers) }
       : {}),
