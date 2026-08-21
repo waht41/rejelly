@@ -1,5 +1,6 @@
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useWindowSize } from "ink";
 import { useEffect, useMemo, useState } from "react";
+import stringWidth from "string-width";
 import type {
   McpManagerAction,
   McpManagerRequest,
@@ -30,6 +31,19 @@ function approvalColor(approval: McpManagerToolRow["approval"]): "green" | "yell
   if (approval === "always") return "green";
   if (approval === "session") return "yellow";
   return undefined;
+}
+
+function fitCell(value: string, width: number): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  if (stringWidth(compact) <= width) return compact + " ".repeat(width - stringWidth(compact));
+  if (width <= 1) return "…".slice(0, width);
+  let fitted = "";
+  for (const character of compact) {
+    if (stringWidth(`${fitted}${character}…`) > width) break;
+    fitted += character;
+  }
+  const truncated = `${fitted}…`;
+  return truncated + " ".repeat(Math.max(0, width - stringWidth(truncated)));
 }
 
 function detailActions(row: McpManagerRow): DetailAction[] {
@@ -76,6 +90,7 @@ export function McpManagerPrompt({
   request: McpManagerRequest;
   onAction: (action: McpManagerAction) => void;
 }) {
+  const { columns, rows: terminalRows } = useWindowSize();
   const initialIndex = useMemo(
     () =>
       Math.max(
@@ -93,6 +108,8 @@ export function McpManagerPrompt({
   const [searching, setSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [confirmAlways, setConfirmAlways] = useState<readonly McpManagerToolRow[]>();
+  const [inspectedToolName, setInspectedToolName] = useState<string>();
+  const [schemaLineIndex, setSchemaLineIndex] = useState(0);
   const serverWidth = Math.min(28, Math.max(8, ...request.rows.map((row) => row.serverId.length)));
   const activeDetailServerId = request.activity?.serverId ?? detailServerId;
   const detailRow = request.rows.find((row) => row.serverId === activeDetailServerId);
@@ -106,6 +123,18 @@ export function McpManagerPrompt({
         row.description.toLocaleLowerCase().includes(query),
     );
   }, [request.toolPanel?.rows, searchQuery]);
+  const inspectedTool = request.toolPanel?.rows.find(
+    (row) => row.nativeToolName === inspectedToolName,
+  );
+  const schemaLines = useMemo(
+    () => (inspectedTool ? JSON.stringify(inspectedTool.inputSchema, null, 2).split("\n") : []),
+    [inspectedTool],
+  );
+  const toolRowWidth = Math.max(38, columns - 2);
+  const toolApprovalWidth = 7;
+  const toolFlexibleWidth = Math.max(12, toolRowWidth - 6 - 6 - toolApprovalWidth);
+  const toolNameWidth = Math.min(30, Math.max(10, Math.floor(toolFlexibleWidth * 0.35)));
+  const toolDescriptionWidth = Math.max(1, toolFlexibleWidth - toolNameWidth);
 
   useEffect(() => setSelectedIndex(initialIndex), [initialIndex]);
   useEffect(() => {
@@ -118,7 +147,10 @@ export function McpManagerPrompt({
     setToolIndex(0);
     setSelectedTools(new Set());
     setConfirmAlways(undefined);
+    setInspectedToolName(undefined);
+    setSchemaLineIndex(0);
   }, [request.toolPanel]);
+  useEffect(() => setToolIndex(0), [searchQuery]);
 
   useInput((input, key) => {
     if (request.activity) {
@@ -126,6 +158,31 @@ export function McpManagerPrompt({
       return;
     }
     if (toolsVisible && request.toolPanel) {
+      if (inspectedTool) {
+        if (key.escape) {
+          setInspectedToolName(undefined);
+          setSchemaLineIndex(0);
+        } else if (
+          key.upArrow ||
+          key.downArrow ||
+          key.pageUp ||
+          key.pageDown ||
+          key.home ||
+          key.end
+        ) {
+          const pageStep = Math.max(1, Math.min(12, terminalRows - 12));
+          setSchemaLineIndex((current) => {
+            if (key.home) return 0;
+            if (key.end) return Math.max(0, schemaLines.length - pageStep);
+            const delta = key.pageUp ? -pageStep : key.pageDown ? pageStep : key.upArrow ? -1 : 1;
+            return Math.max(
+              0,
+              Math.min(Math.max(0, schemaLines.length - pageStep), current + delta),
+            );
+          });
+        }
+        return;
+      }
       if (confirmAlways) {
         if (key.escape) setConfirmAlways(undefined);
         else if (key.return) {
@@ -176,7 +233,12 @@ export function McpManagerPrompt({
         return;
       }
       const focused = visibleTools[toolIndex];
-      if ((key.return || input === " ") && focused) {
+      if (key.return && focused) {
+        setInspectedToolName(focused.nativeToolName);
+        setSchemaLineIndex(0);
+        return;
+      }
+      if (input === " " && focused) {
         setSelectedTools((current) => {
           const next = new Set(current);
           if (next.has(focused.nativeToolName)) next.delete(focused.nativeToolName);
@@ -262,6 +324,35 @@ export function McpManagerPrompt({
   if (toolsVisible && request.toolPanel) {
     const counts = { ask: 0, session: 0, always: 0 };
     for (const row of request.toolPanel.rows) counts[row.approval] += 1;
+    if (inspectedTool) {
+      const visibleSchemaRows = Math.max(3, Math.min(12, terminalRows - 12));
+      const lastSchemaLine = Math.min(schemaLines.length, schemaLineIndex + visibleSchemaRows);
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text bold>
+            MCP · {request.toolPanel.serverId} · {inspectedTool.nativeToolName}
+          </Text>
+          <Box flexDirection="column" marginTop={1}>
+            <Text>
+              Approval:{" "}
+              <Text color={approvalColor(inspectedTool.approval)}>{inspectedTool.approval}</Text>
+            </Text>
+            <Text bold>Description</Text>
+            <Text>{inspectedTool.description || "No description provided."}</Text>
+            <Text bold>Input schema</Text>
+            {schemaLines.slice(schemaLineIndex, lastSchemaLine).map((line, index) => (
+              <Text key={`${schemaLineIndex + index}:${line}`} wrap="truncate-end">
+                {line || " "}
+              </Text>
+            ))}
+          </Box>
+          <Text dimColor>
+            Schema lines {schemaLineIndex + 1}-{lastSchemaLine} of {schemaLines.length} · ↑/↓ scroll
+            · Esc back
+          </Text>
+        </Box>
+      );
+    }
     return (
       <Box flexDirection="column" marginTop={1}>
         <Text bold>MCP · {request.toolPanel.serverId} · Tools & approvals</Text>
@@ -272,20 +363,29 @@ export function McpManagerPrompt({
           <Text color={searching ? "cyan" : undefined}>Search: {searchQuery || "_"}</Text>
         ) : null}
         <Box flexDirection="column" marginTop={1}>
+          <Text dimColor wrap="truncate-end">
+            {"      "}
+            {fitCell("Tool", toolNameWidth)} │ {fitCell("Access", toolApprovalWidth)} │{" "}
+            {fitCell("Description", toolDescriptionWidth)}
+          </Text>
           <ListViewport
             items={visibleTools}
             selectedIndex={toolIndex}
             getKey={(row) => row.nativeToolName}
             visibleRows={VISIBLE_ROWS}
             empty={<Text dimColor>No matching tools in the current catalog.</Text>}
-            renderItem={(row, { selected }) => (
-              <Text color={selected ? "cyan" : undefined} bold={selected}>
-                {selected ? "▸ " : "  "}[{selectedTools.has(row.nativeToolName) ? "✓" : " "}]{" "}
-                {row.nativeToolName} ·{" "}
-                <Text color={approvalColor(row.approval)}>{row.approval}</Text>
-                {row.description ? ` · ${row.description}` : ""}
-              </Text>
-            )}
+            renderItem={(row, { selected }) => {
+              const name = fitCell(row.nativeToolName, toolNameWidth);
+              const approval = fitCell(row.approval, toolApprovalWidth);
+              const description = fitCell(row.description, toolDescriptionWidth);
+              return (
+                <Text color={selected ? "cyan" : undefined} bold={selected} wrap="truncate-end">
+                  {selected ? "▸ " : "  "}[{selectedTools.has(row.nativeToolName) ? "✓" : " "}]{" "}
+                  {name} │ <Text color={approvalColor(row.approval)}>{approval}</Text> │{" "}
+                  {description}
+                </Text>
+              );
+            }}
           />
         </Box>
         {confirmAlways ? (
@@ -298,7 +398,7 @@ export function McpManagerPrompt({
           <Box flexDirection="column">
             {selectedTools.size > 0 ? <Text>{selectedTools.size} selected</Text> : null}
             <Text dimColor>
-              Space/Enter select · S session · A always · R revoke · / search · Esc back
+              Enter details · Space select · S session · A always · R revoke · / search · Esc back
             </Text>
           </Box>
         )}

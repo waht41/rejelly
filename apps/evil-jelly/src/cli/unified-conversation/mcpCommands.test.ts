@@ -140,6 +140,7 @@ describe("MCP interactive commands", () => {
       grants.map((grant) => ({
         nativeToolName: grant.nativeToolName,
         description: grant.nativeToolName,
+        inputSchema: { type: "object" },
         grant,
         approval: "ask" as const,
       })),

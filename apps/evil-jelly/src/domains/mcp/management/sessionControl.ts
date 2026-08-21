@@ -22,6 +22,7 @@ export interface McpSessionStatusRow {
 export interface McpToolPermissionRow {
   readonly nativeToolName: string;
   readonly description: string;
+  readonly inputSchema: McpBoundRoute["inputSchema"];
   readonly grant: McpToolGrant;
   readonly approval: "ask" | "session" | "always";
 }

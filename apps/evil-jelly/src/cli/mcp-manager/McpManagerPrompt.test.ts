@@ -97,6 +97,7 @@ describe("McpManagerPrompt", () => {
                 {
                   nativeToolName: "find_references",
                   description: "Find symbol references",
+                  inputSchema: { type: "object" },
                   approval: "ask",
                   configFingerprint: "a".repeat(64),
                   toolSchemaFingerprint: "b".repeat(64),
@@ -104,6 +105,7 @@ describe("McpManagerPrompt", () => {
                 {
                   nativeToolName: "diagnostics",
                   description: "Read diagnostics",
+                  inputSchema: { type: "object" },
                   approval: "always",
                   configFingerprint: "a".repeat(64),
                   toolSchemaFingerprint: "c".repeat(64),
@@ -118,7 +120,10 @@ describe("McpManagerPrompt", () => {
 
     expect(output).toContain("Tools & approvals");
     expect(output).toContain("1 always · 0 session · 1 ask");
-    expect(output).toContain("find_references · ask");
-    expect(output).toContain("Space/Enter select · S session · A always · R revoke");
+    expect(output).toContain("Tool");
+    expect(output).toContain("Access");
+    expect(output).toContain("find_references");
+    expect(output).toContain("│ ask");
+    expect(output).toContain("Enter details · Space select · S session · A always · R revoke");
   });
 });

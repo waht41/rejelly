@@ -141,6 +141,7 @@ export async function createMcpChatRuntime(options: {
           {
             nativeToolName: tool.nativeToolName,
             description: tool.description,
+            inputSchema: tool.inputSchema,
             grant,
             approval: persistentToolAllowed(route)
               ? ("always" as const)

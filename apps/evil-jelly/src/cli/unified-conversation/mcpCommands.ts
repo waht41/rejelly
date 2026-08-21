@@ -85,6 +85,7 @@ function toolPanel(
     rows: rows.map((row) => ({
       nativeToolName: row.nativeToolName,
       description: row.description,
+      inputSchema: row.inputSchema,
       approval: row.approval,
       configFingerprint: row.grant.configFingerprint,
       toolSchemaFingerprint: row.grant.toolSchemaFingerprint,
