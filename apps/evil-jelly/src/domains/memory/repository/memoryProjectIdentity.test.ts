@@ -1,9 +1,8 @@
-import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { memoryProjectBucket, resolveMemoryProjectIdentity } from "./memoryProjectIdentity";
+import { resolveMemoryProjectIdentity } from "./memoryProjectIdentity";
 
 const temporaryRoots: string[] = [];
 
@@ -13,6 +12,10 @@ async function temporaryDirectory(): Promise<string> {
   return root;
 }
 
+async function resolve(root: string, memoryRoot: string) {
+  return resolveMemoryProjectIdentity(root, memoryRoot);
+}
+
 afterEach(async () => {
   await Promise.all(
     temporaryRoots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })),
@@ -20,20 +23,83 @@ afterEach(async () => {
 });
 
 describe("persistent memory project identity", () => {
-  it("shares a normal git repository identity with nested workspaces", async () => {
+  it("creates a stable project for a non-git workspace and its nested directories", async () => {
     const root = await temporaryDirectory();
-    await fs.mkdir(path.join(root, ".git"));
+    const memoryRoot = await temporaryDirectory();
     const nested = path.join(root, "packages", "app");
     await fs.mkdir(nested, { recursive: true });
 
-    const rootIdentity = resolveMemoryProjectIdentity(root);
-    const nestedIdentity = resolveMemoryProjectIdentity(nested);
+    const rootIdentity = await resolve(root, memoryRoot);
+    const nestedIdentity = await resolve(nested, memoryRoot);
+
+    expect(rootIdentity.projectId).toMatch(/^[0-9a-f-]{36}$/i);
     expect(nestedIdentity).toEqual(rootIdentity);
-    expect(rootIdentity.kind).toBe("git");
   });
 
-  it("uses the same project name and bucket for main checkouts and linked worktrees", async () => {
+  it("uses the nearest registered project and never merges nested projects", async () => {
     const root = await temporaryDirectory();
+    const memoryRoot = await temporaryDirectory();
+    const first = path.join(root, "first");
+    const second = path.join(root, "second");
+    await fs.mkdir(first);
+    await fs.mkdir(second);
+
+    const firstIdentity = await resolve(first, memoryRoot);
+    const secondIdentity = await resolve(second, memoryRoot);
+    const rootIdentity = await resolve(root, memoryRoot);
+
+    expect(firstIdentity.projectId).not.toBe(secondIdentity.projectId);
+    expect(rootIdentity.projectId).not.toBe(firstIdentity.projectId);
+    expect(rootIdentity.projectId).not.toBe(secondIdentity.projectId);
+    expect(await resolve(path.join(first, "nested"), memoryRoot)).toEqual(firstIdentity);
+    expect(await resolve(path.join(second, "nested"), memoryRoot)).toEqual(secondIdentity);
+  });
+
+  it("treats Windows separator, case, and trailing-separator variants as one project", async () => {
+    if (process.platform !== "win32") return;
+
+    const root = await temporaryDirectory();
+    const memoryRoot = await temporaryDirectory();
+    const variants = [root, `${root.toUpperCase()}\\`, root.replaceAll("\\\\", "/")];
+    const identities = [];
+    for (const variant of variants) {
+      identities.push(await resolve(variant, memoryRoot));
+    }
+
+    expect(identities[1]).toEqual(identities[0]);
+    expect(identities[2]).toEqual(identities[0]);
+    expect(identities[0]!.root).not.toMatch(/[\\\\/]$/);
+    expect(identities[0]!.root).toContain("\\");
+  });
+
+  it("uses git only to discover an unregistered project root", async () => {
+    const root = await temporaryDirectory();
+    const memoryRoot = await temporaryDirectory();
+    const repository = path.join(root, "repository");
+    const nested = path.join(repository, "packages", "app");
+    await fs.mkdir(path.join(repository, ".git"), { recursive: true });
+    await fs.mkdir(nested, { recursive: true });
+
+    const identity = await resolve(nested, memoryRoot);
+    expect(identity.root).toBe(await fs.realpath(repository));
+    expect(identity.projectName).toBe("repository");
+    expect(await resolve(repository, memoryRoot)).toEqual(identity);
+  });
+
+  it("keeps the project id when git is initialized after registration", async () => {
+    const root = await temporaryDirectory();
+    const memoryRoot = await temporaryDirectory();
+    const beforeGit = await resolve(root, memoryRoot);
+    await fs.mkdir(path.join(root, ".git"));
+
+    const afterGit = await resolve(path.join(root, "packages", "api"), memoryRoot);
+
+    expect(afterGit).toEqual(beforeGit);
+  });
+
+  it("shares the registered project between a main checkout and linked worktree", async () => {
+    const root = await temporaryDirectory();
+    const memoryRoot = await temporaryDirectory();
     const repository = path.join(root, "repository");
     const common = path.join(repository, ".git");
     const worktree = path.join(root, "worktree");
@@ -44,38 +110,9 @@ describe("persistent memory project identity", () => {
     await fs.writeFile(path.join(gitDirectory, "commondir"), "../..\n");
     await fs.writeFile(path.join(worktree, ".git"), `gitdir: ${gitDirectory}\n`);
 
-    const mainIdentity = resolveMemoryProjectIdentity(repository);
-    const worktreeIdentity = resolveMemoryProjectIdentity(worktree);
-    expect(worktreeIdentity.kind).toBe(mainIdentity.kind);
-    expect(worktreeIdentity.canonicalIdentity).toBe(mainIdentity.canonicalIdentity);
-    expect(worktreeIdentity.projectName).toBe("repository");
-    expect(worktreeIdentity.projectName).toBe(mainIdentity.projectName);
-    expect(memoryProjectBucket(worktreeIdentity)).toBe(memoryProjectBucket(mainIdentity));
-  });
+    const mainIdentity = await resolve(repository, memoryRoot);
+    const worktreeIdentity = await resolve(worktree, memoryRoot);
 
-  it("uses a sanitized name and an eight-character sha1 identity suffix", async () => {
-    const root = await temporaryDirectory();
-    const repository = path.join(root, "repo with spaces");
-    await fs.mkdir(path.join(repository, ".git"), { recursive: true });
-
-    const identity = resolveMemoryProjectIdentity(repository);
-    const expectedDigest = crypto
-      .createHash("sha1")
-      .update(`${identity.kind}\0${identity.canonicalIdentity}`)
-      .digest("hex")
-      .slice(0, 8);
-
-    expect(memoryProjectBucket(identity)).toBe(`repo_with_spaces-${expectedDigest}`);
-    expect(memoryProjectBucket(identity)).toMatch(/^repo_with_spaces-[0-9a-f]{8}$/);
-  });
-
-  it("isolates non-git workspaces by canonical root", async () => {
-    const root = await temporaryDirectory();
-    const nested = path.join(root, "nested");
-    await fs.mkdir(nested);
-    const identity = resolveMemoryProjectIdentity(root);
-    const nestedIdentity = resolveMemoryProjectIdentity(nested);
-    expect(identity.kind).toBe("workspace");
-    expect(identity.canonicalIdentity).not.toBe(nestedIdentity.canonicalIdentity);
+    expect(worktreeIdentity).toEqual(mainIdentity);
   });
 });

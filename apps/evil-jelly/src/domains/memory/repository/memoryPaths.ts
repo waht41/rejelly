@@ -1,10 +1,6 @@
 import path from "node:path";
 import { resolveGlobalJellyDir } from "../../../shared/globalPath";
-import {
-  type MemoryProjectIdentity,
-  memoryProjectBucket,
-  resolveMemoryProjectIdentity,
-} from "./memoryProjectIdentity";
+import { type MemoryProjectIdentity, resolveMemoryProjectIdentity } from "./memoryProjectIdentity";
 
 export interface PersistentMemoryPaths {
   readonly root: string;
@@ -30,11 +26,11 @@ export function resolveMemoryPaths(
   memoryRoot = resolvePersistentMemoryRoot(),
 ): PersistentMemoryPaths {
   const root = path.resolve(memoryRoot);
-  const identity = resolveMemoryProjectIdentity(workspaceRoot);
+  const identity = resolveMemoryProjectIdentity(workspaceRoot, root);
   const userFile = assertInsideRoot(root, path.join(root, "user.json"));
   const projectFile = assertInsideRoot(
     root,
-    path.join(root, "projects", memoryProjectBucket(identity), "memory.json"),
+    path.join(root, "projects", identity.projectId, "memory.json"),
   );
   return { root, userFile, projectFile, projectIdentity: identity };
 }
