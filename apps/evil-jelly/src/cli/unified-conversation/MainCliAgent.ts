@@ -387,6 +387,8 @@ async function handleMemory(runtime: RouterRuntime, rawInput: string): Promise<v
     runtime: memoryRuntime,
     sessionId: runtime.props.sessionId,
     requestConfirmation: runtime.host.requestMemoryConfirmation,
+    requestMemoryManager: runtime.host.requestMemoryManager,
+    showMemoryStoreInExplorer: runtime.host.showMemoryStoreInExplorer,
     logSystem: runtime.host.logSystemEvent,
   });
 }
@@ -494,6 +496,7 @@ async function runConversationTurn(
         drainAndPrepareSteerMessages(runtime, activeTurnId!, turnMcpSelection),
       sessionBlobRoot: runtime.props.sessionBlobRoot,
       sessionRecorder: runtime.props.sessionRecorder,
+      sessionId: runtime.props.sessionId,
       turnId: activeTurnId,
       mcpBindingFactory,
     });

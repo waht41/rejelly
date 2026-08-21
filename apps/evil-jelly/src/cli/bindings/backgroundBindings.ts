@@ -107,6 +107,7 @@ function createStubHostBindings(
       console.log(`[${logPrefix}] requestChoice → first option (${value})`);
       return value;
     },
+    requestMemoryManager: async () => ({ action: "close" as const }),
   };
 }
 

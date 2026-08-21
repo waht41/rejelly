@@ -144,6 +144,22 @@ describe("persistent memory commands", () => {
     );
   });
 
+  it("opens the human-only memory manager and explorer action", async () => {
+    const showMemoryStoreInExplorer = vi.fn(async () => undefined);
+    const requestMemoryManager = vi
+      .fn()
+      .mockResolvedValueOnce({ action: "detail" as const, id })
+      .mockResolvedValueOnce({ action: "show_in_explorer" as const })
+      .mockResolvedValueOnce({ action: "close" as const });
+    const command = ports({ requestMemoryManager, showMemoryStoreInExplorer });
+    await handleMemoryCommand("/memory", command);
+    expect(requestMemoryManager).toHaveBeenCalledWith(
+      expect.objectContaining({ canShowInExplorer: true }),
+    );
+    expect(showMemoryStoreInExplorer).toHaveBeenCalledOnce();
+    expect(command.logSystem).not.toHaveBeenCalledWith(expect.stringContaining("/memory"));
+  });
+
   it("renders detail, provenance, and injected status", async () => {
     const command = ports({
       runtime: { statusFor: () => "current" } as unknown as SessionMemoryRuntime,

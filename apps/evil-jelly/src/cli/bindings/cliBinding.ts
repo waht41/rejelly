@@ -26,6 +26,7 @@ import {
 import type { InteractiveRunControl } from "../entry/unified-run/interactive/runControl";
 import { createInteractiveShell } from "../interactive-shell/inkLifecycle";
 import { createInteractiveSubmission } from "../interactive-shell/submission";
+import { showMemoryStoreInExplorer } from "../memory-manager/openMemoryStore";
 import {
   resetComposerSession,
   useComposerSession,
@@ -73,6 +74,17 @@ function createInkRequestChoice(): PromptInputBindings["requestChoice"] {
       return selected;
     });
   };
+}
+
+function createInkRequestMemoryManager(): NonNullable<PromptInputBindings["requestMemoryManager"]> {
+  const decision = createOperatorDecision();
+  return async (request) =>
+    decision.run(async (session) => {
+      useOutputStore.getState().setPhase("awaiting_user", "Browsing persistent memory…");
+      const action = await session.requestMemoryManager(request);
+      useOutputStore.getState().resumeWork("Running…");
+      return action;
+    });
 }
 
 function createInkRequestMcpManager(): NonNullable<PromptInputBindings["requestMcpManager"]> {
@@ -198,6 +210,10 @@ function createPromptBindings(options: {
     getAgentMode: () => useModeStore.getState().mode,
     requestChoice: createInkRequestChoice(),
     requestMcpManager: createInkRequestMcpManager(),
+    requestMemoryManager: createInkRequestMemoryManager(),
+    showMemoryStoreInExplorer: async () => {
+      await suspendInkForExternalProcess(showMemoryStoreInExplorer);
+    },
     dismissMcpManager: () => useDecisionStore.getState().submitMcpManager({ action: "refresh" }),
     setAvailableSkills: (skills) => {
       useComposerSession.getState().setAvailableSkills(skills);

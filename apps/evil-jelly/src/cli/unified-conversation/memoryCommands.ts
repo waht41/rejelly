@@ -17,6 +17,11 @@ import type {
   PersistentMemoryService,
 } from "../../domains/memory/service/persistentMemoryService";
 import type {
+  MemoryManagerAction,
+  MemoryManagerEntry,
+  MemoryManagerRequest,
+} from "../../shared/host/inputBindings";
+import type {
   MemoryConfirmationHandler,
   MemoryMutationConfirmationPayload,
 } from "../../shared/host/toolConfirmationBindings";
@@ -26,6 +31,8 @@ export interface MemoryCommandPorts {
   readonly runtime?: SessionMemoryRuntime;
   readonly sessionId?: string;
   readonly requestConfirmation?: MemoryConfirmationHandler;
+  readonly requestMemoryManager?: (request: MemoryManagerRequest) => Promise<MemoryManagerAction>;
+  readonly showMemoryStoreInExplorer?: () => Promise<void>;
   logSystem(message: string): void;
 }
 
@@ -140,6 +147,24 @@ function formatProvenance(entry: PersistentMemoryEntryV1): string {
   return JSON.stringify(entry.provenance, null, 2);
 }
 
+function managerEntry(
+  entry: PersistentMemoryEntryV1,
+  runtime: SessionMemoryRuntime | undefined,
+): MemoryManagerEntry {
+  return {
+    id: entry.id,
+    scope: entry.scope,
+    title: entry.title,
+    summary: entry.summary,
+    detail: entry.detail,
+    revision: entry.revision,
+    createdAt: formatTimestamp(entry.createdAt),
+    updatedAt: formatTimestamp(entry.updatedAt),
+    provenance: formatProvenance(entry),
+    ...(runtime ? { injectedStatus: runtime.statusFor(entry.id, entry) } : {}),
+  };
+}
+
 function formatDetail(
   entry: PersistentMemoryEntryV1,
   runtime: SessionMemoryRuntime | undefined,
@@ -197,6 +222,62 @@ function usageForInvalidInput(error: unknown): string {
     return `Memory command failed: ${error.issues[0]?.message ?? "invalid value"}`;
   }
   return `Memory command failed: ${errorMessage(error)}`;
+}
+
+async function runMemoryManager(ports: MemoryCommandPorts): Promise<void> {
+  if (!ports.requestMemoryManager) {
+    return showCatalog(ports);
+  }
+  let selectedId: string | undefined;
+  let detail: MemoryManagerEntry | undefined;
+  let message: string | undefined;
+  for (;;) {
+    const detailId = detail?.id;
+    const result = await ports.service.list(
+      detailId
+        ? { scope: "all", ids: [detailId], view: "detail" }
+        : { scope: "all", view: "summary" },
+    );
+    const entries = result.entries.map((entry) => managerEntry(entry, ports.runtime));
+    const selectedDetail = detailId ? entries.find((entry) => entry.id === detailId) : undefined;
+    const action = await ports.requestMemoryManager({
+      entries,
+      ...(selectedId ? { selectedId } : {}),
+      ...(selectedDetail ? { detail: selectedDetail } : {}),
+      ...(result.diagnostic ? { diagnostic: result.diagnostic } : {}),
+      ...(message ? { message } : {}),
+      canShowInExplorer: Boolean(ports.showMemoryStoreInExplorer),
+    });
+    message = undefined;
+    if (action.action === "close") return;
+    if (action.action === "back") {
+      detail = undefined;
+      continue;
+    }
+    if (action.action === "refresh") {
+      continue;
+    }
+    if (action.action === "detail") {
+      selectedId = action.id;
+      detail = entries.find((entry) => entry.id === action.id);
+      if (!detail) {
+        message = `Memory not found: ${action.id}`;
+      }
+      continue;
+    }
+    if (action.action === "show_in_explorer") {
+      if (!ports.showMemoryStoreInExplorer) {
+        message = "Explorer is unavailable in this host.";
+      } else {
+        try {
+          await ports.showMemoryStoreInExplorer();
+          message = "Opened persistent memory in File Explorer.";
+        } catch (error) {
+          message = `Could not open persistent memory: ${errorMessage(error)}`;
+        }
+      }
+    }
+  }
 }
 
 async function showCatalog(ports: MemoryCommandPorts): Promise<void> {
@@ -308,7 +389,7 @@ export async function handleMemoryCommand(
     return;
   }
   try {
-    if (command.kind === "catalog") return await showCatalog(ports);
+    if (command.kind === "catalog") return await runMemoryManager(ports);
     if (command.kind === "show") return await showEntry(ports, command.id);
     if (command.kind === "edit")
       return await editEntry(ports, command.id, command.field, command.value);
