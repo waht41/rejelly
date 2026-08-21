@@ -191,7 +191,7 @@ export const memoryAddInputSchema = z
     scope: memoryScopeSchema.default("project"),
   })
   .strict();
-export type MemoryAddInput = z.infer<typeof memoryAddInputSchema>;
+export type MemoryAddInput = z.input<typeof memoryAddInputSchema>;
 
 export const memoryUpdateInputSchema = z
   .object({

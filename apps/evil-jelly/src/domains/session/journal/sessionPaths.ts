@@ -9,7 +9,10 @@ export function resolveSessionsRoot(): string {
   return path.join(resolveGlobalJellyDir(), "sessions");
 }
 
-/** Per-workspace bucket: <sanitized-basename>-<sha1(absRoot)[0..8]>. */
+/**
+ * Per-workspace bucket: <sanitized-basename>-<sha1(absRoot)[0..8]>.
+ * The naming format matches memory buckets, but the identity stays workspace-local.
+ */
 export function workspaceBucket(workspaceRoot: string): string {
   const abs = path.resolve(workspaceRoot);
   const hash = crypto.createHash("sha1").update(abs).digest("hex").slice(0, 8);

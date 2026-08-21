@@ -74,6 +74,7 @@
       "src/domains/[dom]/**/*",
       "!src/domains/session/**/*",
       "!src/domains/skills/**/*",
+      "!src/domains/memory/**/*",
       "!src/**/__tests__/**/*",
       "!src/**/*.test.*"
     ],
@@ -117,6 +118,7 @@
       "!src/**/__tests__/**/*",
       "!src/**/*.test.*"
     ],
+    "@domain:memory": ["src/domains/memory/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@domain:session:recorder": [
       "src/domains/session/recorder/**/*",
       "!src/**/__tests__/**/*",
@@ -135,6 +137,7 @@
             "@cli:**",
             "@feature:[feat]",
             "@domain:[dom]",
+            "@domain:memory",
             "@domain:session:*",
             "@domain:skills:*",
             "@shared",
@@ -143,7 +146,14 @@
           ]
         ],
         "production_foundation": [
-          ["@cli:**", "@feature:[feat]", "@domain:[dom]", "@domain:session:*", "@domain:skills:*"],
+          [
+            "@cli:**",
+            "@feature:[feat]",
+            "@domain:[dom]",
+            "@domain:memory",
+            "@domain:session:*",
+            "@domain:skills:*"
+          ],
           ["@shared"]
         ],
         "direct_fs": [
@@ -155,6 +165,7 @@
             "@cli:message-composer",
             "@cli:tool-approval",
             "@domain:skills:loader",
+            "@domain:memory",
             "@domain:session:journal",
             "@domain:session:repository"
           ],
