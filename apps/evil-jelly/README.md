@@ -261,7 +261,7 @@ pnpm typecheck      # TypeScript checking
 - `--api-key <key>`: override `OPENAI_API_KEY` for this invocation. Prefer `evil init` for persistent setup and avoid exposing keys in shell history.
 - `--env <name|path>`: load an env profile above the shell environment. A bare name resolves to `~/.evil-jelly/<name>.env`, beside the default `.env`; anything containing a separator or ending in `.env` is a path.
 - `--review`: enable Review trace export, optionally with `REJELLY_REVIEW_ENDPOINT`.
-- `--devtool`: connect to the devtool MCP tools. A failed connection prints a warning and execution continues.
+- `--devtool`: compatibility shortcut that adds the dynamic `evil.devtool` server to the interactive coding run. It uses the same MCP runtime and gateway as configured servers; Audit and headless runs reject it.
 - `--doc-map <path>`: workspace-relative doc-map for doc-drift validation. Defaults to `.evil-jelly/doc-map.jsonc`.
 - `--workspace <dir>`: workspace root for `.evil-jelly/` configuration, audit output, session data, and Agent tool paths. Defaults to the current working directory; relative paths are resolved from the process startup directory.
 - `--snapshot <traceId>`: restore a snapshot from a Review trace before entering the session. Mutually exclusive with `--mock`, `--resume`, and `--headless`.
@@ -293,7 +293,7 @@ pnpm --filter @rejelly/devtool dev
 evil --review --devtool
 ```
 
-The MCP endpoint is derived from the origin of `REJELLY_REVIEW_ENDPOINT` and defaults to `http://localhost:5789/mcp`. Tools use their own JSON schemas; trace tools generally accept `traceId` and otherwise query the latest trace in the devtool database.
+The MCP endpoint is derived from the origin of `REJELLY_REVIEW_ENDPOINT` and defaults to `http://localhost:5789/mcp`. `--devtool` is mapped once to the ordinary dynamic MCP server contract; it has no separate provider or lifecycle. Tools use their own JSON schemas; trace tools generally accept `traceId` and otherwise query the latest trace in the devtool database.
 
 </details>
 
@@ -313,7 +313,7 @@ All Evil Jelly configuration lives under an `.evil-jelly/` directory:
 
 ### User and workspace settings
 
-`~/.evil-jelly/settings.jsonc` supplies user defaults; the ignored `.evil-jelly/settings.jsonc` at the Agent workspace root overrides individual fields for that local checkout. Both files use the same strict schema. Every field is optional, so either file may be absent; a malformed file fails loudly. Copy `.evil-jelly/settings.example.jsonc` when a workspace-local override is needed. `getSettings()` in `src/shared/settings.ts` resolves each field explicitly, and `initSettings` injects CLI overrides at the composition root.
+`~/.evil-jelly/settings.jsonc` supplies user defaults; the ignored `.evil-jelly/settings.jsonc` at the Agent workspace root overrides individual fields for that local checkout. Both files use the same strict schema. Every field is optional, so either file may be absent; a malformed file fails loudly. Copy `.evil-jelly/settings.example.jsonc` when a workspace-local override is needed. `getSettings()` in `src/shared/configuration/settings.ts` resolves each field explicitly, and `initSettings` injects CLI overrides at the composition root.
 
 ```jsonc
 {
@@ -333,6 +333,29 @@ All Evil Jelly configuration lives under an `.evil-jelly/` directory:
       "user:review": { "enabled": false },
       "project:release": { "enabled": true },
     },
+  },
+  "mcp": {
+    "servers": {
+      "typescript": {
+        "transport": {
+          "type": "stdio",
+          "command": "npx",
+          "args": ["-y", "ts-language-mcp", "."]
+        },
+        "use": {
+          "chat": { "exposure": "explicit", "required": false },
+          "audit": {
+            "exposure": "always",
+            "allow": [
+              "get_definition",
+              "get_references",
+              "get_diagnostics",
+              "get_all_diagnostics"
+            ]
+          }
+        }
+      }
+    }
   }
 }
 ```
@@ -349,6 +372,63 @@ atomic Skill token such as `$review`; the source qualifier is shown only when na
 applies that Skill to the current input only. The host carries the selection as structured input
 and injects its instructions; ordinary dollar-prefixed text such as `$HOME` or an unselected
 `$unknown` remains plain text.
+
+### MCP settings and commands
+
+MCP definitions use whole-server replacement across `user < workspace < dynamic` layers; fields
+from two scopes are never deep-merged. Keep secrets in environment variables and reference them
+with `{ "fromEnv": "NAME" }`. Workspace definitions require approval of their exact non-secret
+configuration fingerprint before they connect. A changed definition invalidates the old grant.
+
+`use.chat.exposure` accepts `off`, `explicit`, or `always`. Every enabled chat server except `off`
+is advertised to the Agent by name and can be progressively inspected through `mcp_reference`.
+`explicit` still requires a turn/session selection before `mcp_call`; `always` is callable in every
+chat turn. Audit is independent and considers only servers with `use.audit.exposure: "always"`;
+its `allow` list is mandatory for native tools to be routable. `required: true` blocks only the
+corresponding consumer while that server is unavailable.
+
+`mcp_reference` accepts `*` as a bounded visible-tool listing. When a configured server is not
+ready, its result reports `unavailableServers` with an `untrusted`, `pending`, `failed`, or
+`disabled` status and a `suggestedAction`; these states are not search misses.
+
+For `request_access` or a relevant non-callable match, the Agent uses the fixed `mcp_request`
+gateway. The CLI offers server access for this Session or permanently for this workspace. A
+Session grant updates the Session V3 selection event; a permanent grant is stored with the exact
+host-owned configuration fingerprint. Native `mcp_call` approval is separate and offers once,
+this Session, or permanently for this tool in this workspace. Permanent tool grants also bind the
+native tool's schema fingerprint, so configuration or schema drift automatically requires a new
+decision. The next model dispatch can reference the fresh catalog without requiring a manual
+`/mcp use`.
+
+```bash
+evil mcp list
+evil mcp list --scope user
+evil mcp get typescript --scope effective
+evil mcp add typescript --scope project -- npx -y ts-language-mcp .
+evil mcp disable typescript --scope project
+evil mcp enable typescript --scope project
+evil mcp remove typescript --scope project
+```
+
+Mutations require an explicit `user` or `project` scope and update only that file. During an
+interactive session, `/mcp` shows source, exposure, selection, connection, tool count and
+fingerprint; `/mcp use <id>`, `/mcp unuse <id>`, and `/mcp reload [id]` manage the live session.
+`/mcp permissions` lists permanent workspace grants, while `/mcp revoke <id>` clears permanent
+server and tool grants and `/mcp revoke <id>/<tool>` clears one permanent tool grant.
+Type `$` and select an MCP server to insert a structured `$mcp:<id>` turn token. Chat models always
+see only the stable `mcp_reference`, `mcp_request`, and `mcp_call` gateways; native schemas are
+referenced through conversation history and validated again immediately before the native call.
+Audit remains non-interactive and exposes only `mcp_reference` and `mcp_call` when configured; it
+does not prompt for or write chat grants. Non-interactive hosts likewise never promote a decision
+to a permanent grant implicitly.
+
+A stdio `mcp add` requires the explicit `--` separator before its executable. PowerShell's pnpm
+shim consumes a bare separator, so quote that token there: `evil mcp add typescript --scope project
+'--' npx -y ts-language-mcp .`. Use `--server-cwd <path>` before the separator to set the MCP
+subprocess working directory; it defaults to the workspace root.
+The default startup timeout is 30 seconds and can be overridden per server with
+`startupTimeoutMs`; stdio server diagnostics are captured for status errors rather than written
+directly into the interactive terminal.
 
 Documentation-domain configuration does not belong in settings. It uses the fixed `.evil-jelly/doc-map.jsonc` path unless a one-off `--doc-map` override is supplied.
 

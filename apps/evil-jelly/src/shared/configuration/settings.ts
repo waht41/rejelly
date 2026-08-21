@@ -63,19 +63,16 @@ const SettingsFileSchema = z
       .strict()
       .optional(),
     skills: SkillsSettingsSchema.optional(),
+    // Parsed by the MCP domain, which owns the one strict server-definition schema.
+    mcp: z.unknown().optional(),
   })
   .strict();
 
 export type EvilJellySettingsFile = z.infer<typeof SettingsFileSchema>;
 
-/**
- * CLI overrides (highest precedence). `devtoolMcp` is CLI-only on purpose: connecting
- * the devtool MCP toolset is a per-run capability toggle, not a repo fact, so it has
- * no settings-file counterpart.
- */
+/** CLI overrides (highest precedence). */
 export interface SettingsCliOverrides {
   docMap?: string;
-  devtoolMcp?: boolean;
   auditMaxSeeds?: number;
   auditLedgerGcDays?: number;
   auditDisableLedgerGc?: boolean;
@@ -96,8 +93,11 @@ export interface ResolvedSettings {
     enabled: boolean;
     overrides: Readonly<Record<string, { readonly enabled: boolean }>>;
   };
-  /** Whether to connect the devtool MCP toolset this run. */
-  devtoolMcp: boolean;
+  /** Raw layer carrier. MCP owns validation, defaulting, and whole-server replacement. */
+  mcp: {
+    user: { readonly path: string; readonly value: unknown };
+    workspace: { readonly path: string; readonly value: unknown };
+  };
 }
 
 let cliOverrides: SettingsCliOverrides = {};
@@ -109,6 +109,11 @@ let cache: { root: string; resolved: ResolvedSettings } | undefined;
  */
 export function initSettings(overrides: SettingsCliOverrides): void {
   cliOverrides = overrides;
+  cache = undefined;
+}
+
+/** Re-read user/workspace files while preserving this process's CLI override layer. */
+export function invalidateSettingsCache(): void {
   cache = undefined;
 }
 
@@ -136,8 +141,10 @@ export function getSettings(): ResolvedSettings {
   if (cache?.root === root) {
     return cache.resolved;
   }
-  const userFile = readSettingsFile(resolveUserSettingsPath());
-  const workspaceFile = readSettingsFile(path.join(root, SETTINGS_FILE_REL_PATH));
+  const userPath = resolveUserSettingsPath();
+  const workspacePath = path.join(root, SETTINGS_FILE_REL_PATH);
+  const userFile = readSettingsFile(userPath);
+  const workspaceFile = readSettingsFile(workspacePath);
   const resolved: ResolvedSettings = {
     docMap: cliOverrides.docMap ?? DOC_MAP_DEFAULT_PATH,
     audit: {
@@ -157,7 +164,10 @@ export function getSettings(): ResolvedSettings {
         ...workspaceFile.skills?.overrides,
       }),
     },
-    devtoolMcp: cliOverrides.devtoolMcp ?? false,
+    mcp: {
+      user: { path: userPath, value: userFile.mcp },
+      workspace: { path: workspacePath, value: workspaceFile.mcp },
+    },
   };
   cache = { root, resolved };
   return resolved;

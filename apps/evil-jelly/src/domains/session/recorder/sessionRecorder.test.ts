@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { recordInitialTextInput, resolvedTextInput } from "../__tests__/sessionTestInput";
 import { readSessionEvents } from "../journal/sessionJsonlStore";
 import { buildStoredActiveContext, buildTranscript } from "../projection/sessionHistoryProjection";
+import { projectSessionMcpState } from "../projection/sessionMcpProjection";
 import { prepareSessionReplay } from "../projection/sessionReplay";
 import { openSessionRecorder } from "./sessionRecorder";
 
@@ -114,6 +115,60 @@ describe("sessionRecorder", () => {
       traceIds: ["trace-1"],
       budget,
     });
+  });
+
+  it("keeps session MCP selection outside compaction and projects the latest complete set", async () => {
+    const recorder = await openSessionRecorder({
+      workspaceRoot,
+      sessionId: "session-mcp",
+      traceId: "trace-1",
+      originator: "evil-jelly-cli",
+      appVersion: "0.1.0",
+      modelId: "test-model",
+      cwd: workspaceRoot,
+      sessionsRoot,
+    });
+
+    await recorder.recordMcpSelection(["github", "docs", "github"], "startup");
+    await recorder.recordMcpToolGrants(
+      [
+        {
+          serverId: "docs",
+          configFingerprint: "a".repeat(64),
+          nativeToolName: "read",
+          toolSchemaFingerprint: "b".repeat(64),
+        },
+      ],
+      "tool",
+    );
+    await recordInitialTextInput(recorder, "turn-1", "inspect docs");
+    await recorder.recordCompaction({
+      trigger: "manual",
+      replacementHistory: [{ role: "user", content: "summary without MCP reference" }],
+      beforeMessageCount: 1,
+    });
+    await recorder.recordMcpSelection(["github"], "command");
+    await recorder.completeTurn("turn-1", "completed");
+    await recorder.endSegment({ status: "completed", reason: "exit" });
+    await recorder.close();
+
+    const stored = await readSessionEvents(workspaceRoot, "session-mcp", { sessionsRoot });
+    const replay = prepareSessionReplay(stored.events);
+    expect(projectSessionMcpState(replay)).toEqual({
+      selectedServerIds: ["github"],
+      toolGrants: [
+        {
+          serverId: "docs",
+          configFingerprint: "a".repeat(64),
+          nativeToolName: "read",
+          toolSchemaFingerprint: "b".repeat(64),
+        },
+      ],
+    });
+    expect(stored.events.filter((event) => event.type === "mcp_selection_changed")).toEqual([
+      expect.objectContaining({ selectedServerIds: ["docs", "github"], reason: "startup" }),
+      expect.objectContaining({ selectedServerIds: ["github"], reason: "command" }),
+    ]);
   });
 
   it("opens a later trace as a resumed segment without rewriting the prior log", async () => {

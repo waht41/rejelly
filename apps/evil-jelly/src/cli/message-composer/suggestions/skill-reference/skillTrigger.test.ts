@@ -3,6 +3,7 @@ import type { UserSkillListItem } from "../../../../shared/host/inputBindings";
 import {
   activeSkillTrigger,
   extractSkillQuery,
+  mcpReferenceName,
   removeActiveSkillTrigger,
   skillReferenceName,
   skillTokensFromDocument,
@@ -60,6 +61,11 @@ describe("Skill $ trigger", () => {
 
     expect(skillReferenceName(catalog[0]!, [...catalog, duplicate])).toBe("project:review");
     expect(skillReferenceName(duplicate, [...catalog, duplicate])).toBe("user:review");
+    expect(skillReferenceName(catalog[0]!, catalog, [{ serverId: "review" }])).toBe(
+      "project:review",
+    );
+    expect(mcpReferenceName({ serverId: "docs" }, catalog)).toBe("docs");
+    expect(mcpReferenceName({ serverId: "review" }, catalog)).toBe("mcp:review");
   });
 
   it("removes an unfinished text trigger without creating a fake Skill marker", () => {

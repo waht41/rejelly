@@ -1,0 +1,201 @@
+import { describe, expect, it, vi } from "vitest";
+import { mcpBoundRouteFixture } from "../__tests__/mcpTestFixtures";
+import type { McpDispatchBinding } from "../contracts";
+import {
+  createMcpGatewayToolsForDispatch,
+  createUnavailableMcpDispatch,
+  referenceMcpTools,
+} from "./dispatch";
+
+function route(serverId: string, nativeToolName: string) {
+  return mcpBoundRouteFixture({
+    identity: { serverId, nativeToolName },
+    description: `Read ${serverId} documentation`,
+    inputSchema: {
+      type: "object",
+      properties: { path: { type: "string" } },
+      required: ["path"],
+    },
+    configFingerprint: `config-${serverId}`,
+    catalogRevision: `catalog-${serverId}`,
+  });
+}
+
+function binding(): McpDispatchBinding {
+  const routes = [route("alpha", "read"), route("beta", "read")];
+  return {
+    bindingId: "binding-1",
+    generation: 1,
+    servers: [
+      {
+        serverId: "alpha",
+        configFingerprint: "config-alpha",
+        status: "ready",
+        catalogRevision: "catalog-alpha",
+        tools: [
+          {
+            nativeToolName: "read",
+            description: "Read alpha documentation",
+            inputSchema: routes[0]!.inputSchema,
+          },
+        ],
+      },
+      {
+        serverId: "beta",
+        configFingerprint: "config-beta",
+        status: "ready",
+        catalogRevision: "catalog-beta",
+        tools: [
+          {
+            nativeToolName: "read",
+            description: "Read beta documentation",
+            inputSchema: routes[1]!.inputSchema,
+          },
+        ],
+      },
+      {
+        serverId: "pending",
+        configFingerprint: "config-pending",
+        status: "pending",
+        tools: [],
+      },
+      {
+        serverId: "workspace",
+        configFingerprint: "config-workspace",
+        status: "untrusted",
+        tools: [],
+      },
+      {
+        serverId: "failed",
+        configFingerprint: "config-failed",
+        status: "failed",
+        failure: {
+          code: "runtime_error",
+          messageExcerpt: "JavaScript heap out of memory",
+          messageTruncated: false,
+        },
+        tools: [],
+      },
+    ],
+    route: (identity) =>
+      routes.find(
+        (candidate) =>
+          candidate.identity.serverId === "alpha" &&
+          candidate.identity.serverId === identity.serverId &&
+          candidate.identity.nativeToolName === identity.nativeToolName,
+      ),
+  };
+}
+
+describe("MCP dispatch gateway", () => {
+  it("keeps stable unavailable gateway tools without an MCP runtime", async () => {
+    const tools = createMcpGatewayToolsForDispatch(createUnavailableMcpDispatch());
+
+    expect(tools.map((tool) => tool.name)).toEqual(["mcp_reference", "mcp_request", "mcp_call"]);
+    await expect(tools[0].handler({ query: "typescript" })).resolves.toContain(
+      '<mcp_reference version="1" detail="full" matched="0" returned="0">',
+    );
+    await expect(
+      tools[1].handler({
+        serverId: "typescript",
+        reason: "Use semantic TypeScript tools",
+      }),
+    ).resolves.toMatchObject({ status: "unavailable", code: "runtime_unavailable" });
+    const unavailableCall = await tools[2].handler({
+      tool: { serverId: "typescript", nativeToolName: "get_definition" },
+      catalogRevision: "catalog-1",
+      arguments: {},
+    });
+    expect(unavailableCall).toContain(
+      '<mcp_call_result version="1" status="rejected" server="typescript" tool="get_definition" code="tool_unavailable">',
+    );
+    expect(unavailableCall).toContain("The MCP tool is not available in this dispatch.");
+  });
+
+  it("references same-named tools and reports unavailable servers with actions", () => {
+    const result = referenceMcpTools(binding(), { query: "read documentation" });
+
+    expect(result.matches.map((match) => match.identity)).toEqual([
+      { serverId: "alpha", nativeToolName: "read" },
+      { serverId: "beta", nativeToolName: "read" },
+    ]);
+    expect(result.matches.map((match) => match.callable)).toEqual([true, false]);
+    expect(result.unavailableServers).toEqual([
+      {
+        serverId: "failed",
+        status: "failed",
+        suggestedAction: "reload",
+        failure: {
+          code: "runtime_error",
+          messageExcerpt: "JavaScript heap out of memory",
+          messageTruncated: false,
+        },
+      },
+      { serverId: "pending", status: "pending", suggestedAction: "wait" },
+      { serverId: "workspace", status: "untrusted", suggestedAction: "request_access" },
+    ]);
+    expect(
+      referenceMcpTools(binding(), { query: "read", serverIds: ["beta"] }).matches.map(
+        (match) => match.identity,
+      ),
+    ).toEqual([{ serverId: "beta", nativeToolName: "read" }]);
+    expect(
+      referenceMcpTools(binding(), { query: "read", serverIds: ["beta"] }).unavailableServers,
+    ).toBeUndefined();
+  });
+
+  it("treats an exact asterisk query as a bounded visible-tool listing", () => {
+    const result = referenceMcpTools(binding(), { query: "*", maxResults: 1 });
+
+    expect(result.matches).toHaveLength(1);
+    expect(result.matches[0]?.identity).toEqual({ serverId: "alpha", nativeToolName: "read" });
+    expect(result.matchedCount).toBe(2);
+    expect(result.omittedToolIdentities).toEqual([{ serverId: "beta", nativeToolName: "read" }]);
+  });
+
+  it("keeps a dispatched call bound to the invocation port from its own tool batch", async () => {
+    const firstInvoke = vi.fn(async () => ({
+      ok: true as const,
+      result: { content: [{ type: "text", text: "first" }] },
+    }));
+    const secondInvoke = vi.fn(async () => ({
+      ok: true as const,
+      result: { content: [{ type: "text", text: "second" }] },
+    }));
+    const firstTools = createMcpGatewayToolsForDispatch({
+      binding: binding(),
+      reference: async (input) => referenceMcpTools(binding(), input),
+      request: async (input) => ({
+        type: "mcp_request_v1",
+        serverId: input.serverId,
+        status: "denied",
+        message: "not used",
+      }),
+      invoke: firstInvoke,
+    });
+    createMcpGatewayToolsForDispatch({
+      binding: binding(),
+      reference: async (input) => referenceMcpTools(binding(), input),
+      request: async (input) => ({
+        type: "mcp_request_v1",
+        serverId: input.serverId,
+        status: "denied",
+        message: "not used",
+      }),
+      invoke: secondInvoke,
+    });
+
+    const result = await firstTools[2].handler({
+      tool: { serverId: "alpha", nativeToolName: "read" },
+      catalogRevision: "catalog-alpha",
+      arguments: { path: "guide.md" },
+    });
+
+    expect(result).toContain(
+      '<mcp_call_result version="1" status="completed" server="alpha" tool="read"',
+    );
+    expect(result).toContain('<text index="0" format="text">\nfirst\n</text>');
+    expect(firstInvoke).toHaveBeenCalledOnce();
+    expect(secondInvoke).not.toHaveBeenCalled();
+  });
+});

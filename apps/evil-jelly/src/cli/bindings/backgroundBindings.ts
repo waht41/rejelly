@@ -60,8 +60,14 @@ function createStubHostBindings(
           console.log(
             `[${logPrefix}] tool approval auto-accept: outside ${params.mode} ${params.targetPath}`,
           );
-        } else {
+        } else if (params.type === "shell_command") {
           console.log(`[${logPrefix}] tool approval auto-accept: shell ${params.command}`);
+        } else if (params.type === "mcp_access") {
+          console.log(`[${logPrefix}] tool approval auto-accept: MCP access ${params.serverId}`);
+        } else {
+          console.log(
+            `[${logPrefix}] tool approval auto-accept: MCP ${params.tool.serverId}/${params.tool.nativeToolName}`,
+          );
         }
         return { action: "accept" };
       }
@@ -79,8 +85,14 @@ function createStubHostBindings(
         console.warn(
           `[${logPrefix}] tool approval auto-reject: outside ${params.mode} ${params.targetPath}`,
         );
-      } else {
+      } else if (params.type === "shell_command") {
         console.warn(`[${logPrefix}] tool approval auto-reject: shell ${params.command}`);
+      } else if (params.type === "mcp_access") {
+        console.warn(`[${logPrefix}] tool approval auto-reject: MCP access ${params.serverId}`);
+      } else {
+        console.warn(
+          `[${logPrefix}] tool approval auto-reject: MCP ${params.tool.serverId}/${params.tool.nativeToolName}`,
+        );
       }
       return { action: "reject" };
     },

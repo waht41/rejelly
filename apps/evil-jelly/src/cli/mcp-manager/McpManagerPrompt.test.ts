@@ -1,0 +1,197 @@
+import { renderToString } from "ink";
+import { createElement } from "react";
+import stripAnsi from "strip-ansi";
+import { describe, expect, it, vi } from "vitest";
+import { McpManagerPrompt, mcpToolClipboardText } from "./McpManagerPrompt";
+
+describe("McpManagerPrompt", () => {
+  it("renders connection, access, tool count, and keyboard affordances", () => {
+    const output = stripAnsi(
+      renderToString(
+        createElement(McpManagerPrompt, {
+          request: {
+            rows: [
+              {
+                serverId: "typescript",
+                source: "project",
+                exposure: "explicit",
+                selected: true,
+                persistentAccess: false,
+                routable: true,
+                connection: "ready",
+                toolCount: 12,
+              },
+              {
+                serverId: "github",
+                source: "user",
+                exposure: "explicit",
+                selected: false,
+                persistentAccess: false,
+                routable: false,
+                connection: "untrusted",
+                toolCount: 0,
+              },
+            ],
+          },
+          onAction: vi.fn(),
+          copyText: vi.fn(async () => undefined),
+        }),
+        { columns: 100 },
+      ),
+    );
+
+    expect(output).toContain("MCP servers");
+    expect(output).toContain("▸ ● typescript");
+    expect(output).toContain("ready");
+    expect(output).toContain("12 tools");
+    expect(output).toContain("○ github");
+    expect(output).toContain("Enter details");
+  });
+
+  it("renders server actions and a cancellable startup state in the detail panel", () => {
+    const row = {
+      serverId: "typescript",
+      source: "project",
+      exposure: "explicit" as const,
+      selected: true,
+      persistentAccess: false,
+      routable: false,
+      connection: "pending" as const,
+      toolCount: 0,
+    };
+    const detail = stripAnsi(
+      renderToString(
+        createElement(McpManagerPrompt, {
+          request: { rows: [row], detailServerId: "typescript" },
+          onAction: vi.fn(),
+          copyText: vi.fn(async () => undefined),
+        }),
+      ),
+    );
+    const loading = stripAnsi(
+      renderToString(
+        createElement(McpManagerPrompt, {
+          request: {
+            rows: [row],
+            detailServerId: "typescript",
+            activity: { serverId: "typescript", label: "Starting typescript…" },
+          },
+          onAction: vi.fn(),
+          copyText: vi.fn(async () => undefined),
+        }),
+      ),
+    );
+
+    expect(detail).toContain("Remove from this session");
+    expect(detail).toContain("Reload connection");
+    expect(loading).toContain("Starting typescript…");
+    expect(loading).toContain("Esc cancel startup");
+  });
+
+  it("keeps raw failure diagnostics out of the list and detail rendering", () => {
+    const row = {
+      serverId: "typescript",
+      source: "project",
+      exposure: "explicit" as const,
+      selected: true,
+      persistentAccess: false,
+      routable: false,
+      connection: "failed" as const,
+      toolCount: 0,
+      failure: {
+        code: "runtime_error",
+        messageExcerpt: "FATAL ERROR: JavaScript heap out of memory",
+        messageTruncated: false,
+        detail: "very long native stack trace",
+      },
+    };
+    const list = stripAnsi(
+      renderToString(
+        createElement(McpManagerPrompt, {
+          request: { rows: [row] },
+          onAction: vi.fn(),
+          copyText: vi.fn(async () => undefined),
+        }),
+      ),
+    );
+    const detail = stripAnsi(
+      renderToString(
+        createElement(McpManagerPrompt, {
+          request: { rows: [row], detailServerId: "typescript" },
+          onAction: vi.fn(),
+          copyText: vi.fn(async () => undefined),
+        }),
+      ),
+    );
+
+    expect(list).toContain("runtime_error");
+    expect(list).not.toContain("very long native stack trace");
+    expect(detail).toContain("FATAL ERROR: JavaScript heap out of memory");
+    expect(detail).toContain("Y copy failure diagnostics");
+    expect(detail).not.toContain("very long native stack trace");
+  });
+
+  it("renders the terminal tool panel with inline batch actions", () => {
+    const output = stripAnsi(
+      renderToString(
+        createElement(McpManagerPrompt, {
+          request: {
+            rows: [],
+            toolPanel: {
+              serverId: "typescript",
+              rows: [
+                {
+                  nativeToolName: "find_references",
+                  description: "Find symbol references",
+                  inputSchema: { type: "object" },
+                  approval: "ask",
+                  configFingerprint: "a".repeat(64),
+                  toolSchemaFingerprint: "b".repeat(64),
+                },
+                {
+                  nativeToolName: "diagnostics",
+                  description: "Read diagnostics",
+                  inputSchema: { type: "object" },
+                  approval: "always",
+                  configFingerprint: "a".repeat(64),
+                  toolSchemaFingerprint: "c".repeat(64),
+                },
+              ],
+            },
+          },
+          onAction: vi.fn(),
+          copyText: vi.fn(async () => undefined),
+        }),
+      ),
+    );
+
+    expect(output).toContain("Tools & approvals");
+    expect(output).toContain("1 always · 0 session · 0 auto · 1 ask");
+    expect(output).toContain("Tool");
+    expect(output).toContain("Access");
+    expect(output).toContain("find_references");
+    expect(output).toContain("│ ask");
+    expect(output).toContain("Enter details · Space select · S session · A always · R revoke");
+  });
+
+  it("projects schema and full descriptor clipboard payloads", () => {
+    const tool = {
+      nativeToolName: "find_references",
+      description: "Find symbol references",
+      inputSchema: { type: "object", properties: { symbol: { type: "string" } } },
+      approval: "ask" as const,
+      configFingerprint: "a".repeat(64),
+      toolSchemaFingerprint: "b".repeat(64),
+    };
+
+    expect(JSON.parse(mcpToolClipboardText("typescript", tool, "schema"))).toEqual(
+      tool.inputSchema,
+    );
+    expect(JSON.parse(mcpToolClipboardText("typescript", tool, "descriptor"))).toEqual({
+      serverId: "typescript",
+      nativeToolName: "find_references",
+      description: "Find symbol references",
+      inputSchema: tool.inputSchema,
+    });
+  });
+});

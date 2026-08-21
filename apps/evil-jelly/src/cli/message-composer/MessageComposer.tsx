@@ -12,8 +12,8 @@
  * @-trigger: typing @ opens a fuzzy file picker; selecting a file inserts an
  * semantic file token at the caret and adds its path to this turn.
  *
- * $-trigger: typing $ opens the enabled Skill picker; selecting one inserts a semantic token
- * whose display name is qualified only when the catalog is ambiguous.
+ * $-trigger: typing $ opens the Skill/MCP reference picker; selecting one inserts a semantic
+ * token whose display name is qualified only when the combined catalog is ambiguous.
  *
  * Clipboard image: Alt+V (or Ctrl+V, which arrives as garbage bytes and is
  * detected) attaches an image from the OS clipboard. It drops an `[Image #N]`
@@ -38,7 +38,10 @@ import type { ComposerPickerKeyHandler } from "./suggestions/ComposerPicker";
 import { ComposerSuggestionOverlay } from "./suggestions/ComposerSuggestionOverlay";
 import { useCommandSuggestion } from "./suggestions/commands/useCommandSuggestion";
 import { useFileReferenceSuggestion } from "./suggestions/file-reference/useFileReferenceSuggestion";
-import { selectedSkillReferenceName } from "./suggestions/skill-reference/skillTrigger";
+import {
+  mcpReferenceName,
+  selectedSkillReferenceName,
+} from "./suggestions/skill-reference/skillTrigger";
 import { useSkillReferenceSuggestion } from "./suggestions/skill-reference/useSkillReferenceSuggestion";
 import { useComposerDraft } from "./useComposerDraft";
 
@@ -72,7 +75,14 @@ export function MessageComposer({
   const [terminalRows, setTerminalRows] = useState(stdout.rows || 24);
   const [clipboardImageStatus, setClipboardImageStatus] = useState<string | null>(null);
   const draft = useComposerDraft({ label, onCommand });
-  const { buffer: buf, selectedFiles, selectedSkills, availableSkills } = draft;
+  const {
+    buffer: buf,
+    selectedFiles,
+    selectedSkills,
+    selectedMcpServers,
+    availableSkills,
+    availableMcpServers,
+  } = draft;
   // Key-claim slot shared with whichever picker overlay is mounted: the picker
   // publishes its handler here and the line keybindings offer it each key first.
   const overlayKeysRef = useRef<ComposerPickerKeyHandler | null>(null);
@@ -118,6 +128,7 @@ export function MessageComposer({
   const skillSuggestion = useSkillReferenceSuggestion({
     buffer: buf,
     availableSkills,
+    availableMcpServers,
     selectedSkills,
     maxSelectedSkills: MAX_SELECTED_SKILLS,
     onNotice,
@@ -184,7 +195,19 @@ export function MessageComposer({
         {selectedSkills.map((skill) => (
           <Box key={skill.qualifiedName} flexDirection="row">
             <Text color="magenta">$ </Text>
-            <Text>{selectedSkillReferenceName(skill, availableSkills)}</Text>
+            <Text>{selectedSkillReferenceName(skill, availableSkills, availableMcpServers)}</Text>
+          </Box>
+        ))}
+      </Box>
+    ) : null;
+
+  const selectedMcpList =
+    selectedMcpServers.length > 0 ? (
+      <Box flexDirection="column" marginBottom={1}>
+        {selectedMcpServers.map((server) => (
+          <Box key={server.serverId} flexDirection="row">
+            <Text color="cyan">$ </Text>
+            <Text>{mcpReferenceName(server, availableSkills)}</Text>
           </Box>
         ))}
       </Box>
@@ -196,6 +219,7 @@ export function MessageComposer({
   const promptRows =
     (selectedFiles.length > 0 ? selectedFiles.length + 1 : 0) +
     (selectedSkills.length > 0 ? selectedSkills.length + 1 : 0) +
+    (selectedMcpServers.length > 0 ? selectedMcpServers.length + 1 : 0) +
     promptLayout.rows.length;
   const suggestionVisibleRows = Math.min(
     MAX_SUGGESTION_ROWS,
@@ -206,6 +230,7 @@ export function MessageComposer({
     <Box flexDirection="column">
       {selectedAttachmentList}
       {selectedSkillList}
+      {selectedMcpList}
       <BufferView
         rowRef={promptLayout.rowRef}
         label={label}
@@ -235,6 +260,7 @@ export function MessageComposer({
         skill={skillSuggestion}
         file={fileSuggestion}
         availableSkills={availableSkills}
+        availableMcpServers={availableMcpServers}
         visibleRows={suggestionVisibleRows}
         keySink={overlayKeysRef}
       />

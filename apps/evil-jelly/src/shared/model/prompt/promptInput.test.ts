@@ -28,6 +28,8 @@ const richInput: PromptInput = {
     { type: "token", kind: "file", attachmentId: "file-1" },
     { type: "text", text: " " },
     { type: "token", kind: "image", attachmentId: "image-1" },
+    { type: "text", text: " " },
+    { type: "token", kind: "mcp", serverId: "docs" },
   ],
   attachments: [
     { id: "file-1", kind: "file", path: "src/main.ts" },
@@ -81,7 +83,7 @@ describe("prompt input contract", () => {
   });
 
   it("keeps plain and copy fallback projections explicit and lossy", () => {
-    const expected = "review $project:review\npasted\nbody @src/main.ts [Image #1]";
+    const expected = "review $project:review\npasted\nbody @src/main.ts [Image #1] $mcp:docs";
 
     expect(promptInputPlainText(richInput)).toBe(expected);
     expect(promptInputCopyText(richInput)).toBe(expected);
@@ -153,5 +155,21 @@ describe("prompt input contract", () => {
     expect(copied.document[1]).not.toBe(richInput.document[1]);
     expect(copied.attachments).not.toBe(richInput.attachments);
     expect(copied.attachments[0]).not.toBe(richInput.attachments[0]);
+  });
+
+  it("rejects blank MCP token identity without interpreting display text", () => {
+    expect(() =>
+      assertValidPromptInput({
+        document: [{ type: "token", kind: "mcp", serverId: " " }],
+        attachments: [],
+      }),
+    ).toThrow("MCP server id must not be empty");
+    expect(() =>
+      assertValidPromptInput({
+        document: [{ type: "token", kind: "mcp", serverId: "Docs" }],
+        attachments: [],
+      }),
+    ).toThrow("lowercase ASCII");
+    expect(promptInputPlainText(textPromptInput("$mcp:docs"))).toBe("$mcp:docs");
   });
 });

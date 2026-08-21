@@ -92,6 +92,116 @@ describe("parseCliArgs", () => {
     expect(args.initModelId).toBe("deepseek-chat");
   });
 
+  it("parses MCP read commands without requiring model configuration", () => {
+    const list = parseCliArgs(["node", "evil", "mcp", "list", "--scope", "project"]);
+    expect(list.kind).toBe("mcp");
+    if (list.kind !== "mcp") throw new Error("expected mcp args");
+    expect(list.mcpCommand).toEqual({ action: "list", scope: "project" });
+
+    const get = parseCliArgs(["node", "evil", "mcp", "get", "docs"]);
+    expect(get.kind).toBe("mcp");
+    if (get.kind !== "mcp") throw new Error("expected mcp args");
+    expect(get.mcpCommand).toEqual({ action: "get", serverId: "docs", scope: "effective" });
+  });
+
+  it("parses HTTP and stdio MCP additions", () => {
+    const http = parseCliArgs([
+      "node",
+      "evil",
+      "mcp",
+      "add",
+      "remote",
+      "--scope",
+      "user",
+      "--url",
+      "https://example.test/mcp",
+      "--header",
+      "Authorization=env:MCP_TOKEN",
+    ]);
+    expect(http.kind).toBe("mcp");
+    if (http.kind !== "mcp") throw new Error("expected mcp args");
+    expect(http.mcpCommand).toMatchObject({
+      action: "add",
+      serverId: "remote",
+      scope: "user",
+      settings: {
+        transport: {
+          type: "streamableHttp",
+          headers: { Authorization: { fromEnv: "MCP_TOKEN" } },
+        },
+      },
+    });
+
+    const stdio = parseCliArgs([
+      "node",
+      "evil",
+      "mcp",
+      "add",
+      "local",
+      "--scope",
+      "project",
+      "--server-cwd",
+      "packages/local-mcp",
+      "--server-env",
+      "TOKEN=env:MCP_TOKEN",
+      "--",
+      "npx",
+      "-y",
+      "local-mcp",
+    ]);
+    expect(stdio.kind).toBe("mcp");
+    if (stdio.kind !== "mcp") throw new Error("expected mcp args");
+    expect(stdio.mcpCommand).toMatchObject({
+      action: "add",
+      serverId: "local",
+      scope: "project",
+      settings: {
+        transport: {
+          type: "stdio",
+          command: "npx",
+          args: ["-y", "local-mcp"],
+          cwd: "packages/local-mcp",
+          env: { TOKEN: { fromEnv: "MCP_TOKEN" } },
+        },
+      },
+    });
+  });
+
+  it("rejects a stdio MCP command without an explicit separator", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+
+    expect(() =>
+      parseCliArgs([
+        "node",
+        "evil",
+        "mcp",
+        "add",
+        "typescript",
+        "--scope",
+        "project",
+        "npx",
+        "-y",
+        "ts-language-mcp",
+        ".",
+      ]),
+    ).toThrow("exit 1");
+    expect(error).toHaveBeenCalledWith(
+      "mcp add stdio commands require an explicit `--` before the executable " +
+        "(PowerShell: quote it as `'--'`).",
+    );
+  });
+
+  it("requires explicit writable scope for MCP mutations", () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+    expect(() => parseCliArgs(["node", "evil", "mcp", "remove", "docs"])).toThrow("exit 1");
+  });
+
   it("carries --env on both the run loop and init", () => {
     expect(parseCliArgs(["node", "evil", "--env", "luna"]).envFile).toBe("luna");
     expect(parseCliArgs(["node", "evil", "init", "--env", "luna"]).envFile).toBe("luna");
@@ -187,10 +297,15 @@ describe("parseCliArgs", () => {
   });
 
   it("parses settings-override flags into common settings", () => {
-    const args = parseCliArgs([
+    const unifiedArgs = parseCliArgs(["node", "evil", "--devtool", "--doc-map", "docs/map.jsonc"]);
+    expect(unifiedArgs.settings).toEqual({
+      docMap: "docs/map.jsonc",
+    });
+    expect(unifiedArgs).toMatchObject({ kind: "unified", devtool: true });
+
+    const auditArgs = parseCliArgs([
       "node",
       "evil",
-      "--devtool",
       "--doc-map",
       "docs/map.jsonc",
       "audit",
@@ -202,9 +317,8 @@ describe("parseCliArgs", () => {
       "10",
       "--no-ledger-gc",
     ]);
-    expect(args.settings).toEqual({
+    expect(auditArgs.settings).toEqual({
       docMap: "docs/map.jsonc",
-      devtoolMcp: true,
       auditMaxSeeds: 48,
       auditLedgerGcDays: 10,
       auditDisableLedgerGc: true,
@@ -215,7 +329,6 @@ describe("parseCliArgs", () => {
     const args = parseCliArgs(["node", "evil"]);
     expect(args.settings).toEqual({
       docMap: undefined,
-      devtoolMcp: undefined,
       auditMaxSeeds: undefined,
       auditLedgerGcDays: undefined,
       auditDisableLedgerGc: undefined,
@@ -381,6 +494,32 @@ describe("parseCliArgs", () => {
     });
 
     expect(() => parseCliArgs(["node", "evil", "--family", "fragmentation"])).toThrow("exit 1");
+  });
+
+  it("rejects DevTool MCP for the Audit workflow", () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+
+    expect(() => parseCliArgs(["node", "evil", "audit", "--family", "clone", "--devtool"])).toThrow(
+      "exit 1",
+    );
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("not supported by audit"));
+  });
+
+  it("rejects DevTool MCP outside the interactive coding workflow", () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+
+    expect(() =>
+      parseCliArgs(["node", "evil", "--headless", "--input", "task", "--devtool"]),
+    ).toThrow("exit 1");
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining("supported only by the interactive coding run"),
+    );
   });
 
   it.each([

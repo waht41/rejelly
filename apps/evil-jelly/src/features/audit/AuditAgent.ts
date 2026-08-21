@@ -12,7 +12,11 @@
  * (DR-0005 narrow workflow).
  */
 
-import { createAgent } from "@rejelly/core";
+import { createAgent, expectResource } from "@rejelly/core";
+import {
+  MCP_AUDIT_PROVENANCE_RESOURCE_KEY,
+  type McpAuditProvenanceCollector,
+} from "../../domains/mcp/gateway/auditDispatch";
 import { getSettings } from "../../shared/configuration/settings";
 import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import { getBinding } from "../../shared/host/context";
@@ -328,6 +332,9 @@ export const AuditAgent = createAgent<AuditAgentProps, string>({
       ledger: ledgerStats,
       evaluatedCount,
       findings: allFindings,
+      mcp: expectResource<McpAuditProvenanceCollector>(MCP_AUDIT_PROVENANCE_RESOURCE_KEY, {
+        optional: true,
+      })?.snapshot(),
     };
     const markdown = renderAuditReport(data, { onlyActionable: props.onlyActionable });
 

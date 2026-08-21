@@ -5,6 +5,7 @@ import {
   fileLocatorFromResolved,
 } from "../../../shared/fs-policy/file-locator";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
+import { validateMcpServerId } from "../../../shared/model/mcp/serverIdentity";
 import type {
   ResolvedUserInputNodeV1,
   ResolvedUserInputV1,
@@ -153,6 +154,10 @@ export interface UserMessageMaterializationOptions {
     status: "resolved" | "unavailable";
     context?: string;
   };
+  mcpResolution?: (serverId: string) => {
+    status: "selected" | "unavailable" | "disabled" | "untrusted";
+    configFingerprint?: string;
+  };
 }
 
 /** Compile PromptInput once, in document order, without parsing any display projection. */
@@ -185,6 +190,15 @@ export async function materializeUserInput(
         qualifiedName: node.qualifiedName,
         ...resolution,
       });
+      continue;
+    }
+    if (node.kind === "mcp") {
+      const identity = validateMcpServerId(node.serverId);
+      if (!identity.ok) throw new Error(identity.reason);
+      const resolution = options.mcpResolution?.(node.serverId) ?? {
+        status: "unavailable" as const,
+      };
+      nodes.push({ kind: "mcp", serverId: node.serverId, ...resolution });
       continue;
     }
 

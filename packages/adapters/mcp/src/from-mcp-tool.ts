@@ -4,7 +4,12 @@
 
 import type { JsonSchema, ToolDefinition } from "@rejelly/core";
 import { jsonSchemaToZod } from "./json-schema-to-zod";
-import { formatCallToolResult, type MCPClientLike, normalizeCallTool } from "./mcp-compat";
+import {
+  formatCallToolResult,
+  type MCPClientLike,
+  type McpToolListItem,
+  normalizeCallTool,
+} from "./mcp-compat";
 
 export interface FromMCPToolOptions {
   /** Registered tool name; default is MCP tool name */
@@ -16,7 +21,7 @@ export interface FromMCPToolOptions {
  * The handler proxies to client.callTool (SDK or compatible).
  */
 export function fromMCPTool(
-  mcpTool: { name: string; description?: string; inputSchema?: JsonSchema },
+  mcpTool: McpToolListItem,
   client: MCPClientLike,
   options?: FromMCPToolOptions,
 ): ToolDefinition {

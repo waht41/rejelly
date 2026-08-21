@@ -27,6 +27,7 @@ import {
   resetComposerSession,
   useComposerSession,
 } from "../message-composer/session/composerSession";
+import { useDecisionStore } from "../operator-decision/decisionStore";
 import type { DecisionView } from "../operator-decision/model";
 import {
   createOperatorDecision,
@@ -67,6 +68,18 @@ function createInkRequestChoice(): PromptInputBindings["requestChoice"] {
       });
       useOutputStore.getState().resumeWork("Running…");
       return selected;
+    });
+  };
+}
+
+function createInkRequestMcpManager(): NonNullable<PromptInputBindings["requestMcpManager"]> {
+  const decision = createOperatorDecision();
+  return async (request) => {
+    return decision.run(async (session) => {
+      useOutputStore.getState().setPhase("awaiting_user", "Managing MCP servers…");
+      const action = await session.requestMcpManager(request);
+      useOutputStore.getState().resumeWork("Running…");
+      return action;
     });
   };
 }
@@ -155,8 +168,13 @@ function createPromptBindings(options: {
     }),
     getAgentMode: () => useModeStore.getState().mode,
     requestChoice: createInkRequestChoice(),
+    requestMcpManager: createInkRequestMcpManager(),
+    dismissMcpManager: () => useDecisionStore.getState().submitMcpManager({ action: "refresh" }),
     setAvailableSkills: (skills) => {
       useComposerSession.getState().setAvailableSkills(skills);
+    },
+    setAvailableMcpServers: (servers) => {
+      useComposerSession.getState().setAvailableMcpServers(servers);
     },
   };
 }

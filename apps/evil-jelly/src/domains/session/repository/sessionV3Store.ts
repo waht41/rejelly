@@ -11,6 +11,7 @@ import {
 import { isKnownSessionEvent } from "../model/sessionEvents";
 import type { SessionMeta, SessionRecord } from "../model/sessionTypes";
 import { buildStoredActiveContext, buildTranscript } from "../projection/sessionHistoryProjection";
+import { projectSessionMcpState } from "../projection/sessionMcpProjection";
 import {
   projectSessionSummary,
   projectSessionSummaryFromState,
@@ -110,6 +111,7 @@ export async function readV3Session(
         meta: sessionMetaFromSummary(summary),
         messages: buildStoredActiveContext(replay),
         transcript: buildTranscript(replay, { tailTurns: 10 }),
+        mcp: projectSessionMcpState(replay),
         ...(warnings ? { warnings } : {}),
       },
     };

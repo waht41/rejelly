@@ -1,4 +1,5 @@
 import type { Message } from "@rejelly/core";
+import type { SessionMcpState } from "../../../shared/model/mcp/sessionMcpState";
 import type { TranscriptItem } from "../../../shared/session/transcript";
 import type { LegacySessionMeta, SessionBudgetData } from "./sessionEvents";
 
@@ -21,6 +22,8 @@ export interface SessionRecord {
   messages: Message[];
   /** Prepared display projection. V1 callers may still build this lazily from messages. */
   transcript?: TranscriptItem[];
+  /** Canonical Session MCP projection; V1/V2 sources project an empty state. */
+  mcp: SessionMcpState;
   /** Non-blocking compatibility notices to show when hydrating a resumed session. */
   warnings?: string[];
 }

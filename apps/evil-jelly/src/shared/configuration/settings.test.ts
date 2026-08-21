@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os, { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resolveMcpSettingsLayers } from "../../domains/mcp/configuration/configuration";
 import { getWorkspaceFsPolicy, setWorkspaceRoot } from "../fs-policy/workspace-fs-policy";
 import {
   DOC_MAP_DEFAULT_PATH,
@@ -52,7 +53,7 @@ describe("settings resolution", () => {
       disableLedgerGc: false,
     });
     expect(s.skills).toEqual({ enabled: true, overrides: {} });
-    expect(s.devtoolMcp).toBe(false);
+    expect(resolveMcpSettingsLayers(s.mcp)).toEqual({ servers: [] });
   });
 
   it("reads values from workspace .evil-jelly/settings.jsonc", () => {
@@ -142,14 +143,12 @@ describe("settings resolution", () => {
     }`);
     initSettings({
       docMap: "other/map.jsonc",
-      devtoolMcp: true,
       auditMaxSeeds: 32,
       auditLedgerGcDays: 7,
       auditDisableLedgerGc: true,
     });
     const s = getSettings();
     expect(s.docMap).toBe("other/map.jsonc");
-    expect(s.devtoolMcp).toBe(true);
     expect(s.audit).toMatchObject({
       maxSeeds: 32,
       ledgerGcDays: 7,
@@ -192,6 +191,45 @@ describe("settings resolution", () => {
       "skills": { "overrides": { "review": { "enabled": false } } }
     }`);
     expect(() => getSettings()).toThrow(/qualified Skill name/);
+  });
+
+  it("replaces a same-id MCP server as one workspace definition", () => {
+    writeUserSettingsFile(`{
+      "mcp": { "servers": {
+        "docs": {
+          "transport": { "type": "stdio", "command": "user-command" },
+          "startupTimeoutMs": 1234,
+          "use": { "chat": { "exposure": "always" } }
+        }
+      } }
+    }`);
+    writeWorkspaceSettingsFile(`{
+      "mcp": { "servers": {
+        "docs": { "transport": { "type": "stdio", "command": "project-command" } }
+      } }
+    }`);
+
+    const server = resolveMcpSettingsLayers(getSettings().mcp).servers[0];
+    expect(server).toMatchObject({
+      id: "docs",
+      source: { kind: "workspace" },
+      definition: {
+        transport: { command: "project-command" },
+        startupTimeoutMs: 30_000,
+        use: { chat: { exposure: "explicit" } },
+      },
+    });
+  });
+
+  it("rejects reserved and malformed MCP server definitions with their path", () => {
+    writeWorkspaceSettingsFile(`{
+      "mcp": { "servers": {
+        "evil.devtool": { "transport": { "type": "stdio", "command": "shadow" } }
+      } }
+    }`);
+    const settings = getSettings();
+    expect(() => resolveMcpSettingsLayers(settings.mcp)).toThrow(/evil\.devtool/);
+    expect(() => resolveMcpSettingsLayers(settings.mcp)).toThrow(/reserved/);
   });
 
   it("rejects unknown Skill override fields", () => {

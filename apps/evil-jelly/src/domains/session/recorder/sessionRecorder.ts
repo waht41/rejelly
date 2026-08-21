@@ -1,4 +1,5 @@
 import type { Message } from "@rejelly/core";
+import type { McpToolGrant } from "../../../shared/model/mcp/toolGrant";
 import {
   type FrozenUserInputV1,
   projectFrozenUserInputPlainText,
@@ -55,6 +56,11 @@ export interface SessionRecorder extends SessionMessageSink {
     inputKind: "initial" | "steer",
     input: ResolvedUserInputV1,
   ): Promise<FrozenUserInputV1>;
+  recordMcpSelection(
+    selectedServerIds: readonly string[],
+    reason: "startup" | "command" | "tool",
+  ): Promise<void>;
+  recordMcpToolGrants(grants: readonly McpToolGrant[], reason: "command" | "tool"): Promise<void>;
   completeTurn(
     turnId: string,
     status: "completed" | "interrupted" | "error",
@@ -207,6 +213,37 @@ class JsonlSessionRecorder implements SessionRecorder {
     message: Message,
   ): Promise<void> {
     await this.recordMessages(turnId, [{ source, message }]);
+  }
+
+  async recordMcpSelection(
+    selectedServerIds: readonly string[],
+    reason: "startup" | "command" | "tool",
+  ): Promise<void> {
+    await this.#append({
+      type: "mcp_selection_changed",
+      selectedServerIds: [...new Set(selectedServerIds)].sort(),
+      reason,
+    });
+    await this.writer.flush();
+  }
+
+  async recordMcpToolGrants(
+    grants: readonly McpToolGrant[],
+    reason: "command" | "tool",
+  ): Promise<void> {
+    const unique = new Map(
+      grants.map((grant) => [JSON.stringify([grant.serverId, grant.nativeToolName]), grant]),
+    );
+    await this.#append({
+      type: "mcp_tool_grants_changed",
+      grants: [...unique.values()].sort(
+        (left, right) =>
+          left.serverId.localeCompare(right.serverId) ||
+          left.nativeToolName.localeCompare(right.nativeToolName),
+      ),
+      reason,
+    });
+    await this.writer.flush();
   }
 
   async recordMessages(

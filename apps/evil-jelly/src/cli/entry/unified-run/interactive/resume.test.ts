@@ -1,6 +1,7 @@
 import type { Message } from "@rejelly/core";
 import { describe, expect, it } from "vitest";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
+import { emptySessionMcpState } from "../../../../shared/model/mcp/sessionMcpState";
 import { textPromptInput } from "../../../../shared/model/prompt/promptInput";
 import { buildLegacyResumeSeed, hydrateResumeSeed } from "./resume";
 
@@ -154,6 +155,7 @@ describe("hydrateResumeSeed", () => {
       ],
       totalTurns: 25,
       budget: undefined,
+      mcp: emptySessionMcpState(),
     });
 
     expect(hydrated).toHaveLength(1);

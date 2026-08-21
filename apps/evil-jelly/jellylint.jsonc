@@ -34,6 +34,8 @@
       "!src/**/__tests__/**/*",
       "!src/**/*.test.*"
     ],
+    "@cli:mcp-runtime": ["src/cli/mcp-runtime/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@cli:mcp-manager": ["src/cli/mcp-manager/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:runtime": ["src/cli/runtime/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:submission-dispatch": [
       "src/cli/submission-dispatch/**/*",
@@ -46,6 +48,7 @@
       "!src/**/*.test.*"
     ],
     "@cli:init-run": ["src/cli/entry/init-run/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@cli:mcp-run": ["src/cli/entry/mcp-run/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:unified-run": [
       "src/cli/entry/unified-run/**/*",
       "!src/**/__tests__/**/*",
@@ -147,6 +150,7 @@
           [
             "@shared",
             "@cli:entry",
+            "@cli:mcp-run",
             "@cli:interactive-shell",
             "@cli:message-composer",
             "@cli:tool-approval",
@@ -162,6 +166,7 @@
             "@cli:conversation-display",
             "@cli:terminal-ui",
             "@cli:message-composer",
+            "@cli:mcp-manager",
             "@cli:operator-decision",
             "@cli:tool-approval"
           ],
@@ -169,7 +174,7 @@
         ]
       },
       "connect": {
-        "@cli:audit-run": ["@feature:audit"],
+        "@cli:audit-run": ["@feature:audit", "@domain:mcp"],
         "@cli:unified-run": [
           "@feature:unified",
           "@feature:replay",
@@ -180,7 +185,8 @@
           "@domain:skills:definition",
           "@domain:mcp"
         ],
-        "@cli:unified-conversation": ["@feature:unified"],
+        "@cli:unified-conversation": ["@feature:unified", "@domain:mcp"],
+        "@cli:mcp-runtime": ["@domain:mcp"],
         "@feature:unified": [
           "@domain:workspace",
           "@domain:web",
@@ -189,7 +195,7 @@
           "@domain:policy",
           "@domain:mcp"
         ],
-        "@feature:audit": ["@domain:workspace"],
+        "@feature:audit": ["@domain:workspace", "@domain:mcp"],
         "@cli:message-composer": [
           "@domain:workspace",
           "@domain:skills:agent",
@@ -202,19 +208,23 @@
         "@cli:entry": [
           "@cli:audit-run",
           "@cli:init-run",
+          "@cli:mcp-run",
           "@cli:unified-run",
           "@cli:bindings",
           "@cli:model-composition"
         ],
         "@cli:audit-run": ["@cli:runtime"],
+        "@cli:mcp-run": ["@domain:mcp"],
         "@cli:unified-run": [
           "@cli:runtime",
           "@cli:message-composer",
           "@cli:submission-dispatch",
+          "@cli:mcp-runtime",
           "@cli:skill-runtime",
           "@cli:unified-conversation"
         ],
         "@cli:skill-runtime": ["@domain:skills:*"],
+        "@cli:mcp-runtime": ["@domain:mcp"],
         "@cli:unified-conversation": [
           "@cli:conversation-display",
           "@cli:message-composer",
@@ -236,12 +246,14 @@
         ],
         "@cli:interactive-shell": [
           "@cli:conversation-display",
+          "@cli:mcp-manager",
           "@cli:operator-decision",
           "@cli:tool-approval",
           "@cli:message-composer",
           "@cli:submission-dispatch"
         ],
         "@cli:conversation-display": ["@cli:terminal-ui"],
+        "@cli:mcp-manager": ["@cli:terminal-ui"],
         "@cli:message-composer": ["@cli:terminal-ui"],
         "@cli:operator-decision": ["@cli:conversation-display", "@cli:terminal-ui"],
         "@cli:tool-approval": ["@cli:conversation-display", "@cli:operator-decision"]

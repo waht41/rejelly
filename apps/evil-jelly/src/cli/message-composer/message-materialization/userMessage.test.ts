@@ -232,4 +232,34 @@ describe("materializeUserInput", () => {
       "src/attached.ts",
     ]);
   });
+
+  it("freezes MCP identity and non-secret resolution without parsing display text", async () => {
+    const resolved = await resolveUserInput(
+      {
+        document: [
+          { type: "text", text: "plain $mcp:fake " },
+          { type: "token", kind: "mcp", serverId: "docs" },
+        ],
+        attachments: [],
+      },
+      {
+        mcpResolution: () => ({ status: "selected", configFingerprint: "config-1" }),
+      },
+    );
+    const frozen = await freezeResolvedUserInput(resolved, { blobRoot });
+
+    expect(frozen.nodes).toEqual([
+      { kind: "text", text: "plain $mcp:fake " },
+      {
+        kind: "mcp",
+        serverId: "docs",
+        status: "selected",
+        configFingerprint: "config-1",
+      },
+    ]);
+    expect(projectFrozenUserInputMessage(frozen).content).toContain(
+      '<selected_mcp server="docs" status="selected" />',
+    );
+    expect(projectFrozenUserInputDisplay(frozen).text).toBe("plain $mcp:fake $mcp:docs");
+  });
 });

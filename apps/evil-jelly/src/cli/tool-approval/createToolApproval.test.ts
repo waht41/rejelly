@@ -421,4 +421,104 @@ describe("createToolApproval", () => {
     useDecisionStore.getState().submitChoice("reject");
     await expect(pending).resolves.toEqual({ action: "reject" });
   });
+
+  it("prompts with structured MCP identity and arguments", async () => {
+    resetCliStores();
+    const confirmTool = createToolApproval({ getMode: () => "normal" });
+
+    const pending = confirmTool({
+      type: "mcp_call",
+      tool: { serverId: "docs", nativeToolName: "read" },
+      configFingerprint: "a".repeat(64),
+      toolSchemaFingerprint: "b".repeat(64),
+      autoApprovedByPolicy: false,
+      arguments: { path: "guide.md" },
+    });
+
+    await flushMicrotasks();
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      type: "choice",
+      message: 'Allow MCP tool docs/read?\nArguments:\n{\n  "path": "guide.md"\n}',
+      options: expect.arrayContaining([
+        expect.objectContaining({ value: "accept_session" }),
+        expect.objectContaining({ value: "accept_always" }),
+      ]),
+    });
+    useDecisionStore.getState().submitChoice("accept");
+    await expect(pending).resolves.toEqual({ action: "accept", scope: "once" });
+  });
+
+  it("auto-allows every MCP tool call without creating a session grant", async () => {
+    resetCliStores();
+    let mode: "auto" | "normal" = "auto";
+    const confirmTool = createToolApproval({ getMode: () => mode });
+
+    await expect(
+      confirmTool({
+        type: "mcp_call",
+        tool: { serverId: "docs", nativeToolName: "read" },
+        configFingerprint: "a".repeat(64),
+        toolSchemaFingerprint: "b".repeat(64),
+        autoApprovedByPolicy: false,
+        arguments: { path: "guide.md" },
+      }),
+    ).resolves.toEqual({ action: "accept", scope: "once" });
+    expect(useDecisionStore.getState().decision).toEqual({ type: "idle" });
+
+    mode = "normal";
+    const pending = confirmTool({
+      type: "mcp_call",
+      tool: { serverId: "docs", nativeToolName: "read" },
+      configFingerprint: "a".repeat(64),
+      toolSchemaFingerprint: "b".repeat(64),
+      autoApprovedByPolicy: false,
+      arguments: { path: "guide.md" },
+    });
+    await flushMicrotasks();
+    expect(useDecisionStore.getState().decision).toMatchObject({ type: "choice" });
+    useDecisionStore.getState().submitChoice("reject");
+    await expect(pending).resolves.toEqual({ action: "reject" });
+  });
+
+  it("prompts for session MCP access with the host-owned fingerprint", async () => {
+    resetCliStores();
+    const confirmTool = createToolApproval({ getMode: () => "auto" });
+
+    const pending = confirmTool({
+      type: "mcp_access",
+      serverId: "typescript",
+      source: "workspace",
+      configFingerprint: "f".repeat(64),
+      requiresTrust: true,
+      reason: "Find symbol references",
+    });
+
+    await flushMicrotasks();
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      type: "choice",
+      message: expect.stringContaining("Allow MCP server typescript?"),
+      options: expect.arrayContaining([expect.objectContaining({ value: "accept_always" })]),
+    });
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      message: expect.stringContaining("Find symbol references"),
+    });
+    useDecisionStore.getState().submitChoice("accept");
+    await expect(pending).resolves.toEqual({ action: "accept", scope: "session" });
+  });
+
+  it("auto-selects an already trusted MCP server for the current session", async () => {
+    resetCliStores();
+    const confirmTool = createToolApproval({ getMode: () => "auto" });
+
+    await expect(
+      confirmTool({
+        type: "mcp_access",
+        serverId: "typescript",
+        source: "user",
+        configFingerprint: "f".repeat(64),
+        requiresTrust: false,
+      }),
+    ).resolves.toEqual({ action: "accept", scope: "session" });
+    expect(useDecisionStore.getState().decision).toEqual({ type: "idle" });
+  });
 });

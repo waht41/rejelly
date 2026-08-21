@@ -1,5 +1,6 @@
 import type { Message } from "@rejelly/core";
 import { z } from "zod";
+import { validateMcpServerId } from "../../../shared/model/mcp/serverIdentity";
 import type {
   FrozenUserInputV1,
   UserInputDisplay,
@@ -89,6 +90,14 @@ const imageNodeSchema = z
       });
     }
   });
+const mcpNodeSchema = z
+  .object({
+    kind: z.literal("mcp"),
+    serverId: nonBlankString.refine((value) => validateMcpServerId(value).ok),
+    status: z.enum(["selected", "unavailable", "disabled", "untrusted"]),
+    configFingerprint: nonBlankString.optional(),
+  })
+  .strict();
 
 const resolvedNodeSchema = z.union([
   textNodeSchema,
@@ -96,6 +105,7 @@ const resolvedNodeSchema = z.union([
   skillNodeSchema,
   fileNodeSchema,
   imageNodeSchema,
+  mcpNodeSchema,
 ]);
 const resolvedInputSchema = z
   .object({

@@ -3,15 +3,19 @@
  */
 
 import { type ContentPart, type JsonSchema, toolContent } from "@rejelly/core";
+import { type McpNativeToolDescriptor, normalizeMcpToolCatalog } from "./gateway";
 import type { CallToolResult, MCPResourceDescriptor } from "./types";
 
-/** MCP tools/list item shape */
-export interface MCPToolDescriptor {
+/** Untrusted tools/list item shape accepted by the legacy compatibility path. */
+export interface McpToolListItem {
   name: string;
   description?: string;
-  /** Full JSON Schema from server — preserve for jsonSchemaToZod */
+  /** Legacy clients may omit this; normalization supplies an empty object schema. */
   inputSchema?: JsonSchema;
 }
+
+/** @deprecated Use McpNativeToolDescriptor after normalizeMcpToolCatalog(). */
+export type MCPToolDescriptor = McpToolListItem;
 
 /** Minimal surface needed by fromMCPTool / equipMCP */
 export interface MCPClientLike {
@@ -24,14 +28,14 @@ export interface MCPClientLike {
 }
 
 function parseListToolsPage(raw: unknown): {
-  tools: MCPToolDescriptor[];
+  tools: McpToolListItem[];
   nextCursor?: string;
 } {
-  if (Array.isArray(raw)) return { tools: raw as MCPToolDescriptor[] };
+  if (Array.isArray(raw)) return { tools: raw as McpToolListItem[] };
   if (raw && typeof raw === "object") {
     const o = raw as { tools?: unknown; nextCursor?: string };
     if (Array.isArray(o.tools)) {
-      return { tools: o.tools as MCPToolDescriptor[], nextCursor: o.nextCursor };
+      return { tools: o.tools as McpToolListItem[], nextCursor: o.nextCursor };
     }
   }
   return { tools: [] };
@@ -57,12 +61,12 @@ export interface NormalizeListToolsOptions {
 export async function normalizeListTools(
   client: MCPClientLike,
   options?: NormalizeListToolsOptions,
-): Promise<MCPToolDescriptor[]> {
+): Promise<McpNativeToolDescriptor[]> {
   const autoPaginate = options?.autoPaginate !== false;
   const maxItems = options?.maxItems ?? 100;
   const required = options?.requiredNames?.length ? new Set(options.requiredNames) : null;
 
-  const byName = new Map<string, MCPToolDescriptor>();
+  const byName = new Map<string, McpToolListItem>();
   let cursor: string | undefined;
   const listFn = client.listTools.bind(client);
 
@@ -83,7 +87,7 @@ export async function normalizeListTools(
         byName.set(t.name, t);
       }
       if (!required && byName.size >= maxItems) {
-        return Array.from(byName.values()).slice(0, maxItems);
+        return [...normalizeMcpToolCatalog(Array.from(byName.values()).slice(0, maxItems))];
       }
     }
 
@@ -104,7 +108,7 @@ export async function normalizeListTools(
       }
     } else {
       if (byName.size >= maxItems) {
-        return Array.from(byName.values()).slice(0, maxItems);
+        return [...normalizeMcpToolCatalog(Array.from(byName.values()).slice(0, maxItems))];
       }
       if (!nextCursor || !autoPaginate) {
         break;
@@ -121,10 +125,10 @@ export async function normalizeListTools(
         `[@rejelly/adapter-mcp] Requested tools not found on MCP server. Missing: ${miss.join(", ")}`,
       );
     }
-    return [...required].map((n) => byName.get(n)!);
+    return [...normalizeMcpToolCatalog([...required].map((n) => byName.get(n)!))];
   }
 
-  return Array.from(byName.values()).slice(0, maxItems);
+  return [...normalizeMcpToolCatalog(Array.from(byName.values()).slice(0, maxItems))];
 }
 
 export function parseListResourcesPage(raw: unknown): {

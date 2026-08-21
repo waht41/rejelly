@@ -132,6 +132,81 @@ describe("sessionEvents", () => {
     ).toThrow(SessionSchemaError);
   });
 
+  it("records a complete session MCP selection set only in V3", () => {
+    expect(
+      parseNewSessionEvent({
+        type: "mcp_selection_changed",
+        selectedServerIds: ["docs", "github"],
+        reason: "command",
+      }),
+    ).toEqual({
+      type: "mcp_selection_changed",
+      selectedServerIds: ["docs", "github"],
+      reason: "command",
+    });
+    expect(
+      parseNewSessionEvent({
+        type: "mcp_selection_changed",
+        selectedServerIds: ["typescript"],
+        reason: "tool",
+      }),
+    ).toMatchObject({ reason: "tool" });
+    expect(() =>
+      parseNewSessionEvent({
+        type: "mcp_selection_changed",
+        selectedServerIds: ["docs", "docs"],
+        reason: "startup",
+      }),
+    ).toThrow("duplicate server id");
+    expect(() =>
+      parseSessionEvent(
+        {
+          type: "mcp_selection_changed",
+          seq: 1,
+          timestamp: 2,
+          selectedServerIds: ["docs"],
+          reason: "startup",
+        },
+        2,
+      ),
+    ).toThrow("Session V2 cannot contain mcp_selection_changed events");
+  });
+
+  it("records complete session MCP tool grants only in V3", () => {
+    const grant = {
+      serverId: "docs",
+      configFingerprint: "a".repeat(64),
+      nativeToolName: "read",
+      toolSchemaFingerprint: "b".repeat(64),
+    };
+    expect(
+      parseNewSessionEvent({
+        type: "mcp_tool_grants_changed",
+        grants: [grant],
+        reason: "tool",
+      }),
+    ).toMatchObject({ grants: [grant], reason: "tool" });
+    expect(() =>
+      parseNewSessionEvent({
+        type: "mcp_tool_grants_changed",
+        grants: [grant, grant],
+        reason: "command",
+      }),
+    ).toThrow("duplicate tool identity");
+    expect(() =>
+      parseSessionEvent(
+        {
+          type: "mcp_tool_grants_changed",
+          seq: 1,
+          timestamp: 2,
+          grants: [grant],
+          reason: "tool",
+        },
+        2,
+      ),
+    ).toThrow("Session V2 cannot contain mcp_tool_grants_changed events");
+  });
+
   it("uses created/resumed for run starts instead of encoding the caller path", () => {
     expect(
       parseSessionEvent({

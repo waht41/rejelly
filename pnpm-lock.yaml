@@ -442,6 +442,9 @@ importers:
       vitest:
         specifier: 'catalog:'
         version: 4.0.16(@opentelemetry/api@1.9.0)(@types/node@22.19.6)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.2)
+      zod-to-json-schema:
+        specifier: ^3.25.0
+        version: 3.25.2(zod@3.25.76)
 
   docs:
     devDependencies:
@@ -616,6 +619,9 @@ importers:
 
   packages/adapters/mcp:
     dependencies:
+      ajv:
+        specifier: ^8.17.1
+        version: 8.17.1
       zod-to-json-schema:
         specifier: ^3.25.0
         version: 3.25.0(zod@3.25.76)
@@ -632,6 +638,9 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.0.16(@opentelemetry/api@1.9.0)(@types/node@22.19.6)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.2)
       zod:
         specifier: 'catalog:'
         version: 3.25.76
@@ -7670,7 +7679,7 @@ snapshots:
       pkce-challenge: 5.0.1
       raw-body: 3.0.2
       zod: 3.25.76
-      zod-to-json-schema: 3.25.1(zod@3.25.76)
+      zod-to-json-schema: 3.25.2(zod@3.25.76)
     optionalDependencies:
       '@cfworker/json-schema': 4.1.1
     transitivePeerDependencies:

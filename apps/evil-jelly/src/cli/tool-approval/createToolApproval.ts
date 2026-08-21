@@ -7,6 +7,8 @@ import type { AgentMode } from "../../shared/host/modeBindings";
 import type {
   FsOutsideAccessPayload,
   FsWritePayload,
+  McpAccessConfirmationPayload,
+  McpCallConfirmationPayload,
   ShellCommandPayload,
   ToolConfirmationHandler,
   ToolConfirmationResult,
@@ -152,6 +154,55 @@ async function confirmOutsideAccess(
   });
   useOutputStore.getState().resumeWork("Running…");
   return selected === "accept" ? { action: "accept" } : { action: "reject" };
+}
+
+async function confirmMcpCall(
+  params: McpCallConfirmationPayload,
+  decision: OperatorDecisionSession,
+): Promise<ToolConfirmationResult> {
+  const identity = `${params.tool.serverId}/${params.tool.nativeToolName}`;
+  useOutputStore.getState().setPhase("awaiting_user", `MCP → ${identity}`);
+  const selected = await decision.requestChoice({
+    message: `Allow MCP tool ${identity}?\nArguments:\n${JSON.stringify(params.arguments, null, 2)}`,
+    options: [
+      { key: "y", label: "Allow once", value: "accept" },
+      { key: "s", label: "Allow this tool for this session", value: "accept_session" },
+      { key: "A", label: "Always allow this tool in this workspace", value: "accept_always" },
+      { key: "n", label: "Reject", value: "reject" },
+    ],
+    cancelValue: "reject",
+  });
+  useOutputStore.getState().resumeWork("Running…");
+  if (selected === "accept_session") return { action: "accept", scope: "session" };
+  if (selected === "accept_always") return { action: "accept", scope: "always" };
+  return selected === "accept" ? { action: "accept", scope: "once" } : { action: "reject" };
+}
+
+async function confirmMcpAccess(
+  params: McpAccessConfirmationPayload,
+  decision: OperatorDecisionSession,
+): Promise<ToolConfirmationResult> {
+  useOutputStore.getState().setPhase("awaiting_user", `MCP access → ${params.serverId}`);
+  const trustLine = params.requiresTrust
+    ? "\nThis also trusts the exact workspace configuration fingerprint."
+    : "";
+  const reasonLine = params.reason ? `\nReason: ${params.reason}` : "";
+  const selected = await decision.requestChoice({
+    message:
+      `Allow MCP server ${params.serverId}?\n` +
+      `Source: ${params.source}\nFingerprint: ${params.configFingerprint}` +
+      trustLine +
+      reasonLine,
+    options: [
+      { key: "y", label: "Allow for this session", value: "accept" },
+      { key: "A", label: "Always allow this server in this workspace", value: "accept_always" },
+      { key: "n", label: "Reject", value: "reject" },
+    ],
+    cancelValue: "reject",
+  });
+  useOutputStore.getState().resumeWork("Running…");
+  if (selected === "accept_always") return { action: "accept", scope: "always" };
+  return selected === "accept" ? { action: "accept", scope: "session" } : { action: "reject" };
 }
 
 type ShellAutoAllowCheck = {
@@ -350,6 +401,22 @@ export function createToolApproval(
     }
     if (params.type === "fs_outside_access") {
       return decision.run((session) => confirmOutsideAccess(params, session));
+    }
+    if (params.type === "mcp_access") {
+      if (getMode() === "auto" && !params.requiresTrust) {
+        logNotice(`[Auto-allowed] MCP server ${params.serverId} for this session (auto mode)`);
+        return { action: "accept", scope: "session" };
+      }
+      return decision.run((session) => confirmMcpAccess(params, session));
+    }
+    if (params.type === "mcp_call") {
+      if (getMode() === "auto") {
+        logNotice(
+          `[Auto-allowed] MCP tool ${params.tool.serverId}/${params.tool.nativeToolName} (auto mode)`,
+        );
+        return { action: "accept", scope: "once" };
+      }
+      return decision.run((session) => confirmMcpCall(params, session));
     }
 
     recordActiveToolDetail({

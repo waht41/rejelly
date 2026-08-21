@@ -19,6 +19,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "clean": "node ../../../scripts/clean.mjs",
     "prepublishOnly": "node -e \"if(process.env.I_KNOW_WHAT_I_AM_DOING !== 'true') { console.error('❌ 防呆拦截：必须带上环境变量才能发布！'); process.exit(1); }\""
@@ -38,6 +39,7 @@
     "zod": "catalog:peer"
   },
   "dependencies": {
+    "ajv": "^8.17.1",
     "zod-to-json-schema": "^3.25.0"
   },
   "devDependencies": {
@@ -45,6 +47,7 @@
     "@types/node": "catalog:",
     "tsup": "catalog:",
     "typescript": "catalog:",
+    "vitest": "catalog:",
     "zod": "catalog:"
   }
 }

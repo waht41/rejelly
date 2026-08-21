@@ -29,6 +29,25 @@ describe("buildUnifiedSystemPrompt", () => {
     expect(prompt.endsWith(workspaceRuleBlock)).toBe(true);
   });
 
+  it("uses MCP before workspace fallback for explicit and semantic requests", () => {
+    const prompt = buildUnifiedSystemPrompt({ workspaceRuleBlock: "" });
+
+    expect(prompt).toContain(
+      "When the user explicitly asks to use or search MCP, call mcp_reference before inspecting the workspace.",
+    );
+    expect(prompt).toContain(
+      "For semantic TypeScript tasks such as references, definitions, hover, and implementations, call mcp_reference first.",
+    );
+    expect(prompt).toContain("matching callable MCP tool");
+    expect(prompt).toContain(
+      'If mcp_reference returns suggested_action="request_access" or a relevant server with callable="false", call mcp_request once',
+    );
+    expect(prompt).toContain("do not ask the user to run /mcp manually");
+    expect(prompt).toContain("Do not retry synonyms");
+    expect(prompt).toContain("otherwise fall back to grep + read_file");
+    expect(prompt).not.toContain("There is no language-server/`ts_` tool available");
+  });
+
   it("does not add an empty trailing workspace block", () => {
     const prompt = buildUnifiedSystemPrompt({ workspaceRuleBlock: "  \n" });
 

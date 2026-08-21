@@ -5,6 +5,8 @@ import {
   type ContextCompactedEvent,
   isKnownSessionEvent,
   type LegacySnapshotImportedEvent,
+  type McpSelectionChangedEvent,
+  type McpToolGrantsChangedEvent,
   type MessageRecordedEvent,
   type RunSegmentEndedEvent,
   type RunSegmentStartedEvent,
@@ -45,6 +47,8 @@ export type PreparedSessionEvent =
   | RunSegmentEndedEvent
   | PreparedMessageRecordedEvent
   | PreparedUserInputRecordedEvent
+  | McpSelectionChangedEvent
+  | McpToolGrantsChangedEvent
   | TurnCompletedEvent
   | PreparedContextCompactedEvent
   | SessionStateEvent

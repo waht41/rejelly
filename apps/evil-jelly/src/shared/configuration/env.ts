@@ -404,6 +404,11 @@ export function getReviewEndpointFromEnv(): string {
   return normalizeReviewTracesEndpoint(env.REJELLY_REVIEW_ENDPOINT);
 }
 
+/** Arbitrary environment lookup for secret references owned by external integrations such as MCP. */
+export function getEnvironmentValue(name: string): string | undefined {
+  return process.env[name];
+}
+
 export function resolveReviewOptions(
   enableReviewOption: boolean | ReviewOptions | undefined,
 ): ReviewOptions | null {

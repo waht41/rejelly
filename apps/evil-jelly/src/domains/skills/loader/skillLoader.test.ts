@@ -179,9 +179,11 @@ describe("skill loader and resource repository", () => {
     await writeSkill();
     const references = path.join(skillRoot, "references");
     await fs.mkdir(references);
-    for (let index = 0; index <= SKILL_LOADER_LIMITS.resourcesPerSkill; index++) {
-      await fs.writeFile(path.join(references, `${index.toString().padStart(3, "0")}.md`), "x");
-    }
+    await Promise.all(
+      Array.from({ length: SKILL_LOADER_LIMITS.resourcesPerSkill + 1 }, (_, index) =>
+        fs.writeFile(path.join(references, `${index.toString().padStart(3, "0")}.md`), "x"),
+      ),
+    );
 
     const overCount = await loadSkill(candidate());
 
@@ -190,6 +192,8 @@ describe("skill loader and resource repository", () => {
     expect(overCount.ok).toBe(true);
     if (overCount.ok) {
       expect(overCount.skill.record.resources).toHaveLength(SKILL_LOADER_LIMITS.resourcesPerSkill);
+      expect(overCount.skill.record.resources[0]?.path).toBe("references/000.md");
+      expect(overCount.skill.record.resources.at(-1)?.path).toBe("references/255.md");
       expect(overCount.skill.record.instruction).toBe("Use the reference.\n");
     }
     expect(overCount.diagnostics.map((item) => item.code)).toContain(

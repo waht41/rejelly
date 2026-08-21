@@ -1,8 +1,14 @@
 import type { AgentSnapshot, Message, ModelAdapter } from "@rejelly/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { connectMcpProviders } from "../../../../domains/mcp/mcpServerKit";
+import { defaultMcpServerDefinition } from "../../../../domains/mcp/configuration/configuration";
+import { createMcpRuntimeProviders } from "../../../../domains/mcp/mcpServerKit";
+import { sessionRecordFixture } from "../../../../domains/session/__tests__/sessionTestRecord";
 import * as sessionStore from "../../../../domains/session/repository/sessionStore";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
+import {
+  createSessionMcpState,
+  emptySessionMcpState,
+} from "../../../../shared/model/mcp/sessionMcpState";
 import { textPromptInput } from "../../../../shared/model/prompt/promptInput";
 import { createInteractiveRunControl, type InteractiveRunControl } from "./runControl";
 import { runInteractiveLoop } from "./runLoop";
@@ -12,6 +18,8 @@ const runtimeMocks = vi.hoisted(() => ({
   buildSkillRuntime: vi.fn(),
   formatSkillSummary: vi.fn(),
   disposeMcp: vi.fn(async () => undefined),
+  reconcileMcp: vi.fn(async () => undefined),
+  connectorOptions: vi.fn(),
 }));
 
 vi.mock("./runSegment", () => ({
@@ -19,14 +27,45 @@ vi.mock("./runSegment", () => ({
 }));
 
 vi.mock("../../../../domains/mcp/mcpServerKit", () => ({
-  connectMcpProviders: vi.fn(async () => ({
-    providers: {},
-    dispose: runtimeMocks.disposeMcp,
-  })),
+  createMcpDispatchBindingFactory: vi.fn(() => vi.fn()),
+  createMcpRuntimeProviders: vi.fn(() => ({})),
+}));
+
+vi.mock("../../../../domains/mcp/runtime/runtimeManager", () => ({
+  McpRuntimeManager: class {
+    reconcile = runtimeMocks.reconcileMcp;
+    dispose = runtimeMocks.disposeMcp;
+    getSnapshot = () => ({ servers: [] });
+    getCatalog = () => undefined;
+    reload = vi.fn(async () => undefined);
+  },
+}));
+
+vi.mock("../../../../domains/mcp/runtime/sdkConnector", () => ({
+  SdkMcpRuntimeConnector: class {
+    constructor(options: unknown) {
+      runtimeMocks.connectorOptions(options);
+    }
+  },
 }));
 
 vi.mock("../../../../shared/configuration/settings", () => ({
-  getSettings: () => ({ devtoolMcp: true }),
+  getSettings: () => ({
+    mcp: {
+      user: { path: "user-settings", value: undefined },
+      workspace: { path: "workspace-settings", value: undefined },
+    },
+  }),
+  invalidateSettingsCache: vi.fn(),
+}));
+
+vi.mock("../../../../shared/mcp/trustRepository", () => ({
+  readMcpTrustGrants: () => [],
+  readMcpPersistentPermissions: () => [],
+  grantMcpWorkspaceTrust: vi.fn(),
+  grantMcpPersistentServerAccess: vi.fn(),
+  grantMcpPersistentToolAccess: vi.fn(),
+  revokeMcpPersistentPermissions: vi.fn(),
 }));
 
 vi.mock("../../../skill-runtime/configuredRuntime", () => ({
@@ -38,7 +77,7 @@ vi.mock("../../../skill-runtime/startupSummary", () => ({
 }));
 
 const runHostMock = vi.mocked(runEvilJellyHost);
-const connectMcpProvidersMock = vi.mocked(connectMcpProviders);
+const createMcpRuntimeProvidersMock = vi.mocked(createMcpRuntimeProviders);
 let runControl: InteractiveRunControl;
 
 function createBindings() {
@@ -67,8 +106,10 @@ describe("runInteractiveLoop mock session isolation", () => {
     runtimeMocks.formatSkillSummary.mockReturnValue(undefined);
   });
 
-  it("passes the resolved devtool opt-in to the MCP connection boundary", async () => {
+  it("reconciles the resolved MCP desired configuration without blocking on readiness", async () => {
     const { bindings } = createBindings();
+    const setAvailableMcpServers = vi.fn();
+    bindings.setAvailableMcpServers = setAvailableMcpServers;
     runHostMock.mockResolvedValueOnce(undefined);
 
     await runInteractiveLoop({
@@ -80,7 +121,34 @@ describe("runInteractiveLoop mock session isolation", () => {
       isolateSessionState: true,
     });
 
-    expect(connectMcpProvidersMock).toHaveBeenCalledWith({ devtoolMcp: true });
+    expect(runtimeMocks.reconcileMcp).toHaveBeenCalledWith({ servers: [] }, []);
+    expect(setAvailableMcpServers).toHaveBeenCalledWith([]);
+    expect(createMcpRuntimeProvidersMock).toHaveBeenCalledOnce();
+  });
+
+  it("reconciles host dynamic MCP servers through the ordinary desired-server contract", async () => {
+    const { bindings } = createBindings();
+    runHostMock.mockResolvedValueOnce(undefined);
+    const devtool = {
+      id: "evil.devtool",
+      source: { kind: "dynamic" as const, sourceId: "cli:--devtool" },
+      definition: defaultMcpServerDefinition({
+        transport: { type: "streamableHttp", url: "http://localhost:5789/mcp" },
+        use: { chat: { exposure: "always" } },
+      }),
+    };
+
+    await runInteractiveLoop({
+      bindings,
+      runControl,
+      model: {} as ModelAdapter,
+      enableReview: false,
+      snapshot: undefined,
+      isolateSessionState: true,
+      dynamicMcpServers: [devtool],
+    });
+
+    expect(runtimeMocks.reconcileMcp).toHaveBeenCalledWith({ servers: [devtool] }, []);
   });
 
   it("publishes the path-free enabled Skill catalog through the host boundary", async () => {
@@ -222,6 +290,7 @@ describe("runInteractiveLoop mock session isolation", () => {
         transcript: [],
         totalTurns: 1,
         budget,
+        mcp: emptySessionMcpState(),
       },
     });
 
@@ -260,19 +329,22 @@ describe("runInteractiveLoop mock session isolation", () => {
       lastContextTokens: 10,
       lastCacheReadTokens: 0,
     };
-    vi.spyOn(sessionStore, "resumeSession").mockResolvedValue({
-      meta: {
-        id: "session_target",
-        workspaceRoot: "workspace",
-        title: "resumed task",
-        createdAt: 1,
-        updatedAt: 2,
-        turns: 1,
-        traceIds: [],
-        budget,
-      },
-      messages,
-    });
+    vi.spyOn(sessionStore, "resumeSession").mockResolvedValue(
+      sessionRecordFixture({
+        meta: {
+          id: "session_target",
+          workspaceRoot: "workspace",
+          title: "resumed task",
+          createdAt: 1,
+          updatedAt: 2,
+          turns: 1,
+          traceIds: [],
+          budget,
+        },
+        messages,
+        mcp: createSessionMcpState({ selectedServerIds: ["docs"] }),
+      }),
+    );
     runHostMock
       .mockImplementationOnce(async () => {
         runControl.loop.request({ type: "resume", sessionId: "session_target" });
@@ -295,6 +367,7 @@ describe("runInteractiveLoop mock session isolation", () => {
       sessionStartMode: "resumed",
       seedContext: messages,
       seedBudget: budget,
+      seedMcpState: { selectedServerIds: ["docs"], toolGrants: [] },
       snapshot: undefined,
       session: { enabled: true, appVersion: "1.0.0" },
     });

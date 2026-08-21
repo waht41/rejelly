@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { isCompactionBridgeMessage } from "../../../shared/conversation/compactionMessages";
+import { emptySessionMcpState } from "../../../shared/model/mcp/sessionMcpState";
 import {
   findLastEvent,
   findLatestSessionStateFromTail,
@@ -121,6 +122,7 @@ export async function readV2Session(
         meta: sessionMetaFromSummary(summary),
         messages: buildStoredActiveContext(replay),
         transcript: buildTranscript(replay, { tailTurns: 10 }),
+        mcp: emptySessionMcpState(),
         ...(warnings ? { warnings } : {}),
       },
     };

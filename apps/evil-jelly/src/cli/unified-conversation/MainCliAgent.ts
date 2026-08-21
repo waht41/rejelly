@@ -13,6 +13,8 @@ import {
   type Message,
   reborn,
 } from "@rejelly/core";
+import { createAuthorizedMcpBindingFactory } from "../../domains/mcp/management/chatAuthorization";
+import type { McpSessionControl } from "../../domains/mcp/management/sessionControl";
 import type { SessionRecorder } from "../../domains/session/recorder/sessionRecorder";
 import {
   listSessions,
@@ -27,6 +29,7 @@ import {
   SKILL_RUNTIME_PROVIDER_KEY,
   type SkillRuntimeSnapshot,
 } from "../../domains/skills/agent/skillRuntime";
+import type { ConversationAgentProps } from "../../features/unified/conversationRun";
 import { UnifiedAgent } from "../../features/unified/UnifiedAgent";
 import { env } from "../../shared/configuration/env";
 import { countConversationTurns } from "../../shared/conversation/compactionMessages";
@@ -35,6 +38,12 @@ import type { EvilJellyBindings } from "../../shared/host/bindings";
 import { getBinding, setBinding } from "../../shared/host/context";
 import { releasePromptResources } from "../../shared/host/promptResourceLifecycle";
 import {
+  createSessionMcpState,
+  type SessionMcpState,
+} from "../../shared/model/mcp/sessionMcpState";
+import {
+  type FrozenUserInputV1,
+  frozenUserInputMcpServerIds,
   projectFrozenUserInputDisplay,
   type ResolvedUserInputV1,
 } from "../../shared/model/prompt/frozenUserInput";
@@ -53,6 +62,7 @@ import { materializeSkillAwareUserInput } from "../message-composer/message-mate
 import { withAbort } from "../runtime/withAbort";
 import { drainSteers } from "../submission-dispatch/steerQueue";
 import { combineSessionBudget } from "./budget";
+import { handleMcpCommand, isMcpLocalCommand } from "./mcpCommands";
 
 const UnifiedAgentWithAbort = UnifiedAgent.fork({ middlewares: [withAbort()] });
 
@@ -132,10 +142,20 @@ export interface MainCliAgentProps extends EvilJellyBindings {
   sessionBlobRoot?: string;
   /** Cumulative usage carried back from a resumed session, used as the /status base. */
   seedBudget?: SessionBudget;
+  /** Session-level MCP authorization state recovered from its V3 projection. */
+  seedMcpState?: SessionMcpState;
+  resolveMcpUserInput?: (serverId: string) => {
+    status: "selected" | "unavailable" | "disabled" | "untrusted";
+    configFingerprint?: string;
+  };
   /** Replay-only mode: do not read from or write to durable local sessions. */
   isolateSessionState?: boolean;
   /** Session V3 writer. Undefined only for ephemeral or isolated runs. */
   sessionRecorder?: SessionRecorder;
+  /** Composition-root factory for immutable per-model-dispatch MCP bindings. */
+  mcpBindingFactory?: ConversationAgentProps["mcpBindingFactory"];
+  /** Interactive status/reload/trust operations over the process-owned MCP runtime. */
+  mcpSessionControl?: McpSessionControl;
 }
 
 type RouterIntent =
@@ -145,6 +165,7 @@ type RouterIntent =
   | { kind: "status" }
   | { kind: "compress" }
   | { kind: "resume"; rawInput: string }
+  | { kind: "mcp"; rawInput: string }
   | { kind: "message"; promptInput: PromptInput; userInput: string };
 
 interface RouterRuntime {
@@ -155,6 +176,10 @@ interface RouterRuntime {
   currentBudget: () => SessionBudget;
   appendTurn: (userMessage: Message, reply: string, delta?: Message[]) => void;
   skillSnapshot?: SkillRuntimeSnapshot;
+  resolveMcpUserInput?: MainCliAgentProps["resolveMcpUserInput"];
+  sessionMcpState: () => SessionMcpState;
+  setSessionMcpState: (state: SessionMcpState) => void;
+  mcpBindingFactory?: ConversationAgentProps["mcpBindingFactory"];
 }
 
 /** Short, session-local correlation ID with 96 bits of entropy and URL-safe characters. */
@@ -182,6 +207,9 @@ function classifyRouterIntent(promptInput: PromptInput): RouterIntent {
   }
   if (normalized === "/resume" || normalized?.startsWith("/resume ")) {
     return { kind: "resume", rawInput: commandText! };
+  }
+  if (commandText && isMcpLocalCommand(commandText)) {
+    return { kind: "mcp", rawInput: commandText! };
   }
   return { kind: "message", promptInput, userInput: promptInputPlainText(promptInput).trim() };
 }
@@ -259,20 +287,24 @@ async function handleCompress(runtime: RouterRuntime): Promise<void> {
 async function drainAndPrepareSteerMessages(
   runtime: RouterRuntime,
   turnId: string,
+  turnMcpSelection: Set<string>,
 ): Promise<Message[]> {
   const messages: Message[] = [];
   const inputs = drainSteers();
   try {
     for (const input of inputs) {
-      const resolved = await materializeSkillAwareUserInput(input, runtime.skillSnapshot).finally(
-        () =>
-          releasePromptResources(input).catch((error) =>
-            runtime.host.logSystemEvent(
-              `Prompt resource cleanup failed: ${formatPersistenceError(error)}\n`,
-            ),
+      const resolved = await materializePromptInput(runtime, input).finally(() =>
+        releasePromptResources(input).catch((error) =>
+          runtime.host.logSystemEvent(
+            `Prompt resource cleanup failed: ${formatPersistenceError(error)}\n`,
           ),
+        ),
       );
-      messages.push(await commitUserInput(runtime, turnId, "steer", resolved));
+      const committed = await commitUserInput(runtime, turnId, "steer", resolved);
+      for (const serverId of frozenUserInputMcpServerIds(committed.frozen)) {
+        turnMcpSelection.add(serverId);
+      }
+      messages.push(committed.message);
     }
   } catch (error) {
     await Promise.all(inputs.map((input) => releasePromptResources(input).catch(() => undefined)));
@@ -281,19 +313,33 @@ async function drainAndPrepareSteerMessages(
   return messages;
 }
 
+function materializePromptInput(
+  runtime: RouterRuntime,
+  input: PromptInput,
+): Promise<ResolvedUserInputV1> {
+  return materializeSkillAwareUserInput(input, runtime.skillSnapshot, {
+    mcpResolution: (serverId) => {
+      return runtime.resolveMcpUserInput?.(serverId) ?? { status: "unavailable" };
+    },
+  });
+}
+
 async function commitUserInput(
   runtime: RouterRuntime,
   turnId: string,
   inputKind: "initial" | "steer",
   resolved: ResolvedUserInputV1,
-): Promise<Message> {
+): Promise<{ readonly frozen: FrozenUserInputV1; readonly message: Message }> {
   const frozen = runtime.props.sessionRecorder
     ? await runtime.props.sessionRecorder.recordUserInput(turnId, inputKind, resolved)
     : await commitResolvedUserInput(resolved, { blobRoot: runtime.props.sessionBlobRoot });
   runtime.host.logUserMessage(formatUserInputDisplay(projectFrozenUserInputDisplay(frozen)));
-  return materializeFrozenUserInputMessage(frozen, {
-    blobRoot: runtime.props.sessionBlobRoot,
-  });
+  return {
+    frozen,
+    message: await materializeFrozenUserInputMessage(frozen, {
+      blobRoot: runtime.props.sessionBlobRoot,
+    }),
+  };
 }
 
 async function handleResume(runtime: RouterRuntime, rawInput: string): Promise<boolean> {
@@ -318,6 +364,33 @@ async function handleResume(runtime: RouterRuntime, rawInput: string): Promise<b
     budget: runtime.currentBudget(),
   });
   return true;
+}
+
+async function handleMcp(runtime: RouterRuntime, rawInput: string): Promise<void> {
+  await handleMcpCommand(rawInput, {
+    control: runtime.props.mcpSessionControl,
+    selectedServerIds: () => runtime.sessionMcpState().selectedServerIds,
+    setSelectedServerIds: (selectedServerIds) =>
+      runtime.setSessionMcpState(
+        createSessionMcpState({ ...runtime.sessionMcpState(), selectedServerIds }),
+      ),
+    recordSelection: async (selectedServerIds) => {
+      await runtime.props.sessionRecorder?.recordMcpSelection(selectedServerIds, "command");
+    },
+    sessionToolGrants: () => runtime.sessionMcpState().toolGrants,
+    setSessionToolGrants: (toolGrants) =>
+      runtime.setSessionMcpState(
+        createSessionMcpState({ ...runtime.sessionMcpState(), toolGrants }),
+      ),
+    recordToolGrants: async (toolGrants) => {
+      await runtime.props.sessionRecorder?.recordMcpToolGrants(toolGrants, "command");
+    },
+    agentMode: () => runtime.host.getAgentMode?.() ?? "normal",
+    requestChoice: runtime.host.requestChoice,
+    ...(runtime.host.requestMcpManager ? { requestManager: runtime.host.requestMcpManager } : {}),
+    ...(runtime.host.dismissMcpManager ? { dismissManager: runtime.host.dismissMcpManager } : {}),
+    logSystem: runtime.host.logSystemEvent,
+  });
 }
 
 function formatPersistenceError(error: unknown): string {
@@ -349,10 +422,7 @@ async function runConversationTurn(
   let turnClosureAttempted = false;
 
   try {
-    const resolved = await materializeSkillAwareUserInput(
-      promptInput,
-      runtime.skillSnapshot,
-    ).finally(() =>
+    const resolved = await materializePromptInput(runtime, promptInput).finally(() =>
       releasePromptResources(promptInput).catch((error) =>
         runtime.host.logSystemEvent(
           `Prompt resource cleanup failed: ${formatPersistenceError(error)}\n`,
@@ -364,15 +434,43 @@ async function runConversationTurn(
     // timer must anchor at exactly this point so steers and maintenance commands never
     // start (or restart) a turn.
     runtime.host.onTurnStart?.();
-    submittedUserMessage = await commitUserInput(runtime, activeTurnId, "initial", resolved);
+    const committed = await commitUserInput(runtime, activeTurnId, "initial", resolved);
+    submittedUserMessage = committed.message;
+    const turnMcpSelection = new Set(frozenUserInputMcpServerIds(committed.frozen));
+    const selectedServerIds = () =>
+      [...new Set([...runtime.sessionMcpState().selectedServerIds, ...turnMcpSelection])].sort();
+    const mcpBindingFactory = runtime.mcpBindingFactory
+      ? createAuthorizedMcpBindingFactory({
+          bindingFactory: runtime.mcpBindingFactory,
+          control: runtime.props.mcpSessionControl,
+          confirmTool: runtime.host.confirmTool,
+          state: {
+            get: runtime.sessionMcpState,
+            commitSelection: async (next) => {
+              await runtime.props.sessionRecorder?.recordMcpSelection(
+                next.selectedServerIds,
+                "tool",
+              );
+              runtime.setSessionMcpState(next);
+            },
+            commitToolGrants: async (next) => {
+              await runtime.props.sessionRecorder?.recordMcpToolGrants(next.toolGrants, "tool");
+              runtime.setSessionMcpState(next);
+            },
+          },
+          effectiveSelectedServerIds: selectedServerIds,
+        })
+      : undefined;
 
     const result = await UnifiedAgentWithAbort({
       message: submittedUserMessage,
       history: runtime.history,
-      pendingUserMessages: () => drainAndPrepareSteerMessages(runtime, activeTurnId!),
+      pendingUserMessages: () =>
+        drainAndPrepareSteerMessages(runtime, activeTurnId!, turnMcpSelection),
       sessionBlobRoot: runtime.props.sessionBlobRoot,
       sessionRecorder: runtime.props.sessionRecorder,
       turnId: activeTurnId,
+      mcpBindingFactory,
     });
 
     if (result.compactHistory) {
@@ -448,10 +546,19 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
       "main_cli:last_cache_tokens",
       props.seedBudget?.lastCacheReadTokens ?? 0,
     );
+    const [storedSessionMcpState, storeSessionMcpState] = equipMemory<SessionMcpState>(
+      "main_cli:mcp_state",
+      props.seedMcpState ?? createSessionMcpState(),
+    );
     // Local mirrors initialized from the carried values and updated live during the turn (the
     // equipMemory getters are frozen at entry, so we mirror writes here for same-turn reads).
     let liveContextTokens = storedContextTokens;
     let liveCacheTokens = storedCacheTokens;
+    let liveSessionMcpState = storedSessionMcpState;
+    const setSessionMcpState = (state: SessionMcpState) => {
+      liveSessionMcpState = state;
+      storeSessionMcpState(state);
+    };
     // Root-context budget config fires for every model call in descendant agents (the update walks
     // the parent chain), so delta.promptTokens of the latest call tracks current context occupancy.
     equipBudget({
@@ -490,6 +597,10 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
       skillSnapshot: expectResource<SkillRuntimeSnapshot>(SKILL_RUNTIME_PROVIDER_KEY, {
         optional: true,
       }),
+      resolveMcpUserInput: props.resolveMcpUserInput,
+      sessionMcpState: () => liveSessionMcpState,
+      setSessionMcpState,
+      mcpBindingFactory: props.mcpBindingFactory,
     };
 
     try {
@@ -516,6 +627,9 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
           if (await handleResume(runtime, intent.rawInput)) {
             return;
           }
+          return reborn();
+        case "mcp":
+          await handleMcp(runtime, intent.rawInput);
           return reborn();
         case "message":
           await runConversationTurn(runtime, intent.promptInput, intent.userInput);

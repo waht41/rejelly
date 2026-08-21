@@ -34,7 +34,18 @@ export interface ImagePromptToken {
   readonly attachmentId: string;
 }
 
-export type PromptToken = SkillPromptToken | PastePromptToken | FilePromptToken | ImagePromptToken;
+export interface McpPromptToken {
+  readonly type: "token";
+  readonly kind: "mcp";
+  readonly serverId: string;
+}
+
+export type PromptToken =
+  | SkillPromptToken
+  | PastePromptToken
+  | FilePromptToken
+  | ImagePromptToken
+  | McpPromptToken;
 export type PromptNode = PromptTextNode | PromptToken;
 export type PromptDocument = readonly PromptNode[];
 

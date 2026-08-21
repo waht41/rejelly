@@ -153,6 +153,15 @@ export function renderAuditReport(
     "",
     `- Generated: ${data.generatedAt}`,
     `- Workspace: \`${data.workspaceRoot}\``,
+    ...(data.mcp && data.mcp.length > 0
+      ? [
+          "- MCP provenance:",
+          ...data.mcp.map(
+            (entry) =>
+              `  - ${entry.serverId}: config ${entry.configFingerprint}, catalog ${entry.catalogRevision}`,
+          ),
+        ]
+      : []),
     ...renderDetectorLines(data),
     options.onlyActionable ? "- Report filters: actionable findings only" : false,
     data.ledger

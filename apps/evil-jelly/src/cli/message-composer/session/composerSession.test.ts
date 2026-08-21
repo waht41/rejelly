@@ -40,6 +40,16 @@ describe("composer session bridge", () => {
     ).toEqual(["project:a", "project:z"]);
   });
 
+  it("sorts available MCP servers for the shared reference picker", () => {
+    useComposerSession
+      .getState()
+      .setAvailableMcpServers([{ serverId: "zeta" }, { serverId: "docs" }]);
+
+    expect(
+      useComposerSession.getState().availableMcpServers.map((server) => server.serverId),
+    ).toEqual(["docs", "zeta"]);
+  });
+
   it("releases a pending composer-owned draft when a newer seed replaces it", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "evil-draft-seed-cleanup-"));
     roots.push(root);

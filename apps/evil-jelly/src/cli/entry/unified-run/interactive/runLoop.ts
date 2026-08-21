@@ -1,13 +1,13 @@
 import type { AgentSnapshot, ModelAdapter } from "@rejelly/core";
-import { connectMcpProviders } from "../../../../domains/mcp/mcpServerKit";
+import type { McpDesiredServer } from "../../../../domains/mcp/contracts";
 import {
   generateSessionId,
   resumeSession,
 } from "../../../../domains/session/repository/sessionStore";
 import { qualifiedSkillName } from "../../../../domains/skills/definition/skillDefinition";
-import { getSettings } from "../../../../shared/configuration/settings";
 import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
+import { createMcpChatRuntime } from "../../../mcp-runtime/mcpChatRuntime";
 import { buildConfiguredSkillRuntimeSnapshot } from "../../../skill-runtime/configuredRuntime";
 import { formatSkillRuntimeStartupSummary } from "../../../skill-runtime/startupSummary";
 import { buildSessionResumeSeed, hydrateResumeSeed, type SessionResumeSeed } from "./resume";
@@ -28,6 +28,8 @@ export interface RunInteractiveLoopParams {
   isolateSessionState?: boolean;
   /** Durable Session writer configuration. */
   session?: RunEvilJellyHostOptions["session"];
+  /** CLI/host overlays already normalized to the same desired-server contract as settings. */
+  dynamicMcpServers?: readonly McpDesiredServer[];
 }
 
 interface InteractiveSessionState {
@@ -103,11 +105,11 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
     hydrateResumeSeed(bindings, state.sessionId ?? "(ephemeral)", state.resumeSeed);
   }
 
-  // Connect optional MCP servers (e.g. devtool introspection) once, above the run loop, so the
-  // connection is reused across resume segments. Best-effort: empty when disabled/unreachable.
-  // The framework borrows these via runWith({ providers }); disposal stays here (finally).
-  const { providers: mcpProviders, dispose: disposeMcp } = await connectMcpProviders({
-    devtoolMcp: getSettings().devtoolMcp,
+  const workspaceRoot = getWorkspaceFsPolicy().getRoot();
+  const mcp = await createMcpChatRuntime({
+    workspaceRoot,
+    bindings,
+    dynamicServers: params.dynamicMcpServers,
   });
   try {
     const skillRuntime = await buildConfiguredSkillRuntimeSnapshot();
@@ -136,7 +138,11 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
         sessionStartMode: state.sessionStartMode,
         seedContext: state.resumeSeed?.activeContext,
         seedBudget: state.resumeSeed?.budget,
-        mcpProviders,
+        seedMcpState: state.resumeSeed?.mcp,
+        mcpProviders: mcp.providers,
+        mcpBindingFactory: mcp.bindingFactory,
+        mcpSessionControl: mcp.sessionControl,
+        resolveMcpUserInput: mcp.resolveUserInput,
         skillSnapshot: skillRuntime.snapshot,
         mockSourceTraceId,
         isolateSessionState,
@@ -179,6 +185,6 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
       }
     }
   } finally {
-    await disposeMcp();
+    await mcp.dispose();
   }
 }

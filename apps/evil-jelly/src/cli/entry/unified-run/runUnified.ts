@@ -1,6 +1,11 @@
 import type { ModelAdapter } from "@rejelly/core";
+import { createDevtoolMcpDesiredServer } from "../../../domains/mcp/configuration/configuration";
 import { loadMockReplayFromTraceId } from "../../../features/replay/mock/mockFromTrace";
-import { env, exitIfMissingOpenAIKey } from "../../../shared/configuration/env";
+import {
+  env,
+  exitIfMissingOpenAIKey,
+  getReviewEndpointFromEnv,
+} from "../../../shared/configuration/env";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import { textPromptInput } from "../../../shared/model/prompt/promptInput";
 import { enqueueMainInput } from "../../submission-dispatch/mainInputQueue";
@@ -17,6 +22,7 @@ export interface RunUnifiedOptions {
   autoAccept: boolean;
   review: boolean;
   appVersion: string;
+  devtool: boolean;
   createModel: () => ModelAdapter;
   createBackgroundBindings: (options?: { autoAcceptWrite?: boolean }) => EvilJellyBindings;
   createInteractiveBindings: (options: {
@@ -32,6 +38,9 @@ export interface RunUnifiedOptions {
 
 export async function runUnified(options: RunUnifiedOptions): Promise<void> {
   const { startup, appVersion } = options;
+  const dynamicMcpServers = options.devtool
+    ? [createDevtoolMcpDesiredServer(`${new URL(getReviewEndpointFromEnv()).origin}/mcp`)]
+    : [];
   if (startup.kind !== "mock") {
     exitIfMissingOpenAIKey();
   }
@@ -99,6 +108,7 @@ export async function runUnified(options: RunUnifiedOptions): Promise<void> {
       mockSourceTraceId: mockReplay ? mockTraceId : undefined,
       isolateSessionState: Boolean(mockReplay),
       session: { enabled: true, appVersion },
+      dynamicMcpServers,
     });
   } finally {
     dispose();

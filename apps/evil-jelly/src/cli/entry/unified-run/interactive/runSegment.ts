@@ -2,6 +2,7 @@
 
 import { type AgentSnapshot, isAbortError, type Message, type ModelAdapter } from "@rejelly/core";
 import type { ReviewOptions } from "@rejelly/core/debugger";
+import type { McpSessionControl } from "../../../../domains/mcp/management/sessionControl";
 import { LazySessionRecorder } from "../../../../domains/session/recorder/lazySessionRecorder";
 import {
   openSessionRecorder,
@@ -13,11 +14,13 @@ import {
   SKILL_RUNTIME_PROVIDER_KEY,
   type SkillRuntimeSnapshot,
 } from "../../../../domains/skills/agent/skillRuntime";
+import type { ConversationAgentProps } from "../../../../features/unified/conversationRun";
 import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
+import type { SessionMcpState } from "../../../../shared/model/mcp/sessionMcpState";
 import { runWithReview } from "../../../runtime/runWithReview";
 import { generateTraceId } from "../../../runtime/traceId";
-import { MainCliAgent } from "../../../unified-conversation/MainCliAgent";
+import { MainCliAgent, type MainCliAgentProps } from "../../../unified-conversation/MainCliAgent";
 import type { InteractiveRunControl } from "./runControl";
 
 export interface RunEvilJellyHostOptions {
@@ -45,12 +48,16 @@ export interface RunEvilJellyHostOptions {
   seedContext?: Message[];
   /** Cumulative usage carried back from a resumed session, used as the /status base. */
   seedBudget?: SessionBudget;
-  /**
-   * MCP clients seeded as root providers (key `mcp:<id>`), read in-agent via expectResource.
-   * Connected once at the run-loop boundary and reused across segments; the framework borrows
-   * them (never closes), so disposal stays with the caller.
-   */
+  /** Session MCP state recovered independently of compacted model history. */
+  seedMcpState?: SessionMcpState;
+  /** Resolve non-secret token metadata at submit time. */
+  resolveMcpUserInput?: MainCliAgentProps["resolveMcpUserInput"];
+  /** Single process-owned MCP runtime provider, borrowed across run segments. */
   mcpProviders?: Record<string, unknown>;
+  /** Captures one immutable MCP binding for every model boundary. */
+  mcpBindingFactory?: ConversationAgentProps["mcpBindingFactory"];
+  /** Interactive lifecycle over the process-owned MCP runtime. */
+  mcpSessionControl?: McpSessionControl;
   /** Borrowed process-lifetime loose Skill snapshot, reused across run segments. */
   skillSnapshot?: SkillRuntimeSnapshot;
   /**
@@ -199,9 +206,13 @@ export async function runEvilJellyHost(
           traceId,
           seedContext: preparedSeedContext,
           seedBudget,
+          seedMcpState: options.seedMcpState,
+          resolveMcpUserInput: options.resolveMcpUserInput,
           sessionBlobRoot: options.session?.blobRoot,
           isolateSessionState: options.isolateSessionState,
           sessionRecorder: recorder,
+          mcpBindingFactory: options.mcpBindingFactory,
+          mcpSessionControl: options.mcpSessionControl,
         }),
       runWithOptions: {
         snapshot,

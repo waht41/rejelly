@@ -1,6 +1,4 @@
 import type { CAC } from "cac";
-import type { SettingsCliOverrides } from "../../../shared/configuration/settings";
-
 export type RunStartupArgs =
   | { kind: "fresh"; seedInput: string | undefined }
   | { kind: "resume"; sessionId: string | undefined; seedInput: string | undefined }
@@ -14,6 +12,8 @@ export type UnifiedRunCommandArgs = {
   headless: boolean;
   /** Explicitly accept confirmTool requests in headless mode (test/eval harness only). */
   autoAccept: boolean;
+  /** Compatibility flag mapped to an ordinary dynamic MCP server at the composition root. */
+  devtool: boolean;
 };
 
 function failArgs(message: string): never {
@@ -30,7 +30,7 @@ function resolveOptionalString(raw: unknown, trim = true): string | undefined {
 export function registerUnifiedRunArgs(cli: CAC): void {
   cli.option(
     "--devtool",
-    "Connect the devtool MCP toolset (needs a running devtool server; usually with --review)",
+    "Connect the devtool MCP toolset for the interactive coding run (not supported by audit)",
   );
   cli
     .command("", "Start the interactive run loop")
@@ -59,10 +59,6 @@ export function registerUnifiedRunArgs(cli: CAC): void {
       "Resume a saved session by id, or omit the id to pick one; cannot use --snapshot, --mock, or --headless",
     )
     .option("--input <text>", "First user line without prompting; required by --headless");
-}
-
-export function unifiedSettingsOverrides(options: Record<string, unknown>): SettingsCliOverrides {
-  return { devtoolMcp: options.devtool ? true : undefined };
 }
 
 function resolveRunStartup(options: Record<string, unknown>): RunStartupArgs {
@@ -117,6 +113,9 @@ export function parseUnifiedRunArgs(
   if (autoAccept && !headless) {
     failArgs("--auto-accept requires --headless");
   }
+  if (headless && options.devtool) {
+    failArgs("--devtool is supported only by the interactive coding run");
+  }
   const headlessSeedInput = startup.kind === "fresh" ? startup.seedInput : undefined;
   if (headless && (headlessSeedInput === undefined || headlessSeedInput.trim().length === 0)) {
     failArgs("--headless requires --input <text>");
@@ -126,5 +125,6 @@ export function parseUnifiedRunArgs(
     startup,
     headless,
     autoAccept,
+    devtool: Boolean(options.devtool),
   };
 }

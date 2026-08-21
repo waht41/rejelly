@@ -52,6 +52,17 @@ interface InventoryResult {
   readonly diagnostics: readonly SkillLoadDiagnostic[];
 }
 
+interface PendingResourceFile {
+  readonly absolutePath: string;
+  readonly relativePath: string;
+}
+
+type InspectedResourceFile =
+  | { readonly ok: true; readonly entry: SkillResourceEntry }
+  | { readonly ok: false; readonly diagnostic: SkillLoadDiagnostic };
+
+const RESOURCE_INSPECTION_CONCURRENCY = 16;
+
 /**
  * Enumerate bounded resources without ever failing the skill.
  *
@@ -66,6 +77,77 @@ async function inventoryResources(
   const entries: SkillResourceEntry[] = [];
   const diagnostics: SkillLoadDiagnostic[] = [];
   let truncated = false;
+
+  async function inspectFile(
+    file: PendingResourceFile,
+    kind: SkillResourceKind,
+  ): Promise<InspectedResourceFile> {
+    const contained = await resolveContainedPath(
+      skillRootRealPath,
+      fromPosixPath(file.relativePath),
+      "file",
+    );
+    if (!contained.ok) {
+      return {
+        ok: false,
+        diagnostic: skillDiagnostic(
+          contained.reason === "escape" || contained.reason === "symlink-directory"
+            ? "skill.resource.escape"
+            : "skill.resource.invalid",
+          `Resource was skipped: ${contained.message}`,
+          file.absolutePath,
+          origin,
+        ),
+      };
+    }
+    try {
+      const stat = await fs.stat(contained.realPath);
+      return {
+        ok: true,
+        entry: Object.freeze({ path: file.relativePath, kind, sizeBytes: stat.size }),
+      };
+    } catch {
+      return {
+        ok: false,
+        diagnostic: skillDiagnostic(
+          "skill.resource.invalid",
+          "Resource changed while its inventory was being built and was skipped.",
+          file.absolutePath,
+          origin,
+        ),
+      };
+    }
+  }
+
+  async function inspectFiles(
+    files: readonly PendingResourceFile[],
+    kind: SkillResourceKind,
+  ): Promise<void> {
+    for (let offset = 0; offset < files.length; offset += RESOURCE_INSPECTION_CONCURRENCY) {
+      const batch = files.slice(offset, offset + RESOURCE_INSPECTION_CONCURRENCY);
+      const results = await Promise.all(batch.map((file) => inspectFile(file, kind)));
+      for (let index = 0; index < results.length; index++) {
+        const result = results[index]!;
+        if (!result.ok) {
+          diagnostics.push(result.diagnostic);
+          continue;
+        }
+        if (entries.length >= SKILL_LOADER_LIMITS.resourcesPerSkill) {
+          diagnostics.push(
+            skillDiagnostic(
+              "skill.resource.limit-exceeded",
+              `Skill declares more than ${SKILL_LOADER_LIMITS.resourcesPerSkill} resources; the remainder is not listed.`,
+              batch[index]!.absolutePath,
+              origin,
+            ),
+          );
+          truncated = true;
+          return;
+        }
+        entries.push(result.entry);
+      }
+    }
+  }
 
   async function walk(
     absoluteDirectory: string,
@@ -92,10 +174,21 @@ async function inventoryResources(
     }
     children.sort((left, right) => compareStringsByCodeUnit(left.name, right.name));
 
+    let pendingFiles: PendingResourceFile[] = [];
+    const flushFiles = async (): Promise<void> => {
+      if (pendingFiles.length === 0) return;
+      const files = pendingFiles;
+      pendingFiles = [];
+      await inspectFiles(files, kind);
+    };
+
     for (const child of children) {
+      if (truncated) return;
       const relativePath = path.posix.join(relativeDirectory, child.name);
       const absolutePath = path.join(absoluteDirectory, child.name);
       if (child.isDirectory()) {
+        await flushFiles();
+        if (truncated) return;
         if (depth >= SKILL_LOADER_LIMITS.resourceDirectoryDepth) {
           diagnostics.push(
             skillDiagnostic(
@@ -112,6 +205,8 @@ async function inventoryResources(
       }
 
       if (!child.isFile() && !child.isSymbolicLink()) {
+        await flushFiles();
+        if (truncated) return;
         diagnostics.push(
           skillDiagnostic(
             "skill.resource.invalid",
@@ -122,50 +217,9 @@ async function inventoryResources(
         );
         continue;
       }
-      const contained = await resolveContainedPath(
-        skillRootRealPath,
-        fromPosixPath(relativePath),
-        "file",
-      );
-      if (!contained.ok) {
-        diagnostics.push(
-          skillDiagnostic(
-            contained.reason === "escape" || contained.reason === "symlink-directory"
-              ? "skill.resource.escape"
-              : "skill.resource.invalid",
-            `Resource was skipped: ${contained.message}`,
-            absolutePath,
-            origin,
-          ),
-        );
-        continue;
-      }
-      if (entries.length >= SKILL_LOADER_LIMITS.resourcesPerSkill) {
-        diagnostics.push(
-          skillDiagnostic(
-            "skill.resource.limit-exceeded",
-            `Skill declares more than ${SKILL_LOADER_LIMITS.resourcesPerSkill} resources; the remainder is not listed.`,
-            absolutePath,
-            origin,
-          ),
-        );
-        truncated = true;
-        return;
-      }
-      try {
-        const stat = await fs.stat(contained.realPath);
-        entries.push(Object.freeze({ path: relativePath, kind, sizeBytes: stat.size }));
-      } catch {
-        diagnostics.push(
-          skillDiagnostic(
-            "skill.resource.invalid",
-            "Resource changed while its inventory was being built and was skipped.",
-            absolutePath,
-            origin,
-          ),
-        );
-      }
+      pendingFiles.push({ absolutePath, relativePath });
     }
+    await flushFiles();
   }
 
   for (const [directoryName, kind] of [

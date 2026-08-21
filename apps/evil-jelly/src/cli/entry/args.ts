@@ -14,16 +14,26 @@ import {
 } from "./audit-run/args";
 import { type InitCommandArgs, parseInitArgs, registerInitArgs } from "./init-run/args";
 import {
+  extractMcpAddCommand,
+  type McpCommandArgs,
+  parseMcpArgs,
+  registerMcpArgs,
+} from "./mcp-run/args";
+import {
   parseUnifiedRunArgs,
   registerUnifiedRunArgs,
   type UnifiedRunCommandArgs,
-  unifiedSettingsOverrides,
 } from "./unified-run/args";
 
 export type ParsedInitArgs = CommonParsedArgs & InitCommandArgs;
 export type ParsedAuditArgs = CommonParsedArgs & AuditCommandArgs;
 export type ParsedUnifiedArgs = CommonParsedArgs & UnifiedRunCommandArgs;
-export type ParsedEvilJellyArgs = ParsedInitArgs | ParsedAuditArgs | ParsedUnifiedArgs;
+export type ParsedMcpArgs = CommonParsedArgs & McpCommandArgs;
+export type ParsedEvilJellyArgs =
+  | ParsedInitArgs
+  | ParsedAuditArgs
+  | ParsedMcpArgs
+  | ParsedUnifiedArgs;
 
 export function getCliVersion(): string {
   // Source lives at src/cli/entry/args.ts, while tsup bundles it into dist/cli/index.js.
@@ -62,6 +72,7 @@ cli
 registerUnifiedRunArgs(cli);
 registerInitArgs(cli);
 registerAuditArgs(cli);
+registerMcpArgs(cli);
 
 cli
   .help((sections) =>
@@ -99,7 +110,6 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
     workspace: resolveOptionalPath(options.workspace),
     settings: {
       ...auditSettingsOverrides(options),
-      ...unifiedSettingsOverrides(options),
     },
   };
 
@@ -112,7 +122,15 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
     return { ...common, ...parseInitArgs(options) };
   }
   if (commandName === "audit") {
+    if (options.devtool) {
+      failArgs(
+        "--devtool is not supported by audit; configure a server with use.audit.exposure=always instead",
+      );
+    }
     return { ...common, ...parseAuditArgs(args, options) };
+  }
+  if (commandName === "mcp") {
+    return { ...common, ...parseMcpArgs(args, options, extractMcpAddCommand(argv)) };
   }
   if (hasAuditOnlyArgs(options)) {
     failArgs(

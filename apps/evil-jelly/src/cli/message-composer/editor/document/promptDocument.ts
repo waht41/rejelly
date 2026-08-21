@@ -49,6 +49,8 @@ export function defaultPromptTokenDisplayText(token: PromptToken): string {
       return "[File]";
     case "image":
       return "[Image]";
+    case "mcp":
+      return `$mcp:${token.serverId}`;
   }
 }
 

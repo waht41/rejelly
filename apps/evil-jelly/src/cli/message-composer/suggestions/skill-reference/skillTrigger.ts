@@ -1,5 +1,6 @@
-import type { UserSkillListItem } from "../../../../shared/host/inputBindings";
+import type { UserMcpListItem, UserSkillListItem } from "../../../../shared/host/inputBindings";
 import {
+  type McpPromptToken,
   type PromptDocument,
   promptTokens,
   type SkillPromptToken,
@@ -11,19 +12,32 @@ const SKILL_QUERY_PATTERN = /^[a-z0-9._:-]*$/;
 export function skillReferenceName(
   skill: UserSkillListItem,
   catalog: readonly UserSkillListItem[],
+  mcpCatalog: readonly UserMcpListItem[] = [],
 ): string {
-  const duplicate = catalog.some(
-    (candidate) => candidate.name === skill.name && candidate.qualifiedName !== skill.qualifiedName,
-  );
+  const duplicate =
+    catalog.some(
+      (candidate) =>
+        candidate.name === skill.name && candidate.qualifiedName !== skill.qualifiedName,
+    ) || mcpCatalog.some((candidate) => candidate.serverId === skill.name);
   return duplicate ? skill.qualifiedName : skill.name;
 }
 
 export function selectedSkillReferenceName(
   reference: { readonly qualifiedName: string },
   catalog: readonly UserSkillListItem[],
+  mcpCatalog: readonly UserMcpListItem[] = [],
 ): string {
   const skill = catalog.find((candidate) => candidate.qualifiedName === reference.qualifiedName);
-  return skill ? skillReferenceName(skill, catalog) : reference.qualifiedName;
+  return skill ? skillReferenceName(skill, catalog, mcpCatalog) : reference.qualifiedName;
+}
+
+export function mcpReferenceName(
+  reference: { readonly serverId: string },
+  skillCatalog: readonly UserSkillListItem[],
+): string {
+  return skillCatalog.some((skill) => skill.name === reference.serverId)
+    ? `mcp:${reference.serverId}`
+    : reference.serverId;
 }
 
 /** Return the lowercase Skill query in the active `$token` immediately left of the caret. */
@@ -80,6 +94,15 @@ export function skillTokensFromDocument(document: PromptDocument): SkillPromptTo
       return false;
     }
     seen.add(token.qualifiedName);
+    return true;
+  });
+}
+
+export function mcpTokensFromDocument(document: PromptDocument): McpPromptToken[] {
+  const seen = new Set<string>();
+  return promptTokens(document, "mcp").filter((token) => {
+    if (seen.has(token.serverId)) return false;
+    seen.add(token.serverId);
     return true;
   });
 }

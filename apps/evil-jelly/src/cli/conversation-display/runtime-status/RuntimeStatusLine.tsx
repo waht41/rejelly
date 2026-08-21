@@ -70,7 +70,8 @@ export function RuntimeStatusLine() {
     );
   }
 
-  const detailSuffix = WORKING_DETAIL[phase];
+  const detailSuffix =
+    phase === "tool" && detail.startsWith("Starting MCP ") ? detail : WORKING_DETAIL[phase];
   const color = stalled ? "yellow" : undefined;
   return (
     <Box>

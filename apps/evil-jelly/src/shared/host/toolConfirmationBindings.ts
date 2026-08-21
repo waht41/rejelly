@@ -34,10 +34,38 @@ export interface ShellCommandPayload {
   supportedActions?: ("accept" | "reject")[];
 }
 
-export type ToolConfirmationRequest = FsWritePayload | FsOutsideAccessPayload | ShellCommandPayload;
+/** Ephemeral approval projection; routing still uses the domain-owned structured identity. */
+export interface McpCallConfirmationPayload {
+  type: "mcp_call";
+  tool: {
+    serverId: string;
+    nativeToolName: string;
+  };
+  configFingerprint: string;
+  toolSchemaFingerprint: string;
+  /** Exact config policy matched this tool; Auto mode may allow only this call. */
+  autoApprovedByPolicy: boolean;
+  arguments: Record<string, unknown>;
+}
+
+export interface McpAccessConfirmationPayload {
+  type: "mcp_access";
+  serverId: string;
+  source: string;
+  configFingerprint: string;
+  requiresTrust: boolean;
+  reason?: string;
+}
+
+export type ToolConfirmationRequest =
+  | FsWritePayload
+  | FsOutsideAccessPayload
+  | ShellCommandPayload
+  | McpAccessConfirmationPayload
+  | McpCallConfirmationPayload;
 
 export type ToolConfirmationResult =
-  | { action: "accept" }
+  | { action: "accept"; scope?: "once" | "session" | "always" }
   | { action: "reject" }
   | { action: "retry"; feedback: string }
   | { action: "edit"; modifiedContent: string };

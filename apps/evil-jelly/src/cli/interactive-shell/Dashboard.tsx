@@ -19,6 +19,7 @@ import { isRuntimeActive } from "../conversation-display/runtime-status/state";
 import { ToolTranscriptOverlay } from "../conversation-display/tool-transcript/ToolTranscriptOverlay";
 import { useToolTranscriptViewStore } from "../conversation-display/tool-transcript/viewStore";
 import { useOutputStore } from "../conversation-display/useOutputStore";
+import { McpManagerPrompt } from "../mcp-manager/McpManagerPrompt";
 import { MessageComposer } from "../message-composer/MessageComposer";
 import { useComposerSession } from "../message-composer/session/composerSession";
 import { ActionMenuPrompt } from "../operator-decision/ActionMenuPrompt";
@@ -29,6 +30,7 @@ import { TextDecisionPrompt } from "../operator-decision/TextDecisionPrompt";
 import { getQueuedSteers, subscribeSteers } from "../submission-dispatch/steerQueue";
 import { MODE_META, useModeStore } from "../tool-approval/approvalModeStore";
 import { saveClipboardImage } from "./clipboard/clipboardImage";
+import { copyTextToClipboard } from "./clipboard/clipboardText";
 import { handleLocalCommand } from "./interactiveCommandBinding";
 import { type CtrlCAbortHandler, useCtrlCAbort } from "./useCtrlCAbort";
 
@@ -111,6 +113,7 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
   const decision = useDecisionStore((state) => state.decision);
   const submitChoice = useDecisionStore((state) => state.submitChoice);
   const cancelChoice = useDecisionStore((state) => state.cancelChoice);
+  const submitMcpManager = useDecisionStore((state) => state.submitMcpManager);
   const [queuedSteers, setQueuedSteers] = useState<PromptInput[]>(() => getQueuedSteers());
 
   // Ink's <Static> counts flushed items in instance state, so its items array must only grow
@@ -195,7 +198,13 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
             <Box marginTop={1}>
               <RuntimeStatusLine />
             </Box>
-            {decision.type === "confirm" ? (
+            {decision.type === "mcp_manager" ? (
+              <McpManagerPrompt
+                request={decision.request}
+                onAction={submitMcpManager}
+                copyText={copyTextToClipboard}
+              />
+            ) : decision.type === "confirm" ? (
               <ConfirmPrompt message={decision.message} defaultYes={decision.defaultYes} />
             ) : decision.type === "choice" ? (
               <ActionMenuPrompt

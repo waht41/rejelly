@@ -1,0 +1,954 @@
+import { createHash } from "node:crypto";
+import type { McpNativeToolDescriptor } from "@rejelly/adapter-mcp";
+import { evaluateMcpTrust, type McpTrustGrant } from "../configuration/configuration";
+import {
+  fingerprintMcpConnectionDefinition,
+  fingerprintMcpServerDefinition,
+  isMcpToolAllowed,
+  type McpBoundNativeTool,
+  type McpBoundRoute,
+  type McpConsumer,
+  type McpDesiredConfig,
+  type McpDesiredServer,
+  type McpDispatchBinding,
+  type McpJsonValue,
+  type McpRuntimeSnapshot,
+  type McpSelectedServerBinding,
+  type McpServerRuntimeState,
+  type McpToolIdentity,
+} from "../contracts";
+import {
+  captureMcpRuntimeFailure,
+  mcpStartupCancelledError,
+  projectMcpRuntimeFailure,
+} from "./runtimeFailure";
+
+export interface McpRuntimeCatalog {
+  readonly serverId: string;
+  readonly revision: string;
+  readonly tools: readonly McpNativeToolDescriptor[];
+}
+
+export interface McpRuntimeConnection {
+  /** SDK/client facade borrowed by T2's compatibility kit and T3's gateway adapter. */
+  readonly client: unknown;
+  listTools(): Promise<readonly McpNativeToolDescriptor[]>;
+  callTool(name: string, argumentsValue: Record<string, unknown>): Promise<unknown>;
+  close(): Promise<void>;
+}
+
+export type McpRuntimeCallOutcome =
+  | { readonly ok: true; readonly result: unknown }
+  | {
+      readonly ok: false;
+      readonly code: "tool_unavailable" | "catalog_changed" | "call_failed";
+      readonly message: string;
+      readonly currentCatalogRevision?: string;
+    };
+
+export interface McpRuntimeConnectionCallbacks {
+  readonly onClose: (error?: Error) => void;
+  readonly onError: (error: Error) => void;
+  readonly onToolsChanged: (
+    error: Error | null,
+    tools: readonly McpNativeToolDescriptor[] | null,
+  ) => void;
+}
+
+export interface McpRuntimeConnector {
+  connect(
+    server: McpDesiredServer,
+    signal: AbortSignal,
+    callbacks: McpRuntimeConnectionCallbacks,
+  ): Promise<McpRuntimeConnection>;
+}
+
+export interface McpRuntimeScheduler {
+  setTimeout(callback: () => void, delayMs: number): unknown;
+  clearTimeout(handle: unknown): void;
+}
+
+const defaultScheduler: McpRuntimeScheduler = {
+  setTimeout: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
+  clearTimeout: (handle) => globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
+export interface McpRuntimeManagerOptions {
+  /** Delay after each failed remote connect. Empty disables automatic retry. */
+  readonly remoteRetryDelaysMs?: readonly number[];
+  readonly scheduler?: McpRuntimeScheduler;
+  readonly closeTimeoutMs?: number;
+  /** When set, connection lifecycle follows that consumer's exposure and explicit selections. */
+  readonly activationConsumer?: McpConsumer;
+}
+
+type EntryTarget = "active" | "disabled" | "stopped" | "untrusted";
+
+interface RuntimeEntry {
+  server: McpDesiredServer;
+  configFingerprint: string;
+  connectionFingerprint: string;
+  sourceIdentity: string;
+  readonly token: number;
+  target: EntryTarget;
+  status: McpServerRuntimeState["status"];
+  failure?: ReturnType<typeof captureMcpRuntimeFailure>;
+  catalog?: McpRuntimeCatalog;
+  connection?: McpRuntimeConnection;
+  abortController?: AbortController;
+  retryAttempt: number;
+  retryTimer?: unknown;
+  activeCalls: number;
+  readonly callWaiters: Array<() => void>;
+}
+
+export type McpRuntimeSnapshotListener = (snapshot: McpRuntimeSnapshot) => void;
+
+function sourceIdentity(server: McpDesiredServer): string {
+  return server.source.kind === "dynamic"
+    ? `${server.source.kind}:${server.source.sourceId}`
+    : server.source.kind;
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .filter((key) => record[key] !== undefined)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+    .join(",")}}`;
+}
+
+function catalogRevision(tools: readonly McpNativeToolDescriptor[]): string {
+  const projection = [...tools]
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map((tool) => ({
+      name: tool.name,
+      ...(tool.description === undefined ? {} : { description: tool.description }),
+      inputSchema: tool.inputSchema,
+    }));
+  return createHash("sha256").update(canonicalJson(projection)).digest("hex");
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value)) deepFreeze(child);
+  }
+  return value;
+}
+
+function freezeCatalog(
+  serverId: string,
+  tools: readonly McpNativeToolDescriptor[],
+): McpRuntimeCatalog {
+  const frozenTools = tools
+    .map((tool) =>
+      Object.freeze({
+        name: tool.name,
+        ...(tool.description === undefined ? {} : { description: tool.description }),
+        inputSchema: deepFreeze(structuredClone(tool.inputSchema)),
+      }),
+    )
+    .sort((left, right) => left.name.localeCompare(right.name));
+  return Object.freeze({
+    serverId,
+    revision: catalogRevision(frozenTools),
+    tools: Object.freeze(frozenTools),
+  });
+}
+
+function desiredFingerprint(entries: Iterable<RuntimeEntry>): string {
+  const projection = [...entries]
+    .map((entry) => ({
+      id: entry.server.id,
+      fingerprint: entry.configFingerprint,
+      source: entry.sourceIdentity,
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+  return createHash("sha256").update(JSON.stringify(projection)).digest("hex");
+}
+
+function targetFor(
+  server: McpDesiredServer,
+  grants: readonly McpTrustGrant[],
+  activationConsumer: McpConsumer | undefined,
+  activatedServerIds: ReadonlySet<string>,
+): EntryTarget {
+  if (!server.definition.enabled) return "disabled";
+  if (activationConsumer && server.definition.use[activationConsumer].exposure === "off") {
+    return "disabled";
+  }
+  if (!evaluateMcpTrust(server, grants).trusted) return "untrusted";
+  if (
+    activationConsumer &&
+    server.definition.use[activationConsumer].exposure === "explicit" &&
+    !activatedServerIds.has(server.id)
+  ) {
+    return "stopped";
+  }
+  return "active";
+}
+
+function initialStatus(target: EntryTarget): McpServerRuntimeState["status"] {
+  if (target === "disabled") return "disabled";
+  if (target === "stopped") return "stopped";
+  return target === "untrusted" ? "untrusted" : "pending";
+}
+
+function identityKey(serverId: string, nativeToolName: string): string {
+  return JSON.stringify([serverId, nativeToolName]);
+}
+
+function selectedForConsumer(
+  server: McpDesiredServer,
+  consumer: McpConsumer,
+  selectedServerIds: ReadonlySet<string>,
+): boolean {
+  const policy = server.definition.use[consumer];
+  if (policy.exposure === "off") return false;
+  if (consumer === "audit") return policy.exposure === "always";
+  return policy.exposure === "always" || selectedServerIds.has(server.id);
+}
+
+function visibleForConsumer(server: McpDesiredServer, consumer: McpConsumer): boolean {
+  return server.definition.enabled && server.definition.use[consumer].exposure !== "off";
+}
+
+export class McpRuntimeManager {
+  private readonly entries = new Map<string, RuntimeEntry>();
+  private readonly listeners = new Set<McpRuntimeSnapshotListener>();
+  private readonly retryDelays: readonly number[];
+  private readonly scheduler: McpRuntimeScheduler;
+  private readonly closeTimeoutMs: number;
+  private serial: Promise<void> = Promise.resolve();
+  private tokenSequence = 0;
+  private bindingSequence = 0;
+  private generation = 0;
+  private disposed = false;
+  private readonly activationConsumer: McpConsumer | undefined;
+  private readonly activatedServerIds = new Set<string>();
+  private trustGrants: readonly McpTrustGrant[] = [];
+  private snapshot: McpRuntimeSnapshot = Object.freeze({
+    generation: 0,
+    desiredFingerprint: createHash("sha256").update("[]").digest("hex"),
+    servers: Object.freeze([]),
+  });
+
+  constructor(
+    private readonly connector: McpRuntimeConnector,
+    options: McpRuntimeManagerOptions = {},
+  ) {
+    this.retryDelays = options.remoteRetryDelaysMs ?? [1_000, 2_500, 5_000];
+    this.scheduler = options.scheduler ?? defaultScheduler;
+    this.closeTimeoutMs = options.closeTimeoutMs ?? 2_000;
+    this.activationConsumer = options.activationConsumer;
+  }
+
+  getSnapshot(): McpRuntimeSnapshot {
+    return this.snapshot;
+  }
+
+  getCatalog(serverId: string): McpRuntimeCatalog | undefined {
+    return this.entries.get(serverId)?.catalog;
+  }
+
+  getReadyClient(serverId: string): unknown | undefined {
+    const entry = this.entries.get(serverId);
+    return entry?.status === "ready" ? entry.connection?.client : undefined;
+  }
+
+  getReadyServerIds(): readonly string[] {
+    return Object.freeze(
+      [...this.entries.values()]
+        .filter((entry) => entry.status === "ready" && entry.connection !== undefined)
+        .map((entry) => entry.server.id)
+        .sort(),
+    );
+  }
+
+  getDesiredServer(serverId: string): McpDesiredServer | undefined {
+    return this.entries.get(serverId)?.server;
+  }
+
+  /** Names safe to advertise to a consumer before native tool schemas are requested. */
+  getVisibleServerIds(consumer: McpConsumer): readonly string[] {
+    return Object.freeze(
+      [...this.entries.values()]
+        .filter((entry) => visibleForConsumer(entry.server, consumer))
+        .map((entry) => entry.server.id)
+        .sort(),
+    );
+  }
+
+  getAuditLimits(
+    serverId: string,
+  ): { readonly maxCallsPerSeed: number; readonly maxResultBytesPerSeed: number } | undefined {
+    const policy = this.entries.get(serverId)?.server.definition.use.audit;
+    return policy
+      ? {
+          maxCallsPerSeed: policy.maxCallsPerSeed,
+          maxResultBytesPerSeed: policy.maxResultBytesPerSeed,
+        }
+      : undefined;
+  }
+
+  /** Capture one immutable authorization/catalog view for a single model dispatch. */
+  captureDispatchBinding(
+    consumer: McpConsumer,
+    selectedServerIds: readonly string[] = [],
+  ): McpDispatchBinding {
+    this.assertActive();
+    const selected = new Set(selectedServerIds);
+    const visibleEntries = [...this.entries.values()].filter((entry) =>
+      visibleForConsumer(entry.server, consumer),
+    );
+    const routableServerIds = new Set(
+      visibleEntries
+        .filter((entry) => selectedForConsumer(entry.server, consumer, selected))
+        .map((entry) => entry.server.id),
+    );
+    const servers: McpSelectedServerBinding[] = visibleEntries
+      .map((entry) => {
+        const tools: McpBoundNativeTool[] = (entry.catalog?.tools ?? [])
+          .filter((tool) => isMcpToolAllowed(entry.server.definition, consumer, tool.name))
+          .map((tool) =>
+            Object.freeze({
+              nativeToolName: tool.name,
+              description: tool.description ?? `MCP tool ${entry.server.id}/${tool.name}`,
+              inputSchema: tool.inputSchema as Readonly<Record<string, McpJsonValue>>,
+            }),
+          );
+        return Object.freeze({
+          serverId: entry.server.id,
+          configFingerprint: entry.configFingerprint,
+          status: entry.status,
+          ...(entry.catalog ? { catalogRevision: entry.catalog.revision } : {}),
+          ...(entry.failure ? { failure: projectMcpRuntimeFailure(entry.failure) } : {}),
+          tools: Object.freeze(tools),
+        });
+      })
+      .sort((left, right) => left.serverId.localeCompare(right.serverId));
+    const frozenServers = Object.freeze(servers);
+    const bindingId = `mcp-dispatch-${this.generation}-${++this.bindingSequence}`;
+    return Object.freeze({
+      bindingId,
+      generation: this.generation,
+      servers: frozenServers,
+      route: (identity: McpToolIdentity) => {
+        if (!routableServerIds.has(identity.serverId)) return undefined;
+        const requestedKey = identityKey(identity.serverId, identity.nativeToolName);
+        for (const server of frozenServers) {
+          if (server.status !== "ready" || !server.catalogRevision) continue;
+          for (const tool of server.tools) {
+            if (identityKey(server.serverId, tool.nativeToolName) !== requestedKey) continue;
+            return Object.freeze({
+              identity: Object.freeze({ ...identity }),
+              description: tool.description,
+              inputSchema: tool.inputSchema,
+              configFingerprint: server.configFingerprint,
+              catalogRevision: server.catalogRevision,
+            });
+          }
+        }
+        return undefined;
+      },
+    });
+  }
+
+  /** Re-check current runtime state immediately before crossing the native call boundary. */
+  async callBoundTool(
+    consumer: McpConsumer,
+    route: McpBoundRoute,
+    argumentsValue: Record<string, unknown>,
+  ): Promise<McpRuntimeCallOutcome> {
+    const initial = this.resolveCallableEntry(consumer, route);
+    if (!initial.ok) return initial;
+    const { entry } = initial;
+    await this.acquireCallPermit(entry);
+    try {
+      const current = this.resolveCallableEntry(consumer, route);
+      if (!current.ok) return current;
+      if (current.entry !== entry) {
+        return {
+          ok: false,
+          code: "catalog_changed",
+          message: "The MCP runtime changed before the native call started.",
+          ...(current.entry.catalog
+            ? { currentCatalogRevision: current.entry.catalog.revision }
+            : {}),
+        };
+      }
+      try {
+        return {
+          ok: true,
+          result: await current.entry.connection!.callTool(
+            route.identity.nativeToolName,
+            argumentsValue,
+          ),
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          code: "call_failed",
+          message: error instanceof Error ? error.message : String(error),
+        };
+      }
+    } finally {
+      this.releaseCallPermit(entry);
+    }
+  }
+
+  subscribe(listener: McpRuntimeSnapshotListener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  async reconcile(
+    desired: McpDesiredConfig,
+    grants: readonly McpTrustGrant[] = [],
+  ): Promise<McpRuntimeSnapshot> {
+    return this.enqueue(async () => {
+      this.assertActive();
+      this.trustGrants = grants;
+      const desiredById = new Map<string, McpDesiredServer>();
+      for (const server of desired.servers) {
+        if (desiredById.has(server.id)) {
+          throw new Error(`Duplicate MCP server id in desired configuration: ${server.id}`);
+        }
+        desiredById.set(server.id, server);
+      }
+
+      for (const [serverId, entry] of [...this.entries]) {
+        const next = desiredById.get(serverId);
+        if (!next) {
+          this.entries.delete(serverId);
+          await this.stopEntry(entry);
+          continue;
+        }
+        const nextFingerprint = fingerprintMcpServerDefinition(next.id, next.definition);
+        const nextConnectionFingerprint = fingerprintMcpConnectionDefinition(
+          next.id,
+          next.definition,
+        );
+        const nextTarget = targetFor(
+          next,
+          grants,
+          this.activationConsumer,
+          this.activatedServerIds,
+        );
+        if (
+          entry.connectionFingerprint !== nextConnectionFingerprint ||
+          entry.target !== nextTarget
+        ) {
+          this.entries.delete(serverId);
+          await this.stopEntry(entry);
+        } else {
+          entry.server = next;
+          entry.configFingerprint = nextFingerprint;
+          entry.sourceIdentity = sourceIdentity(next);
+          desiredById.delete(serverId);
+        }
+      }
+
+      for (const server of desiredById.values()) {
+        const target = targetFor(server, grants, this.activationConsumer, this.activatedServerIds);
+        const entry: RuntimeEntry = {
+          server,
+          configFingerprint: fingerprintMcpServerDefinition(server.id, server.definition),
+          connectionFingerprint: fingerprintMcpConnectionDefinition(server.id, server.definition),
+          sourceIdentity: sourceIdentity(server),
+          token: ++this.tokenSequence,
+          target,
+          status: initialStatus(target),
+          retryAttempt: 0,
+          activeCalls: 0,
+          callWaiters: [],
+        };
+        this.entries.set(server.id, entry);
+        if (target === "active") this.beginConnect(entry);
+      }
+      this.publish();
+      return this.snapshot;
+    });
+  }
+
+  /** Lazily start explicitly exposed servers once a chat selection makes them effective. */
+  async activateServers(
+    consumer: McpConsumer,
+    serverIds: readonly string[],
+  ): Promise<McpRuntimeSnapshot> {
+    return this.enqueue(() => {
+      this.assertActive();
+      if (this.activationConsumer && this.activationConsumer !== consumer) return this.snapshot;
+      for (const serverId of serverIds) this.activatedServerIds.add(serverId);
+      let changed = false;
+      for (const entry of this.entries.values()) {
+        const nextTarget = targetFor(
+          entry.server,
+          this.trustGrants,
+          this.activationConsumer,
+          this.activatedServerIds,
+        );
+        if (entry.target === nextTarget) continue;
+        entry.target = nextTarget;
+        entry.status = initialStatus(nextTarget);
+        entry.failure = undefined;
+        changed = true;
+        if (nextTarget === "active") this.beginConnect(entry);
+      }
+      if (changed) this.publish();
+      return this.snapshot;
+    });
+  }
+
+  async reload(serverId?: string): Promise<McpRuntimeSnapshot> {
+    return this.enqueue(async () => {
+      this.assertActive();
+      const targets = serverId
+        ? [this.entries.get(serverId)].filter((entry): entry is RuntimeEntry => entry !== undefined)
+        : [...this.entries.values()];
+      if (serverId && targets.length === 0) throw new Error(`Unknown MCP server: ${serverId}`);
+      for (const previous of targets) {
+        const replacement: RuntimeEntry = {
+          server: previous.server,
+          configFingerprint: previous.configFingerprint,
+          connectionFingerprint: previous.connectionFingerprint,
+          sourceIdentity: previous.sourceIdentity,
+          token: ++this.tokenSequence,
+          target: previous.target,
+          status: initialStatus(previous.target),
+          retryAttempt: 0,
+          activeCalls: 0,
+          callWaiters: [],
+        };
+        this.entries.set(previous.server.id, replacement);
+        await this.stopEntry(previous);
+        if (replacement.target === "active") this.beginConnect(replacement);
+      }
+      this.publish();
+      return this.snapshot;
+    });
+  }
+
+  /** Abort one transient connection attempt and leave it stopped until an explicit reload. */
+  async cancelStartup(serverId: string): Promise<McpRuntimeSnapshot> {
+    return this.enqueue(async () => {
+      this.assertActive();
+      const previous = this.entries.get(serverId);
+      if (!previous) throw new Error(`Unknown MCP server: ${serverId}`);
+      if (previous.status !== "pending") return this.snapshot;
+      const replacement: RuntimeEntry = {
+        server: previous.server,
+        configFingerprint: previous.configFingerprint,
+        connectionFingerprint: previous.connectionFingerprint,
+        sourceIdentity: previous.sourceIdentity,
+        token: ++this.tokenSequence,
+        target: previous.target,
+        status: "failed",
+        failure: captureMcpRuntimeFailure(mcpStartupCancelledError()),
+        retryAttempt: 0,
+        activeCalls: 0,
+        callWaiters: [],
+      };
+      this.entries.set(serverId, replacement);
+      await this.stopEntry(previous);
+      this.publish();
+      return this.snapshot;
+    });
+  }
+
+  /** Required-policy barrier for a later composition boundary; non-required servers never block. */
+  requiredServerIds(
+    consumer: McpConsumer,
+    selectedServerIds: readonly string[] = [],
+  ): readonly string[] {
+    const selected = new Set(selectedServerIds);
+    return Object.freeze(
+      [...this.entries.values()]
+        .filter(
+          (entry) =>
+            entry.server.definition.use[consumer].required &&
+            selectedForConsumer(entry.server, consumer, selected),
+        )
+        .map((entry) => entry.server.id)
+        .sort(),
+    );
+  }
+
+  async waitForRequiredServers(
+    consumer: McpConsumer,
+    selectedServerIds: readonly string[] = [],
+  ): Promise<readonly McpServerRuntimeState[]> {
+    const required = this.requiredServerIds(consumer, selectedServerIds);
+    if (required.length === 0) return Object.freeze([]);
+    const requiredSet = new Set(required);
+    while (true) {
+      const states = this.snapshot.servers.filter((server) => requiredSet.has(server.serverId));
+      if (states.every((server) => server.status !== "pending")) return Object.freeze(states);
+      await new Promise<void>((resolve) => {
+        const unsubscribe = this.subscribe(() => {
+          unsubscribe();
+          resolve();
+        });
+      });
+    }
+  }
+
+  /** Wait for one configured server to leave its transient startup state. */
+  async waitForServer(serverId: string): Promise<McpServerRuntimeState> {
+    while (true) {
+      const state = this.snapshot.servers.find((server) => server.serverId === serverId);
+      if (!state) throw new Error(`Unknown MCP server: ${serverId}`);
+      if (state.status !== "pending") return state;
+      await new Promise<void>((resolve) => {
+        const unsubscribe = this.subscribe(() => {
+          unsubscribe();
+          resolve();
+        });
+      });
+    }
+  }
+
+  /** Wait at most one bounded interval for effective servers needed by a reference query. */
+  async waitForReferenceServers(
+    consumer: McpConsumer,
+    selectedServerIds: readonly string[] = [],
+    requestedServerIds?: readonly string[],
+    options: {
+      readonly timeoutMs?: number;
+      readonly onWaitStart?: (serverIds: readonly string[]) => (() => void) | undefined;
+    } = {},
+  ): Promise<readonly McpServerRuntimeState[]> {
+    const selected = new Set(selectedServerIds);
+    const requested = requestedServerIds ? new Set(requestedServerIds) : undefined;
+    const targetIds = new Set(
+      [...this.entries.values()]
+        .filter(
+          (entry) =>
+            (!requested || requested.has(entry.server.id)) &&
+            selectedForConsumer(entry.server, consumer, selected),
+        )
+        .map((entry) => entry.server.id),
+    );
+    const current = () =>
+      Object.freeze(this.snapshot.servers.filter((server) => targetIds.has(server.serverId)));
+    if (targetIds.size === 0 || current().every((server) => server.status !== "pending")) {
+      return current();
+    }
+    const finishActivity = options.onWaitStart?.(
+      current()
+        .filter((server) => server.status === "pending")
+        .map((server) => server.serverId),
+    );
+    try {
+      return await new Promise((resolve) => {
+        let settled = false;
+        let unsubscribe: () => void = () => undefined;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          unsubscribe();
+          this.scheduler.clearTimeout(timeout);
+          resolve(current());
+        };
+        const timeout = this.scheduler.setTimeout(finish, Math.max(0, options.timeoutMs ?? 10_000));
+        unsubscribe = this.subscribe(() => {
+          if (current().every((server) => server.status !== "pending")) finish();
+        });
+        if (current().every((server) => server.status !== "pending")) finish();
+      });
+    } finally {
+      finishActivity?.();
+    }
+  }
+
+  async dispose(): Promise<void> {
+    await this.enqueue(async () => {
+      if (this.disposed) return;
+      this.disposed = true;
+      const entries = [...this.entries.values()];
+      this.entries.clear();
+      await Promise.allSettled(entries.map((entry) => this.stopEntry(entry)));
+      this.publish();
+      this.listeners.clear();
+    });
+  }
+
+  private assertActive(): void {
+    if (this.disposed) throw new Error("MCP runtime manager is disposed");
+  }
+
+  private enqueue<T>(operation: () => Promise<T> | T): Promise<T> {
+    const result = this.serial.then(operation, operation);
+    this.serial = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  private isCurrent(entry: RuntimeEntry): boolean {
+    return !this.disposed && this.entries.get(entry.server.id)?.token === entry.token;
+  }
+
+  private resolveCallableEntry(
+    consumer: McpConsumer,
+    route: McpBoundRoute,
+  ):
+    | { readonly ok: true; readonly entry: RuntimeEntry }
+    | Exclude<McpRuntimeCallOutcome, { ok: true }> {
+    const entry = this.entries.get(route.identity.serverId);
+    if (
+      !entry ||
+      entry.status !== "ready" ||
+      !entry.connection ||
+      !entry.catalog ||
+      !isMcpToolAllowed(entry.server.definition, consumer, route.identity.nativeToolName)
+    ) {
+      return {
+        ok: false,
+        code: "tool_unavailable",
+        message: "The MCP tool is no longer available in the current runtime.",
+      };
+    }
+    if (
+      entry.configFingerprint !== route.configFingerprint ||
+      entry.catalog.revision !== route.catalogRevision
+    ) {
+      return {
+        ok: false,
+        code: "catalog_changed",
+        message: "The MCP configuration or catalog changed before the native call.",
+        currentCatalogRevision: entry.catalog.revision,
+      };
+    }
+    if (!entry.catalog.tools.some((tool) => tool.name === route.identity.nativeToolName)) {
+      return {
+        ok: false,
+        code: "catalog_changed",
+        message: "The referenced MCP tool is absent from the current catalog.",
+        currentCatalogRevision: entry.catalog.revision,
+      };
+    }
+    return { ok: true, entry };
+  }
+
+  private async acquireCallPermit(entry: RuntimeEntry): Promise<void> {
+    while (entry.activeCalls >= entry.server.definition.maxConcurrency && this.isCurrent(entry)) {
+      await new Promise<void>((resolve) => entry.callWaiters.push(resolve));
+    }
+    entry.activeCalls += 1;
+  }
+
+  private releaseCallPermit(entry: RuntimeEntry): void {
+    entry.activeCalls = Math.max(0, entry.activeCalls - 1);
+    entry.callWaiters.shift()?.();
+  }
+
+  private releaseAllCallWaiters(entry: RuntimeEntry): void {
+    for (const resolve of entry.callWaiters.splice(0)) resolve();
+  }
+
+  private beginConnect(entry: RuntimeEntry): void {
+    if (!this.isCurrent(entry) || entry.target !== "active") return;
+    this.clearRetry(entry);
+    const abortController = new AbortController();
+    entry.abortController = abortController;
+    entry.status = "pending";
+    entry.failure = undefined;
+    const callbacks: McpRuntimeConnectionCallbacks = {
+      onClose: (error) => {
+        void this.enqueue(() => this.handleConnectionClosed(entry, error));
+      },
+      onError: (error) => {
+        void this.enqueue(() => this.handleConnectionError(entry, error));
+      },
+      onToolsChanged: (error, tools) => {
+        void this.enqueue(() => this.handleToolsChanged(entry, error, tools));
+      },
+    };
+    void this.connector.connect(entry.server, abortController.signal, callbacks).then(
+      (connection) => {
+        void this.enqueue(() => this.acceptConnection(entry, connection));
+      },
+      (error) => {
+        void this.enqueue(() => this.handleConnectFailure(entry, error));
+      },
+    );
+  }
+
+  private async acceptConnection(
+    entry: RuntimeEntry,
+    connection: McpRuntimeConnection,
+  ): Promise<void> {
+    if (!this.isCurrent(entry) || entry.abortController?.signal.aborted) {
+      await this.closeConnection(connection);
+      return;
+    }
+    entry.abortController = undefined;
+    entry.connection = connection;
+    void connection.listTools().then(
+      (tools) => {
+        void this.enqueue(() => this.acceptInitialCatalog(entry, connection, tools));
+      },
+      (error) => {
+        void this.enqueue(() => this.handleCatalogFailure(entry, connection, error));
+      },
+    );
+  }
+
+  private async acceptInitialCatalog(
+    entry: RuntimeEntry,
+    connection: McpRuntimeConnection,
+    tools: readonly McpNativeToolDescriptor[],
+  ): Promise<void> {
+    if (!this.isCurrent(entry) || entry.connection !== connection) {
+      await this.closeConnection(connection);
+      return;
+    }
+    entry.catalog = freezeCatalog(entry.server.id, tools);
+    entry.status = "ready";
+    entry.failure = undefined;
+    entry.retryAttempt = 0;
+    this.publish();
+  }
+
+  private async handleCatalogFailure(
+    entry: RuntimeEntry,
+    connection: McpRuntimeConnection,
+    error: unknown,
+  ): Promise<void> {
+    if (!this.isCurrent(entry) || entry.connection !== connection) {
+      await this.closeConnection(connection);
+      return;
+    }
+    entry.connection = undefined;
+    await this.closeConnection(connection);
+    this.failEntry(entry, error);
+  }
+
+  private async handleConnectFailure(entry: RuntimeEntry, error: unknown): Promise<void> {
+    if (!this.isCurrent(entry)) return;
+    entry.abortController = undefined;
+    this.failEntry(entry, error);
+  }
+
+  private failEntry(entry: RuntimeEntry, error: unknown): void {
+    if (!this.isCurrent(entry)) return;
+    entry.connection = undefined;
+    entry.catalog = undefined;
+    entry.status = "failed";
+    entry.failure = captureMcpRuntimeFailure(error);
+    this.scheduleRetry(entry);
+    this.publish();
+  }
+
+  private async handleConnectionClosed(entry: RuntimeEntry, error?: Error): Promise<void> {
+    if (!this.isCurrent(entry) || !entry.connection) return;
+    entry.connection = undefined;
+    entry.catalog = undefined;
+    this.failEntry(entry, error ?? new Error("MCP connection closed"));
+  }
+
+  private handleConnectionError(entry: RuntimeEntry, error: Error): void {
+    if (!this.isCurrent(entry) || entry.status !== "ready") return;
+    entry.failure = captureMcpRuntimeFailure(error);
+    this.publish();
+  }
+
+  private handleToolsChanged(
+    entry: RuntimeEntry,
+    error: Error | null,
+    tools: readonly McpNativeToolDescriptor[] | null,
+  ): void {
+    if (!this.isCurrent(entry) || entry.status !== "ready" || !entry.connection) return;
+    if (error || !tools) {
+      entry.failure = captureMcpRuntimeFailure(
+        error ?? new Error("MCP tools/list refresh returned no catalog"),
+      );
+      this.publish();
+      return;
+    }
+    entry.catalog = freezeCatalog(entry.server.id, tools);
+    entry.failure = undefined;
+    this.publish();
+  }
+
+  private scheduleRetry(entry: RuntimeEntry): void {
+    if (
+      entry.server.definition.transport.type !== "streamableHttp" ||
+      entry.retryAttempt >= this.retryDelays.length ||
+      !this.isCurrent(entry)
+    ) {
+      return;
+    }
+    const delay = this.retryDelays[entry.retryAttempt] ?? 0;
+    entry.retryAttempt += 1;
+    entry.retryTimer = this.scheduler.setTimeout(() => {
+      void this.enqueue(() => {
+        if (!this.isCurrent(entry) || entry.status !== "failed") return;
+        entry.retryTimer = undefined;
+        this.beginConnect(entry);
+        this.publish();
+      });
+    }, delay);
+  }
+
+  private clearRetry(entry: RuntimeEntry): void {
+    if (entry.retryTimer === undefined) return;
+    this.scheduler.clearTimeout(entry.retryTimer);
+    entry.retryTimer = undefined;
+  }
+
+  private async stopEntry(entry: RuntimeEntry): Promise<void> {
+    this.clearRetry(entry);
+    this.releaseAllCallWaiters(entry);
+    entry.abortController?.abort();
+    entry.abortController = undefined;
+    const connection = entry.connection;
+    entry.connection = undefined;
+    entry.catalog = undefined;
+    if (connection) await this.closeConnection(connection);
+  }
+
+  private async closeConnection(connection: McpRuntimeConnection): Promise<void> {
+    let timeout: unknown;
+    await Promise.race([
+      connection.close().catch(() => undefined),
+      new Promise<void>((resolve) => {
+        timeout = this.scheduler.setTimeout(resolve, this.closeTimeoutMs);
+      }),
+    ]);
+    if (timeout !== undefined) this.scheduler.clearTimeout(timeout);
+  }
+
+  private publish(): void {
+    const servers = [...this.entries.values()]
+      .map(
+        (entry): McpServerRuntimeState =>
+          Object.freeze({
+            serverId: entry.server.id,
+            configFingerprint: entry.configFingerprint,
+            status: entry.status,
+            ...(entry.catalog ? { catalogRevision: entry.catalog.revision } : {}),
+            ...(entry.failure ? { failure: entry.failure } : {}),
+          }),
+      )
+      .sort((left, right) => left.serverId.localeCompare(right.serverId));
+    this.snapshot = Object.freeze({
+      generation: ++this.generation,
+      desiredFingerprint: desiredFingerprint(this.entries.values()),
+      servers: Object.freeze(servers),
+    });
+    for (const listener of this.listeners) {
+      try {
+        listener(this.snapshot);
+      } catch {
+        // Observers cannot corrupt runtime serialization.
+      }
+    }
+  }
+}

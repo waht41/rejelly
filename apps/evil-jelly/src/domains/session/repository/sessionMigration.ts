@@ -249,7 +249,8 @@ function equivalentProjection(left: SessionRecord, right: SessionRecord): boolea
     JSON.stringify(leftMeta) === JSON.stringify(rightMeta) &&
     JSON.stringify(left.messages.map(comparableMessage)) ===
       JSON.stringify(right.messages.map(comparableMessage)) &&
-    JSON.stringify(left.transcript) === JSON.stringify(right.transcript)
+    JSON.stringify(left.transcript) === JSON.stringify(right.transcript) &&
+    JSON.stringify(left.mcp) === JSON.stringify(right.mcp)
   );
 }
 
