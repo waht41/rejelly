@@ -1,47 +1,72 @@
 // Evil Jelly workspace-local settings example.
-// Copy this file to settings.jsonc for local overrides; settings.jsonc is ignored by Git.
-// Precedence: CLI flag > workspace settings.jsonc > ~/.evil-jelly/settings.jsonc > default.
-// Document-domain repository facts belong in .evil-jelly/doc-map.jsonc.
+// Copy this file to .evil-jelly/settings.jsonc to use it; this example file is never loaded.
+// Precedence: CLI flags > workspace settings > ~/.evil-jelly/settings.jsonc > defaults.
+// Document-domain repository facts belong in .evil-jelly/doc-map.jsonc instead.
 {
-  // "audit": {
-  //   "concurrency": 12,
-  //   "maxSeeds": 24,
-  //   "ledgerGcDays": 30,
-  // },
-  // Skill availability only; this grants no tool permission. Restart after changing it.
-  // "skills": {
-  //   "enabled": true,
-  //   "overrides": {
-  //     "user:review": { "enabled": false },
-  //     "project:release": { "enabled": true },
-  //   },
-  // },
-  // MCP servers are replaced as a whole across user, workspace, and dynamic layers.
-  // This TypeScript server analyzes the current workspace. Audit receives only the listed tools.
-  // "mcp": {
-  //   "servers": {
-  //     "typescript": {
-  //       "transport": {
-  //         "type": "stdio",
-  //         "command": "npx",
-  //         "args": ["-y", "ts-language-mcp", "."],
-  //       },
-  //       "use": {
-  //         "chat": {
-  //           "exposure": "explicit",
-  //           "required": false,
-  //           // Exact tool names only; Auto mode allows each matching call once without a prompt.
-  //           "autoApproveTools": ["get_definition", "get_references", "get_diagnostics"],
-  //         },
-  //         "audit": {
-  //           "exposure": "always",
-  //           "required": false,
-  //           "allow": ["get_definition", "get_references", "get_diagnostics", "get_all_diagnostics"],
-  //           "maxCallsPerSeed": 4,
-  //           "maxResultBytesPerSeed": 65536,
-  //         },
-  //       },
-  //     },
-  //   },
-  // },
+  "audit": {
+    // Maximum number of seeds evaluated concurrently.
+    "concurrency": 12,
+    // Upper bound on seeds admitted to one Audit run.
+    "maxSeeds": 24,
+    // Remove completed ledger entries older than this many days.
+    "ledgerGcDays": 30
+  },
+
+  // Skills control prompt availability only; enabling one grants no tool permission.
+  // Restart Evil Jelly after changing Skill availability.
+  "skills": {
+    "enabled": true,
+    "overrides": {
+      // Qualified names include their source so similarly named Skills remain unambiguous.
+      "user:review": { "enabled": false },
+      "project:release": { "enabled": true }
+    }
+  },
+
+  // A same-id MCP server is replaced as a complete definition across user, workspace,
+  // and dynamic layers; individual fields are not deep-merged.
+  "mcp": {
+    "servers": {
+      "typescript": {
+        // stdio starts a local child process. Use streamableHttp for a remote MCP endpoint.
+        "transport": {
+          "type": "stdio",
+          "command": "npx",
+          "args": ["-y", "ts-language-mcp", "."]
+        },
+
+        "use": {
+          "chat": {
+            // off: hidden; explicit: available through $typescript or mcp_request;
+            // always: visible and routable without an explicit Session selection.
+            "exposure": "explicit",
+            // Required servers may delay the relevant composition boundary while starting.
+            "required": false,
+            // Exact native names only—no globs. In Auto mode each matching call is allowed once;
+            // this does not create a Session grant or persistent permission.
+            "autoApproveTools": ["get_definition", "get_references", "get_diagnostics"]
+          },
+
+          "audit": {
+            // Audit MCP exposure supports off or always; Audit never selects servers interactively.
+            "exposure": "always",
+            // When true, Audit waits for this server before evaluating MCP-dependent work.
+            "required": false,
+            // Audit can call only these exact native tools, even if Chat can see more.
+            "allow": [
+              // Navigation queries.
+              "get_definition",
+              "get_references",
+              // Diagnostic queries.
+              "get_diagnostics",
+              "get_all_diagnostics"
+            ],
+            // Per-seed limits bound external work and returned MCP context.
+            "maxCallsPerSeed": 4,
+            "maxResultBytesPerSeed": 65536
+          }
+        }
+      }
+    }
+  }
 }
