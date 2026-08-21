@@ -5,11 +5,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   grantMcpPersistentServerAccess,
   grantMcpPersistentToolAccess,
+  grantMcpPersistentToolAccesses,
   grantMcpWorkspaceTrust,
   readMcpPersistentPermissions,
   readMcpTrustGrants,
   resolveMcpTrustPath,
   revokeMcpPersistentPermissions,
+  revokeMcpPersistentServerAccess,
+  revokeMcpPersistentToolAccesses,
 } from "./trustRepository";
 
 const roots: string[] = [];
@@ -65,9 +68,14 @@ describe("MCP trust repository", () => {
       },
     ]);
 
+    revokeMcpPersistentServerAccess(workspace, "docs");
+    expect(readMcpPersistentPermissions(workspace)[0]).toMatchObject({
+      chatAccess: false,
+      tools: [{ nativeToolName: "read" }],
+    });
     revokeMcpPersistentPermissions(workspace, "docs", "read");
     expect(readMcpPersistentPermissions(workspace)[0]).toMatchObject({
-      chatAccess: true,
+      chatAccess: false,
       tools: [],
     });
     revokeMcpPersistentPermissions(workspace, "docs");
@@ -96,6 +104,24 @@ describe("MCP trust repository", () => {
         tools: [],
       },
     ]);
+  });
+
+  it("grants and revokes multiple tool permissions in one repository update", () => {
+    const { workspace } = fixture();
+    const configFingerprint = "a".repeat(64);
+    grantMcpPersistentToolAccesses(
+      workspace,
+      ["diagnostics", "references"].map((nativeToolName, index) => ({
+        serverId: "typescript",
+        configFingerprint,
+        nativeToolName,
+        toolSchemaFingerprint: String(index + 1).repeat(64),
+      })),
+    );
+
+    expect(readMcpPersistentPermissions(workspace)[0]?.tools).toHaveLength(2);
+    revokeMcpPersistentToolAccesses(workspace, "typescript", ["diagnostics", "references"]);
+    expect(readMcpPersistentPermissions(workspace)[0]?.tools).toEqual([]);
   });
 
   it("reads legacy V1 trust grants as grants without persistent permissions", () => {

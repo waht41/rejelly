@@ -58,7 +58,7 @@ export function createAuthorizedMcpBindingFactory(options: {
             }),
           );
         } else if (decision.scope === "always") {
-          await options.control?.grantPersistentToolAccess(grant);
+          await options.control?.grantPersistentToolAccess([grant]);
         }
         return true;
       },

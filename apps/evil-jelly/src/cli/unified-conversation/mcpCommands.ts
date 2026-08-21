@@ -2,18 +2,23 @@ import { requestMcpAccess } from "../../domains/mcp/management/requestAccess";
 import type {
   McpSessionControl,
   McpSessionStatusRow,
+  McpToolPermissionRow,
 } from "../../domains/mcp/management/sessionControl";
 import type {
   McpManagerAction,
   McpManagerRequest,
   PromptChoiceRequest,
 } from "../../shared/host/inputBindings";
+import type { McpToolGrant } from "../../shared/model/mcp/toolGrant";
 
 export interface McpCommandPorts {
   readonly control?: McpSessionControl;
   selectedServerIds(): readonly string[];
   setSelectedServerIds(selectedServerIds: readonly string[]): void;
   recordSelection(selectedServerIds: readonly string[]): Promise<void>;
+  sessionToolGrants(): readonly McpToolGrant[];
+  setSessionToolGrants(grants: readonly McpToolGrant[]): void;
+  recordToolGrants(grants: readonly McpToolGrant[]): Promise<void>;
   requestChoice(request: PromptChoiceRequest): Promise<string>;
   requestManager?: (request: McpManagerRequest) => Promise<McpManagerAction>;
   dismissManager?: () => void;
@@ -50,6 +55,7 @@ function managerRequest(
   selectedServerId?: string,
   detailServerId?: string,
   activity?: McpManagerRequest["activity"],
+  toolPanel?: McpManagerRequest["toolPanel"],
 ): McpManagerRequest {
   return {
     rows: rows.map((row) => ({
@@ -66,6 +72,23 @@ function managerRequest(
     ...(selectedServerId ? { selectedServerId } : {}),
     ...(detailServerId ? { detailServerId } : {}),
     ...(activity ? { activity } : {}),
+    ...(toolPanel ? { toolPanel } : {}),
+  };
+}
+
+function toolPanel(
+  serverId: string,
+  rows: readonly McpToolPermissionRow[],
+): NonNullable<McpManagerRequest["toolPanel"]> {
+  return {
+    serverId,
+    rows: rows.map((row) => ({
+      nativeToolName: row.nativeToolName,
+      description: row.description,
+      approval: row.approval,
+      configFingerprint: row.grant.configFingerprint,
+      toolSchemaFingerprint: row.grant.toolSchemaFingerprint,
+    })),
   };
 }
 
@@ -73,6 +96,41 @@ async function requestManagerFallback(
   request: McpManagerRequest,
   requestChoice: McpCommandPorts["requestChoice"],
 ): Promise<McpManagerAction> {
+  if (request.toolPanel) {
+    const selectedTool = await requestChoice({
+      message: `MCP ${request.toolPanel.serverId} tools`,
+      options: [
+        ...request.toolPanel.rows.map((row, index) => ({
+          key: index < 9 ? String(index + 1) : "",
+          label: `${row.nativeToolName} · ${row.approval}`,
+          value: row.nativeToolName,
+        })),
+        { key: "b", label: "Back", value: "" },
+      ],
+      cancelValue: "",
+    });
+    const row = request.toolPanel.rows.find(
+      (candidate) => candidate.nativeToolName === selectedTool,
+    );
+    if (!row) return { action: "refresh" };
+    const approval = await requestChoice({
+      message: `Approval for ${row.nativeToolName}`,
+      options: [
+        { key: "s", label: "Allow for this session", value: "session" },
+        { key: "a", label: "Always allow", value: "always" },
+        { key: "r", label: "Revoke approval", value: "ask" },
+        { key: "b", label: "Back", value: "back" },
+      ],
+      cancelValue: "back",
+    });
+    if (approval === "back") return { action: "refresh" };
+    return {
+      action: "set_tool_approval",
+      serverId: request.toolPanel.serverId,
+      tools: [row],
+      approval: approval as "ask" | "session" | "always",
+    };
+  }
   const selected = await requestChoice({
     message: "MCP servers",
     options: [
@@ -96,6 +154,7 @@ async function requestManagerFallback(
         value: "toggle",
       },
       { key: "r", label: "Reload connection", value: "reload" },
+      { key: "t", label: "Tools & approvals", value: "tools" },
       { key: "p", label: "Persistent permissions", value: "permissions" },
       { key: "b", label: "Back", value: "back" },
     ],
@@ -103,7 +162,7 @@ async function requestManagerFallback(
   });
   return action === "back"
     ? requestManagerFallback({ ...request, selectedServerId: selected }, requestChoice)
-    : { action: action as "toggle" | "reload" | "permissions", serverId: selected };
+    : { action: action as "toggle" | "reload" | "permissions" | "tools", serverId: selected };
 }
 
 async function commitSelection(
@@ -112,6 +171,57 @@ async function commitSelection(
 ): Promise<void> {
   await ports.recordSelection(selectedServerIds);
   ports.setSelectedServerIds(selectedServerIds);
+}
+
+async function commitToolGrants(
+  ports: McpCommandPorts,
+  grants: readonly McpToolGrant[],
+): Promise<void> {
+  await ports.recordToolGrants(grants);
+  ports.setSessionToolGrants(grants);
+}
+
+async function setToolApproval(
+  ports: McpCommandPorts,
+  action: Extract<McpManagerAction, { action: "set_tool_approval" }>,
+): Promise<void> {
+  const { control } = ports;
+  if (!control) return;
+  const currentRows = control.toolPermissions(action.serverId, ports.sessionToolGrants());
+  const requested = new Map(action.tools.map((tool) => [tool.nativeToolName, tool]));
+  const validRows = currentRows.filter((row) => {
+    const expected = requested.get(row.nativeToolName);
+    return (
+      expected?.configFingerprint === row.grant.configFingerprint &&
+      expected.toolSchemaFingerprint === row.grant.toolSchemaFingerprint
+    );
+  });
+  const validNames = new Set(validRows.map((row) => row.nativeToolName));
+  const grants = validRows.map((row) => row.grant);
+  if (action.approval === "always") {
+    await control.grantPersistentToolAccess(grants);
+  } else {
+    await control.revokePersistentToolPermissions(action.serverId, [...validNames]);
+  }
+
+  const currentSessionGrants = ports.sessionToolGrants();
+  const nextSessionGrants = currentSessionGrants.filter(
+    (grant) => grant.serverId !== action.serverId || !validNames.has(grant.nativeToolName),
+  );
+  if (action.approval === "session") nextSessionGrants.push(...grants);
+  if (
+    nextSessionGrants.length !== currentSessionGrants.length ||
+    nextSessionGrants.some((grant, index) => grant !== currentSessionGrants[index])
+  ) {
+    await commitToolGrants(ports, nextSessionGrants);
+  }
+
+  const skipped = requested.size - validRows.length;
+  if (skipped > 0) {
+    ports.logSystem(
+      `MCP tool permissions: ${validRows.length} updated, ${skipped} skipped (catalog changed).\n`,
+    );
+  }
 }
 
 async function awaitServerInManager(
@@ -197,30 +307,7 @@ async function managePermissions(ports: McpCommandPorts, serverId: string): Prom
   const permission = ports.control
     ?.persistentPermissions()
     .find((candidate) => candidate.serverId === serverId);
-  if (!permission || (!permission.chatAccess && permission.nativeToolNames.length === 0)) {
-    ports.logSystem(`MCP persistent permissions for ${serverId}: none.\n`);
-    return;
-  }
-  const selected = await ports.requestChoice({
-    message: `Persistent permissions for ${serverId}`,
-    options: [
-      ...(permission.chatAccess
-        ? [{ key: "s", label: "Revoke persistent server access", value: "server" }]
-        : []),
-      ...permission.nativeToolNames.map((tool, index) => ({
-        key: index < 9 ? String(index + 1) : "",
-        label: `Revoke tool: ${tool}`,
-        value: `tool:${tool}`,
-      })),
-      { key: "b", label: "Back", value: "back" },
-    ],
-    cancelValue: "back",
-  });
-  if (selected === "server") {
-    await ports.control?.revokePersistentPermissions(serverId);
-  } else if (selected.startsWith("tool:")) {
-    await ports.control?.revokePersistentPermissions(serverId, selected.slice("tool:".length));
-  }
+  if (permission?.chatAccess) await ports.control?.revokePersistentServerAccess(serverId);
 }
 
 async function runManager(ports: McpCommandPorts): Promise<void> {
@@ -231,11 +318,17 @@ async function runManager(ports: McpCommandPorts): Promise<void> {
   }
   let selectedServerId: string | undefined;
   let detailServerId: string | undefined;
+  let toolServerId: string | undefined;
   while (true) {
+    const tools = toolServerId
+      ? toolPanel(toolServerId, control.toolPermissions(toolServerId, ports.sessionToolGrants()))
+      : undefined;
     const request = managerRequest(
       control.status(ports.selectedServerIds()),
       selectedServerId,
       detailServerId,
+      undefined,
+      tools,
     );
     const action = ports.requestManager
       ? await ports.requestManager(request)
@@ -244,15 +337,23 @@ async function runManager(ports: McpCommandPorts): Promise<void> {
     if (!("serverId" in action)) continue;
     selectedServerId = action.serverId;
     detailServerId = action.serverId;
-    if (action.action === "reload") {
+    if (action.action === "tools") {
+      toolServerId = action.serverId;
+    } else if (action.action === "set_tool_approval") {
+      toolServerId = action.serverId;
+      await setToolApproval(ports, action);
+    } else if (action.action === "reload") {
+      toolServerId = undefined;
       try {
         await control.reload(action.serverId);
       } catch (error) {
         ports.logSystem(`MCP reload failed: ${errorMessage(error)}\n`);
       }
     } else if (action.action === "permissions") {
+      toolServerId = undefined;
       await managePermissions(ports, action.serverId);
     } else {
+      toolServerId = undefined;
       const row = control
         .status(ports.selectedServerIds())
         .find((candidate) => candidate.serverId === action.serverId);

@@ -377,6 +377,14 @@ async function handleMcp(runtime: RouterRuntime, rawInput: string): Promise<void
     recordSelection: async (selectedServerIds) => {
       await runtime.props.sessionRecorder?.recordMcpSelection(selectedServerIds, "command");
     },
+    sessionToolGrants: () => runtime.sessionMcpState().toolGrants,
+    setSessionToolGrants: (toolGrants) =>
+      runtime.setSessionMcpState(
+        createSessionMcpState({ ...runtime.sessionMcpState(), toolGrants }),
+      ),
+    recordToolGrants: async (toolGrants) => {
+      await runtime.props.sessionRecorder?.recordMcpToolGrants(toolGrants, "command");
+    },
     requestChoice: runtime.host.requestChoice,
     ...(runtime.host.requestMcpManager ? { requestManager: runtime.host.requestMcpManager } : {}),
     ...(runtime.host.dismissMcpManager ? { dismissManager: runtime.host.dismissMcpManager } : {}),

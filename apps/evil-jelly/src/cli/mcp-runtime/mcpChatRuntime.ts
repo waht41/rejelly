@@ -14,7 +14,11 @@ import {
   createMcpDispatchBindingFactory,
   createMcpRuntimeProviders,
 } from "../../domains/mcp/mcpServerKit";
-import { fingerprintMcpToolSchema } from "../../domains/mcp/permissions";
+import {
+  fingerprintMcpToolSchema,
+  mcpToolGrantForRoute,
+  mcpToolGrantMatchesRoute,
+} from "../../domains/mcp/permissions";
 import { McpRuntimeManager } from "../../domains/mcp/runtime/runtimeManager";
 import { SdkMcpRuntimeConnector } from "../../domains/mcp/runtime/sdkConnector";
 import { getEnvironmentValue } from "../../shared/configuration/env";
@@ -22,11 +26,13 @@ import { getSettings, invalidateSettingsCache } from "../../shared/configuration
 import type { EvilJellyBindings } from "../../shared/host/bindings";
 import {
   grantMcpPersistentServerAccess,
-  grantMcpPersistentToolAccess,
+  grantMcpPersistentToolAccesses,
   grantMcpWorkspaceTrust,
   readMcpPersistentPermissions,
   readMcpTrustGrants,
   revokeMcpPersistentPermissions,
+  revokeMcpPersistentServerAccess,
+  revokeMcpPersistentToolAccesses,
 } from "../../shared/mcp/trustRepository";
 export interface McpChatRuntime {
   readonly providers: Record<string, unknown>;
@@ -80,6 +86,16 @@ export async function createMcpChatRuntime(options: {
         .filter((server) => server.definition.use.chat.exposure !== "off")
         .map((server) => ({ serverId: server.id })),
     );
+  const persistentToolAllowed = (route: McpBoundRoute): boolean => {
+    const permission = currentPersistentPermission(route.identity.serverId);
+    return (
+      permission?.tools.some(
+        (tool) =>
+          tool.nativeToolName === route.identity.nativeToolName &&
+          tool.toolSchemaFingerprint === fingerprintMcpToolSchema(route),
+      ) ?? false
+    );
+  };
 
   const sessionControl: McpSessionControl = {
     status: (selectedServerIds): readonly McpSessionStatusRow[] => {
@@ -111,6 +127,28 @@ export async function createMcpChatRuntime(options: {
           configFingerprint: runtime?.configFingerprint ?? "unavailable",
           ...(runtime?.error ? { error: runtime.error } : {}),
         };
+      });
+    },
+    toolPermissions: (serverId, sessionGrants) => {
+      const binding = manager.captureDispatchBinding("chat", [serverId]);
+      const server = binding.servers.find((candidate) => candidate.serverId === serverId);
+      if (!server || server.status !== "ready") return [];
+      return server.tools.flatMap((tool) => {
+        const route = binding.route({ serverId, nativeToolName: tool.nativeToolName });
+        if (!route) return [];
+        const grant = mcpToolGrantForRoute(route);
+        return [
+          {
+            nativeToolName: tool.nativeToolName,
+            description: tool.description,
+            grant,
+            approval: persistentToolAllowed(route)
+              ? ("always" as const)
+              : sessionGrants.some((candidate) => mcpToolGrantMatchesRoute(candidate, route))
+                ? ("session" as const)
+                : ("ask" as const),
+          },
+        ];
       });
     },
     reload: async (serverId) => {
@@ -151,28 +189,27 @@ export async function createMcpChatRuntime(options: {
       });
       persistentPermissions = readMcpPersistentPermissions(workspaceRoot);
     },
-    grantPersistentToolAccess: async (grant) => {
-      grantMcpPersistentToolAccess(workspaceRoot, grant);
+    grantPersistentToolAccess: async (grants) => {
+      grantMcpPersistentToolAccesses(workspaceRoot, grants);
       persistentPermissions = readMcpPersistentPermissions(workspaceRoot);
     },
-    isPersistentToolAllowed: (route: McpBoundRoute) => {
-      const permission = currentPersistentPermission(route.identity.serverId);
-      return (
-        permission?.tools.some(
-          (tool) =>
-            tool.nativeToolName === route.identity.nativeToolName &&
-            tool.toolSchemaFingerprint === fingerprintMcpToolSchema(route),
-        ) ?? false
-      );
-    },
+    isPersistentToolAllowed: persistentToolAllowed,
     persistentPermissions: () =>
       persistentPermissions.map((permission) => ({
         serverId: permission.serverId,
         chatAccess: permission.chatAccess,
         nativeToolNames: permission.tools.map((tool) => tool.nativeToolName),
       })),
+    revokePersistentServerAccess: async (serverId) => {
+      revokeMcpPersistentServerAccess(workspaceRoot, serverId);
+      persistentPermissions = readMcpPersistentPermissions(workspaceRoot);
+    },
     revokePersistentPermissions: async (serverId, nativeToolName) => {
       revokeMcpPersistentPermissions(workspaceRoot, serverId, nativeToolName);
+      persistentPermissions = readMcpPersistentPermissions(workspaceRoot);
+    },
+    revokePersistentToolPermissions: async (serverId, nativeToolNames) => {
+      revokeMcpPersistentToolAccesses(workspaceRoot, serverId, nativeToolNames);
       persistentPermissions = readMcpPersistentPermissions(workspaceRoot);
     },
   };

@@ -17,6 +17,7 @@ export function mcpSessionControlStub(
 ): McpSessionControl {
   return {
     status: () => [],
+    toolPermissions: () => [],
     reload: async () => undefined,
     cancelStartup: async () => undefined,
     grantTrust: async () => undefined,
@@ -29,7 +30,9 @@ export function mcpSessionControlStub(
     grantPersistentToolAccess: async () => undefined,
     isPersistentToolAllowed: () => false,
     persistentPermissions: () => [],
+    revokePersistentServerAccess: async () => undefined,
     revokePersistentPermissions: async () => undefined,
+    revokePersistentToolPermissions: async () => undefined,
     ...overrides,
   };
 }

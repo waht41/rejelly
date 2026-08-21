@@ -19,21 +19,37 @@ export interface McpSessionStatusRow {
   readonly error?: string;
 }
 
+export interface McpToolPermissionRow {
+  readonly nativeToolName: string;
+  readonly description: string;
+  readonly grant: McpToolGrant;
+  readonly approval: "ask" | "session" | "always";
+}
+
 export interface McpSessionControl {
   status(selectedServerIds: readonly string[]): readonly McpSessionStatusRow[];
+  toolPermissions(
+    serverId: string,
+    sessionGrants: readonly McpToolGrant[],
+  ): readonly McpToolPermissionRow[];
   reload(serverId?: string): Promise<void>;
   cancelStartup(serverId: string): Promise<void>;
   grantTrust(serverId: string): Promise<void>;
   waitForServer(serverId: string): Promise<McpServerRuntimeState>;
   grantPersistentServerAccess(serverId: string): Promise<void>;
-  grantPersistentToolAccess(grant: McpToolGrant): Promise<void>;
+  grantPersistentToolAccess(grants: readonly McpToolGrant[]): Promise<void>;
   isPersistentToolAllowed(route: McpBoundRoute): boolean;
   persistentPermissions(): readonly {
     readonly serverId: string;
     readonly chatAccess: boolean;
     readonly nativeToolNames: readonly string[];
   }[];
+  revokePersistentServerAccess(serverId: string): Promise<void>;
   revokePersistentPermissions(serverId: string, nativeToolName?: string): Promise<void>;
+  revokePersistentToolPermissions(
+    serverId: string,
+    nativeToolNames: readonly string[],
+  ): Promise<void>;
 }
 
 function sourceLabel(source: McpConfigSource): string {

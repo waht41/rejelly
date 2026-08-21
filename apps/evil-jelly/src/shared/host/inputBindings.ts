@@ -47,6 +47,14 @@ export interface McpManagerRow {
   detail?: string;
 }
 
+export interface McpManagerToolRow {
+  nativeToolName: string;
+  description: string;
+  approval: "ask" | "session" | "always";
+  configFingerprint: string;
+  toolSchemaFingerprint: string;
+}
+
 export interface McpManagerRequest {
   rows: McpManagerRow[];
   selectedServerId?: string;
@@ -55,12 +63,26 @@ export interface McpManagerRequest {
     serverId: string;
     label: string;
   };
+  toolPanel?: {
+    serverId: string;
+    rows: McpManagerToolRow[];
+  };
 }
 
 export type McpManagerAction =
   | { action: "close" }
   | { action: "cancel" | "refresh" }
-  | { action: "toggle" | "reload" | "permissions"; serverId: string };
+  | { action: "toggle" | "reload" | "permissions" | "tools"; serverId: string }
+  | {
+      action: "set_tool_approval";
+      serverId: string;
+      tools: Array<{
+        nativeToolName: string;
+        configFingerprint: string;
+        toolSchemaFingerprint: string;
+      }>;
+      approval: "ask" | "session" | "always";
+    };
 
 /** User input, picker inventory, and general prompt choices supplied to the agent runtime. */
 export interface PromptInputBindings {

@@ -84,4 +84,41 @@ describe("McpManagerPrompt", () => {
     expect(loading).toContain("Starting typescript…");
     expect(loading).toContain("Esc cancel startup");
   });
+
+  it("renders the terminal tool panel with inline batch actions", () => {
+    const output = stripAnsi(
+      renderToString(
+        createElement(McpManagerPrompt, {
+          request: {
+            rows: [],
+            toolPanel: {
+              serverId: "typescript",
+              rows: [
+                {
+                  nativeToolName: "find_references",
+                  description: "Find symbol references",
+                  approval: "ask",
+                  configFingerprint: "a".repeat(64),
+                  toolSchemaFingerprint: "b".repeat(64),
+                },
+                {
+                  nativeToolName: "diagnostics",
+                  description: "Read diagnostics",
+                  approval: "always",
+                  configFingerprint: "a".repeat(64),
+                  toolSchemaFingerprint: "c".repeat(64),
+                },
+              ],
+            },
+          },
+          onAction: vi.fn(),
+        }),
+      ),
+    );
+
+    expect(output).toContain("Tools & approvals");
+    expect(output).toContain("1 always · 0 session · 1 ask");
+    expect(output).toContain("find_references · ask");
+    expect(output).toContain("Space/Enter select · S session · A always · R revoke");
+  });
 });

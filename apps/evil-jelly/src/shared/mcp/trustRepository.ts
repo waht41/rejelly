@@ -162,8 +162,27 @@ export function grantMcpPersistentServerAccess(
   updateWorkspaceGrant(workspaceRoot, grant, (current) => ({ ...current, chatAccess: true }));
 }
 
-export function grantMcpPersistentToolAccess(workspaceRoot: string, grant: McpToolGrant): void {
-  updateWorkspaceGrant(workspaceRoot, grant, (current) => {
+export function grantMcpPersistentToolAccesses(
+  workspaceRoot: string,
+  requestedGrants: readonly McpToolGrant[],
+): void {
+  if (requestedGrants.length === 0) return;
+  const normalizedRoot = normalizedWorkspaceRoot(workspaceRoot);
+  const grants = readStoredGrants();
+  for (const grant of requestedGrants) {
+    const index = grants.findIndex(
+      (stored) =>
+        normalizedWorkspaceRoot(stored.workspaceRoot) === normalizedRoot &&
+        stored.serverId === grant.serverId,
+    );
+    const current =
+      index >= 0 && grants[index]!.configFingerprint === grant.configFingerprint
+        ? grants[index]!
+        : {
+            workspaceRoot: path.resolve(workspaceRoot),
+            serverId: grant.serverId,
+            configFingerprint: grant.configFingerprint,
+          };
     const tools = [...(current.tools ?? [])].filter(
       (tool) => tool.nativeToolName !== grant.nativeToolName,
     );
@@ -172,8 +191,51 @@ export function grantMcpPersistentToolAccess(workspaceRoot: string, grant: McpTo
       toolSchemaFingerprint: grant.toolSchemaFingerprint,
     });
     tools.sort((left, right) => left.nativeToolName.localeCompare(right.nativeToolName));
-    return { ...current, tools };
-  });
+    const next = { ...current, tools };
+    if (index >= 0) grants[index] = next;
+    else grants.push(next);
+  }
+  atomicWriteGrants(sortGrants(grants));
+}
+
+export function grantMcpPersistentToolAccess(workspaceRoot: string, grant: McpToolGrant): void {
+  grantMcpPersistentToolAccesses(workspaceRoot, [grant]);
+}
+
+export function revokeMcpPersistentToolAccesses(
+  workspaceRoot: string,
+  serverId: string,
+  nativeToolNames: readonly string[],
+): void {
+  if (nativeToolNames.length === 0) return;
+  const normalizedRoot = normalizedWorkspaceRoot(workspaceRoot);
+  const grants = readStoredGrants();
+  const index = grants.findIndex(
+    (grant) =>
+      normalizedWorkspaceRoot(grant.workspaceRoot) === normalizedRoot &&
+      grant.serverId === serverId,
+  );
+  if (index < 0) return;
+  const revoked = new Set(nativeToolNames);
+  const current = grants[index]!;
+  grants[index] = {
+    ...current,
+    tools: (current.tools ?? []).filter((tool) => !revoked.has(tool.nativeToolName)),
+  };
+  atomicWriteGrants(sortGrants(grants));
+}
+
+export function revokeMcpPersistentServerAccess(workspaceRoot: string, serverId: string): void {
+  const normalizedRoot = normalizedWorkspaceRoot(workspaceRoot);
+  const grants = readStoredGrants();
+  const index = grants.findIndex(
+    (grant) =>
+      normalizedWorkspaceRoot(grant.workspaceRoot) === normalizedRoot &&
+      grant.serverId === serverId,
+  );
+  if (index < 0) return;
+  grants[index] = { ...grants[index]!, chatAccess: false };
+  atomicWriteGrants(sortGrants(grants));
 }
 
 export function revokeMcpPersistentPermissions(
@@ -181,6 +243,10 @@ export function revokeMcpPersistentPermissions(
   serverId: string,
   nativeToolName?: string,
 ): void {
+  if (nativeToolName) {
+    revokeMcpPersistentToolAccesses(workspaceRoot, serverId, [nativeToolName]);
+    return;
+  }
   const normalizedRoot = normalizedWorkspaceRoot(workspaceRoot);
   const grants = readStoredGrants();
   const index = grants.findIndex(
@@ -190,11 +256,6 @@ export function revokeMcpPersistentPermissions(
   );
   if (index < 0) return;
   const current = grants[index]!;
-  grants[index] = nativeToolName
-    ? {
-        ...current,
-        tools: (current.tools ?? []).filter((tool) => tool.nativeToolName !== nativeToolName),
-      }
-    : { ...current, chatAccess: false, tools: [] };
+  grants[index] = { ...current, chatAccess: false, tools: [] };
   atomicWriteGrants(sortGrants(grants));
 }

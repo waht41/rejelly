@@ -39,6 +39,9 @@ function ports(overrides: Partial<McpCommandPorts> = {}) {
     selectedServerIds: () => [],
     setSelectedServerIds: vi.fn(),
     recordSelection: vi.fn(async () => undefined),
+    sessionToolGrants: () => [],
+    setSessionToolGrants: vi.fn(),
+    recordToolGrants: vi.fn(async () => undefined),
     requestChoice: vi.fn(async () => "cancel"),
     logSystem: vi.fn(),
     ...overrides,
@@ -123,6 +126,64 @@ describe("MCP interactive commands", () => {
     );
     expect(cancelStartup).toHaveBeenCalledWith("docs");
     expect(selectedServerIds).toEqual([]);
+  });
+
+  it("applies multiple tool approvals through one session and persistent mutation", async () => {
+    const grants = ["diagnostics", "find_references"].map((nativeToolName, index) => ({
+      serverId: "docs",
+      configFingerprint: "a".repeat(64),
+      nativeToolName,
+      toolSchemaFingerprint: String(index + 1).repeat(64),
+    }));
+    let sessionToolGrants: typeof grants = [];
+    const toolPermissions = vi.fn(() =>
+      grants.map((grant) => ({
+        nativeToolName: grant.nativeToolName,
+        description: grant.nativeToolName,
+        grant,
+        approval: "ask" as const,
+      })),
+    );
+    const revokePersistentToolPermissions = vi.fn(async () => undefined);
+    const requestManager = vi
+      .fn()
+      .mockResolvedValueOnce({ action: "tools", serverId: "docs" })
+      .mockResolvedValueOnce({
+        action: "set_tool_approval",
+        serverId: "docs",
+        tools: grants,
+        approval: "session",
+      })
+      .mockResolvedValueOnce({ action: "close" });
+    const command = ports({
+      control: mcpSessionControlStub({ toolPermissions, revokePersistentToolPermissions }),
+      sessionToolGrants: () => sessionToolGrants,
+      setSessionToolGrants: (next) => {
+        sessionToolGrants = [...next] as typeof grants;
+      },
+      requestManager,
+    });
+
+    await handleMcpCommand("/mcp", command);
+
+    expect(requestManager).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        toolPanel: expect.objectContaining({
+          serverId: "docs",
+          rows: expect.arrayContaining([
+            expect.objectContaining({ nativeToolName: "diagnostics", approval: "ask" }),
+          ]),
+        }),
+      }),
+    );
+    expect(revokePersistentToolPermissions).toHaveBeenCalledOnce();
+    expect(revokePersistentToolPermissions).toHaveBeenCalledWith("docs", [
+      "diagnostics",
+      "find_references",
+    ]);
+    expect(command.recordToolGrants).toHaveBeenCalledOnce();
+    expect(sessionToolGrants).toEqual(grants);
   });
 
   it("persists a sorted session selection without mutating runtime config", async () => {
