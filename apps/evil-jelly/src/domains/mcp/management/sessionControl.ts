@@ -36,6 +36,7 @@ export interface McpSessionControl {
   ): readonly McpToolPermissionRow[];
   reload(serverId?: string): Promise<void>;
   cancelStartup(serverId: string): Promise<void>;
+  activateServers(serverIds: readonly string[]): Promise<void>;
   grantTrust(serverId: string): Promise<void>;
   waitForServer(serverId: string): Promise<McpServerRuntimeState>;
   grantPersistentServerAccess(serverId: string): Promise<void>;

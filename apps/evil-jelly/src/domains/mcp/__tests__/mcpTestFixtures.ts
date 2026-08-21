@@ -20,6 +20,7 @@ export function mcpSessionControlStub(
     toolPermissions: () => [],
     reload: async () => undefined,
     cancelStartup: async () => undefined,
+    activateServers: async () => undefined,
     grantTrust: async () => undefined,
     waitForServer: async (serverId) => ({
       serverId,

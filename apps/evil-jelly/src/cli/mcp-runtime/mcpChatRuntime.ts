@@ -59,6 +59,7 @@ export async function createMcpChatRuntime(options: {
       workspaceRoot,
       resolveEnvironment: getEnvironmentValue,
     }),
+    { activationConsumer: "chat" },
   );
   let desired = resolveDesired();
   let trustGrants = readMcpTrustGrants(workspaceRoot);
@@ -169,6 +170,9 @@ export async function createMcpChatRuntime(options: {
     },
     cancelStartup: async (serverId) => {
       await manager.cancelStartup(serverId);
+    },
+    activateServers: async (serverIds) => {
+      await manager.activateServers("chat", serverIds);
     },
     grantTrust: async (serverId) => {
       const server = desired.servers.find((candidate) => candidate.id === serverId);

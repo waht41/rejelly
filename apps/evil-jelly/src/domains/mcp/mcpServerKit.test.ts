@@ -30,10 +30,12 @@ describe("MCP dispatch composition", () => {
       result: { content: [{ type: "text", text: "ok" }] },
     }));
     const waitForRequiredServers = vi.fn(async () => []);
+    const activateServers = vi.fn(async () => undefined);
     const manager = {
       captureDispatchBinding,
       callBoundTool,
       waitForRequiredServers,
+      activateServers,
     } as unknown as McpRuntimeManager;
     const confirmTool = vi
       .fn<ToolConfirmationHandler>()
@@ -56,10 +58,13 @@ describe("MCP dispatch composition", () => {
     expect(captureDispatchBinding).toHaveBeenNthCalledWith(2, "chat", ["docs", "github"]);
     expect(waitForRequiredServers).toHaveBeenNthCalledWith(1, "chat", ["docs"]);
     expect(waitForRequiredServers).toHaveBeenNthCalledWith(2, "chat", ["docs", "github"]);
+    expect(activateServers).toHaveBeenNthCalledWith(1, "chat", ["docs"]);
+    expect(activateServers).toHaveBeenNthCalledWith(2, "chat", ["docs", "github"]);
   });
 
   it("rejects a dispatch when a required server finishes unavailable", async () => {
     const manager = {
+      activateServers: vi.fn(async () => undefined),
       waitForRequiredServers: vi.fn(async () => [
         {
           serverId: "docs",
@@ -79,6 +84,7 @@ describe("MCP dispatch composition", () => {
 
   it("adds persistently authorized servers to every captured chat binding", async () => {
     const manager = {
+      activateServers: vi.fn(async () => undefined),
       waitForRequiredServers: vi.fn(async () => []),
       captureDispatchBinding: vi.fn(() => binding("persistent")),
     } as unknown as McpRuntimeManager;
@@ -90,5 +96,44 @@ describe("MCP dispatch composition", () => {
 
     expect(manager.waitForRequiredServers).toHaveBeenCalledWith("chat", ["docs", "github"]);
     expect(manager.captureDispatchBinding).toHaveBeenCalledWith("chat", ["docs", "github"]);
+  });
+
+  it("waits before reference and reads the catalog from a fresh binding", async () => {
+    const pending = binding("pending");
+    const ready: McpDispatchBinding = {
+      bindingId: "ready",
+      generation: 2,
+      servers: [
+        {
+          serverId: "docs",
+          configFingerprint: "config-1",
+          status: "ready",
+          catalogRevision: "catalog-1",
+          tools: [
+            {
+              nativeToolName: "read",
+              description: "Read docs",
+              inputSchema: { type: "object" },
+            },
+          ],
+        },
+      ],
+      route: () => route,
+    };
+    const waitForReferenceServers = vi.fn(async () => []);
+    const manager = {
+      activateServers: vi.fn(async () => undefined),
+      waitForRequiredServers: vi.fn(async () => []),
+      waitForReferenceServers,
+      captureDispatchBinding: vi.fn().mockReturnValueOnce(pending).mockReturnValueOnce(ready),
+    } as unknown as McpRuntimeManager;
+    const dispatch = await createMcpDispatchBindingFactory(manager, vi.fn())(["docs"]);
+
+    await expect(dispatch.reference({ query: "*", serverIds: ["docs"] })).resolves.toMatchObject({
+      matches: [
+        expect.objectContaining({ identity: { serverId: "docs", nativeToolName: "read" } }),
+      ],
+    });
+    expect(waitForReferenceServers).toHaveBeenCalledWith("chat", ["docs"], ["docs"]);
   });
 });

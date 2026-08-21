@@ -1,8 +1,12 @@
 /** Process-owned MCP runtime projection into per-dispatch gateway bindings. */
 
 import type { ToolConfirmationHandler } from "../../shared/host/toolConfirmationBindings";
-import type { McpBoundRoute, McpRequestInput } from "./contracts";
-import type { McpCallAuthorizationHandler, McpDispatchBindingFactory } from "./gateway/dispatch";
+import type { McpBoundRoute, McpReferenceInput, McpRequestInput } from "./contracts";
+import {
+  type McpCallAuthorizationHandler,
+  type McpDispatchBindingFactory,
+  referenceMcpTools,
+} from "./gateway/dispatch";
 import { fingerprintMcpToolSchema } from "./permissions";
 import type { McpRuntimeManager } from "./runtime/runtimeManager";
 
@@ -25,6 +29,7 @@ export function createMcpDispatchBindingFactory(
     const effectiveServerIds = [
       ...new Set([...selectedServerIds, ...(options.persistentServerIds?.() ?? [])]),
     ].sort();
+    await manager.activateServers("chat", effectiveServerIds);
     const required = await manager.waitForRequiredServers("chat", effectiveServerIds);
     const failures = required.filter((server) => server.status !== "ready");
     if (failures.length > 0) {
@@ -40,6 +45,10 @@ export function createMcpDispatchBindingFactory(
     const binding = manager.captureDispatchBinding("chat", effectiveServerIds);
     return Object.freeze({
       binding,
+      reference: async (input: McpReferenceInput) => {
+        await manager.waitForReferenceServers("chat", effectiveServerIds, input.serverIds);
+        return referenceMcpTools(manager.captureDispatchBinding("chat", effectiveServerIds), input);
+      },
       request: async (input: McpRequestInput) => ({
         type: "mcp_request_v1" as const,
         serverId: input.serverId,

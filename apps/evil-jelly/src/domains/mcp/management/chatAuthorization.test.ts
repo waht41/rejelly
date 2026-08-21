@@ -7,6 +7,7 @@ import { createAuthorizedMcpBindingFactory } from "./chatAuthorization";
 function unavailableDispatch(): McpGatewayDispatch {
   return {
     binding: { bindingId: "test", generation: 1, servers: [], route: () => undefined },
+    reference: async () => ({ type: "mcp_reference_v1", matches: [] }),
     request: async (input) => ({
       type: "mcp_request_v1",
       serverId: input.serverId,

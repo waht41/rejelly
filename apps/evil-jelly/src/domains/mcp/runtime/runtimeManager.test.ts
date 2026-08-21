@@ -117,7 +117,7 @@ async function waitForStatus(
 describe("McpRuntimeManager", () => {
   it("advertises configured chat servers while routing only always and selected servers", async () => {
     const connector = new ControlledConnector();
-    const manager = new McpRuntimeManager(connector);
+    const manager = new McpRuntimeManager(connector, { activationConsumer: "chat" });
     const baseAlways = server("always");
     const always: McpDesiredServer = {
       ...baseAlways,
@@ -130,18 +130,22 @@ describe("McpRuntimeManager", () => {
       },
     };
     await manager.reconcile(desired(always, server("selected")));
-    for (const attempt of connector.attempts) {
-      attempt.result.resolve(
-        new FakeConnection([
-          {
-            name: "read",
-            description: `Read ${attempt.server.id}`,
-            inputSchema: { type: "object" },
-          },
-        ]),
-      );
-    }
+    expect(connector.attempts.map((attempt) => attempt.server.id)).toEqual(["always"]);
+    connector.attempts[0]!.result.resolve(
+      new FakeConnection([
+        { name: "read", description: "Read always", inputSchema: { type: "object" } },
+      ]),
+    );
     await waitForStatus(manager, "always", "ready");
+    await waitForStatus(manager, "selected", "stopped");
+
+    await manager.activateServers("chat", ["selected"]);
+    expect(connector.attempts.map((attempt) => attempt.server.id)).toEqual(["always", "selected"]);
+    connector.attempts[1]!.result.resolve(
+      new FakeConnection([
+        { name: "read", description: "Read selected", inputSchema: { type: "object" } },
+      ]),
+    );
     await waitForStatus(manager, "selected", "ready");
 
     const first = manager.captureDispatchBinding("chat");
@@ -160,6 +164,60 @@ describe("McpRuntimeManager", () => {
     );
     expect(second.bindingId).not.toBe(first.bindingId);
     expect(Object.isFrozen(second.servers)).toBe(true);
+    await manager.dispose();
+  });
+
+  it("never connects a server whose chat exposure is off", async () => {
+    const connector = new ControlledConnector();
+    const manager = new McpRuntimeManager(connector, { activationConsumer: "chat" });
+    const base = server("hidden");
+    const hidden: McpDesiredServer = {
+      ...base,
+      definition: {
+        ...base.definition,
+        use: {
+          ...base.definition.use,
+          chat: { exposure: "off", required: false, autoApproveTools: [] },
+        },
+      },
+    };
+
+    await manager.reconcile(desired(hidden));
+    await manager.activateServers("chat", ["hidden"]);
+
+    expect(connector.attempts).toEqual([]);
+    expect(manager.getSnapshot().servers).toEqual([
+      expect.objectContaining({ serverId: "hidden", status: "disabled" }),
+    ]);
+    await manager.dispose();
+  });
+
+  it("bounds reference waiting while an always server is still pending", async () => {
+    const connector = new ControlledConnector();
+    const scheduler = new ControlledScheduler();
+    const manager = new McpRuntimeManager(connector, {
+      activationConsumer: "chat",
+      scheduler,
+    });
+    const base = server("docs");
+    const always: McpDesiredServer = {
+      ...base,
+      definition: {
+        ...base.definition,
+        use: {
+          ...base.definition.use,
+          chat: { exposure: "always", required: false, autoApproveTools: [] },
+        },
+      },
+    };
+    await manager.reconcile(desired(always));
+
+    const waiting = manager.waitForReferenceServers("chat", [], undefined, 25);
+    scheduler.fireAll();
+
+    await expect(waiting).resolves.toEqual([
+      expect.objectContaining({ serverId: "docs", status: "pending" }),
+    ]);
     await manager.dispose();
   });
 

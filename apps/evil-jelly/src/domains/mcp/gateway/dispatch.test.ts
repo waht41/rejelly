@@ -140,6 +140,7 @@ describe("MCP dispatch gateway", () => {
     }));
     const firstTools = createMcpGatewayToolsForDispatch({
       binding: binding(),
+      reference: async (input) => referenceMcpTools(binding(), input),
       request: async (input) => ({
         type: "mcp_request_v1",
         serverId: input.serverId,
@@ -150,6 +151,7 @@ describe("MCP dispatch gateway", () => {
     });
     createMcpGatewayToolsForDispatch({
       binding: binding(),
+      reference: async (input) => referenceMcpTools(binding(), input),
       request: async (input) => ({
         type: "mcp_request_v1",
         serverId: input.serverId,

@@ -73,9 +73,11 @@ export interface McpRuntimeManagerOptions {
   readonly remoteRetryDelaysMs?: readonly number[];
   readonly scheduler?: McpRuntimeScheduler;
   readonly closeTimeoutMs?: number;
+  /** When set, connection lifecycle follows that consumer's exposure and explicit selections. */
+  readonly activationConsumer?: McpConsumer;
 }
 
-type EntryTarget = "active" | "disabled" | "untrusted";
+type EntryTarget = "active" | "disabled" | "stopped" | "untrusted";
 
 interface RuntimeEntry {
   server: McpDesiredServer;
@@ -168,13 +170,30 @@ function desiredFingerprint(entries: Iterable<RuntimeEntry>): string {
   return createHash("sha256").update(JSON.stringify(projection)).digest("hex");
 }
 
-function targetFor(server: McpDesiredServer, grants: readonly McpTrustGrant[]): EntryTarget {
+function targetFor(
+  server: McpDesiredServer,
+  grants: readonly McpTrustGrant[],
+  activationConsumer: McpConsumer | undefined,
+  activatedServerIds: ReadonlySet<string>,
+): EntryTarget {
   if (!server.definition.enabled) return "disabled";
-  return evaluateMcpTrust(server, grants).trusted ? "active" : "untrusted";
+  if (activationConsumer && server.definition.use[activationConsumer].exposure === "off") {
+    return "disabled";
+  }
+  if (!evaluateMcpTrust(server, grants).trusted) return "untrusted";
+  if (
+    activationConsumer &&
+    server.definition.use[activationConsumer].exposure === "explicit" &&
+    !activatedServerIds.has(server.id)
+  ) {
+    return "stopped";
+  }
+  return "active";
 }
 
 function initialStatus(target: EntryTarget): McpServerRuntimeState["status"] {
   if (target === "disabled") return "disabled";
+  if (target === "stopped") return "stopped";
   return target === "untrusted" ? "untrusted" : "pending";
 }
 
@@ -208,6 +227,9 @@ export class McpRuntimeManager {
   private bindingSequence = 0;
   private generation = 0;
   private disposed = false;
+  private readonly activationConsumer: McpConsumer | undefined;
+  private readonly activatedServerIds = new Set<string>();
+  private trustGrants: readonly McpTrustGrant[] = [];
   private snapshot: McpRuntimeSnapshot = Object.freeze({
     generation: 0,
     desiredFingerprint: createHash("sha256").update("[]").digest("hex"),
@@ -221,6 +243,7 @@ export class McpRuntimeManager {
     this.retryDelays = options.remoteRetryDelaysMs ?? [1_000, 2_500, 5_000];
     this.scheduler = options.scheduler ?? defaultScheduler;
     this.closeTimeoutMs = options.closeTimeoutMs ?? 2_000;
+    this.activationConsumer = options.activationConsumer;
   }
 
   getSnapshot(): McpRuntimeSnapshot {
@@ -387,6 +410,7 @@ export class McpRuntimeManager {
   ): Promise<McpRuntimeSnapshot> {
     return this.enqueue(async () => {
       this.assertActive();
+      this.trustGrants = grants;
       const desiredById = new Map<string, McpDesiredServer>();
       for (const server of desired.servers) {
         if (desiredById.has(server.id)) {
@@ -407,7 +431,12 @@ export class McpRuntimeManager {
           next.id,
           next.definition,
         );
-        const nextTarget = targetFor(next, grants);
+        const nextTarget = targetFor(
+          next,
+          grants,
+          this.activationConsumer,
+          this.activatedServerIds,
+        );
         if (
           entry.connectionFingerprint !== nextConnectionFingerprint ||
           entry.target !== nextTarget
@@ -423,7 +452,7 @@ export class McpRuntimeManager {
       }
 
       for (const server of desiredById.values()) {
-        const target = targetFor(server, grants);
+        const target = targetFor(server, grants, this.activationConsumer, this.activatedServerIds);
         const entry: RuntimeEntry = {
           server,
           configFingerprint: fingerprintMcpServerDefinition(server.id, server.definition),
@@ -440,6 +469,35 @@ export class McpRuntimeManager {
         if (target === "active") this.beginConnect(entry);
       }
       this.publish();
+      return this.snapshot;
+    });
+  }
+
+  /** Lazily start explicitly exposed servers once a chat selection makes them effective. */
+  async activateServers(
+    consumer: McpConsumer,
+    serverIds: readonly string[],
+  ): Promise<McpRuntimeSnapshot> {
+    return this.enqueue(() => {
+      this.assertActive();
+      if (this.activationConsumer && this.activationConsumer !== consumer) return this.snapshot;
+      for (const serverId of serverIds) this.activatedServerIds.add(serverId);
+      let changed = false;
+      for (const entry of this.entries.values()) {
+        const nextTarget = targetFor(
+          entry.server,
+          this.trustGrants,
+          this.activationConsumer,
+          this.activatedServerIds,
+        );
+        if (entry.target === nextTarget) continue;
+        entry.target = nextTarget;
+        entry.status = initialStatus(nextTarget);
+        entry.error = undefined;
+        changed = true;
+        if (nextTarget === "active") this.beginConnect(entry);
+      }
+      if (changed) this.publish();
       return this.snapshot;
     });
   }
@@ -550,6 +608,47 @@ export class McpRuntimeManager {
         });
       });
     }
+  }
+
+  /** Wait at most one bounded interval for effective servers needed by a reference query. */
+  async waitForReferenceServers(
+    consumer: McpConsumer,
+    selectedServerIds: readonly string[] = [],
+    requestedServerIds?: readonly string[],
+    timeoutMs = 10_000,
+  ): Promise<readonly McpServerRuntimeState[]> {
+    const selected = new Set(selectedServerIds);
+    const requested = requestedServerIds ? new Set(requestedServerIds) : undefined;
+    const targetIds = new Set(
+      [...this.entries.values()]
+        .filter(
+          (entry) =>
+            (!requested || requested.has(entry.server.id)) &&
+            selectedForConsumer(entry.server, consumer, selected),
+        )
+        .map((entry) => entry.server.id),
+    );
+    const current = () =>
+      Object.freeze(this.snapshot.servers.filter((server) => targetIds.has(server.serverId)));
+    if (targetIds.size === 0 || current().every((server) => server.status !== "pending")) {
+      return current();
+    }
+    return new Promise((resolve) => {
+      let settled = false;
+      let unsubscribe: () => void = () => undefined;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        unsubscribe();
+        this.scheduler.clearTimeout(timeout);
+        resolve(current());
+      };
+      const timeout = this.scheduler.setTimeout(finish, Math.max(0, timeoutMs));
+      unsubscribe = this.subscribe(() => {
+        if (current().every((server) => server.status !== "pending")) finish();
+      });
+      if (current().every((server) => server.status !== "pending")) finish();
+    });
   }
 
   async dispose(): Promise<void> {

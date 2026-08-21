@@ -42,7 +42,7 @@ export interface McpManagerRow {
   selected: boolean;
   persistentAccess: boolean;
   routable: boolean;
-  connection: "disabled" | "untrusted" | "pending" | "ready" | "failed";
+  connection: "disabled" | "stopped" | "untrusted" | "pending" | "ready" | "failed";
   toolCount: number;
   detail?: string;
 }

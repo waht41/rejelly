@@ -258,7 +258,13 @@ export interface McpBoundNativeTool {
   readonly inputSchema: Readonly<Record<string, McpJsonValue>>;
 }
 
-export type McpServerRuntimeStatus = "disabled" | "untrusted" | "pending" | "ready" | "failed";
+export type McpServerRuntimeStatus =
+  | "disabled"
+  | "stopped"
+  | "untrusted"
+  | "pending"
+  | "ready"
+  | "failed";
 
 export interface McpServerRuntimeState {
   readonly serverId: string;

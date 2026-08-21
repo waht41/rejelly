@@ -85,6 +85,7 @@ export async function requestMcpAccess(
     const selectedServerIds = [...new Set([...ports.selectedServerIds(), row.serverId])].sort();
     if (approvalScope === "always") await control.grantPersistentServerAccess(row.serverId);
     else await ports.commitSelection(selectedServerIds);
+    await control.activateServers([row.serverId]);
     if (ports.awaitServer) {
       await ports.awaitServer(row.serverId, () => control.waitForServer(row.serverId));
     } else {

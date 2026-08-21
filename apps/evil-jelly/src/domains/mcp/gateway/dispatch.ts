@@ -23,6 +23,7 @@ export interface McpGatewayCallDispatch {
 }
 
 export interface McpGatewayDispatch extends McpGatewayCallDispatch {
+  readonly reference: (input: McpReferenceInput) => Promise<McpReferenceResult>;
   readonly request: (input: McpRequestInput) => Promise<McpRequestResult>;
 }
 
@@ -99,7 +100,7 @@ export function referenceMcpTools(
           suggestedAction:
             server.status === "disabled"
               ? "enable"
-              : server.status === "untrusted"
+              : server.status === "untrusted" || server.status === "stopped"
                 ? "request_access"
                 : server.status === "pending"
                   ? "wait"
@@ -122,7 +123,7 @@ export function createMcpGatewayToolsForDispatch(
   dispatch: McpGatewayDispatch,
 ): McpChatGatewayToolDefinitions {
   return createMcpChatGatewayToolDefinitions({
-    reference: async (input) => referenceMcpTools(dispatch.binding, input),
+    reference: dispatch.reference,
     request: dispatch.request,
     callPolicy: new McpCallPolicy({
       resolveRoute: (identity) => dispatch.binding.route(identity),
@@ -142,6 +143,7 @@ const EMPTY_MCP_BINDING: McpDispatchBinding = Object.freeze({
 export function createUnavailableMcpDispatch(): McpGatewayDispatch {
   return Object.freeze({
     binding: EMPTY_MCP_BINDING,
+    reference: async (input: McpReferenceInput) => referenceMcpTools(EMPTY_MCP_BINDING, input),
     request: async (input: McpRequestInput) => ({
       type: "mcp_request_v1" as const,
       serverId: input.serverId,
