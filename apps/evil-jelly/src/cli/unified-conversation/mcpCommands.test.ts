@@ -189,6 +189,46 @@ describe("MCP interactive commands", () => {
     expect(sessionToolGrants).toEqual(grants);
   });
 
+  it("shows every ungranted tool as auto-approved while the agent is in auto mode", async () => {
+    const grant = {
+      serverId: "docs",
+      configFingerprint: "a".repeat(64),
+      nativeToolName: "delete_repository",
+      toolSchemaFingerprint: "b".repeat(64),
+    };
+    const requestManager = vi
+      .fn()
+      .mockResolvedValueOnce({ action: "tools", serverId: "docs" })
+      .mockResolvedValueOnce({ action: "close" });
+    const command = ports({
+      agentMode: () => "auto",
+      control: mcpSessionControlStub({
+        toolPermissions: () => [
+          {
+            nativeToolName: grant.nativeToolName,
+            description: "Delete a repository",
+            inputSchema: { type: "object" },
+            grant,
+            approval: "ask",
+            autoApprovedByPolicy: false,
+          },
+        ],
+      }),
+      requestManager,
+    });
+
+    await handleMcpCommand("/mcp", command);
+
+    expect(requestManager).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        toolPanel: expect.objectContaining({
+          rows: [expect.objectContaining({ approval: "auto" })],
+        }),
+      }),
+    );
+  });
+
   it("persists a sorted session selection without mutating runtime config", async () => {
     const command = ports({ selectedServerIds: () => ["search"] });
     await handleMcpCommand("/mcp use docs", command);

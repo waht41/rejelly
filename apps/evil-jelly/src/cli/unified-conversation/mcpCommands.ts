@@ -88,10 +88,7 @@ function toolPanel(
       nativeToolName: row.nativeToolName,
       description: row.description,
       inputSchema: row.inputSchema,
-      approval:
-        autoMode && row.approval === "ask" && row.autoApprovedByPolicy
-          ? ("auto" as const)
-          : row.approval,
+      approval: autoMode && row.approval === "ask" ? ("auto" as const) : row.approval,
       configFingerprint: row.grant.configFingerprint,
       toolSchemaFingerprint: row.grant.toolSchemaFingerprint,
     })),

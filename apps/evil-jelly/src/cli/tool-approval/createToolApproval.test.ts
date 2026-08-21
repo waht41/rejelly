@@ -424,7 +424,7 @@ describe("createToolApproval", () => {
 
   it("prompts with structured MCP identity and arguments", async () => {
     resetCliStores();
-    const confirmTool = createToolApproval({ getMode: () => "auto" });
+    const confirmTool = createToolApproval({ getMode: () => "normal" });
 
     const pending = confirmTool({
       type: "mcp_call",
@@ -448,9 +448,10 @@ describe("createToolApproval", () => {
     await expect(pending).resolves.toEqual({ action: "accept", scope: "once" });
   });
 
-  it("auto-allows only policy-listed MCP tool calls without creating a reusable grant", async () => {
+  it("auto-allows every MCP tool call without creating a session grant", async () => {
     resetCliStores();
-    const confirmTool = createToolApproval({ getMode: () => "auto" });
+    let mode: "auto" | "normal" = "auto";
+    const confirmTool = createToolApproval({ getMode: () => mode });
 
     await expect(
       confirmTool({
@@ -458,11 +459,25 @@ describe("createToolApproval", () => {
         tool: { serverId: "docs", nativeToolName: "read" },
         configFingerprint: "a".repeat(64),
         toolSchemaFingerprint: "b".repeat(64),
-        autoApprovedByPolicy: true,
+        autoApprovedByPolicy: false,
         arguments: { path: "guide.md" },
       }),
     ).resolves.toEqual({ action: "accept", scope: "once" });
     expect(useDecisionStore.getState().decision).toEqual({ type: "idle" });
+
+    mode = "normal";
+    const pending = confirmTool({
+      type: "mcp_call",
+      tool: { serverId: "docs", nativeToolName: "read" },
+      configFingerprint: "a".repeat(64),
+      toolSchemaFingerprint: "b".repeat(64),
+      autoApprovedByPolicy: false,
+      arguments: { path: "guide.md" },
+    });
+    await flushMicrotasks();
+    expect(useDecisionStore.getState().decision).toMatchObject({ type: "choice" });
+    useDecisionStore.getState().submitChoice("reject");
+    await expect(pending).resolves.toEqual({ action: "reject" });
   });
 
   it("prompts for session MCP access with the host-owned fingerprint", async () => {

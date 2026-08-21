@@ -410,9 +410,9 @@ export function createToolApproval(
       return decision.run((session) => confirmMcpAccess(params, session));
     }
     if (params.type === "mcp_call") {
-      if (getMode() === "auto" && params.autoApprovedByPolicy) {
+      if (getMode() === "auto") {
         logNotice(
-          `[Auto-allowed] MCP tool ${params.tool.serverId}/${params.tool.nativeToolName} (auto mode policy)`,
+          `[Auto-allowed] MCP tool ${params.tool.serverId}/${params.tool.nativeToolName} (auto mode)`,
         );
         return { action: "accept", scope: "once" };
       }
