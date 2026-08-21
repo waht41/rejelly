@@ -90,6 +90,7 @@ async function useUnifiedTools(props: ConversationAgentProps): Promise<void> {
     ...(memoryRuntime ? { service: memoryRuntime.service, runtime: memoryRuntime } : {}),
     source: {
       source: "agent_tool",
+      ...(props.sessionId ? { sessionId: props.sessionId } : {}),
       ...(props.turnId ? { turnId: props.turnId } : {}),
     },
     requestConfirmation: requestMemoryConfirmation,

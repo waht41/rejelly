@@ -97,7 +97,11 @@ export function buildAutoCompactionConfig(
       ? {
           refreshPrefixAfterSummary: async (currentPrefix) => {
             const previousInstruction = memoryRuntime.epoch.instruction;
+            const previousDiagnosticCount = memoryRuntime.diagnostics.length;
             await memoryRuntime.refresh();
+            for (const diagnostic of memoryRuntime.diagnostics.slice(previousDiagnosticCount)) {
+              getBinding().logSystemEvent(`Memory warning: ${diagnostic}\n`);
+            }
             return refreshMemoryInstructionPrefix(
               currentPrefix,
               memoryRuntime.epoch.instruction,

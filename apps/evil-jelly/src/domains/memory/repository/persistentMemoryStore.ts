@@ -197,6 +197,14 @@ export class PersistentMemoryStore {
 
   private async readUnlocked(scope: MemoryScope): Promise<PersistentMemoryFileV1> {
     const filePath = this.filePath(scope);
+    if (scope === "project" && this.paths.projectUnavailable) {
+      throw new PersistentMemoryStoreError(
+        "unavailable",
+        scope,
+        filePath,
+        `Persistent project memory is unavailable: ${this.paths.projectUnavailable}`,
+      );
+    }
     let raw: string;
     try {
       const info = await stat(filePath);

@@ -218,7 +218,7 @@ export type MemoryDeleteInput = z.infer<typeof memoryDeleteInputSchema>;
 export const memoryListInputSchema = z
   .object({
     scope: z.enum(["all", "user", "project"]).default("all"),
-    ids: z.array(memoryIdSchema).max(PERSISTENT_MEMORY_LIMITS.maxEntries).optional(),
+    ids: z.array(memoryIdSchema).min(1).max(PERSISTENT_MEMORY_LIMITS.maxEntries).optional(),
     view: z.enum(["summary", "detail"]).default("summary"),
   })
   .strict()

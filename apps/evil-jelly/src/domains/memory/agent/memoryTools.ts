@@ -28,7 +28,7 @@ import { createPersistentMemoryService } from "../service/persistentMemoryServic
 const memoryReadParameters = z
   .object({
     scope: z.enum(["all", "user", "project"]).default("all"),
-    ids: z.array(memoryIdSchema).max(20).optional(),
+    ids: z.array(memoryIdSchema).min(1).max(20).optional(),
     view: z.enum(["catalog", "detail"]).default("catalog"),
   })
   .strict()

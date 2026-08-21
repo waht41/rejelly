@@ -7,6 +7,8 @@ export interface PersistentMemoryPaths {
   readonly userFile: string;
   readonly projectFile: string;
   readonly projectIdentity: MemoryProjectIdentity;
+  /** Set when the project registry could not be read; user memory remains available. */
+  readonly projectUnavailable?: string;
 }
 
 export function resolvePersistentMemoryRoot(): string {
@@ -26,11 +28,29 @@ export function resolveMemoryPaths(
   memoryRoot = resolvePersistentMemoryRoot(),
 ): PersistentMemoryPaths {
   const root = path.resolve(memoryRoot);
-  const identity = resolveMemoryProjectIdentity(workspaceRoot, root);
+  let identity: MemoryProjectIdentity;
+  let projectUnavailable: string | undefined;
+  try {
+    identity = resolveMemoryProjectIdentity(workspaceRoot, root);
+  } catch (error) {
+    projectUnavailable = error instanceof Error ? error.message : String(error);
+    identity = {
+      projectId: "unavailable",
+      root: path.resolve(workspaceRoot),
+      createdAt: new Date(0).toISOString(),
+      projectName: "unavailable",
+    };
+  }
   const userFile = assertInsideRoot(root, path.join(root, "user.json"));
   const projectFile = assertInsideRoot(
     root,
     path.join(root, "projects", identity.projectId, "memory.json"),
   );
-  return { root, userFile, projectFile, projectIdentity: identity };
+  return {
+    root,
+    userFile,
+    projectFile,
+    projectIdentity: identity,
+    ...(projectUnavailable ? { projectUnavailable } : {}),
+  };
 }
