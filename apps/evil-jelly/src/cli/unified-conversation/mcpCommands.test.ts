@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type {
-  McpSessionControl,
-  McpSessionStatusRow,
-} from "../../domains/mcp/management/sessionControl";
+import { mcpSessionControlStub } from "../../domains/mcp/__tests__/mcpTestFixtures";
+import type { McpSessionStatusRow } from "../../domains/mcp/management/sessionControl";
 import { handleMcpCommand, type McpCommandPorts } from "./mcpCommands";
 
 function row(overrides: Partial<McpSessionStatusRow> = {}): McpSessionStatusRow {
@@ -21,7 +19,7 @@ function row(overrides: Partial<McpSessionStatusRow> = {}): McpSessionStatusRow 
 }
 
 function ports(overrides: Partial<McpCommandPorts> = {}) {
-  const control: McpSessionControl = {
+  const control = mcpSessionControlStub({
     status: vi.fn(() => [row()]),
     reload: vi.fn(async () => undefined),
     grantTrust: vi.fn(async () => undefined),
@@ -35,7 +33,7 @@ function ports(overrides: Partial<McpCommandPorts> = {}) {
       configFingerprint: "a".repeat(64),
       status: "ready" as const,
     })),
-  };
+  });
   return {
     control,
     selectedServerIds: [],
@@ -59,7 +57,7 @@ describe("MCP interactive commands", () => {
 
   it("grants only the displayed workspace fingerprint after an explicit decision", async () => {
     const command = ports({
-      control: {
+      control: mcpSessionControlStub({
         status: () => [row({ source: { kind: "workspace" }, connection: "untrusted" })],
         reload: vi.fn(async () => undefined),
         grantTrust: vi.fn(async () => undefined),
@@ -73,7 +71,7 @@ describe("MCP interactive commands", () => {
           configFingerprint: "a".repeat(64),
           status: "ready" as const,
         })),
-      },
+      }),
       requestChoice: vi.fn(async () => "trust"),
     });
     await handleMcpCommand("/mcp use docs", command);

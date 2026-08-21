@@ -5,6 +5,7 @@ import {
   countConversationTurns,
   isCompactionBridgeMessage,
 } from "../../../shared/conversation/compactionMessages";
+import { emptySessionMcpState } from "../../../shared/model/mcp/sessionMcpState";
 import type { SessionStoragePaths } from "../journal/sessionJsonlReader";
 import { resolveWorkspaceDir } from "../journal/sessionPaths";
 import { legacySessionMetaSchema, sessionMessageSchema } from "../model/sessionEvents";
@@ -55,8 +56,7 @@ export function readLegacySession(
           turns: countConversationTurns(parsed.messages),
         },
         messages: parsed.messages,
-        mcpSelection: [],
-        mcpToolGrants: [],
+        mcp: emptySessionMcpState(),
         ...(parsed.messages.some(isCompactionBridgeMessage)
           ? {
               warnings: [

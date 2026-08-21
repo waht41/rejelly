@@ -4,6 +4,7 @@ import path from "node:path";
 import type { Message } from "@rejelly/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { recordInitialTextInput } from "../__tests__/sessionTestInput";
+import { sessionRecordFixture } from "../__tests__/sessionTestRecord";
 import { persistSessionBlob } from "../journal/sessionBlobStore";
 import {
   createSessionMetaLine,
@@ -22,13 +23,7 @@ import {
 import { isKnownSessionEvent } from "../model/sessionEvents";
 import { openSessionRecorder } from "../recorder/sessionRecorder";
 import { materializeMessageHistory } from "./sessionMessageMaterializer";
-import {
-  listSessions,
-  loadSession,
-  resumeSession,
-  type SessionBudget,
-  type SessionRecord,
-} from "./sessionStore";
+import { listSessions, loadSession, resumeSession, type SessionBudget } from "./sessionStore";
 
 describe("mixed-format session store", () => {
   let tmpDir: string;
@@ -65,7 +60,7 @@ describe("mixed-format session store", () => {
     const dir = resolveWorkspaceDir(workspaceRoot, sessionsRoot);
     await fs.mkdir(dir, { recursive: true });
     const filePath = path.join(dir, `${id}.json`);
-    const record: SessionRecord = {
+    const record = sessionRecordFixture({
       meta: {
         id,
         workspaceRoot,
@@ -77,9 +72,7 @@ describe("mixed-format session store", () => {
         ...(options.budget ? { budget: options.budget } : {}),
       },
       messages,
-      mcpSelection: [],
-      mcpToolGrants: [],
-    };
+    });
     await fs.writeFile(filePath, JSON.stringify(record), "utf8");
     return filePath;
   }

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { mcpSessionControlStub } from "../__tests__/mcpTestFixtures";
 import { requestMcpAccess } from "./requestAccess";
-import type { McpSessionControl, McpSessionStatusRow } from "./sessionControl";
+import type { McpSessionStatusRow } from "./sessionControl";
 
 function createHarness(
   options: {
@@ -24,7 +25,7 @@ function createHarness(
     toolCount: trusted ? 4 : 0,
     configFingerprint: "f".repeat(64),
   });
-  const control: McpSessionControl = {
+  const control = mcpSessionControlStub({
     status: (selectedServerIds) => [row(selectedServerIds)],
     reload: vi.fn(async () => undefined),
     grantTrust: vi.fn(async () => {
@@ -42,7 +43,7 @@ function createHarness(
       configFingerprint: "f".repeat(64),
       status: "ready" as const,
     })),
-  };
+  });
   const approve = vi.fn(async () => options.approve ?? "session");
   const commitSelection = vi.fn(async (serverIds: readonly string[]) => {
     selected = serverIds.includes("typescript");

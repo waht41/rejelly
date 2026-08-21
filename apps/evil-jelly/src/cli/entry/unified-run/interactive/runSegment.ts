@@ -17,7 +17,7 @@ import {
 import type { ConversationAgentProps } from "../../../../features/unified/conversationRun";
 import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
-import type { McpToolGrant } from "../../../../shared/model/mcp/toolGrant";
+import type { SessionMcpState } from "../../../../shared/model/mcp/sessionMcpState";
 import { runWithReview } from "../../../runtime/runWithReview";
 import { generateTraceId } from "../../../runtime/traceId";
 import { MainCliAgent, type MainCliAgentProps } from "../../../unified-conversation/MainCliAgent";
@@ -48,10 +48,8 @@ export interface RunEvilJellyHostOptions {
   seedContext?: Message[];
   /** Cumulative usage carried back from a resumed session, used as the /status base. */
   seedBudget?: SessionBudget;
-  /** Session-level MCP selection recovered independently of compacted model history. */
-  seedMcpSelection?: readonly string[];
-  /** Session tool approvals recovered independently of compacted model history. */
-  seedMcpToolGrants?: readonly McpToolGrant[];
+  /** Session MCP state recovered independently of compacted model history. */
+  seedMcpState?: SessionMcpState;
   /** Resolve non-secret token metadata at submit time. */
   resolveMcpUserInput?: MainCliAgentProps["resolveMcpUserInput"];
   /** Single process-owned MCP runtime provider, borrowed across run segments. */
@@ -208,8 +206,7 @@ export async function runEvilJellyHost(
           traceId,
           seedContext: preparedSeedContext,
           seedBudget,
-          seedMcpSelection: options.seedMcpSelection,
-          seedMcpToolGrants: options.seedMcpToolGrants,
+          seedMcpState: options.seedMcpState,
           resolveMcpUserInput: options.resolveMcpUserInput,
           sessionBlobRoot: options.session?.blobRoot,
           isolateSessionState: options.isolateSessionState,

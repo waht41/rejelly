@@ -1,14 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import type { McpBoundRoute, McpCallInput, McpReferenceMatch } from "../contracts";
+import { mcpBoundRouteFixture } from "../__tests__/mcpTestFixtures";
+import type { McpCallInput, McpReferenceMatch } from "../contracts";
 import { createMcpChatGatewayToolDefinitions } from "./gatewayTools";
 import { McpCallPolicy } from "./mcpCallPolicy";
 
-function route(overrides: Partial<McpBoundRoute> = {}): McpBoundRoute {
-  return {
-    identity: { serverId: "docs", nativeToolName: "read" },
-    description: "Read docs",
+function route(overrides: Partial<McpReferenceMatch> = {}) {
+  return mcpBoundRouteFixture({
     inputSchema: {
       type: "object",
       properties: { path: { type: "string", minLength: 2 } },
@@ -18,7 +17,7 @@ function route(overrides: Partial<McpBoundRoute> = {}): McpBoundRoute {
     configFingerprint: "config-1",
     catalogRevision: "catalog-1",
     ...overrides,
-  };
+  });
 }
 
 function referenceMatch(overrides: Partial<McpReferenceMatch> = {}): McpReferenceMatch {

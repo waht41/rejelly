@@ -2,8 +2,13 @@ import type { AgentSnapshot, Message, ModelAdapter } from "@rejelly/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultMcpServerDefinition } from "../../../../domains/mcp/configuration/configuration";
 import { createMcpRuntimeProviders } from "../../../../domains/mcp/mcpServerKit";
+import { sessionRecordFixture } from "../../../../domains/session/__tests__/sessionTestRecord";
 import * as sessionStore from "../../../../domains/session/repository/sessionStore";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
+import {
+  createSessionMcpState,
+  emptySessionMcpState,
+} from "../../../../shared/model/mcp/sessionMcpState";
 import { textPromptInput } from "../../../../shared/model/prompt/promptInput";
 import { createInteractiveRunControl, type InteractiveRunControl } from "./runControl";
 import { runInteractiveLoop } from "./runLoop";
@@ -285,8 +290,7 @@ describe("runInteractiveLoop mock session isolation", () => {
         transcript: [],
         totalTurns: 1,
         budget,
-        mcpSelection: [],
-        mcpToolGrants: [],
+        mcp: emptySessionMcpState(),
       },
     });
 
@@ -325,21 +329,22 @@ describe("runInteractiveLoop mock session isolation", () => {
       lastContextTokens: 10,
       lastCacheReadTokens: 0,
     };
-    vi.spyOn(sessionStore, "resumeSession").mockResolvedValue({
-      meta: {
-        id: "session_target",
-        workspaceRoot: "workspace",
-        title: "resumed task",
-        createdAt: 1,
-        updatedAt: 2,
-        turns: 1,
-        traceIds: [],
-        budget,
-      },
-      messages,
-      mcpSelection: ["docs"],
-      mcpToolGrants: [],
-    });
+    vi.spyOn(sessionStore, "resumeSession").mockResolvedValue(
+      sessionRecordFixture({
+        meta: {
+          id: "session_target",
+          workspaceRoot: "workspace",
+          title: "resumed task",
+          createdAt: 1,
+          updatedAt: 2,
+          turns: 1,
+          traceIds: [],
+          budget,
+        },
+        messages,
+        mcp: createSessionMcpState({ selectedServerIds: ["docs"] }),
+      }),
+    );
     runHostMock
       .mockImplementationOnce(async () => {
         runControl.loop.request({ type: "resume", sessionId: "session_target" });
@@ -362,7 +367,7 @@ describe("runInteractiveLoop mock session isolation", () => {
       sessionStartMode: "resumed",
       seedContext: messages,
       seedBudget: budget,
-      seedMcpSelection: ["docs"],
+      seedMcpState: { selectedServerIds: ["docs"], toolGrants: [] },
       snapshot: undefined,
       session: { enabled: true, appVersion: "1.0.0" },
     });

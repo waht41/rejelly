@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { mcpBoundRouteFixture } from "./__tests__/mcpTestFixtures";
 import type { McpBoundRoute } from "./contracts";
 import {
   fingerprintMcpToolSchema,
@@ -7,13 +8,10 @@ import {
 } from "./permissions";
 
 function route(inputSchema: McpBoundRoute["inputSchema"]): McpBoundRoute {
-  return {
-    identity: { serverId: "docs", nativeToolName: "read" },
-    description: "Read docs",
+  return mcpBoundRouteFixture({
     inputSchema,
     configFingerprint: "a".repeat(64),
-    catalogRevision: "catalog-1",
-  };
+  });
 }
 
 describe("MCP tool permissions", () => {

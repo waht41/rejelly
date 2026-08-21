@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import type { McpBoundRoute, McpDispatchBinding } from "../contracts";
+import { mcpBoundRouteFixture } from "../__tests__/mcpTestFixtures";
+import type { McpDispatchBinding } from "../contracts";
 import {
   createMcpGatewayToolsForDispatch,
   createUnavailableMcpDispatch,
   referenceMcpTools,
 } from "./dispatch";
 
-function route(serverId: string, nativeToolName: string): McpBoundRoute {
-  return {
+function route(serverId: string, nativeToolName: string) {
+  return mcpBoundRouteFixture({
     identity: { serverId, nativeToolName },
     description: `Read ${serverId} documentation`,
     inputSchema: {
@@ -17,7 +18,7 @@ function route(serverId: string, nativeToolName: string): McpBoundRoute {
     },
     configFingerprint: `config-${serverId}`,
     catalogRevision: `catalog-${serverId}`,
-  };
+  });
 }
 
 function binding(): McpDispatchBinding {

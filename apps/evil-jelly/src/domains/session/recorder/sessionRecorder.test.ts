@@ -4,9 +4,8 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { recordInitialTextInput, resolvedTextInput } from "../__tests__/sessionTestInput";
 import { readSessionEvents } from "../journal/sessionJsonlStore";
-import { projectMcpSessionSelection } from "../projection/mcpSelectionProjection";
-import { projectMcpSessionToolGrants } from "../projection/mcpToolGrantProjection";
 import { buildStoredActiveContext, buildTranscript } from "../projection/sessionHistoryProjection";
+import { projectSessionMcpState } from "../projection/sessionMcpProjection";
 import { prepareSessionReplay } from "../projection/sessionReplay";
 import { openSessionRecorder } from "./sessionRecorder";
 
@@ -155,15 +154,17 @@ describe("sessionRecorder", () => {
 
     const stored = await readSessionEvents(workspaceRoot, "session-mcp", { sessionsRoot });
     const replay = prepareSessionReplay(stored.events);
-    expect(projectMcpSessionSelection(replay)).toEqual(["github"]);
-    expect(projectMcpSessionToolGrants(replay)).toEqual([
-      {
-        serverId: "docs",
-        configFingerprint: "a".repeat(64),
-        nativeToolName: "read",
-        toolSchemaFingerprint: "b".repeat(64),
-      },
-    ]);
+    expect(projectSessionMcpState(replay)).toEqual({
+      selectedServerIds: ["github"],
+      toolGrants: [
+        {
+          serverId: "docs",
+          configFingerprint: "a".repeat(64),
+          nativeToolName: "read",
+          toolSchemaFingerprint: "b".repeat(64),
+        },
+      ],
+    });
     expect(stored.events.filter((event) => event.type === "mcp_selection_changed")).toEqual([
       expect.objectContaining({ selectedServerIds: ["docs", "github"], reason: "startup" }),
       expect.objectContaining({ selectedServerIds: ["github"], reason: "command" }),

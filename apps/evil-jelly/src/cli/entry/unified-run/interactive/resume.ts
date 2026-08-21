@@ -12,7 +12,10 @@ import {
 import { countConversationTurns } from "../../../../shared/conversation/compactionMessages";
 import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
-import type { McpToolGrant } from "../../../../shared/model/mcp/toolGrant";
+import {
+  emptySessionMcpState,
+  type SessionMcpState,
+} from "../../../../shared/model/mcp/sessionMcpState";
 import type { TranscriptItem } from "../../../../shared/session/transcript";
 
 export interface SessionResumeSeed {
@@ -20,8 +23,7 @@ export interface SessionResumeSeed {
   transcript: TranscriptItem[];
   totalTurns: number;
   budget: SessionBudget | undefined;
-  mcpSelection: readonly string[];
-  mcpToolGrants: readonly McpToolGrant[];
+  mcp: SessionMcpState;
   warnings?: string[];
 }
 
@@ -98,8 +100,7 @@ export function buildLegacyResumeSeed(
     transcript: buildLegacyTranscript(messages, { tailTurns: 10 }),
     totalTurns: options.totalTurns ?? countConversationTurns(messages),
     budget: options.budget,
-    mcpSelection: [],
-    mcpToolGrants: [],
+    mcp: emptySessionMcpState(),
   };
 }
 
@@ -113,8 +114,7 @@ export function buildSessionResumeSeed(record: SessionRecord): SessionResumeSeed
     ...legacy,
     ...(record.transcript ? { transcript: record.transcript } : {}),
     ...(record.warnings ? { warnings: record.warnings } : {}),
-    mcpSelection: record.mcpSelection,
-    mcpToolGrants: record.mcpToolGrants,
+    mcp: record.mcp,
   };
 }
 

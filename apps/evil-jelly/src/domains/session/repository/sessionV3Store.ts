@@ -10,9 +10,8 @@ import {
 } from "../journal/sessionJsonlStore";
 import { isKnownSessionEvent } from "../model/sessionEvents";
 import type { SessionMeta, SessionRecord } from "../model/sessionTypes";
-import { projectMcpSessionSelection } from "../projection/mcpSelectionProjection";
-import { projectMcpSessionToolGrants } from "../projection/mcpToolGrantProjection";
 import { buildStoredActiveContext, buildTranscript } from "../projection/sessionHistoryProjection";
+import { projectSessionMcpState } from "../projection/sessionMcpProjection";
 import {
   projectSessionSummary,
   projectSessionSummaryFromState,
@@ -112,8 +111,7 @@ export async function readV3Session(
         meta: sessionMetaFromSummary(summary),
         messages: buildStoredActiveContext(replay),
         transcript: buildTranscript(replay, { tailTurns: 10 }),
-        mcpSelection: projectMcpSessionSelection(replay),
-        mcpToolGrants: projectMcpSessionToolGrants(replay),
+        mcp: projectSessionMcpState(replay),
         ...(warnings ? { warnings } : {}),
       },
     };

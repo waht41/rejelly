@@ -34,6 +34,7 @@
       "!src/**/__tests__/**/*",
       "!src/**/*.test.*"
     ],
+    "@cli:mcp-runtime": ["src/cli/mcp-runtime/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:runtime": ["src/cli/runtime/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:submission-dispatch": [
       "src/cli/submission-dispatch/**/*",
@@ -183,6 +184,7 @@
           "@domain:mcp"
         ],
         "@cli:unified-conversation": ["@feature:unified", "@domain:mcp"],
+        "@cli:mcp-runtime": ["@domain:mcp"],
         "@feature:unified": [
           "@domain:workspace",
           "@domain:web",
@@ -215,10 +217,12 @@
           "@cli:runtime",
           "@cli:message-composer",
           "@cli:submission-dispatch",
+          "@cli:mcp-runtime",
           "@cli:skill-runtime",
           "@cli:unified-conversation"
         ],
         "@cli:skill-runtime": ["@domain:skills:*"],
+        "@cli:mcp-runtime": ["@domain:mcp"],
         "@cli:unified-conversation": [
           "@cli:conversation-display",
           "@cli:message-composer",

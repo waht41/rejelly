@@ -1,16 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ToolConfirmationHandler } from "../../shared/host/toolConfirmationBindings";
-import type { McpBoundRoute, McpDispatchBinding } from "./contracts";
+import { mcpBoundRouteFixture } from "./__tests__/mcpTestFixtures";
+import type { McpDispatchBinding } from "./contracts";
 import { createMcpDispatchBindingFactory } from "./mcpServerKit";
 import type { McpRuntimeManager } from "./runtime/runtimeManager";
 
-const route: McpBoundRoute = {
-  identity: { serverId: "docs", nativeToolName: "read" },
-  description: "Read docs",
-  inputSchema: { type: "object" },
+const route = mcpBoundRouteFixture({
   configFingerprint: "config-1",
   catalogRevision: "catalog-1",
-};
+});
 
 function binding(id: string): McpDispatchBinding {
   return {
