@@ -50,6 +50,17 @@ export type FsResolveResult =
       approveDir?: string;
     };
 
+export type FsResolveOptions = {
+  intent?: FsIntent;
+  approvalMode?: FsApprovalMode;
+  /**
+   * Resolve a path even when the root `.gitignore` hides it. System-hidden entries
+   * (`.git`, `node_modules`, ...) and sensitive file patterns are still denied.
+   * Used for workspace rule files whose gitignored state is a Codex convention.
+   */
+  allowGitignored?: boolean;
+};
+
 /**
  * Directory name segments that must not be exposed to the agent (list/read/write/search).
  * Matches any path segment, e.g. repo/.agents/skills is blocked.
@@ -208,7 +219,7 @@ export class WorkspaceFsPolicy {
     };
   }
 
-  private isPathHidden(relativeNormalized: string): boolean {
+  private isPathHidden(relativeNormalized: string, allowGitignored = false): boolean {
     if (isPathSystemHidden(relativeNormalized)) {
       return true;
     }
@@ -217,6 +228,9 @@ export class WorkspaceFsPolicy {
       gitignorePath === EVIL_JELLY_STATE_DIR ||
       gitignorePath.startsWith(`${EVIL_JELLY_STATE_DIR}/`)
     ) {
+      return false;
+    }
+    if (allowGitignored) {
       return false;
     }
     if (
@@ -232,8 +246,8 @@ export class WorkspaceFsPolicy {
   /**
    * Internal: resolve a path relative to root and enforce jail policy.
    */
-  resolvePath(relativePath: string): string {
-    const resolved = this.tryResolve(relativePath);
+  resolvePath(relativePath: string, options: FsResolveOptions = {}): string {
+    const resolved = this.tryResolve(relativePath, options);
     if (!resolved.ok) {
       throw new Error(resolved.error);
     }
@@ -243,10 +257,7 @@ export class WorkspaceFsPolicy {
   /**
    * Same as resolvePath but returns a result type for tool handlers.
    */
-  tryResolve(
-    userPath: string,
-    options: { intent?: FsIntent; approvalMode?: FsApprovalMode } = {},
-  ): FsResolveResult {
+  tryResolve(userPath: string, options: FsResolveOptions = {}): FsResolveResult {
     try {
       const intent = options.intent ?? "inside";
       const approvalMode = options.approvalMode ?? "normal";
@@ -291,7 +302,7 @@ export class WorkspaceFsPolicy {
           error: sensitiveFileError(relNorm),
         };
       }
-      if (this.isPathHidden(relNorm)) {
+      if (this.isPathHidden(relNorm, options.allowGitignored)) {
         return {
           ok: false,
           error: `Access denied: Path '${relNorm}' is hidden or ignored.`,
@@ -304,8 +315,8 @@ export class WorkspaceFsPolicy {
     }
   }
 
-  async readFile(relativePath: string): Promise<string> {
-    return fsPromises.readFile(this.resolvePath(relativePath), "utf-8");
+  async readFile(relativePath: string, options: FsResolveOptions = {}): Promise<string> {
+    return fsPromises.readFile(this.resolvePath(relativePath, options), "utf-8");
   }
 
   async readResolved(resolved: ResolvedFsPath): Promise<string> {
@@ -347,8 +358,8 @@ export class WorkspaceFsPolicy {
     });
   }
 
-  async stat(relativePath: string) {
-    return fsPromises.stat(this.resolvePath(relativePath));
+  async stat(relativePath: string, options: FsResolveOptions = {}) {
+    return fsPromises.stat(this.resolvePath(relativePath, options));
   }
 
   async statResolved(resolved: ResolvedFsPath) {

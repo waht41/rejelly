@@ -42,6 +42,22 @@ describe("readWorkspaceRuleMarkdown", () => {
     expect(await readWorkspaceRuleMarkdown(new WorkspaceFsPolicy(cwd))).toBe("Override rule");
   });
 
+  it("reads AGENTS.override.md even when .gitignore hides it", async () => {
+    const cwd = makeTempDir();
+    fs.writeFileSync(path.join(cwd, ".gitignore"), "AGENTS.override.md\n", "utf-8");
+    fs.writeFileSync(path.join(cwd, "AGENTS.override.md"), "Override rule");
+
+    expect(await readWorkspaceRuleMarkdown(new WorkspaceFsPolicy(cwd))).toBe("Override rule");
+  });
+
+  it("reads AGENTS.md even when .gitignore hides it", async () => {
+    const cwd = makeTempDir();
+    fs.writeFileSync(path.join(cwd, ".gitignore"), "AGENTS.md\n", "utf-8");
+    fs.writeFileSync(path.join(cwd, "AGENTS.md"), "Base rule");
+
+    expect(await readWorkspaceRuleMarkdown(new WorkspaceFsPolicy(cwd))).toBe("Base rule");
+  });
+
   it("falls back to AGENTS.md when AGENTS.override.md is empty", async () => {
     const cwd = makeTempDir();
     fs.writeFileSync(path.join(cwd, "AGENTS.md"), "Base rule");
