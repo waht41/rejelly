@@ -90,13 +90,15 @@ describe("MCP dispatch gateway", () => {
         reason: "Use semantic TypeScript tools",
       }),
     ).resolves.toMatchObject({ status: "unavailable", code: "runtime_unavailable" });
-    await expect(
-      tools[2].handler({
-        tool: { serverId: "typescript", nativeToolName: "get_definition" },
-        catalogRevision: "catalog-1",
-        arguments: {},
-      }),
-    ).resolves.toMatchObject({ status: "rejected", code: "tool_unavailable" });
+    const unavailableCall = await tools[2].handler({
+      tool: { serverId: "typescript", nativeToolName: "get_definition" },
+      catalogRevision: "catalog-1",
+      arguments: {},
+    });
+    expect(unavailableCall).toContain(
+      '<mcp_call_result version="1" status="rejected" server="typescript" tool="get_definition" code="tool_unavailable">',
+    );
+    expect(unavailableCall).toContain("The MCP tool is not available in this dispatch.");
   });
 
   it("references same-named tools and reports unavailable servers with actions", () => {
@@ -168,10 +170,10 @@ describe("MCP dispatch gateway", () => {
       arguments: { path: "guide.md" },
     });
 
-    expect(result).toMatchObject({
-      status: "completed",
-      result: { content: [{ type: "text", text: "first" }] },
-    });
+    expect(result).toContain(
+      '<mcp_call_result version="1" status="completed" server="alpha" tool="read"',
+    );
+    expect(result).toContain('<text index="0" format="text">\nfirst\n</text>');
     expect(firstInvoke).toHaveBeenCalledOnce();
     expect(secondInvoke).not.toHaveBeenCalled();
   });

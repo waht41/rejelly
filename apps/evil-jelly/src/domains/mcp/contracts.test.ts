@@ -267,7 +267,7 @@ describe("stable MCP gateway contract", () => {
       call: {
         name: "mcp_call",
         description:
-          "Call one previously referenced MCP tool using its structured identity, catalog revision, and JSON object arguments.",
+          "Call one previously referenced MCP tool and return a bounded XML-like projection containing native text, JSON structured content, and explicit omission metadata.",
       },
     });
   });

@@ -15,6 +15,7 @@ import {
   mcpReferenceInputSchema,
   mcpRequestInputSchema,
 } from "../contracts";
+import { projectMcpCallResultForModel } from "./callResultProjection";
 import type { McpCallPolicy } from "./mcpCallPolicy";
 import { projectMcpReferenceForModel } from "./referenceProjection";
 
@@ -53,7 +54,8 @@ export function createMcpGatewayToolDefinitions(
     name: MCP_CALL_TOOL_NAME,
     description: MCP_CALL_TOOL_DESCRIPTION,
     parameters: mcpCallInputSchema,
-    handler: (input: McpCallInput) => ports.callPolicy.execute(input),
+    handler: async (input: McpCallInput) =>
+      projectMcpCallResultForModel(await ports.callPolicy.execute(input)),
   });
   return Object.freeze([referenceTool, callTool]);
 }

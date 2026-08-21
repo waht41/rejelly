@@ -19,6 +19,7 @@ export const MCP_CONTRACT_LIMITS = Object.freeze({
   referenceSingleToolOutputBytes: 128 * 1024,
   gatewayArgumentsBytes: 256 * 1024,
   gatewayArgumentsDepth: 32,
+  callResultOutputBytes: 64 * 1024,
 });
 
 export const MCP_RESERVED_SERVER_ID_PREFIX = "evil.";
@@ -363,7 +364,7 @@ export const MCP_REFERENCE_TOOL_DESCRIPTION =
 export const MCP_REQUEST_TOOL_DESCRIPTION =
   "Ask the user to trust and enable one configured MCP server for this chat session.";
 export const MCP_CALL_TOOL_DESCRIPTION =
-  "Call one previously referenced MCP tool using its structured identity, catalog revision, and JSON object arguments.";
+  "Call one previously referenced MCP tool and return a bounded XML-like projection containing native text, JSON structured content, and explicit omission metadata.";
 
 export const mcpReferenceInputSchema = z
   .object({
