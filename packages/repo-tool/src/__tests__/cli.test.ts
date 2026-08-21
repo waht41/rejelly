@@ -6,6 +6,7 @@ describe("normalizeVerifyOptions", () => {
     expect(normalizeVerifyOptions({})).toMatchObject({
       biome: "changed",
       fix: false,
+      fixBranch: false,
       scope: { kind: "affected" },
       verbose: false,
     });
@@ -40,6 +41,11 @@ describe("normalizeVerifyOptions", () => {
       fix: true,
       verbose: true,
     });
+  });
+
+  it("requires --fix before widening writes to the whole branch", () => {
+    expect(() => normalizeVerifyOptions({ branch: true })).toThrow("--branch requires --fix");
+    expect(normalizeVerifyOptions({ branch: true, fix: true }).fixBranch).toBe(true);
   });
 
   it("rejects fixing when Biome is disabled", () => {

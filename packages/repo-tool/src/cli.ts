@@ -33,14 +33,17 @@ export function normalizeVerifyOptions(options: Record<string, unknown>): Verify
   const all = options.all === true;
   const biome = biomeScope(options.biome, all);
   const fix = options.fix === true;
+  const fixBranch = options.branch === true;
   if (all && filters.length > 0) throw new Error("--all cannot be combined with --filter");
   if (fix && biome === "skip") throw new Error("--fix cannot be combined with --biome skip");
+  if (fixBranch && !fix) throw new Error("--branch requires --fix");
   return {
     allowMany: options.allowMany === true,
     base: typeof options.base === "string" ? options.base : undefined,
     biome,
     dryRun: options.dryRun === true,
     fix,
+    fixBranch,
     maxFiles: positiveInteger(options.maxFiles, "--max-files", 100),
     scope: all
       ? { kind: "all" }
@@ -60,6 +63,7 @@ export function main(argv = process.argv.slice(2)): void {
     .option("--filter <package>", "Turbo package filter (repeatable)")
     .option("--all", "Verify every workspace package and all Biome files")
     .option("--fix", "Apply Biome safe fixes, formatting, and import sorting before verification")
+    .option("--branch", "With --fix, include committed branch changes instead of only dirty files")
     .option("--no-tests", "Skip test tasks")
     .option("--biome <scope>", "Biome scope: changed, all, or skip")
     .option("--base <ref>", "Base ref used by the changed-file Biome check")
@@ -74,11 +78,13 @@ export function main(argv = process.argv.slice(2)): void {
   cli
     .command("branch-report", "Summarize branch commits and working-tree state")
     .option("--base <ref>", "Comparison base (default: origin/main or main)")
+    .option("--max-commits <count>", "Maximum commits included in the report", { default: 20 })
     .option("--json", "Print structured JSON")
     .action((options: Record<string, unknown>) => {
       runBranchReport(findRepoRoot(), {
         base: typeof options.base === "string" ? options.base : undefined,
         json: options.json === true,
+        maxCommits: positiveInteger(options.maxCommits, "--max-commits", 20),
       });
     });
 

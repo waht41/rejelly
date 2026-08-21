@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type { VerifyOptions } from "../../contracts.js";
-import { createVerifyPlan } from "../verify.js";
+import {
+  assertFiltersMatched,
+  createVerifyPlan,
+  resolveAffectedScope,
+  selectBiomeFiles,
+} from "../verify.js";
 
 const defaults: VerifyOptions = {
   allowMany: false,
   biome: "changed",
   dryRun: false,
   fix: false,
+  fixBranch: false,
   maxFiles: 100,
   scope: { kind: "affected" },
   tests: true,
@@ -130,5 +136,27 @@ describe("createVerifyPlan", () => {
     expect(plan.steps).toEqual([
       { kind: "biome-changed", label: "Biome check (changed files)", write: false },
     ]);
+  });
+});
+
+describe("verify scope guards", () => {
+  it("rejects filters that resolve to no workspace package", () => {
+    expect(() => assertFiltersMatched(["@rejelly/missing"], [])).toThrow(
+      "No workspace package matched --filter @rejelly/missing",
+    );
+  });
+
+  it("promotes global root changes to all packages and leaves neutral-only roots taskless", () => {
+    expect(resolveAffectedScope(["pnpm-lock.yaml"], [])).toEqual({ kind: "all" });
+    expect(resolveAffectedScope([], [])).toEqual({ kind: "none", source: "affected" });
+  });
+
+  it("keeps fixing on dirty files unless --branch is explicit", () => {
+    expect(
+      selectBiomeFiles({ fix: true, fixBranch: false }, ["old.ts", "new.ts"], ["new.ts"]),
+    ).toEqual(["new.ts"]);
+    expect(
+      selectBiomeFiles({ fix: true, fixBranch: true }, ["old.ts", "new.ts"], ["new.ts"]),
+    ).toEqual(["old.ts", "new.ts"]);
   });
 });

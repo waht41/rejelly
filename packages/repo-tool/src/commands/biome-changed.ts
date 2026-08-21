@@ -51,6 +51,11 @@ export function collectBiomeChangedFiles(
   return { base: changed.base, files };
 }
 
+export function existingBiomeCandidateFiles(repoRoot: string, files: readonly string[]): string[] {
+  const resolvedRoot = path.resolve(repoRoot);
+  return files.filter((file) => existsSync(path.join(resolvedRoot, file))).sort();
+}
+
 export function exceedsBiomeWriteLimit(
   fileCount: number,
   options: Pick<BiomeChangedOptions, "allowMany" | "maxFiles" | "write">,
@@ -77,7 +82,7 @@ export function runBiomeChanged(repoRoot: string, options: BiomeChangedOptions):
   const candidate = options.selection ?? collectBiomeChangedFiles(repoRoot, options.base);
   const base = candidate.base;
   const resolvedRoot = path.resolve(repoRoot);
-  const files = candidate.files.filter((file) => existsSync(path.join(resolvedRoot, file))).sort();
+  const files = existingBiomeCandidateFiles(repoRoot, candidate.files);
   console.log(
     `Biome ${options.write ? "write" : "check"}: ${files.length} changed candidate(s), base ${base}`,
   );
