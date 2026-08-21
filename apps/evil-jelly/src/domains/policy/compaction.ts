@@ -34,6 +34,11 @@ import { COMPACTION_STREAM_CHANNEL } from "./compactionChannel";
  * threshold during the tool-call loop, summarize the working set, keep the most recent user
  * turn projections, and continue in place - bounding the live window across an unbounded task.
  */
+export interface CompactionPrefix {
+  readonly system: readonly Message[];
+  readonly instruction: readonly Message[];
+}
+
 export interface PromptChatCompactionConfig {
   /** Estimated live-context token count at/above which a compaction round is triggered. */
   thresholdTokens: number;
@@ -54,6 +59,11 @@ export interface PromptChatCompactionConfig {
   maxRounds?: number;
   /** Header prepended to the generated summary in the replacement history. */
   summaryPrefix?: string;
+  /**
+   * Refresh application-owned prompt state only after the summary succeeds. The summary request
+   * always uses the old prefix; the returned prefix is used by the continuation.
+   */
+  refreshPrefixAfterSummary?: (currentPrefix: CompactionPrefix) => Promise<CompactionPrefix>;
   /** Observer fired after each successful compaction round (logging / telemetry). */
   onCompacted?: (info: CompactionRoundInfo) => void;
   /**
@@ -500,6 +510,16 @@ export async function runContextCompaction(
     return null;
   }
 
+  let refreshedPrefix: CompactionPrefix = { system: ctx.system, instruction: ctx.instruction };
+  if (config.refreshPrefixAfterSummary) {
+    try {
+      refreshedPrefix = await config.refreshPrefixAfterSummary(refreshedPrefix);
+    } catch {
+      // Prompt refresh is best effort: a valid summary must remain usable with the old prefix.
+      refreshedPrefix = { system: ctx.system, instruction: ctx.instruction };
+    }
+  }
+
   const prefix = config.summaryPrefix ?? DEFAULT_SUMMARY_PREFIX;
   // Exclude prior rounds' bridge message (notice + summary) from the recent-user selection: it is
   // a user-role message, so without this filter each round re-collects it as the "most recent user
@@ -521,8 +541,8 @@ export async function runContextCompaction(
   // model re-answers already-handled turns. With the summary last, the kept turns read as historical
   // inputs and the model continues from the checkpoint.
   const history: Message[] = [
-    ...ctx.system,
-    ...ctx.instruction,
+    ...refreshedPrefix.system,
+    ...refreshedPrefix.instruction,
     ...keptUsers.map(wrapPriorUserMessage),
     {
       role: "user",

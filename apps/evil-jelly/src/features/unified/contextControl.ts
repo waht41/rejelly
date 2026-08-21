@@ -1,3 +1,7 @@
+import {
+  refreshMemoryInstructionPrefix,
+  type SessionMemoryRuntime,
+} from "../../domains/memory/runtime/sessionMemoryRuntime";
 import type { PromptChatCompactionConfig } from "../../domains/policy/promptChatResilient";
 import { env } from "../../shared/configuration/env";
 import {
@@ -54,7 +58,9 @@ const AUTO_COMPACT_WARN_HINT =
  * /compress reuses this exact config through promptCompactHistory, so manual and automatic
  * compaction cannot drift apart.
  */
-export function buildAutoCompactionConfig(): PromptChatCompactionConfig {
+export function buildAutoCompactionConfig(
+  memoryRuntime?: SessionMemoryRuntime,
+): PromptChatCompactionConfig {
   // Real model window: the hard ceiling the summarization request is proactively trimmed to fit.
   const contextWindow = env.OPENAI_CONTEXT_WINDOW ?? DEFAULT_OPENAI_CONTEXT_WINDOW_TOKENS;
   const isLowContextWindow = contextWindow < LOW_OPENAI_CONTEXT_WINDOW_TOKENS;
@@ -87,6 +93,19 @@ export function buildAutoCompactionConfig(): PromptChatCompactionConfig {
     summaryInstruction: AUTO_COMPACT_SUMMARY_INSTRUCTION,
     keepRecentUserTokens,
     summaryPrefix: "## Auto-compacted checkpoint",
+    ...(memoryRuntime
+      ? {
+          refreshPrefixAfterSummary: async (currentPrefix) => {
+            const previousInstruction = memoryRuntime.epoch.instruction;
+            await memoryRuntime.refresh();
+            return refreshMemoryInstructionPrefix(
+              currentPrefix,
+              memoryRuntime.epoch.instruction,
+              previousInstruction,
+            );
+          },
+        }
+      : {}),
     warnHint: AUTO_COMPACT_WARN_HINT,
     onCompacted: ({ round, beforeTokens, afterTokens }) => {
       getBinding().logSystemEvent(

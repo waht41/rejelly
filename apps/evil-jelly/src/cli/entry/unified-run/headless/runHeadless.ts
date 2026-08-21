@@ -1,6 +1,11 @@
 import { augmentAgent, type Message, type ModelAdapter } from "@rejelly/core";
 import type { ReviewOptions } from "@rejelly/core/debugger";
 import {
+  createSessionMemoryRuntime,
+  MEMORY_RUNTIME_PROVIDER_KEY,
+} from "../../../../domains/memory/runtime/sessionMemoryRuntime";
+import { createPersistentMemoryService } from "../../../../domains/memory/service/persistentMemoryServiceImpl";
+import {
   commitResolvedUserInput,
   materializeFrozenUserInputMessage,
 } from "../../../../domains/session/repository/userInputRepository";
@@ -34,6 +39,12 @@ export async function runHeadless(
   try {
     const skillRuntime = await buildConfiguredSkillRuntimeSnapshot();
     const skillSummary = formatSkillRuntimeStartupSummary(skillRuntime);
+    const memoryRuntime = await createSessionMemoryRuntime(
+      createPersistentMemoryService({ workspaceRoot: process.cwd() }),
+    );
+    for (const diagnostic of memoryRuntime.diagnostics) {
+      bindings.logSystemEvent(`Memory warning: ${diagnostic}\n`);
+    }
     if (skillSummary) {
       bindings.logSystemEvent(`${skillSummary}\n`);
     }
@@ -54,7 +65,10 @@ export async function runHeadless(
         bindings.logAssistantMessage(result.reply);
       },
       runWithOptions: {
-        providers: { [SKILL_RUNTIME_PROVIDER_KEY]: skillRuntime.snapshot },
+        providers: {
+          [SKILL_RUNTIME_PROVIDER_KEY]: skillRuntime.snapshot,
+          [MEMORY_RUNTIME_PROVIDER_KEY]: memoryRuntime,
+        },
         trace: {
           traceId,
           attributes: {

@@ -194,7 +194,8 @@
           "@domain:session:projection",
           "@domain:skills:agent",
           "@domain:skills:definition",
-          "@domain:mcp"
+          "@domain:mcp",
+          "@domain:memory"
         ],
         "@cli:unified-conversation": ["@feature:unified", "@domain:mcp"],
         "@cli:mcp-runtime": ["@domain:mcp"],
@@ -233,7 +234,8 @@
           "@cli:submission-dispatch",
           "@cli:mcp-runtime",
           "@cli:skill-runtime",
-          "@cli:unified-conversation"
+          "@cli:unified-conversation",
+          "@domain:memory"
         ],
         "@cli:skill-runtime": ["@domain:skills:*"],
         "@cli:mcp-runtime": ["@domain:mcp"],

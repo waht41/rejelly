@@ -1,5 +1,7 @@
 import type { AgentSnapshot, ModelAdapter } from "@rejelly/core";
 import type { McpDesiredServer } from "../../../../domains/mcp/contracts";
+import { createSessionMemoryRuntime } from "../../../../domains/memory/runtime/sessionMemoryRuntime";
+import { createPersistentMemoryService } from "../../../../domains/memory/service/persistentMemoryServiceImpl";
 import {
   generateSessionId,
   resumeSession,
@@ -129,6 +131,12 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
     // Outer loop: each iteration is one runWith segment (own traceId). A mid-session /resume ends
     // the current run, queues a loop intent, and we restart with the loaded history.
     while (true) {
+      const memoryRuntime = await createSessionMemoryRuntime(
+        createPersistentMemoryService({ workspaceRoot }),
+      );
+      for (const diagnostic of memoryRuntime.diagnostics) {
+        bindings.logSystemEvent(`Memory warning: ${diagnostic}\n`);
+      }
       await runEvilJellyHost(bindings, {
         runControl,
         model,
@@ -144,6 +152,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
         mcpSessionControl: mcp.sessionControl,
         resolveMcpUserInput: mcp.resolveUserInput,
         skillSnapshot: skillRuntime.snapshot,
+        memoryRuntime,
         mockSourceTraceId,
         isolateSessionState,
         session,

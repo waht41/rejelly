@@ -14,6 +14,7 @@ import {
   memorySummarySchema,
   memoryTitleSchema,
 } from "../model/memorySchema";
+import type { SessionMemoryRuntime } from "../runtime/sessionMemoryRuntime";
 import {
   type MemoryMutationPreview,
   PersistentMemoryError,
@@ -27,7 +28,7 @@ import { createPersistentMemoryService } from "../service/persistentMemoryServic
 const memoryReadParameters = z
   .object({
     scope: z.enum(["all", "user", "project"]).default("all"),
-    ids: z.array(memoryIdSchema).max(100).optional(),
+    ids: z.array(memoryIdSchema).max(20).optional(),
     view: z.enum(["catalog", "detail"]).default("catalog"),
   })
   .strict()
@@ -108,6 +109,7 @@ export type MemoryEditInput = z.input<typeof memoryEditParameters>;
 
 export interface MemoryToolsOptions {
   readonly service: PersistentMemoryService;
+  readonly runtime?: SessionMemoryRuntime;
   readonly source: MemorySourceContext;
   /** Missing handlers are intentionally treated as unavailable, never as acceptance. */
   readonly requestConfirmation?: MemoryConfirmationHandler;
@@ -240,6 +242,7 @@ async function executeMemoryEdit(
     return {
       ...result,
       ...(result.entry ? { entry: result.entry } : {}),
+      ...(result.status === "committed" ? { instructionEffect: "next_epoch" } : {}),
     };
   } catch (error) {
     return publicError(error);
@@ -248,6 +251,7 @@ async function executeMemoryEdit(
 
 export function createMemoryReadTool(
   service: PersistentMemoryService,
+  runtime?: SessionMemoryRuntime,
 ): ToolDefinition<typeof memoryReadParameters> {
   return {
     name: "memory_read",
@@ -272,14 +276,22 @@ export function createMemoryReadTool(
                 title: entry.title,
                 summary: entry.summary,
                 revision: entry.revision,
-                createdAt: entry.createdAt,
-                updatedAt: entry.updatedAt,
               }));
         return {
           status: result.status,
           scope: result.scope,
           view: input.view,
-          entries,
+          entries: entries.map((entry) => ({
+            ...entry,
+            ...(runtime
+              ? {
+                  injectedStatus: runtime.statusFor(
+                    entry.id,
+                    result.entries.find((candidate) => candidate.id === entry.id),
+                  ),
+                }
+              : {}),
+          })),
           ...(result.status === "unavailable"
             ? { diagnostic: "One or more persistent memory scopes are unavailable." }
             : {}),
@@ -306,7 +318,7 @@ export function createMemoryEditTool(
 export function createMemoryTools(
   options: MemoryToolsOptions,
 ): [ToolDefinition<typeof memoryReadParameters>, ToolDefinition<typeof memoryEditParameters>] {
-  return [createMemoryReadTool(options.service), createMemoryEditTool(options)];
+  return [createMemoryReadTool(options.service, options.runtime), createMemoryEditTool(options)];
 }
 
 export interface EquipMemoryKitOptions {
@@ -314,6 +326,7 @@ export interface EquipMemoryKitOptions {
   readonly source: MemorySourceContext;
   readonly memoryRoot?: string;
   readonly service?: PersistentMemoryService;
+  readonly runtime?: SessionMemoryRuntime;
   readonly requestConfirmation?: MemoryConfirmationHandler;
 }
 
@@ -326,7 +339,8 @@ export function equipMemoryKit(options: EquipMemoryKitOptions): void {
       ...(options.memoryRoot ? { memoryRoot: options.memoryRoot } : {}),
     });
   const tools: ToolDefinition[] = createMemoryTools({
-    service,
+    service: options.runtime?.service ?? service,
+    runtime: options.runtime,
     source: options.source,
     requestConfirmation: options.requestConfirmation,
   }) as unknown as ToolDefinition[];
