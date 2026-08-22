@@ -7,18 +7,34 @@ const DEFAULT_TIMEOUT_MS = 180_000;
 const DEFAULT_MAX_CAPTURE_BYTES = 48_000;
 const TERMINATION_GRACE_MS = 3_000;
 const WINDOWS_ENCODING_SAMPLE_BYTES = 128;
+const POWERSHELL_UTF8_OUTPUT_PREFIX =
+  "try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}\n";
+const POWERSHELL_NATIVE_EXIT_CODE_SUFFIX = "\nif ($null -ne $LASTEXITCODE) { exit $LASTEXITCODE }";
 
-function getShellCommand(command: string): string {
-  if (process.platform !== "win32") {
-    return command;
+interface ShellInvocation {
+  readonly file: string;
+  readonly args: string[];
+  readonly useShell: boolean;
+}
+
+function getShellInvocation(command: string): ShellInvocation {
+  if (process.platform === "win32") {
+    return {
+      file: getShellPath(),
+      args: [
+        "-NoLogo",
+        "-NoProfile",
+        "-Command",
+        `${POWERSHELL_UTF8_OUTPUT_PREFIX}${command}${POWERSHELL_NATIVE_EXIT_CODE_SUFFIX}`,
+      ],
+      useShell: false,
+    };
   }
-  return `chcp 65001 >nul & ${command}`;
+  return { file: command, args: [], useShell: true };
 }
 
 export function getShellPath(): string {
-  return process.platform === "win32"
-    ? (process.env.ComSpec ?? "cmd.exe")
-    : (process.env.SHELL ?? "/bin/sh");
+  return process.platform === "win32" ? "powershell.exe" : (process.env.SHELL ?? "/bin/sh");
 }
 
 export function getShellEnvironmentSummary(): string {
@@ -247,10 +263,11 @@ export async function executeShellCommand(
     let settled = false;
     let forceFinishTimer: NodeJS.Timeout | null = null;
 
-    const child = spawn(getShellCommand(options.command), {
+    const invocation = getShellInvocation(options.command);
+    const child = spawn(invocation.file, invocation.args, {
       cwd: options.cwd,
       env: options.env,
-      shell: true,
+      shell: invocation.useShell,
       windowsHide: true,
     });
 

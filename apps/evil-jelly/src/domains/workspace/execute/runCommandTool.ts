@@ -71,7 +71,7 @@ export const RunCommandTool: ToolDefinition<typeof runCommandParameters> = {
   description:
     "Run a shell command in workspace root by default (tests, tsc, lint). " +
     "Use optional cwd to execute inside a workspace subdirectory. " +
-    "Commands run through the host platform shell; on Windows this is cmd.exe syntax, not Unix sh syntax. " +
+    "Commands run through the host platform shell; on Windows this is PowerShell syntax, not cmd.exe or Unix sh syntax. " +
     "Prefer this when you need a targeted check beyond the automatic post-edit verification.",
   parameters: runCommandParameters,
   handler: async ({ command, cwd, declaredSafety, reason }) => {
