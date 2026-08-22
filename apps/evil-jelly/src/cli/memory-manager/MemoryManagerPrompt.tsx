@@ -48,14 +48,8 @@ export function MemoryManagerPrompt({
       return;
     }
     if (request.detail) {
-      if (key.escape || input.toLocaleLowerCase() === "b") {
+      if (key.escape) {
         onAction({ action: "back" });
-        return;
-      }
-      if (key.return) {
-        if (request.canRevealFile && selected) {
-          onAction({ action: "reveal_file", id: selected.id });
-        }
         return;
       }
       return;
@@ -117,9 +111,9 @@ export function MemoryManagerPrompt({
           ))}
         </Box>
         {request.canRevealFile ? (
-          <Text dimColor>Enter or O reveal this memory file · Esc/B back</Text>
+          <Text dimColor>O reveal this memory file · Esc back</Text>
         ) : (
-          <Text dimColor>Explorer is unavailable in this host · Esc/B back</Text>
+          <Text dimColor>Explorer is unavailable in this host · Esc back</Text>
         )}
         {request.message ? <Text color="green">{request.message}</Text> : null}
       </Box>
