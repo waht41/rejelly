@@ -44,6 +44,7 @@ const skillNodeSchema = z
   .object({
     kind: z.literal("skill"),
     qualifiedName: nonBlankString,
+    referenceName: nonBlankString.optional(),
     status: z.enum(["resolved", "unavailable"]),
     context: z.string().optional(),
   })
@@ -94,10 +95,39 @@ const mcpNodeSchema = z
   .object({
     kind: z.literal("mcp"),
     serverId: nonBlankString.refine((value) => validateMcpServerId(value).ok),
+    referenceName: nonBlankString.optional(),
     status: z.enum(["selected", "unavailable", "disabled", "untrusted"]),
     configFingerprint: nonBlankString.optional(),
   })
   .strict();
+const memoryNodeSchema = z
+  .object({
+    kind: z.literal("memory"),
+    memoryId: nonBlankString,
+    referenceName: nonBlankString.optional(),
+    status: z.enum(["resolved", "unavailable"]),
+    scope: z.enum(["user", "project"]).optional(),
+    revision: z.number().int().positive().optional(),
+    title: nonBlankString.optional(),
+    summary: nonBlankString.optional(),
+    detail: nonBlankString.optional(),
+  })
+  .strict()
+  .superRefine((node, context) => {
+    const resolvedFields = [node.scope, node.revision, node.title, node.summary, node.detail];
+    if (node.status === "resolved" && resolvedFields.some((value) => value === undefined)) {
+      context.addIssue({
+        code: "custom",
+        message: "Resolved Memory needs scope, revision, title, summary, and detail",
+      });
+    }
+    if (node.status === "unavailable" && resolvedFields.some((value) => value !== undefined)) {
+      context.addIssue({
+        code: "custom",
+        message: "Unavailable Memory cannot contain resolved fields",
+      });
+    }
+  });
 
 const resolvedNodeSchema = z.union([
   textNodeSchema,
@@ -106,6 +136,7 @@ const resolvedNodeSchema = z.union([
   fileNodeSchema,
   imageNodeSchema,
   mcpNodeSchema,
+  memoryNodeSchema,
 ]);
 const resolvedInputSchema = z
   .object({

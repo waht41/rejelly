@@ -20,6 +20,26 @@ function formatToolProgressLine(ctx: ToolContext): string {
     const depth = typeof input.depth === "number" ? input.depth : 1;
     return `[Tools] list_directory → ${dirPath} (depth ${depth})…\n`;
   }
+  if (ctx.toolName === "memory_read") {
+    const scope = typeof input.scope === "string" ? input.scope : "all";
+    const view = typeof input.view === "string" ? input.view : "catalog";
+    const ids = Array.isArray(input.ids) ? input.ids : [];
+    const idsHint = view === "detail" ? ` (${ids.length} ids)` : "";
+    return `[Tools] memory_read → ${scope}/${view}${idsHint}…\n`;
+  }
+  if (ctx.toolName === "memory_edit") {
+    const change =
+      typeof input.change === "object" && input.change !== null
+        ? (input.change as Record<string, unknown>)
+        : {};
+    const kind = typeof change.kind === "string" ? change.kind : "change";
+    if (kind === "add") {
+      const scope = typeof change.scope === "string" ? change.scope : "project";
+      return `[Tools] memory_edit → add/${scope}…\n`;
+    }
+    const id = typeof change.id === "string" ? change.id : "(memory)";
+    return `[Tools] memory_edit → ${kind}/${id}…\n`;
+  }
   if (ctx.toolName === "read_file") {
     const rawEntries = Array.isArray(input.filePaths) ? (input.filePaths as unknown[]) : [];
     const filePaths = rawEntries.map((entry) => {

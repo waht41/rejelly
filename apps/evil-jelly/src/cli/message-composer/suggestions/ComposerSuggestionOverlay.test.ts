@@ -24,7 +24,7 @@ const file = {
   select: vi.fn(),
   dismiss: vi.fn(),
 };
-const skillSuggestion = {
+const referenceSuggestion = {
   matches: [{ kind: "skill" as const, skill }],
   open: true,
   select: vi.fn(),
@@ -34,17 +34,18 @@ const keySink = { current: null };
 
 function render(overrides: {
   commandOpen?: boolean;
-  skillOpen?: boolean;
+  referenceOpen?: boolean;
   fileOpen?: boolean;
 }): string {
   return stripAnsi(
     renderToString(
       createElement(ComposerSuggestionOverlay, {
         command: { ...command, open: overrides.commandOpen ?? true },
-        skill: { ...skillSuggestion, open: overrides.skillOpen ?? true },
+        reference: { ...referenceSuggestion, open: overrides.referenceOpen ?? true },
         file: { ...file, open: overrides.fileOpen ?? true },
         availableSkills: [skill],
         availableMcpServers: [],
+        availableMemories: [],
         visibleRows: 5,
         keySink,
       }),
@@ -61,7 +62,7 @@ describe("ComposerSuggestionOverlay", () => {
     expect(output).not.toContain("$review");
   });
 
-  it("gives skill suggestions priority over file suggestions", () => {
+  it("gives semantic reference suggestions priority over file suggestions", () => {
     const output = render({ commandOpen: false });
 
     expect(output).toContain("$review");
@@ -69,6 +70,6 @@ describe("ComposerSuggestionOverlay", () => {
   });
 
   it("renders nothing when no suggestion is active", () => {
-    expect(render({ commandOpen: false, skillOpen: false, fileOpen: false })).toBe("");
+    expect(render({ commandOpen: false, referenceOpen: false, fileOpen: false })).toBe("");
   });
 });

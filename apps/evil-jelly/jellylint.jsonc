@@ -36,6 +36,11 @@
     ],
     "@cli:mcp-runtime": ["src/cli/mcp-runtime/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:mcp-manager": ["src/cli/mcp-manager/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@cli:memory-manager": [
+      "src/cli/memory-manager/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
     "@cli:runtime": ["src/cli/runtime/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:submission-dispatch": [
       "src/cli/submission-dispatch/**/*",
@@ -74,6 +79,7 @@
       "src/domains/[dom]/**/*",
       "!src/domains/session/**/*",
       "!src/domains/skills/**/*",
+      "!src/domains/memory/**/*",
       "!src/**/__tests__/**/*",
       "!src/**/*.test.*"
     ],
@@ -117,6 +123,7 @@
       "!src/**/__tests__/**/*",
       "!src/**/*.test.*"
     ],
+    "@domain:memory": ["src/domains/memory/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@domain:session:recorder": [
       "src/domains/session/recorder/**/*",
       "!src/**/__tests__/**/*",
@@ -135,6 +142,7 @@
             "@cli:**",
             "@feature:[feat]",
             "@domain:[dom]",
+            "@domain:memory",
             "@domain:session:*",
             "@domain:skills:*",
             "@shared",
@@ -143,7 +151,14 @@
           ]
         ],
         "production_foundation": [
-          ["@cli:**", "@feature:[feat]", "@domain:[dom]", "@domain:session:*", "@domain:skills:*"],
+          [
+            "@cli:**",
+            "@feature:[feat]",
+            "@domain:[dom]",
+            "@domain:memory",
+            "@domain:session:*",
+            "@domain:skills:*"
+          ],
           ["@shared"]
         ],
         "direct_fs": [
@@ -155,6 +170,7 @@
             "@cli:message-composer",
             "@cli:tool-approval",
             "@domain:skills:loader",
+            "@domain:memory",
             "@domain:session:journal",
             "@domain:session:repository"
           ],
@@ -167,6 +183,7 @@
             "@cli:terminal-ui",
             "@cli:message-composer",
             "@cli:mcp-manager",
+            "@cli:memory-manager",
             "@cli:operator-decision",
             "@cli:tool-approval"
           ],
@@ -183,11 +200,13 @@
           "@domain:session:projection",
           "@domain:skills:agent",
           "@domain:skills:definition",
-          "@domain:mcp"
+          "@domain:mcp",
+          "@domain:memory"
         ],
         "@cli:unified-conversation": ["@feature:unified", "@domain:mcp"],
         "@cli:mcp-runtime": ["@domain:mcp"],
         "@feature:unified": [
+          "@domain:memory",
           "@domain:workspace",
           "@domain:web",
           "@domain:skills:agent",
@@ -221,7 +240,8 @@
           "@cli:submission-dispatch",
           "@cli:mcp-runtime",
           "@cli:skill-runtime",
-          "@cli:unified-conversation"
+          "@cli:unified-conversation",
+          "@domain:memory"
         ],
         "@cli:skill-runtime": ["@domain:skills:*"],
         "@cli:mcp-runtime": ["@domain:mcp"],
@@ -230,6 +250,7 @@
           "@cli:message-composer",
           "@cli:runtime",
           "@cli:submission-dispatch",
+          "@domain:memory",
           "@domain:session:model",
           "@domain:session:recorder",
           "@domain:session:repository",
@@ -238,6 +259,7 @@
         "@cli:bindings": [
           "@cli:unified-run",
           "@cli:conversation-display",
+          "@cli:memory-manager",
           "@cli:message-composer",
           "@cli:interactive-shell",
           "@cli:submission-dispatch",
@@ -247,6 +269,7 @@
         "@cli:interactive-shell": [
           "@cli:conversation-display",
           "@cli:mcp-manager",
+          "@cli:memory-manager",
           "@cli:operator-decision",
           "@cli:tool-approval",
           "@cli:message-composer",
@@ -254,6 +277,7 @@
         ],
         "@cli:conversation-display": ["@cli:terminal-ui"],
         "@cli:mcp-manager": ["@cli:terminal-ui"],
+        "@cli:memory-manager": ["@cli:terminal-ui", "@domain:memory"],
         "@cli:message-composer": ["@cli:terminal-ui"],
         "@cli:operator-decision": ["@cli:conversation-display", "@cli:terminal-ui"],
         "@cli:tool-approval": ["@cli:conversation-display", "@cli:operator-decision"]

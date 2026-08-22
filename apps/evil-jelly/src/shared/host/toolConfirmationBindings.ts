@@ -74,7 +74,44 @@ export type ToolConfirmationHandler = (
   params: ToolConfirmationRequest,
 ) => Promise<ToolConfirmationResult>;
 
-/** Human or policy decision boundary for tool operations that require confirmation. */
+/** Model-independent preview used by the memory confirmation surface. */
+export interface MemoryMutationEntryPreview {
+  id: string;
+  scope: "user" | "project";
+  title: string;
+  summary: string;
+  detail: string;
+  revision: number;
+}
+
+export interface MemoryMutationConfirmationPayload {
+  type: "memory_mutation";
+  operation: "add" | "update" | "delete";
+  scope: "user" | "project";
+  id: string;
+  expectedRevision: number;
+  before?: MemoryMutationEntryPreview;
+  after?: MemoryMutationEntryPreview;
+  proposalSha256: string;
+  source: {
+    source: "agent_tool" | "slash_command";
+    sessionId?: string;
+    turnId?: string;
+  };
+}
+
+export type MemoryConfirmationResult =
+  | { action: "accept" }
+  | { action: "reject" }
+  | { action: "unavailable"; reason: string };
+
+export type MemoryConfirmationHandler = (
+  params: MemoryMutationConfirmationPayload,
+) => Promise<MemoryConfirmationResult>;
+
+/** Human or policy decision boundaries for operations that require confirmation. */
 export interface ToolConfirmationBindings {
   confirmTool: ToolConfirmationHandler;
+  /** Independent gate for persistent memory; auto/headless hosts must not accept it implicitly. */
+  requestMemoryConfirmation?: MemoryConfirmationHandler;
 }

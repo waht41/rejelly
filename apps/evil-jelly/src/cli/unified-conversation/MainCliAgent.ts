@@ -15,6 +15,11 @@ import {
 } from "@rejelly/core";
 import { createAuthorizedMcpBindingFactory } from "../../domains/mcp/management/chatAuthorization";
 import type { McpSessionControl } from "../../domains/mcp/management/sessionControl";
+import { memoryIdSchema } from "../../domains/memory/model/memorySchema";
+import {
+  MEMORY_RUNTIME_PROVIDER_KEY,
+  type SessionMemoryRuntime,
+} from "../../domains/memory/runtime/sessionMemoryRuntime";
 import type { SessionRecorder } from "../../domains/session/recorder/sessionRecorder";
 import {
   listSessions,
@@ -59,10 +64,12 @@ import {
   formatTokenUsageLine,
 } from "../conversation-display/session-summary/format";
 import { materializeSkillAwareUserInput } from "../message-composer/message-materialization/skillAwareUserMessage";
+import { memoryReferenceName } from "../message-composer/suggestions/semantic-reference/referenceNaming";
 import { withAbort } from "../runtime/withAbort";
 import { drainSteers } from "../submission-dispatch/steerQueue";
 import { combineSessionBudget } from "./budget";
 import { handleMcpCommand, isMcpLocalCommand } from "./mcpCommands";
+import { handleMemoryCommand, isMemoryLocalCommand } from "./memoryCommands";
 
 const UnifiedAgentWithAbort = UnifiedAgent.fork({ middlewares: [withAbort()] });
 
@@ -166,6 +173,7 @@ type RouterIntent =
   | { kind: "compress" }
   | { kind: "resume"; rawInput: string }
   | { kind: "mcp"; rawInput: string }
+  | { kind: "memory"; rawInput: string }
   | { kind: "message"; promptInput: PromptInput; userInput: string };
 
 interface RouterRuntime {
@@ -180,6 +188,7 @@ interface RouterRuntime {
   sessionMcpState: () => SessionMcpState;
   setSessionMcpState: (state: SessionMcpState) => void;
   mcpBindingFactory?: ConversationAgentProps["mcpBindingFactory"];
+  memoryRuntime?: SessionMemoryRuntime;
 }
 
 /** Short, session-local correlation ID with 96 bits of entropy and URL-safe characters. */
@@ -208,8 +217,11 @@ function classifyRouterIntent(promptInput: PromptInput): RouterIntent {
   if (normalized === "/resume" || normalized?.startsWith("/resume ")) {
     return { kind: "resume", rawInput: commandText! };
   }
+  if (commandText && isMemoryLocalCommand(commandText)) {
+    return { kind: "memory", rawInput: commandText };
+  }
   if (commandText && isMcpLocalCommand(commandText)) {
-    return { kind: "mcp", rawInput: commandText! };
+    return { kind: "mcp", rawInput: commandText };
   }
   return { kind: "message", promptInput, userInput: promptInputPlainText(promptInput).trim() };
 }
@@ -319,7 +331,39 @@ function materializePromptInput(
 ): Promise<ResolvedUserInputV1> {
   return materializeSkillAwareUserInput(input, runtime.skillSnapshot, {
     mcpResolution: (serverId) => {
-      return runtime.resolveMcpUserInput?.(serverId) ?? { status: "unavailable" };
+      return {
+        ...(runtime.resolveMcpUserInput?.(serverId) ?? { status: "unavailable" as const }),
+        referenceName: serverId,
+      };
+    },
+    memoryResolution: async (memoryId) => {
+      if (!runtime.memoryRuntime || !memoryIdSchema.safeParse(memoryId).success) {
+        return { status: "unavailable" };
+      }
+      try {
+        const result = await runtime.memoryRuntime.service.list({
+          scope: "all",
+          ids: [memoryId],
+          view: "detail",
+        });
+        const entry = result.entries[0];
+        return entry
+          ? {
+              status: "resolved",
+              scope: entry.scope,
+              revision: entry.revision,
+              title: entry.title,
+              summary: entry.summary,
+              detail: entry.detail,
+              referenceName: memoryReferenceName(
+                { memoryId: entry.id },
+                runtime.memoryRuntime.epoch.entries,
+              ),
+            }
+          : { status: "unavailable" };
+      } catch {
+        return { status: "unavailable" };
+      }
     },
   });
 }
@@ -364,6 +408,23 @@ async function handleResume(runtime: RouterRuntime, rawInput: string): Promise<b
     budget: runtime.currentBudget(),
   });
   return true;
+}
+
+async function handleMemory(runtime: RouterRuntime, rawInput: string): Promise<void> {
+  const memoryRuntime = runtime.memoryRuntime;
+  if (!memoryRuntime) {
+    runtime.host.logSystemEvent("Persistent memory is unavailable in this runtime.\n");
+    return;
+  }
+  await handleMemoryCommand(rawInput, {
+    service: memoryRuntime.service,
+    runtime: memoryRuntime,
+    sessionId: runtime.props.sessionId,
+    requestConfirmation: runtime.host.requestMemoryConfirmation,
+    requestMemoryManager: runtime.host.requestMemoryManager,
+    revealMemoryFile: runtime.host.revealMemoryFile,
+    logSystem: runtime.host.logSystemEvent,
+  });
 }
 
 async function handleMcp(runtime: RouterRuntime, rawInput: string): Promise<void> {
@@ -469,6 +530,7 @@ async function runConversationTurn(
         drainAndPrepareSteerMessages(runtime, activeTurnId!, turnMcpSelection),
       sessionBlobRoot: runtime.props.sessionBlobRoot,
       sessionRecorder: runtime.props.sessionRecorder,
+      sessionId: runtime.props.sessionId,
       turnId: activeTurnId,
       mcpBindingFactory,
     });
@@ -587,6 +649,9 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
       setHistory(next);
     };
 
+    const memoryRuntime = expectResource<SessionMemoryRuntime>(MEMORY_RUNTIME_PROVIDER_KEY, {
+      optional: true,
+    });
     const runtime: RouterRuntime = {
       props,
       host,
@@ -601,9 +666,18 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
       sessionMcpState: () => liveSessionMcpState,
       setSessionMcpState,
       mcpBindingFactory: props.mcpBindingFactory,
+      memoryRuntime,
     };
 
     try {
+      host.setAvailableMemories?.(
+        memoryRuntime?.epoch.entries.map((entry) => ({
+          id: entry.id,
+          scope: entry.scope,
+          title: entry.title,
+          summary: entry.summary,
+        })) ?? [],
+      );
       const lineInput = await host.getInput();
       const intent = classifyRouterIntent(lineInput);
       switch (intent.kind) {
@@ -630,6 +704,9 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
           return reborn();
         case "mcp":
           await handleMcp(runtime, intent.rawInput);
+          return reborn();
+        case "memory":
+          await handleMemory(runtime, intent.rawInput);
           return reborn();
         case "message":
           await runConversationTurn(runtime, intent.promptInput, intent.userInput);

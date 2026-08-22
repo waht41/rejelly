@@ -130,6 +130,52 @@ Legacy `.json` sessions remain visible. The first resume migrates a legacy sessi
 
 Session logs are stored under `~/.evil-jelly/sessions/<workspace-bucket>/`; image blobs are stored under `~/.evil-jelly/blobs/`. Evil Jelly does not yet provide session deletion, retention, or blob garbage collection. To remove all locally saved conversations, stop Evil Jelly and delete both directories. Deleting a single session log does not reclaim shared blobs.
 
+### Persistent memory
+
+Persistent Memory is a machine-local, cross-session store for facts and preferences that the user explicitly asks Evil Jelly to remember. It is separate from the current conversation, durable session state, and `@rejelly/core`'s invocation-local `equipMemory`.
+
+Memory has two scopes:
+
+- **Project memory** is the default for a request such as “remember that this repository uses pnpm”.
+- **User memory** is shared across workspaces and is used only when the user clearly requests a global preference.
+
+Each entry contains a stable ID, `title`, short self-contained `summary`, and `detail`, plus revision timestamps and provenance. The summary is injected into the model context as a small frozen catalog at session start and after successful compaction. Details and provenance are read progressively with `memory_read` when needed; normal tasks should not call that tool just to list memory. The injected catalog is intentionally frozen within an epoch, so a confirmed edit becomes live immediately but is picked up by the next session or compaction boundary.
+
+Typing `$` in the interactive composer also lists Memory references alongside Skills and MCP servers. A unique Memory title is displayed directly as `$<title>`; `user:` / `project:` is added only when Memory titles collide, and `memory:` is reserved for a collision with another reference kind. The semantic token stores only the stable Memory ID. At submission, Evil Jelly resolves that ID against the live store and freezes its current scope, revision, title, summary, and detail into this user turn; provenance and storage paths are not included. This explicit detail context does not modify the frozen Memory instruction or its prompt-cache prefix, and session resume replays the frozen revision without rereading the store. At most five unique Memories may be selected for one input; a deleted or unavailable selection is frozen as unavailable rather than silently using stale detail.
+
+The Agent has only two Memory tools:
+
+- `memory_read` reads the live catalog or selected details/provenance.
+- `memory_edit` proposes one add, update, or delete operation.
+
+Every mutation is shown as an independent confirmation with its exact scope and before/after content. Rejection, cancellation, unavailable confirmation, headless mode, and `--auto-accept` never write memory. Memory is not automatically inferred from ordinary conversation, session summaries, tool output, or code discoveries. Memory tool calls and their results remain visible in the tool transcript.
+
+In an interactive session, use the local commands below; they do not call the model or add messages to conversation history:
+
+```text
+/memory
+/memory show <id>
+/memory edit <id> title <new-title>
+/memory delete <id>
+```
+
+Bare `/memory` opens the live user/project catalog. Select an entry and press `O` to reveal its concrete scope file in the host file manager (for example, Explorer selects `projects/<project-id>/memory.json`). `/memory show` includes detail and provenance; edit and delete use the same confirmation and compare-and-swap rules as Agent proposals. There is no `/memory list` alias or `/memory add` command. New entries are created by explicitly asking the Agent to remember something.
+
+Memory is stored outside the workspace at:
+
+```text
+~/.evil-jelly/memory/
+├─ user.json
+└─ projects/
+   ├─ registry.json
+   └─ <project-id>/
+      └─ memory.json
+```
+
+Project identity is a local UUID registered on this machine. Git helps discover an initial project root and dynamically associate linked worktrees, but Git remotes, branches, `.git` presence, and worktree paths do not directly become the memory identity. Existing registered project boundaries win over later Git topology changes, and worktree aliases are not persisted.
+
+Memory is lower-priority context, not a rule or permission grant. Application safety rules and workspace `AGENTS.override.md` / `AGENTS.md` instructions override it, as does the current explicit user request; project memory is more specific than user memory. Memory files are local machine data and are not included in ordinary workspace file-tool paths. Deleting an entry (or the memory files) does not retroactively remove user messages, tool arguments, or other already-recorded content from session logs or Review traces.
+
 ### One-shot audits
 
 Run `evil audit --family <name>` to analyze a workspace without modifying it. Reports and their ledger are written to `.evil-jelly/audit/`.
@@ -153,6 +199,12 @@ evil audit --family doc-drift              # Validate docs against code
 evil audit --family doc-sync               # Compare bilingual docs
 evil audit --family fragmentation --only-actionable
 evil --review audit --family doc-drift     # Export a Review trace
+
+# Interactive local memory commands (inside an `evil` session)
+/memory
+/memory show <id>
+/memory edit <id> title <new-title>
+/memory delete <id>
 ```
 
 For repository development without a global link:
@@ -558,7 +610,7 @@ shared → services → tools → features → shell → cli (entrypoint)
 | **shell** | `shell/` | Top-level session orchestration; `MainCliAgent` directly drives `UnifiedAgent`. |
 | **cli** | `cli/` | Ink UI, `runHost`, configuration loading, and the current process's sole entrypoint. |
 
-`MainCliAgent` sends all interactive input directly to `UnifiedAgent`; there is no registry, top-level router, or `--intent`. Read-only and permission scopes are Agent modes/sandboxes, while specialists should be delegated subagents. One-shot audits bypass the interactive session and invoke `AuditAgent` from the `evil audit` subcommand.
+`MainCliAgent` routes local slash commands such as `/memory`, `/mcp`, `/resume`, and `/status` without a model call; ordinary messages are forwarded to `UnifiedAgent`. Read-only and permission scopes are Agent modes/sandboxes, while specialists should be delegated subagents. One-shot audits bypass the interactive session and invoke `AuditAgent` from the `evil audit` subcommand.
 
 `UnifiedAgent` in `features/unified/` handles conversation, explanation, search, implementation, bug fixes, refactoring, file creation, and ad hoc web search; the `cli/` layer does not write files directly. Writes require a displayed unified diff and `confirmWrite`; post-change verification is chosen by the Agent through `run_command`, not an automatic verification pipeline.
 

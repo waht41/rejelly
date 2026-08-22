@@ -23,6 +23,7 @@ import {
 import type { InteractiveRunControl } from "../entry/unified-run/interactive/runControl";
 import { createInteractiveShell } from "../interactive-shell/inkLifecycle";
 import { createInteractiveSubmission } from "../interactive-shell/submission";
+import { revealMemoryFileInExplorer } from "../memory-manager/openMemoryStore";
 import {
   resetComposerSession,
   useComposerSession,
@@ -36,6 +37,7 @@ import {
 import { resetSubmissionDispatch } from "../submission-dispatch/dispatcher";
 import { resetModeSession, useModeStore } from "../tool-approval/approvalModeStore";
 import { createToolApproval } from "../tool-approval/createToolApproval";
+import { createInkRequestMemoryConfirmation } from "./memoryConfirmation";
 
 function toDecisionView(view?: PromptChoiceView): DecisionView | undefined {
   if (view === undefined) {
@@ -70,6 +72,17 @@ function createInkRequestChoice(): PromptInputBindings["requestChoice"] {
       return selected;
     });
   };
+}
+
+function createInkRequestMemoryManager(): NonNullable<PromptInputBindings["requestMemoryManager"]> {
+  const decision = createOperatorDecision();
+  return async (request) =>
+    decision.run(async (session) => {
+      useOutputStore.getState().setPhase("awaiting_user", "Browsing persistent memory…");
+      const action = await session.requestMemoryManager(request);
+      useOutputStore.getState().resumeWork("Running…");
+      return action;
+    });
 }
 
 function createInkRequestMcpManager(): NonNullable<PromptInputBindings["requestMcpManager"]> {
@@ -166,15 +179,25 @@ function createPromptBindings(options: {
       getMode: () => useModeStore.getState().mode,
       decision,
     }),
+    requestMemoryConfirmation: createInkRequestMemoryConfirmation(),
     getAgentMode: () => useModeStore.getState().mode,
     requestChoice: createInkRequestChoice(),
     requestMcpManager: createInkRequestMcpManager(),
+    requestMemoryManager: createInkRequestMemoryManager(),
+    revealMemoryFile: async (scope) => {
+      await suspendInkForExternalProcess(() =>
+        revealMemoryFileInExplorer({ scope, workspaceRoot: getWorkspaceFsPolicy().getRoot() }),
+      );
+    },
     dismissMcpManager: () => useDecisionStore.getState().submitMcpManager({ action: "refresh" }),
     setAvailableSkills: (skills) => {
       useComposerSession.getState().setAvailableSkills(skills);
     },
     setAvailableMcpServers: (servers) => {
       useComposerSession.getState().setAvailableMcpServers(servers);
+    },
+    setAvailableMemories: (memories) => {
+      useComposerSession.getState().setAvailableMemories(memories);
     },
   };
 }

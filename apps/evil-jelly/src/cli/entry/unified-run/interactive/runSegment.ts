@@ -3,6 +3,10 @@
 import { type AgentSnapshot, isAbortError, type Message, type ModelAdapter } from "@rejelly/core";
 import type { ReviewOptions } from "@rejelly/core/debugger";
 import type { McpSessionControl } from "../../../../domains/mcp/management/sessionControl";
+import {
+  MEMORY_RUNTIME_PROVIDER_KEY,
+  type SessionMemoryRuntime,
+} from "../../../../domains/memory/runtime/sessionMemoryRuntime";
 import { LazySessionRecorder } from "../../../../domains/session/recorder/lazySessionRecorder";
 import {
   openSessionRecorder,
@@ -60,6 +64,8 @@ export interface RunEvilJellyHostOptions {
   mcpSessionControl?: McpSessionControl;
   /** Borrowed process-lifetime loose Skill snapshot, reused across run segments. */
   skillSnapshot?: SkillRuntimeSnapshot;
+  /** Session-scoped persistent-memory runtime; rebuilt at each logical session boundary. */
+  memoryRuntime?: SessionMemoryRuntime;
   /**
    * Source trace id when this run replays a mock model (--mock). Tagged onto trace
    * attributes so devtool can tell mock replays (no real LLM calls, zero tokens) apart.
@@ -173,6 +179,7 @@ export async function runEvilJellyHost(
   const providers = {
     ...(options.mcpProviders ?? {}),
     ...(options.skillSnapshot ? { [SKILL_RUNTIME_PROVIDER_KEY]: options.skillSnapshot } : {}),
+    ...(options.memoryRuntime ? { [MEMORY_RUNTIME_PROVIDER_KEY]: options.memoryRuntime } : {}),
   };
   // One traceId per run segment. A logical session may span several of these across resumes;
   // session.id (below) is what groups them in devtool.

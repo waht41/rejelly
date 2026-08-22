@@ -3,7 +3,7 @@ import { createElement } from "react";
 import stripAnsi from "strip-ansi";
 import { describe, expect, it, vi } from "vitest";
 import type { UserSkillListItem } from "../../../../shared/host/inputBindings";
-import { SkillPickerOverlay } from "./SkillPickerOverlay";
+import { ReferencePickerOverlay } from "./ReferencePickerOverlay";
 
 const items: UserSkillListItem[] = [
   {
@@ -21,14 +21,18 @@ const items: UserSkillListItem[] = [
 ];
 const references = items.map((skill) => ({ kind: "skill" as const, skill }));
 
-describe("SkillPickerOverlay", () => {
+describe("ReferencePickerOverlay", () => {
   it("renders aligned title, type, and description columns", () => {
     const output = stripAnsi(
       renderToString(
-        createElement(SkillPickerOverlay, {
+        createElement(ReferencePickerOverlay, {
           items: references,
           getReferenceName: (item) =>
-            item.kind === "skill" ? item.skill.name : item.server.serverId,
+            item.kind === "skill"
+              ? item.skill.name
+              : item.kind === "mcp"
+                ? item.server.serverId
+                : item.memory.title,
           onSelect: vi.fn(),
           onCancel: vi.fn(),
         }),
@@ -48,10 +52,14 @@ describe("SkillPickerOverlay", () => {
   it("keeps each item on one row and truncates descriptions to the remaining width", () => {
     const output = stripAnsi(
       renderToString(
-        createElement(SkillPickerOverlay, {
+        createElement(ReferencePickerOverlay, {
           items: references,
           getReferenceName: (item) =>
-            item.kind === "skill" ? item.skill.name : item.server.serverId,
+            item.kind === "skill"
+              ? item.skill.name
+              : item.kind === "mcp"
+                ? item.server.serverId
+                : item.memory.title,
           onSelect: vi.fn(),
           onCancel: vi.fn(),
         }),
@@ -82,10 +90,14 @@ describe("SkillPickerOverlay", () => {
     ];
     const output = stripAnsi(
       renderToString(
-        createElement(SkillPickerOverlay, {
+        createElement(ReferencePickerOverlay, {
           items: duplicateItems.map((skill) => ({ kind: "skill" as const, skill })),
           getReferenceName: (item) =>
-            item.kind === "skill" ? item.skill.qualifiedName : item.server.serverId,
+            item.kind === "skill"
+              ? item.skill.qualifiedName
+              : item.kind === "mcp"
+                ? item.server.serverId
+                : item.memory.title,
           onSelect: vi.fn(),
           onCancel: vi.fn(),
         }),
@@ -100,7 +112,7 @@ describe("SkillPickerOverlay", () => {
   it("renders MCP references in the shared dollar picker", () => {
     const output = stripAnsi(
       renderToString(
-        createElement(SkillPickerOverlay, {
+        createElement(ReferencePickerOverlay, {
           items: [{ kind: "mcp", server: { serverId: "docs" } }],
           getReferenceName: () => "docs",
           onSelect: vi.fn(),
@@ -112,5 +124,33 @@ describe("SkillPickerOverlay", () => {
 
     expect(output).toContain("▸ $docs");
     expect(output).toContain("[MCP] MCP server docs");
+  });
+
+  it("renders Memory references with scope and summary", () => {
+    const output = stripAnsi(
+      renderToString(
+        createElement(ReferencePickerOverlay, {
+          items: [
+            {
+              kind: "memory",
+              memory: {
+                id: "mem_afe761ca-6383-43e6-8429-445362848d0c",
+                scope: "project",
+                title: "Squash message",
+                summary: "Use the PR description as the squash message.",
+              },
+            },
+          ],
+          getReferenceName: () => "Squash message",
+          onSelect: vi.fn(),
+          onCancel: vi.fn(),
+        }),
+        { columns: 100 },
+      ),
+    );
+
+    expect(output).toContain("▸ $Squash message");
+    expect(output).toContain("[Memory] Use the PR description");
+    expect(output).not.toContain("[project]");
   });
 });

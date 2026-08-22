@@ -20,6 +20,7 @@ import { ToolTranscriptOverlay } from "../conversation-display/tool-transcript/T
 import { useToolTranscriptViewStore } from "../conversation-display/tool-transcript/viewStore";
 import { useOutputStore } from "../conversation-display/useOutputStore";
 import { McpManagerPrompt } from "../mcp-manager/McpManagerPrompt";
+import { MemoryManagerPrompt } from "../memory-manager/MemoryManagerPrompt";
 import { MessageComposer } from "../message-composer/MessageComposer";
 import { useComposerSession } from "../message-composer/session/composerSession";
 import { ActionMenuPrompt } from "../operator-decision/ActionMenuPrompt";
@@ -114,6 +115,7 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
   const submitChoice = useDecisionStore((state) => state.submitChoice);
   const cancelChoice = useDecisionStore((state) => state.cancelChoice);
   const submitMcpManager = useDecisionStore((state) => state.submitMcpManager);
+  const submitMemoryManager = useDecisionStore((state) => state.submitMemoryManager);
   const [queuedSteers, setQueuedSteers] = useState<PromptInput[]>(() => getQueuedSteers());
 
   // Ink's <Static> counts flushed items in instance state, so its items array must only grow
@@ -204,6 +206,8 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
                 onAction={submitMcpManager}
                 copyText={copyTextToClipboard}
               />
+            ) : decision.type === "memory_manager" ? (
+              <MemoryManagerPrompt request={decision.request} onAction={submitMemoryManager} />
             ) : decision.type === "confirm" ? (
               <ConfirmPrompt message={decision.message} defaultYes={decision.defaultYes} />
             ) : decision.type === "choice" ? (

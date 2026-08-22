@@ -12,7 +12,7 @@
  * @-trigger: typing @ opens a fuzzy file picker; selecting a file inserts an
  * semantic file token at the caret and adds its path to this turn.
  *
- * $-trigger: typing $ opens the Skill/MCP reference picker; selecting one inserts a semantic
+ * $-trigger: typing $ opens the Skill/MCP/Memory reference picker; selecting one inserts a semantic
  * token whose display name is qualified only when the combined catalog is ambiguous.
  *
  * Clipboard image: Alt+V (or Ctrl+V, which arrives as garbage bytes and is
@@ -29,7 +29,10 @@
 
 import { Box, Text, useStdout } from "ink";
 import { useEffect, useRef, useState } from "react";
-import { promptDocumentCommandText } from "../../shared/model/prompt/promptDocument";
+import {
+  MAX_EXPLICIT_MEMORY_REFERENCES,
+  promptDocumentCommandText,
+} from "../../shared/model/prompt/promptDocument";
 import { BufferView } from "./editor/BufferView";
 import { useLineKeybindings } from "./editor/keyboard/useLineKeybindings";
 import { usePromptLayout } from "./editor/usePromptLayout";
@@ -40,9 +43,10 @@ import { useCommandSuggestion } from "./suggestions/commands/useCommandSuggestio
 import { useFileReferenceSuggestion } from "./suggestions/file-reference/useFileReferenceSuggestion";
 import {
   mcpReferenceName,
+  memoryReferenceName,
   selectedSkillReferenceName,
-} from "./suggestions/skill-reference/skillTrigger";
-import { useSkillReferenceSuggestion } from "./suggestions/skill-reference/useSkillReferenceSuggestion";
+} from "./suggestions/semantic-reference/referenceNaming";
+import { useReferenceSuggestion } from "./suggestions/semantic-reference/useReferenceSuggestion";
 import { useComposerDraft } from "./useComposerDraft";
 
 const MIN_SUGGESTION_ROWS = 5;
@@ -80,8 +84,10 @@ export function MessageComposer({
     selectedFiles,
     selectedSkills,
     selectedMcpServers,
+    selectedMemories,
     availableSkills,
     availableMcpServers,
+    availableMemories,
   } = draft;
   // Key-claim slot shared with whichever picker overlay is mounted: the picker
   // publishes its handler here and the line keybindings offer it each key first.
@@ -125,12 +131,15 @@ export function MessageComposer({
     buffer: buf,
     attachFile: draft.attachFile,
   });
-  const skillSuggestion = useSkillReferenceSuggestion({
+  const referenceSuggestion = useReferenceSuggestion({
     buffer: buf,
     availableSkills,
     availableMcpServers,
+    availableMemories,
     selectedSkills,
+    selectedMemories,
     maxSelectedSkills: MAX_SELECTED_SKILLS,
+    maxSelectedMemories: MAX_EXPLICIT_MEMORY_REFERENCES,
     onNotice,
   });
 
@@ -213,6 +222,20 @@ export function MessageComposer({
       </Box>
     ) : null;
 
+  const selectedMemoryList =
+    selectedMemories.length > 0 ? (
+      <Box flexDirection="column" marginBottom={1}>
+        {selectedMemories.map((memory) => (
+          <Box key={memory.memoryId} flexDirection="row">
+            <Text color="yellow">$ </Text>
+            <Text>
+              {memoryReferenceName(memory, availableMemories, availableSkills, availableMcpServers)}
+            </Text>
+          </Box>
+        ))}
+      </Box>
+    ) : null;
+
   const promptChromeRows = 4;
   // Rough budget for how tall the picker may grow — the rows the prompt itself
   // eats. Sizing only; the caret no longer depends on this estimate.
@@ -220,6 +243,7 @@ export function MessageComposer({
     (selectedFiles.length > 0 ? selectedFiles.length + 1 : 0) +
     (selectedSkills.length > 0 ? selectedSkills.length + 1 : 0) +
     (selectedMcpServers.length > 0 ? selectedMcpServers.length + 1 : 0) +
+    (selectedMemories.length > 0 ? selectedMemories.length + 1 : 0) +
     promptLayout.rows.length;
   const suggestionVisibleRows = Math.min(
     MAX_SUGGESTION_ROWS,
@@ -231,6 +255,7 @@ export function MessageComposer({
       {selectedAttachmentList}
       {selectedSkillList}
       {selectedMcpList}
+      {selectedMemoryList}
       <BufferView
         rowRef={promptLayout.rowRef}
         label={label}
@@ -257,10 +282,11 @@ export function MessageComposer({
       ) : null}
       <ComposerSuggestionOverlay
         command={commandSuggestion}
-        skill={skillSuggestion}
+        reference={referenceSuggestion}
         file={fileSuggestion}
         availableSkills={availableSkills}
         availableMcpServers={availableMcpServers}
+        availableMemories={availableMemories}
         visibleRows={suggestionVisibleRows}
         keySink={overlayKeysRef}
       />

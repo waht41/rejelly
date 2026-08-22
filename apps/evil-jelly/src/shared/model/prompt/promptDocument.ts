@@ -40,12 +40,21 @@ export interface McpPromptToken {
   readonly serverId: string;
 }
 
+export interface MemoryPromptToken {
+  readonly type: "token";
+  readonly kind: "memory";
+  readonly memoryId: string;
+}
+
+export const MAX_EXPLICIT_MEMORY_REFERENCES = 5;
+
 export type PromptToken =
   | SkillPromptToken
   | PastePromptToken
   | FilePromptToken
   | ImagePromptToken
-  | McpPromptToken;
+  | McpPromptToken
+  | MemoryPromptToken;
 export type PromptNode = PromptTextNode | PromptToken;
 export type PromptDocument = readonly PromptNode[];
 

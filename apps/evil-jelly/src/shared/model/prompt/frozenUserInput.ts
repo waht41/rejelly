@@ -22,6 +22,7 @@ export type ResolvedUserInputNodeV1 =
   | {
       readonly kind: "skill";
       readonly qualifiedName: string;
+      readonly referenceName?: string;
       readonly status: "resolved" | "unavailable";
       readonly context?: string;
     }
@@ -44,8 +45,20 @@ export type ResolvedUserInputNodeV1 =
   | {
       readonly kind: "mcp";
       readonly serverId: string;
+      readonly referenceName?: string;
       readonly status: "selected" | "unavailable" | "disabled" | "untrusted";
       readonly configFingerprint?: string;
+    }
+  | {
+      readonly kind: "memory";
+      readonly memoryId: string;
+      readonly referenceName?: string;
+      readonly status: "resolved" | "unavailable";
+      readonly scope?: "user" | "project";
+      readonly revision?: number;
+      readonly title?: string;
+      readonly summary?: string;
+      readonly detail?: string;
     };
 
 /** Transient resolver output. It is consumed by commit and never stored or used as a projection source. */
@@ -102,6 +115,47 @@ function resolvedSkillContext(input: FrozenResolvedUserInputV1): string {
     : "";
 }
 
+function resolvedMemoryContext(input: FrozenResolvedUserInputV1): string {
+  const seen = new Set<string>();
+  const contexts: string[] = [];
+  for (const node of input.nodes) {
+    if (node.kind !== "memory" || seen.has(node.memoryId)) continue;
+    seen.add(node.memoryId);
+    if (
+      node.status !== "resolved" ||
+      !node.scope ||
+      node.revision === undefined ||
+      !node.title ||
+      !node.summary ||
+      !node.detail
+    ) {
+      contexts.push(
+        renderPseudoXmlEmptyElement("memory_reference", {
+          id: node.memoryId,
+          status: "unavailable",
+        }),
+      );
+      continue;
+    }
+    contexts.push(
+      renderPseudoXmlElement(
+        "memory_reference",
+        `Title: ${node.title}\nSummary: ${node.summary}\nDetail:\n${node.detail}`,
+        {
+          id: node.memoryId,
+          scope: node.scope,
+          revision: String(node.revision),
+        },
+      ),
+    );
+  }
+  return contexts.length > 0
+    ? renderPseudoXmlElement("explicit_memories", contexts.join("\n"), {
+        count: String(contexts.length),
+      })
+    : "";
+}
+
 export function projectFrozenUserInputMessage(input: FrozenUserInputV1): Message {
   if (input.kind === "legacy") return input.message;
 
@@ -141,11 +195,16 @@ export function projectFrozenUserInputMessage(input: FrozenUserInputV1): Message
           status: node.status,
         });
         break;
+      case "memory":
+        modelText += `$memory:${node.memoryId}`;
+        break;
     }
   }
 
   const skillContext = resolvedSkillContext(input);
   if (skillContext) modelText += `${modelText ? "\n\n" : ""}${skillContext}`;
+  const memoryContext = resolvedMemoryContext(input);
+  if (memoryContext) modelText += `${modelText ? "\n\n" : ""}${memoryContext}`;
   if (imageIndex > 0) flushText();
   return { role: "user", content: imageIndex > 0 ? contentParts : modelText };
 }
@@ -167,7 +226,7 @@ export function projectFrozenUserInputDisplay(input: FrozenUserInputV1): UserInp
         text += node.text;
         break;
       case "skill":
-        text += `$${node.qualifiedName}`;
+        text += `$skill:${node.referenceName ?? node.qualifiedName}`;
         break;
       case "file":
         text += `@${node.path}`;
@@ -187,7 +246,13 @@ export function projectFrozenUserInputDisplay(input: FrozenUserInputV1): UserInp
         break;
       }
       case "mcp":
-        text += `$mcp:${node.serverId}`;
+        text += `$mcp:${node.referenceName ?? node.serverId}`;
+        break;
+      case "memory":
+        text += `$memory:${
+          node.referenceName ??
+          (node.status === "resolved" && node.title ? node.title : node.memoryId)
+        }`;
         break;
     }
   }

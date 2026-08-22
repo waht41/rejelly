@@ -14,6 +14,14 @@ export interface UserMcpListItem {
   serverId: string;
 }
 
+/** Path- and provenance-free Memory metadata exposed to the semantic `$` reference picker. */
+export interface UserMemoryListItem {
+  id: string;
+  scope: "user" | "project";
+  title: string;
+  summary: string;
+}
+
 /** One row in a driver-provided action menu (hotkey plus arbitrary value). */
 export interface PromptChoiceOption {
   key: string;
@@ -34,6 +42,33 @@ export interface PromptChoiceRequest {
   /** Option value resolved when the operator presses Esc; omit to make the choice non-cancelable. */
   cancelValue?: string;
 }
+
+export interface MemoryManagerEntry {
+  id: string;
+  scope: "user" | "project";
+  title: string;
+  summary: string;
+  detail: string;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+  provenance: string;
+  injectedStatus?: "current" | "pending_next_epoch" | "removed_next_epoch";
+}
+
+export interface MemoryManagerRequest {
+  entries: MemoryManagerEntry[];
+  selectedId?: string;
+  detail?: MemoryManagerEntry;
+  diagnostic?: string;
+  message?: string;
+  canRevealFile: boolean;
+}
+
+export type MemoryManagerAction =
+  | { action: "close" }
+  | { action: "back" | "refresh" }
+  | { action: "detail" | "delete" | "reveal_file"; id: string };
 
 export interface McpManagerRow {
   serverId: string;
@@ -95,9 +130,14 @@ export interface PromptInputBindings {
   getInput: () => Promise<PromptInput>;
   setAvailableSkills?: (skills: UserSkillListItem[]) => void;
   setAvailableMcpServers?: (servers: UserMcpListItem[]) => void;
+  setAvailableMemories?: (memories: UserMemoryListItem[]) => void;
   requestChoice: (request: PromptChoiceRequest) => Promise<string>;
   /** Rich interactive MCP manager; non-Ink hosts may omit it and use the choice fallback. */
   requestMcpManager?: (request: McpManagerRequest) => Promise<McpManagerAction>;
+  /** Human-only persistent memory browser; never exposed as an Agent tool. */
+  requestMemoryManager?: (request: MemoryManagerRequest) => Promise<MemoryManagerAction>;
+  /** Reveals the application-owned file for one memory scope in the host file manager. */
+  revealMemoryFile?: (scope: "user" | "project") => Promise<void>;
   /** Resolves an active MCP manager request after an asynchronous refresh completes. */
   dismissMcpManager?: () => void;
 }

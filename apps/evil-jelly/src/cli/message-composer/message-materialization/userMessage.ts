@@ -153,11 +153,36 @@ export interface UserMessageMaterializationOptions {
   skillResolution?: (qualifiedName: string) => {
     status: "resolved" | "unavailable";
     context?: string;
+    referenceName?: string;
   };
   mcpResolution?: (serverId: string) => {
     status: "selected" | "unavailable" | "disabled" | "untrusted";
     configFingerprint?: string;
+    referenceName?: string;
   };
+  memoryResolution?: (memoryId: string) =>
+    | {
+        status: "resolved";
+        scope: "user" | "project";
+        revision: number;
+        title: string;
+        summary: string;
+        detail: string;
+        referenceName?: string;
+      }
+    | { status: "unavailable" }
+    | Promise<
+        | {
+            status: "resolved";
+            scope: "user" | "project";
+            revision: number;
+            title: string;
+            summary: string;
+            detail: string;
+            referenceName?: string;
+          }
+        | { status: "unavailable" }
+      >;
 }
 
 /** Compile PromptInput once, in document order, without parsing any display projection. */
@@ -171,6 +196,21 @@ export async function materializeUserInput(
   const fileBudget: FileMaterializationBudget = { totalBytes: 0 };
   const fileCache = new Map<string, Promise<MaterializedFile>>();
   const imageCache = new Map<string, Promise<MaterializedImage>>();
+  const memoryCache = new Map<
+    string,
+    Promise<
+      | {
+          status: "resolved";
+          scope: "user" | "project";
+          revision: number;
+          title: string;
+          summary: string;
+          detail: string;
+          referenceName?: string;
+        }
+      | { status: "unavailable" }
+    >
+  >();
 
   for (const node of input.document) {
     if (node.type === "text") {
@@ -199,6 +239,17 @@ export async function materializeUserInput(
         status: "unavailable" as const,
       };
       nodes.push({ kind: "mcp", serverId: node.serverId, ...resolution });
+      continue;
+    }
+    if (node.kind === "memory") {
+      let pending = memoryCache.get(node.memoryId);
+      if (!pending) {
+        pending = Promise.resolve(
+          options.memoryResolution?.(node.memoryId) ?? { status: "unavailable" as const },
+        );
+        memoryCache.set(node.memoryId, pending);
+      }
+      nodes.push({ kind: "memory", memoryId: node.memoryId, ...(await pending) });
       continue;
     }
 

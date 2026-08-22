@@ -27,6 +27,45 @@ describe("tool observation projection", () => {
     expect(projected.args).not.toContain("first\\nsecond\\nthird");
   });
 
+  it("projects memory tool operations", () => {
+    expect(
+      projectToolStart(context("memory_read", { scope: "all", view: "catalog" })).summary,
+    ).toBe("[Tools] memory_read → all/catalog");
+    expect(
+      projectToolStart(
+        context("memory_read", {
+          scope: "project",
+          view: "detail",
+          ids: ["mem_00000000-0000-4000-8000-000000000001"],
+        }),
+      ).summary,
+    ).toBe("[Tools] memory_read → project/detail (1 ids)");
+
+    const add = projectToolStart(
+      context("memory_edit", {
+        change: {
+          kind: "add",
+          title: "Title",
+          summary: "Summary",
+          detail: "Sensitive detail",
+        },
+      }),
+    );
+    expect(add.summary).toBe("[Tools] memory_edit → add/project");
+    expect(add.args).toContain('"detail": "Sensitive detail"');
+
+    expect(
+      projectToolStart(
+        context("memory_edit", {
+          change: {
+            kind: "delete",
+            id: "mem_00000000-0000-4000-8000-000000000001",
+          },
+        }),
+      ).summary,
+    ).toBe("[Tools] memory_edit → delete/mem_00000000-0000-4000-8000-000000000001");
+  });
+
   it("projects MCP gateway queries and structured tool identities", () => {
     expect(
       projectToolStart(context("mcp_reference", { query: "typescript references" })).summary,
@@ -41,6 +80,13 @@ describe("tool observation projection", () => {
         }),
       ).summary,
     ).toBe("[Tools] mcp_call → typescript/get_references");
+  });
+
+  it("keeps memory detail in observed results", () => {
+    const result = stringifyToolResult({
+      entries: [{ id: "mem_1", detail: "Sensitive persisted detail" }],
+    });
+    expect(result).toContain('"detail": "Sensitive persisted detail"');
   });
 
   it("serializes results and bounds their preview", () => {

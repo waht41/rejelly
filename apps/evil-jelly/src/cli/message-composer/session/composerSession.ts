@@ -2,12 +2,17 @@
 
 import { create } from "zustand";
 import { SKILL_AGENT_LIMITS } from "../../../domains/skills/agent/limits";
-import type { UserMcpListItem, UserSkillListItem } from "../../../shared/host/inputBindings";
+import type {
+  UserMcpListItem,
+  UserMemoryListItem,
+  UserSkillListItem,
+} from "../../../shared/host/inputBindings";
 import { releasePromptResources } from "../../../shared/host/promptResourceLifecycle";
 import { copyPromptInput, type PromptInput } from "../../../shared/model/prompt/promptInput";
 
 export type SkillPickerItem = UserSkillListItem;
 export type McpPickerItem = UserMcpListItem;
+export type MemoryPickerItem = UserMemoryListItem;
 export const MAX_SELECTED_SKILLS = SKILL_AGENT_LIMITS.explicitSkillsPerTurn;
 
 export type DraftSeed = { id: number; value: PromptInput };
@@ -16,12 +21,14 @@ let draftSeedId = 0;
 interface ComposerSessionState {
   availableSkills: SkillPickerItem[];
   availableMcpServers: McpPickerItem[];
+  availableMemories: MemoryPickerItem[];
   draftSeed: DraftSeed | null;
   backgroundLineHandler: ((value: PromptInput) => void) | null;
 
   submitLine: (value: PromptInput) => void;
   setAvailableSkills: (skills: SkillPickerItem[]) => void;
   setAvailableMcpServers: (servers: McpPickerItem[]) => void;
+  setAvailableMemories: (memories: MemoryPickerItem[]) => void;
   seedDraft: (value: PromptInput) => void;
   clearDraftSeed: (id: number) => void;
   setBackgroundLineHandler: (handler: ((value: PromptInput) => void) | null) => void;
@@ -30,6 +37,7 @@ interface ComposerSessionState {
 export const useComposerSession = create<ComposerSessionState>((set, get) => ({
   availableSkills: [],
   availableMcpServers: [],
+  availableMemories: [],
   draftSeed: null,
   backgroundLineHandler: null,
 
@@ -44,6 +52,15 @@ export const useComposerSession = create<ComposerSessionState>((set, get) => ({
     set({
       availableMcpServers: [...servers].sort((left, right) =>
         left.serverId.localeCompare(right.serverId, "en"),
+      ),
+    }),
+  setAvailableMemories: (memories) =>
+    set({
+      availableMemories: [...memories].sort(
+        (left, right) =>
+          (left.scope === right.scope ? 0 : left.scope === "user" ? -1 : 1) ||
+          left.title.localeCompare(right.title) ||
+          left.id.localeCompare(right.id),
       ),
     }),
   seedDraft: (value) => {
@@ -67,6 +84,7 @@ export function resetComposerSession(): void {
   useComposerSession.setState({
     availableSkills: [],
     availableMcpServers: [],
+    availableMemories: [],
     draftSeed: null,
     backgroundLineHandler: null,
   });

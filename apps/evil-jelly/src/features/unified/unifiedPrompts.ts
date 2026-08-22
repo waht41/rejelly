@@ -59,6 +59,9 @@ export function buildUnifiedSystemPrompt(options?: {
   builder.addBlock(
     "For casual or conceptual questions, answer without tools when you already have enough context. For workspace questions, locate files using list_directory / fuzzy_search_paths / grep / ast_document_symbols.",
   );
+  builder.addBlock(
+    "Persistent memory is exposed only through memory_read and memory_edit. The default memory catalog is already injected into the task context; do not routinely call memory_read. Call memory_read only when the user explicitly asks to inspect or refresh memory, or to read selected details. Use memory_edit only for an explicit remember/add/edit/delete request. Memory edits are proposals and require an independent user confirmation; never claim success before confirmation and never bypass these tools or write memory files directly. New memories default to project scope; use user scope only when the user clearly requests a global preference.",
+  );
   builder.addList(
     [
       "When asked to introduce, explain, or summarize a module/project at a high level, prioritize README.md, package.json descriptions, and docs/ before source code.",

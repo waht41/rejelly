@@ -12,6 +12,8 @@ interface ConversationAgentBaseProps {
   replySurface?: UserReplySurface;
   /** Awaited durable message sink for the current top-level turn. */
   sessionRecorder?: SessionMessageSink;
+  /** Durable session id shared by all turns in the current conversation. */
+  sessionId?: string;
   /** Stable id shared by the initial input, steers, model rounds, and tool results. */
   turnId?: string;
   /** Captures one immutable MCP route/catalog view at each model dispatch boundary. */

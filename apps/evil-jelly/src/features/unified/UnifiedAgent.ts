@@ -10,6 +10,7 @@ import {
   equipMemory,
   equipSystem,
   equipTool,
+  expectResource,
   isAbortError,
   isToolLoopExceededError,
   type ToolDefinition,
@@ -25,6 +26,11 @@ import {
   createUnavailableMcpDispatch,
   type McpDispatchBindingFactory,
 } from "../../domains/mcp/gateway/dispatch";
+import { equipMemoryKit } from "../../domains/memory/agent/memoryTools";
+import {
+  MEMORY_RUNTIME_PROVIDER_KEY,
+  type SessionMemoryRuntime,
+} from "../../domains/memory/runtime/sessionMemoryRuntime";
 import { promptChatResilient } from "../../domains/policy/promptChatResilient";
 import { promptCompactHistory } from "../../domains/policy/promptCompactHistory";
 import { materializeMessageHistory } from "../../domains/session/repository/sessionMessageMaterializer";
@@ -59,8 +65,11 @@ import { useArtifact } from "./useArtifact";
  */
 const UNIFIED_MAX_TURN_STEPS = 500;
 
-async function useUnifiedTools(): Promise<void> {
-  const { confirmTool } = getBinding();
+async function useUnifiedTools(props: ConversationAgentProps): Promise<void> {
+  const { confirmTool, requestMemoryConfirmation } = getBinding();
+  const memoryRuntime = expectResource<SessionMemoryRuntime>(MEMORY_RUNTIME_PROVIDER_KEY, {
+    optional: true,
+  });
   const editTool = augmentTool(createEditFileTool(confirmTool), [evilJellyToolLoggerMiddleware]);
   const createTool = augmentTool(createCreateFileTool(confirmTool), [
     evilJellyToolLoggerMiddleware,
@@ -75,6 +84,18 @@ async function useUnifiedTools(): Promise<void> {
   // may be equipped on UnifiedAgent; the standalone research agent stays the fan-out-ready unit.
   equipWebResearchKit();
   useArtifact();
+  if (memoryRuntime) {
+    equipMemoryKit({
+      service: memoryRuntime.service,
+      runtime: memoryRuntime,
+      source: {
+        source: "agent_tool",
+        ...(props.sessionId ? { sessionId: props.sessionId } : {}),
+        ...(props.turnId ? { turnId: props.turnId } : {}),
+      },
+      requestConfirmation: requestMemoryConfirmation,
+    });
+  }
 
   equipTool(editTool);
   equipTool(createTool);
@@ -99,6 +120,9 @@ async function toolsForMcpDispatch(
 }
 
 async function useUnifiedPrompts(props: ConversationAgentProps): Promise<void> {
+  const memoryRuntime = expectResource<SessionMemoryRuntime>(MEMORY_RUNTIME_PROVIDER_KEY, {
+    optional: true,
+  });
   const [artifacts] = equipMemory<Record<string, string>>(UNIFIED_TOOL_ARTIFACTS_KEY, {});
   const artifactSummary = formatArtifactSummaryForInstruction(artifacts);
   const workspaceRuleBlock = await buildWorkspaceRuleInstructionBlock();
@@ -110,6 +134,9 @@ async function useUnifiedPrompts(props: ConversationAgentProps): Promise<void> {
     }),
   );
   equipInstruction(buildUnifiedInstruction({ artifactSummary }));
+  if (memoryRuntime?.epoch.instruction) {
+    equipInstruction(memoryRuntime.epoch.instruction);
+  }
 }
 
 /**
@@ -120,6 +147,7 @@ async function useUnifiedPrompts(props: ConversationAgentProps): Promise<void> {
  */
 async function runManualCompression(
   props: ConversationAgentProps,
+  memoryRuntime?: SessionMemoryRuntime,
 ): Promise<ConversationAgentResult> {
   try {
     // Summarize the persisted history only: the synthetic "/compress" user turn must not be
@@ -130,7 +158,7 @@ async function runManualCompression(
     );
     const compactHistory = await promptCompactHistory({
       message: history,
-      compaction: buildAutoCompactionConfig(),
+      compaction: buildAutoCompactionConfig(memoryRuntime),
     });
     return compactHistory
       ? { reply: "", compactHistory }
@@ -147,14 +175,17 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
   id: "evil_jelly_unified_agent",
   maxTurnSteps: UNIFIED_MAX_TURN_STEPS,
   handler: async (props) => {
-    await useUnifiedTools();
+    const memoryRuntime = expectResource<SessionMemoryRuntime>(MEMORY_RUNTIME_PROVIDER_KEY, {
+      optional: true,
+    });
+    await useUnifiedTools(props);
     await useUnifiedPrompts(props);
     equipMcpCatalog();
     equipSkillKit();
     useStandardStreaming({ textMode: "plain" });
 
     if (props.operation === "compress") {
-      return runManualCompression(props);
+      return runManualCompression(props, memoryRuntime);
     }
 
     try {
@@ -166,7 +197,7 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
         message: messages,
         pendingUserMessages: props.pendingUserMessages,
         toolsForDispatch: (baseTools) => toolsForMcpDispatch(baseTools, props.mcpBindingFactory),
-        compaction: buildAutoCompactionConfig(),
+        compaction: buildAutoCompactionConfig(memoryRuntime),
         sessionRecorder: props.sessionRecorder,
         turnId: props.turnId,
       });
