@@ -122,7 +122,7 @@ export function buildUnifiedInstruction(params: { artifactSummary: string }): st
   const currentOs = `${platform()} ${release()} (${arch()})`;
   const shellNote =
     process.platform === "win32"
-      ? `${getShellPath()} (cmd.exe syntax; POSIX tools like head/tail/xargs are unavailable — avoid Unix-style pipes)`
+      ? `${getShellPath()} (PowerShell syntax; use semicolons instead of cmd.exe && chaining, and do not assume POSIX utilities are installed)`
       : getShellPath();
   const builder = new PromptBuilder();
   builder.addBlock(

@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { executeShellCommand, getShellEnvironmentSummary } from "./executeShellCommand";
 
 function makeNodeCommand(jsCode: string): string {
+  if (process.platform === "win32") {
+    const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
+    return `& ${quote(process.execPath)} -e ${quote(jsCode)}`;
+  }
   return `${JSON.stringify(process.execPath)} -e ${JSON.stringify(jsCode)}`;
 }
 
@@ -10,6 +14,24 @@ describe("executeShellCommand", () => {
     const summary = getShellEnvironmentSummary();
     expect(summary).toContain(process.platform);
     expect(summary).toContain("shell=");
+    if (process.platform === "win32") {
+      expect(summary).toContain("powershell.exe");
+    }
+  });
+
+  it("preserves literal newlines inside one Windows command argument", async () => {
+    if (process.platform !== "win32") {
+      return;
+    }
+    const value = "## Summary\n\n- First line\n- Second line";
+    const command = `${makeNodeCommand(
+      "process.stdout.write(JSON.stringify(process.argv[1]));",
+    )} "${value}"`;
+
+    const result = await executeShellCommand({ command, cwd: process.cwd() });
+
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.output)).toBe(value);
   });
 
   it("streams stdout/stderr chunks through onData", async () => {
