@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import type { SkillPromptToken } from "../../../../shared/model/prompt/promptDocument";
+import type {
+  MemoryPromptToken,
+  SkillPromptToken,
+} from "../../../../shared/model/prompt/promptDocument";
 import type { TextBuffer } from "../../editor/document/textBuffer";
-import type { McpPickerItem, SkillPickerItem } from "../../session/composerSession";
+import type {
+  McpPickerItem,
+  MemoryPickerItem,
+  SkillPickerItem,
+} from "../../session/composerSession";
 import { filterPromptReferencePickerItems, type PromptReferencePickerItem } from "./skillMatching";
 import { activeSkillTrigger, extractSkillQuery, removeActiveSkillTrigger } from "./skillTrigger";
 
@@ -16,15 +23,21 @@ export function useSkillReferenceSuggestion({
   buffer,
   availableSkills,
   availableMcpServers,
+  availableMemories,
   selectedSkills,
+  selectedMemories,
   maxSelectedSkills,
+  maxSelectedMemories,
   onNotice,
 }: {
   buffer: TextBuffer;
   availableSkills: SkillPickerItem[];
   availableMcpServers: McpPickerItem[];
+  availableMemories: MemoryPickerItem[];
   selectedSkills: SkillPromptToken[];
+  selectedMemories: MemoryPromptToken[];
   maxSelectedSkills: number;
+  maxSelectedMemories: number;
   onNotice: (message: string) => void;
 }): SkillReferenceSuggestion {
   const [query, setQuery] = useState<string | null>(null);
@@ -52,6 +65,16 @@ export function useSkillReferenceSuggestion({
         setQuery(null);
         return;
       }
+      if (
+        item.kind === "memory" &&
+        selectedMemories.length >= maxSelectedMemories &&
+        !selectedMemories.some((selected) => selected.memoryId === item.memory.id)
+      ) {
+        onNotice(`At most ${maxSelectedMemories} Memories can be selected for one input.`);
+        buffer.apply(removeActiveSkillTrigger);
+        setQuery(null);
+        return;
+      }
       const trigger = activeSkillTrigger(buffer.text, buffer.cursor);
       if (!trigger) {
         setQuery(null);
@@ -61,7 +84,9 @@ export function useSkillReferenceSuggestion({
       buffer.replaceDisplayRange(trigger.start, trigger.end, [
         item.kind === "skill"
           ? { type: "token", kind: "skill", qualifiedName: item.skill.qualifiedName }
-          : { type: "token", kind: "mcp", serverId: item.server.serverId },
+          : item.kind === "mcp"
+            ? { type: "token", kind: "mcp", serverId: item.server.serverId }
+            : { type: "token", kind: "memory", memoryId: item.memory.id },
         ...(after.length === 0 || !/^\s/.test(after) ? [{ type: "text" as const, text: " " }] : []),
       ]);
       setQuery(null);
@@ -72,7 +97,9 @@ export function useSkillReferenceSuggestion({
       buffer.replaceDisplayRange,
       buffer.text,
       maxSelectedSkills,
+      maxSelectedMemories,
       onNotice,
+      selectedMemories,
       selectedSkills,
     ],
   );
@@ -80,7 +107,12 @@ export function useSkillReferenceSuggestion({
   const matches =
     query === null
       ? []
-      : filterPromptReferencePickerItems(availableSkills, availableMcpServers, query);
+      : filterPromptReferencePickerItems(
+          availableSkills,
+          availableMcpServers,
+          availableMemories,
+          query,
+        );
   return {
     matches,
     open: query !== null && matches.length > 0,

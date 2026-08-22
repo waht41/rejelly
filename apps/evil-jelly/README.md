@@ -141,6 +141,8 @@ Memory has two scopes:
 
 Each entry contains a stable ID, `title`, short self-contained `summary`, and `detail`, plus revision timestamps and provenance. The summary is injected into the model context as a small frozen catalog at session start and after successful compaction. Details and provenance are read progressively with `memory_read` when needed; normal tasks should not call that tool just to list memory. The injected catalog is intentionally frozen within an epoch, so a confirmed edit becomes live immediately but is picked up by the next session or compaction boundary.
 
+Typing `$` in the interactive composer also lists Memory references alongside Skills and MCP servers. Selecting `$memory:<title>` stores only the stable Memory ID in the draft. At submission, Evil Jelly resolves that ID against the live store and freezes its current scope, revision, title, summary, and detail into this user turn; provenance and storage paths are not included. This explicit detail context does not modify the frozen Memory instruction or its prompt-cache prefix, and session resume replays the frozen revision without rereading the store. At most five unique Memories may be selected for one input; a deleted or unavailable selection is frozen as unavailable rather than silently using stale detail.
+
 The Agent has only two Memory tools:
 
 - `memory_read` reads the live catalog or selected details/provenance.

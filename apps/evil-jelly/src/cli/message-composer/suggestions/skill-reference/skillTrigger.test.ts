@@ -4,6 +4,8 @@ import {
   activeSkillTrigger,
   extractSkillQuery,
   mcpReferenceName,
+  memoryReferenceName,
+  memoryTokensFromDocument,
   removeActiveSkillTrigger,
   skillReferenceName,
   skillTokensFromDocument,
@@ -35,6 +37,11 @@ describe("Skill $ trigger", () => {
     expect(extractSkillQuery("echo $HOME", 10)).toBeNull();
     expect(extractSkillQuery("echo $" + "{HOME}", 12)).toBeNull();
     expect(extractSkillQuery("echo $env:PATH", 14)).toBeNull();
+  });
+
+  it("accepts lowercase Unicode Memory search terms", () => {
+    const text = "use $提交信息";
+    expect(extractSkillQuery(text, text.length)).toBe("提交信息");
   });
 
   it("returns the active trigger display range", () => {
@@ -82,6 +89,26 @@ describe("Skill $ trigger", () => {
       qualifiedName: "project:review",
     };
     expect(skillTokensFromDocument([token, { type: "text", text: " $HOME " }, token])).toEqual([
+      token,
+    ]);
+  });
+
+  it("names and deduplicates selected Memory tokens by stable id", () => {
+    const token = {
+      type: "token" as const,
+      kind: "memory" as const,
+      memoryId: "mem_afe761ca-6383-43e6-8429-445362848d0c",
+    };
+    const memories = [
+      {
+        id: token.memoryId,
+        scope: "project" as const,
+        title: "Squash message",
+        summary: "Summary",
+      },
+    ];
+    expect(memoryReferenceName(token, memories)).toBe("memory:Squash message");
+    expect(memoryTokensFromDocument([token, { type: "text", text: " x " }, token])).toEqual([
       token,
     ]);
   });

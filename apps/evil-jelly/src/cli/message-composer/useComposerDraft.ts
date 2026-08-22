@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { releasePromptAttachments } from "../../shared/host/promptResourceLifecycle";
 import {
   type McpPromptToken,
+  type MemoryPromptToken,
   type PromptDocument,
   type PromptToken,
   promptTokens,
@@ -19,11 +20,13 @@ import { defaultPromptTokenDisplayText } from "./editor/document/promptDocument"
 import type { TextBuffer } from "./editor/document/textBuffer";
 import { useTextBuffer } from "./editor/document/textBuffer";
 import { useCollapsedPaste } from "./editor/paste/useCollapsedPaste";
-import type { McpPickerItem, SkillPickerItem } from "./session/composerSession";
+import type { McpPickerItem, MemoryPickerItem, SkillPickerItem } from "./session/composerSession";
 import { useComposerSession } from "./session/composerSession";
 import {
   mcpReferenceName,
   mcpTokensFromDocument,
+  memoryReferenceName,
+  memoryTokensFromDocument,
   selectedSkillReferenceName,
   skillTokensFromDocument,
 } from "./suggestions/skill-reference/skillTrigger";
@@ -33,8 +36,10 @@ export interface ComposerDraft {
   selectedFiles: string[];
   selectedSkills: SkillPromptToken[];
   selectedMcpServers: McpPromptToken[];
+  selectedMemories: MemoryPromptToken[];
   availableSkills: SkillPickerItem[];
   availableMcpServers: McpPickerItem[];
+  availableMemories: MemoryPickerItem[];
   attachFile: (path: string, start: number, end: number) => void;
   clear: () => void;
   submit: () => void;
@@ -82,6 +87,7 @@ export function useComposerDraft({
   const submitLine = useComposerSession((state) => state.submitLine);
   const availableSkills = useComposerSession((state) => state.availableSkills);
   const availableMcpServers = useComposerSession((state) => state.availableMcpServers);
+  const availableMemories = useComposerSession((state) => state.availableMemories);
   const draftSeed = useComposerSession((state) => state.draftSeed);
   const clearDraftSeed = useComposerSession((state) => state.clearDraftSeed);
   const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
@@ -104,15 +110,22 @@ export function useComposerDraft({
       if (token.kind === "mcp") {
         return `$${mcpReferenceName(token, availableSkills)}`;
       }
+      if (token.kind === "memory") {
+        return `$${memoryReferenceName(token, availableMemories)}`;
+      }
       return defaultPromptTokenDisplayText(token);
     },
-    [attachments, availableMcpServers, availableSkills],
+    [attachments, availableMcpServers, availableMemories, availableSkills],
   );
   const buffer = useTextBuffer("", tokenDisplayText);
   const collapsedPaste = useCollapsedPaste(buffer);
   const selectedSkills = useMemo(() => skillTokensFromDocument(buffer.document), [buffer.document]);
   const selectedMcpServers = useMemo(
     () => mcpTokensFromDocument(buffer.document),
+    [buffer.document],
+  );
+  const selectedMemories = useMemo(
+    () => memoryTokensFromDocument(buffer.document),
     [buffer.document],
   );
   const liveAttachments = useMemo(
@@ -249,8 +262,10 @@ export function useComposerDraft({
     selectedFiles,
     selectedSkills,
     selectedMcpServers,
+    selectedMemories,
     availableSkills,
     availableMcpServers,
+    availableMemories,
     attachFile,
     clear,
     submit,

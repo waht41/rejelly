@@ -45,6 +45,7 @@ function render(overrides: {
         file: { ...file, open: overrides.fileOpen ?? true },
         availableSkills: [skill],
         availableMcpServers: [],
+        availableMemories: [],
         visibleRows: 5,
         keySink,
       }),

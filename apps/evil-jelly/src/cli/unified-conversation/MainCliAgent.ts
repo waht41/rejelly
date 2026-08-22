@@ -15,6 +15,7 @@ import {
 } from "@rejelly/core";
 import { createAuthorizedMcpBindingFactory } from "../../domains/mcp/management/chatAuthorization";
 import type { McpSessionControl } from "../../domains/mcp/management/sessionControl";
+import { memoryIdSchema } from "../../domains/memory/model/memorySchema";
 import {
   MEMORY_RUNTIME_PROVIDER_KEY,
   type SessionMemoryRuntime,
@@ -331,6 +332,31 @@ function materializePromptInput(
     mcpResolution: (serverId) => {
       return runtime.resolveMcpUserInput?.(serverId) ?? { status: "unavailable" };
     },
+    memoryResolution: async (memoryId) => {
+      if (!runtime.memoryRuntime || !memoryIdSchema.safeParse(memoryId).success) {
+        return { status: "unavailable" };
+      }
+      try {
+        const result = await runtime.memoryRuntime.service.list({
+          scope: "all",
+          ids: [memoryId],
+          view: "detail",
+        });
+        const entry = result.entries[0];
+        return entry
+          ? {
+              status: "resolved",
+              scope: entry.scope,
+              revision: entry.revision,
+              title: entry.title,
+              summary: entry.summary,
+              detail: entry.detail,
+            }
+          : { status: "unavailable" };
+      } catch {
+        return { status: "unavailable" };
+      }
+    },
   });
 }
 
@@ -615,6 +641,9 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
       setHistory(next);
     };
 
+    const memoryRuntime = expectResource<SessionMemoryRuntime>(MEMORY_RUNTIME_PROVIDER_KEY, {
+      optional: true,
+    });
     const runtime: RouterRuntime = {
       props,
       host,
@@ -629,12 +658,18 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
       sessionMcpState: () => liveSessionMcpState,
       setSessionMcpState,
       mcpBindingFactory: props.mcpBindingFactory,
-      memoryRuntime: expectResource<SessionMemoryRuntime>(MEMORY_RUNTIME_PROVIDER_KEY, {
-        optional: true,
-      }),
+      memoryRuntime,
     };
 
     try {
+      host.setAvailableMemories?.(
+        memoryRuntime?.epoch.entries.map((entry) => ({
+          id: entry.id,
+          scope: entry.scope,
+          title: entry.title,
+          summary: entry.summary,
+        })) ?? [],
+      );
       const lineInput = await host.getInput();
       const intent = classifyRouterIntent(lineInput);
       switch (intent.kind) {

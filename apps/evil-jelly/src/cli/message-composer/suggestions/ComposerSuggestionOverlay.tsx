@@ -1,11 +1,19 @@
-import type { UserMcpListItem, UserSkillListItem } from "../../../shared/host/inputBindings";
+import type {
+  UserMcpListItem,
+  UserMemoryListItem,
+  UserSkillListItem,
+} from "../../../shared/host/inputBindings";
 import type { ComposerPickerKeySink } from "./ComposerPicker";
 import { SlashCommandOverlay } from "./commands/SlashCommandOverlay";
 import type { CommandSuggestion } from "./commands/useCommandSuggestion";
 import { FilePickerOverlay } from "./file-reference/FilePickerOverlay";
 import type { FileReferenceSuggestion } from "./file-reference/useFileReferenceSuggestion";
 import { SkillPickerOverlay } from "./skill-reference/SkillPickerOverlay";
-import { mcpReferenceName, skillReferenceName } from "./skill-reference/skillTrigger";
+import {
+  mcpReferenceName,
+  memoryReferenceName,
+  skillReferenceName,
+} from "./skill-reference/skillTrigger";
 import type { SkillReferenceSuggestion } from "./skill-reference/useSkillReferenceSuggestion";
 
 type CommandSuggestionView = Pick<CommandSuggestion, "matches" | "open" | "select" | "dismiss">;
@@ -21,6 +29,7 @@ interface ComposerSuggestionOverlayProps {
   skill: SkillSuggestionView;
   availableSkills: readonly UserSkillListItem[];
   availableMcpServers: readonly UserMcpListItem[];
+  availableMemories: readonly UserMemoryListItem[];
   visibleRows: number;
   keySink: ComposerPickerKeySink;
 }
@@ -32,6 +41,7 @@ export function ComposerSuggestionOverlay({
   skill,
   availableSkills,
   availableMcpServers,
+  availableMemories,
   visibleRows,
   keySink,
 }: ComposerSuggestionOverlayProps) {
@@ -54,7 +64,9 @@ export function ComposerSuggestionOverlay({
         getReferenceName={(item) =>
           item.kind === "skill"
             ? skillReferenceName(item.skill, availableSkills, availableMcpServers)
-            : mcpReferenceName(item.server, availableSkills)
+            : item.kind === "mcp"
+              ? mcpReferenceName(item.server, availableSkills)
+              : memoryReferenceName({ memoryId: item.memory.id }, availableMemories)
         }
         maxVisibleRows={visibleRows}
         onSelect={skill.select}

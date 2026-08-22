@@ -28,7 +28,11 @@ describe("SkillPickerOverlay", () => {
         createElement(SkillPickerOverlay, {
           items: references,
           getReferenceName: (item) =>
-            item.kind === "skill" ? item.skill.name : item.server.serverId,
+            item.kind === "skill"
+              ? item.skill.name
+              : item.kind === "mcp"
+                ? item.server.serverId
+                : item.memory.title,
           onSelect: vi.fn(),
           onCancel: vi.fn(),
         }),
@@ -51,7 +55,11 @@ describe("SkillPickerOverlay", () => {
         createElement(SkillPickerOverlay, {
           items: references,
           getReferenceName: (item) =>
-            item.kind === "skill" ? item.skill.name : item.server.serverId,
+            item.kind === "skill"
+              ? item.skill.name
+              : item.kind === "mcp"
+                ? item.server.serverId
+                : item.memory.title,
           onSelect: vi.fn(),
           onCancel: vi.fn(),
         }),
@@ -85,7 +93,11 @@ describe("SkillPickerOverlay", () => {
         createElement(SkillPickerOverlay, {
           items: duplicateItems.map((skill) => ({ kind: "skill" as const, skill })),
           getReferenceName: (item) =>
-            item.kind === "skill" ? item.skill.qualifiedName : item.server.serverId,
+            item.kind === "skill"
+              ? item.skill.qualifiedName
+              : item.kind === "mcp"
+                ? item.server.serverId
+                : item.memory.title,
           onSelect: vi.fn(),
           onCancel: vi.fn(),
         }),
@@ -112,5 +124,32 @@ describe("SkillPickerOverlay", () => {
 
     expect(output).toContain("▸ $docs");
     expect(output).toContain("[MCP] MCP server docs");
+  });
+
+  it("renders Memory references with scope and summary", () => {
+    const output = stripAnsi(
+      renderToString(
+        createElement(SkillPickerOverlay, {
+          items: [
+            {
+              kind: "memory",
+              memory: {
+                id: "mem_afe761ca-6383-43e6-8429-445362848d0c",
+                scope: "project",
+                title: "Squash message",
+                summary: "Use the PR description as the squash message.",
+              },
+            },
+          ],
+          getReferenceName: () => "memory:Squash message",
+          onSelect: vi.fn(),
+          onCancel: vi.fn(),
+        }),
+        { columns: 100 },
+      ),
+    );
+
+    expect(output).toContain("▸ $memory:Squash message");
+    expect(output).toContain("[Memory] [project] Use the PR description");
   });
 });

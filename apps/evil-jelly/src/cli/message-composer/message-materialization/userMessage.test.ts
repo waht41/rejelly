@@ -262,4 +262,59 @@ describe("materializeUserInput", () => {
     );
     expect(projectFrozenUserInputDisplay(frozen).text).toBe("plain $mcp:fake $mcp:docs");
   });
+
+  it("resolves an explicitly selected Memory detail once and freezes it into the user turn", async () => {
+    const memoryId = "mem_afe761ca-6383-43e6-8429-445362848d0c";
+    let reads = 0;
+    const resolved = await resolveUserInput(
+      {
+        document: [
+          { type: "text", text: "apply " },
+          { type: "token", kind: "memory", memoryId },
+          { type: "text", text: " and " },
+          { type: "token", kind: "memory", memoryId },
+        ],
+        attachments: [],
+      },
+      {
+        memoryResolution: async () => {
+          reads += 1;
+          return {
+            status: "resolved",
+            scope: "project",
+            revision: 2,
+            title: "Squash message",
+            summary: "Use the PR description as the squash message.",
+            detail: "Keep it suitable for a final commit message.",
+          };
+        },
+      },
+    );
+    const frozen = await freezeResolvedUserInput(resolved, { blobRoot });
+    const message = projectFrozenUserInputMessage(frozen);
+
+    expect(reads).toBe(1);
+    expect(projectFrozenUserInputDisplay(frozen).text).toBe(
+      "apply $memory:Squash message and $memory:Squash message",
+    );
+    expect(message.content).toContain('<explicit_memories count="1">');
+    expect(message.content).toContain("Keep it suitable for a final commit message.");
+    expect(message.content).not.toContain("provenance");
+  });
+
+  it("freezes an unavailable selected Memory without stale detail", async () => {
+    const memoryId = "mem_afe761ca-6383-43e6-8429-445362848d0c";
+    const resolved = await resolveUserInput(
+      {
+        document: [{ type: "token", kind: "memory", memoryId }],
+        attachments: [],
+      },
+      { memoryResolution: () => ({ status: "unavailable" }) },
+    );
+    const frozen = await freezeResolvedUserInput(resolved, { blobRoot });
+
+    expect(projectFrozenUserInputMessage(frozen).content).toContain(
+      `<memory_reference id="${memoryId}" status="unavailable" />`,
+    );
+  });
 });

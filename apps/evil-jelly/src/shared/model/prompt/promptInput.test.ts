@@ -30,6 +30,12 @@ const richInput: PromptInput = {
     { type: "token", kind: "image", attachmentId: "image-1" },
     { type: "text", text: " " },
     { type: "token", kind: "mcp", serverId: "docs" },
+    { type: "text", text: " " },
+    {
+      type: "token",
+      kind: "memory",
+      memoryId: "mem_afe761ca-6383-43e6-8429-445362848d0c",
+    },
   ],
   attachments: [
     { id: "file-1", kind: "file", path: "src/main.ts" },
@@ -83,7 +89,8 @@ describe("prompt input contract", () => {
   });
 
   it("keeps plain and copy fallback projections explicit and lossy", () => {
-    const expected = "review $project:review\npasted\nbody @src/main.ts [Image #1] $mcp:docs";
+    const expected =
+      "review $project:review\npasted\nbody @src/main.ts [Image #1] $mcp:docs $memory:mem_afe761ca-6383-43e6-8429-445362848d0c";
 
     expect(promptInputPlainText(richInput)).toBe(expected);
     expect(promptInputCopyText(richInput)).toBe(expected);
@@ -171,5 +178,24 @@ describe("prompt input contract", () => {
       }),
     ).toThrow("lowercase ASCII");
     expect(promptInputPlainText(textPromptInput("$mcp:docs"))).toBe("$mcp:docs");
+  });
+
+  it("validates Memory token identity and the per-input unique reference limit", () => {
+    expect(() =>
+      assertValidPromptInput({
+        document: [{ type: "token", kind: "memory", memoryId: " " }],
+        attachments: [],
+      }),
+    ).toThrow("Memory id must not be empty");
+    expect(() =>
+      assertValidPromptInput({
+        document: Array.from({ length: 6 }, (_, index) => ({
+          type: "token" as const,
+          kind: "memory" as const,
+          memoryId: `mem_${index}`,
+        })),
+        attachments: [],
+      }),
+    ).toThrow("At most 5 Memories");
   });
 });

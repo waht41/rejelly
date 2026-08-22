@@ -34,7 +34,7 @@ export function resolveExplicitSkills(
 export async function materializeSkillAwareUserInput(
   input: PromptInput,
   snapshot: SkillRuntimeSnapshot | undefined,
-  options: Pick<UserMessageMaterializationOptions, "mcpResolution"> = {},
+  options: Pick<UserMessageMaterializationOptions, "mcpResolution" | "memoryResolution"> = {},
 ): Promise<ResolvedUserInputV1> {
   const skills = resolveExplicitSkills(
     snapshot,

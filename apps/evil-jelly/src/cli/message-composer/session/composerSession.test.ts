@@ -50,6 +50,18 @@ describe("composer session bridge", () => {
     ).toEqual(["docs", "zeta"]);
   });
 
+  it("sorts user Memories before project Memories for the shared reference picker", () => {
+    useComposerSession.getState().setAvailableMemories([
+      { id: "mem_project", scope: "project", title: "A", summary: "Project" },
+      { id: "mem_user", scope: "user", title: "Z", summary: "User" },
+    ]);
+
+    expect(useComposerSession.getState().availableMemories.map((memory) => memory.id)).toEqual([
+      "mem_user",
+      "mem_project",
+    ]);
+  });
+
   it("releases a pending composer-owned draft when a newer seed replaces it", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "evil-draft-seed-cleanup-"));
     roots.push(root);

@@ -1,6 +1,7 @@
 import { validateMcpServerId } from "../mcp/serverIdentity";
 import {
   isPromptDocumentSemanticallyEmpty,
+  MAX_EXPLICIT_MEMORY_REFERENCES,
   normalizePromptDocument,
   type PromptDocument,
   type PromptNode,
@@ -181,6 +182,16 @@ export function assertValidPromptInput(input: PromptInput): void {
       throw new PromptInputContractError("Prompt document must merge adjacent text nodes");
     }
   });
+  const memoryIds = new Set(
+    input.document.flatMap((node) =>
+      node.type === "token" && node.kind === "memory" ? [node.memoryId] : [],
+    ),
+  );
+  if (memoryIds.size > MAX_EXPLICIT_MEMORY_REFERENCES) {
+    throw new PromptInputContractError(
+      `At most ${MAX_EXPLICIT_MEMORY_REFERENCES} Memories can be selected for one input`,
+    );
+  }
 }
 
 function assertValidPromptNode(node: PromptNode): void {
@@ -199,6 +210,9 @@ function assertValidPromptNode(node: PromptNode): void {
   if (node.kind === "mcp") {
     const identity = validateMcpServerId(node.serverId);
     if (!identity.ok) throw new PromptInputContractError(identity.reason);
+  }
+  if (node.kind === "memory" && !node.memoryId.trim()) {
+    throw new PromptInputContractError("Memory id must not be empty");
   }
 }
 
@@ -224,6 +238,8 @@ function promptInputTextProjection(input: PromptInput): string {
           return `[Image #${imageIndex}]`;
         case "mcp":
           return `$mcp:${node.serverId}`;
+        case "memory":
+          return `$memory:${node.memoryId}`;
         default:
           return assertNever(node);
       }

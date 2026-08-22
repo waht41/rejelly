@@ -1,13 +1,18 @@
-import type { UserMcpListItem, UserSkillListItem } from "../../../../shared/host/inputBindings";
+import type {
+  UserMcpListItem,
+  UserMemoryListItem,
+  UserSkillListItem,
+} from "../../../../shared/host/inputBindings";
 import {
   type McpPromptToken,
+  type MemoryPromptToken,
   type PromptDocument,
   promptTokens,
   type SkillPromptToken,
 } from "../../../../shared/model/prompt/promptDocument";
 import type { BufferState } from "../../editor/document/textBuffer";
 
-const SKILL_QUERY_PATTERN = /^[a-z0-9._:-]*$/;
+const REFERENCE_QUERY_PATTERN = /^[\p{L}\p{N}._:-]*$/u;
 
 export function skillReferenceName(
   skill: UserSkillListItem,
@@ -40,6 +45,14 @@ export function mcpReferenceName(
     : reference.serverId;
 }
 
+export function memoryReferenceName(
+  reference: { readonly memoryId: string },
+  memoryCatalog: readonly UserMemoryListItem[],
+): string {
+  const memory = memoryCatalog.find((candidate) => candidate.id === reference.memoryId);
+  return `memory:${memory?.title ?? reference.memoryId}`;
+}
+
 /** Return the lowercase Skill query in the active `$token` immediately left of the caret. */
 export function extractSkillQuery(text: string, cursor: number): string | null {
   const left = text.slice(0, cursor);
@@ -51,7 +64,7 @@ export function extractSkillQuery(text: string, cursor: number): string | null {
     return null;
   }
   const token = left.slice(dollar + 1);
-  if (!SKILL_QUERY_PATTERN.test(token)) {
+  if (!REFERENCE_QUERY_PATTERN.test(token) || token !== token.toLocaleLowerCase()) {
     return null;
   }
   if (cursor < text.length && !/\s/.test(text[cursor]!)) {
@@ -103,6 +116,15 @@ export function mcpTokensFromDocument(document: PromptDocument): McpPromptToken[
   return promptTokens(document, "mcp").filter((token) => {
     if (seen.has(token.serverId)) return false;
     seen.add(token.serverId);
+    return true;
+  });
+}
+
+export function memoryTokensFromDocument(document: PromptDocument): MemoryPromptToken[] {
+  const seen = new Set<string>();
+  return promptTokens(document, "memory").filter((token) => {
+    if (seen.has(token.memoryId)) return false;
+    seen.add(token.memoryId);
     return true;
   });
 }

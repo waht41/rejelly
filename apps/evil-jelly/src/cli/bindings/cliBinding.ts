@@ -196,6 +196,9 @@ function createPromptBindings(options: {
     setAvailableMcpServers: (servers) => {
       useComposerSession.getState().setAvailableMcpServers(servers);
     },
+    setAvailableMemories: (memories) => {
+      useComposerSession.getState().setAvailableMemories(memories);
+    },
   };
 }
 

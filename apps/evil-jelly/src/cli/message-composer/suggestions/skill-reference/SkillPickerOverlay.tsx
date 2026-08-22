@@ -15,6 +15,9 @@ interface SkillPickerOverlayProps {
 
 function pickerDescription(item: PromptReferencePickerItem): string {
   if (item.kind === "mcp") return `MCP server ${item.server.serverId}`;
+  if (item.kind === "memory") {
+    return `[${item.memory.scope}] ${item.memory.summary}`;
+  }
   const text = (item.skill.shortDescription ?? item.skill.description).replace(/\s+/g, " ").trim();
   return text.length <= 100 ? text : `${text.slice(0, 99)}…`;
 }
@@ -37,7 +40,11 @@ export function SkillPickerOverlay({
     <ComposerPicker
       items={items}
       getKey={(item) =>
-        item.kind === "skill" ? `skill:${item.skill.qualifiedName}` : `mcp:${item.server.serverId}`
+        item.kind === "skill"
+          ? `skill:${item.skill.qualifiedName}`
+          : item.kind === "mcp"
+            ? `mcp:${item.server.serverId}`
+            : `memory:${item.memory.id}`
       }
       onSelect={onSelect}
       onCancel={onCancel}
@@ -54,7 +61,8 @@ export function SkillPickerOverlay({
           </Box>
           <Box flexShrink={1}>
             <Text color={selected ? "cyan" : undefined} dimColor={!selected} wrap="truncate-end">
-              [{item.kind === "skill" ? "Skill" : "MCP"}] {pickerDescription(item)}
+              [{item.kind === "skill" ? "Skill" : item.kind === "mcp" ? "MCP" : "Memory"}]{" "}
+              {pickerDescription(item)}
             </Text>
           </Box>
         </Box>

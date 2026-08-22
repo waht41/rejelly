@@ -14,6 +14,14 @@ export interface UserMcpListItem {
   serverId: string;
 }
 
+/** Path- and provenance-free Memory metadata exposed to the semantic `$` reference picker. */
+export interface UserMemoryListItem {
+  id: string;
+  scope: "user" | "project";
+  title: string;
+  summary: string;
+}
+
 /** One row in a driver-provided action menu (hotkey plus arbitrary value). */
 export interface PromptChoiceOption {
   key: string;
@@ -122,6 +130,7 @@ export interface PromptInputBindings {
   getInput: () => Promise<PromptInput>;
   setAvailableSkills?: (skills: UserSkillListItem[]) => void;
   setAvailableMcpServers?: (servers: UserMcpListItem[]) => void;
+  setAvailableMemories?: (memories: UserMemoryListItem[]) => void;
   requestChoice: (request: PromptChoiceRequest) => Promise<string>;
   /** Rich interactive MCP manager; non-Ink hosts may omit it and use the choice fallback. */
   requestMcpManager?: (request: McpManagerRequest) => Promise<McpManagerAction>;
