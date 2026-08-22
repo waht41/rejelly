@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PersistentMemoryServiceImpl } from "../service/persistentMemoryServiceImpl";
 import {
   createMemoryEditTool,
@@ -72,9 +72,9 @@ describe("memory agent tools", () => {
   it("dispatches add/update/delete and never writes before acceptance", async () => {
     const service = await createService();
     let accepted = false;
-    const confirmation = async () => ({
+    const confirmation = vi.fn(async () => ({
       action: accepted ? ("accept" as const) : ("reject" as const),
-    });
+    }));
     const edit = createMemoryEditTool({ service, source, requestConfirmation: confirmation });
 
     const rejected = await edit.handler({
@@ -94,6 +94,13 @@ describe("memory agent tools", () => {
       change: { kind: "update", id, summary: "Updated." },
     });
     expect(updated).toMatchObject({ status: "committed", id });
+    expect(confirmation).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        expectedRevision: 1,
+        before: expect.objectContaining({ revision: 1 }),
+        after: expect.objectContaining({ revision: 2 }),
+      }),
+    );
 
     const deleted = await edit.handler({ change: { kind: "delete", id } });
     expect(deleted).toMatchObject({ status: "committed", id });

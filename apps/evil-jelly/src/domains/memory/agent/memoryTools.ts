@@ -152,14 +152,16 @@ function confirmationPayload(
           revision: entry.revision,
         }
       : undefined;
+  const before = projectEntry(preview.before);
+  const after = projectEntry(preview.after);
   return {
     type: "memory_mutation",
     operation: preview.operation,
     scope: preview.scope,
     id: preview.id,
     expectedRevision: preview.expectedRevision,
-    ...(preview.before ? { before: projectEntry(preview.before) } : {}),
-    ...(preview.after ? { after: projectEntry(preview.after) } : {}),
+    ...(before ? { before } : {}),
+    ...(after ? { after: { ...after, revision: preview.expectedRevision + 1 } } : {}),
     proposalSha256: preview.proposalSha256,
     source: {
       source: "agent_tool",

@@ -126,6 +126,9 @@ describe("persistent memory commands", () => {
     expect(command.requestConfirmation).toHaveBeenCalledWith(
       expect.objectContaining({
         operation: "update",
+        expectedRevision: 1,
+        before: expect.objectContaining({ revision: 1 }),
+        after: expect.objectContaining({ revision: 2 }),
         source: expect.objectContaining({ source: "slash_command" }),
       }),
     );

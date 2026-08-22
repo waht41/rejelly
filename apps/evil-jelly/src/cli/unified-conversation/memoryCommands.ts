@@ -200,14 +200,16 @@ function previewEntry(
 }
 
 function confirmationPayload(proposal: MemoryMutationProposal): MemoryMutationConfirmationPayload {
+  const before = previewEntry(proposal.before);
+  const after = previewEntry(proposal.after);
   return {
     type: "memory_mutation",
     operation: proposal.operation,
     scope: proposal.scope,
     id: proposal.id,
     expectedRevision: proposal.expectedRevision,
-    ...(proposal.before ? { before: previewEntry(proposal.before) } : {}),
-    ...(proposal.after ? { after: previewEntry(proposal.after) } : {}),
+    ...(before ? { before } : {}),
+    ...(after ? { after: { ...after, revision: proposal.expectedRevision + 1 } } : {}),
     proposalSha256: proposal.proposalSha256,
     source: {
       source: "slash_command",
