@@ -9,21 +9,6 @@ export type PromptReferencePickerItem =
   | { readonly kind: "mcp"; readonly server: UserMcpListItem }
   | { readonly kind: "memory"; readonly memory: UserMemoryListItem };
 
-export function filterSkillPickerItems(
-  items: readonly UserSkillListItem[],
-  query: string,
-): UserSkillListItem[] {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) {
-    return [...items];
-  }
-  return items.filter((item) => {
-    const display =
-      `${item.qualifiedName} ${item.shortDescription ?? item.description}`.toLowerCase();
-    return display.includes(normalized);
-  });
-}
-
 export function filterPromptReferencePickerItems(
   skills: readonly UserSkillListItem[],
   mcpServers: readonly UserMcpListItem[],

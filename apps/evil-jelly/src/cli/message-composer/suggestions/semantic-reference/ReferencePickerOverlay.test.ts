@@ -3,7 +3,7 @@ import { createElement } from "react";
 import stripAnsi from "strip-ansi";
 import { describe, expect, it, vi } from "vitest";
 import type { UserSkillListItem } from "../../../../shared/host/inputBindings";
-import { SkillPickerOverlay } from "./SkillPickerOverlay";
+import { ReferencePickerOverlay } from "./ReferencePickerOverlay";
 
 const items: UserSkillListItem[] = [
   {
@@ -21,11 +21,11 @@ const items: UserSkillListItem[] = [
 ];
 const references = items.map((skill) => ({ kind: "skill" as const, skill }));
 
-describe("SkillPickerOverlay", () => {
+describe("ReferencePickerOverlay", () => {
   it("renders aligned title, type, and description columns", () => {
     const output = stripAnsi(
       renderToString(
-        createElement(SkillPickerOverlay, {
+        createElement(ReferencePickerOverlay, {
           items: references,
           getReferenceName: (item) =>
             item.kind === "skill"
@@ -52,7 +52,7 @@ describe("SkillPickerOverlay", () => {
   it("keeps each item on one row and truncates descriptions to the remaining width", () => {
     const output = stripAnsi(
       renderToString(
-        createElement(SkillPickerOverlay, {
+        createElement(ReferencePickerOverlay, {
           items: references,
           getReferenceName: (item) =>
             item.kind === "skill"
@@ -90,7 +90,7 @@ describe("SkillPickerOverlay", () => {
     ];
     const output = stripAnsi(
       renderToString(
-        createElement(SkillPickerOverlay, {
+        createElement(ReferencePickerOverlay, {
           items: duplicateItems.map((skill) => ({ kind: "skill" as const, skill })),
           getReferenceName: (item) =>
             item.kind === "skill"
@@ -112,7 +112,7 @@ describe("SkillPickerOverlay", () => {
   it("renders MCP references in the shared dollar picker", () => {
     const output = stripAnsi(
       renderToString(
-        createElement(SkillPickerOverlay, {
+        createElement(ReferencePickerOverlay, {
           items: [{ kind: "mcp", server: { serverId: "docs" } }],
           getReferenceName: () => "docs",
           onSelect: vi.fn(),
@@ -129,7 +129,7 @@ describe("SkillPickerOverlay", () => {
   it("renders Memory references with scope and summary", () => {
     const output = stripAnsi(
       renderToString(
-        createElement(SkillPickerOverlay, {
+        createElement(ReferencePickerOverlay, {
           items: [
             {
               kind: "memory",

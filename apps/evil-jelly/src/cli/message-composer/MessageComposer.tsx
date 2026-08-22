@@ -45,8 +45,8 @@ import {
   mcpReferenceName,
   memoryReferenceName,
   selectedSkillReferenceName,
-} from "./suggestions/skill-reference/skillTrigger";
-import { useSkillReferenceSuggestion } from "./suggestions/skill-reference/useSkillReferenceSuggestion";
+} from "./suggestions/semantic-reference/referenceNaming";
+import { useReferenceSuggestion } from "./suggestions/semantic-reference/useReferenceSuggestion";
 import { useComposerDraft } from "./useComposerDraft";
 
 const MIN_SUGGESTION_ROWS = 5;
@@ -131,7 +131,7 @@ export function MessageComposer({
     buffer: buf,
     attachFile: draft.attachFile,
   });
-  const skillSuggestion = useSkillReferenceSuggestion({
+  const referenceSuggestion = useReferenceSuggestion({
     buffer: buf,
     availableSkills,
     availableMcpServers,
@@ -282,7 +282,7 @@ export function MessageComposer({
       ) : null}
       <ComposerSuggestionOverlay
         command={commandSuggestion}
-        skill={skillSuggestion}
+        reference={referenceSuggestion}
         file={fileSuggestion}
         availableSkills={availableSkills}
         availableMcpServers={availableMcpServers}

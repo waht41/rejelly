@@ -24,12 +24,14 @@ import type { McpPickerItem, MemoryPickerItem, SkillPickerItem } from "./session
 import { useComposerSession } from "./session/composerSession";
 import {
   mcpReferenceName,
-  mcpTokensFromDocument,
   memoryReferenceName,
-  memoryTokensFromDocument,
   selectedSkillReferenceName,
+} from "./suggestions/semantic-reference/referenceNaming";
+import {
+  mcpTokensFromDocument,
+  memoryTokensFromDocument,
   skillTokensFromDocument,
-} from "./suggestions/skill-reference/skillTrigger";
+} from "./suggestions/semantic-reference/referenceTokens";
 
 export interface ComposerDraft {
   buffer: TextBuffer;

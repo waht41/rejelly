@@ -9,17 +9,24 @@ import type {
   MemoryPickerItem,
   SkillPickerItem,
 } from "../../session/composerSession";
-import { filterPromptReferencePickerItems, type PromptReferencePickerItem } from "./skillMatching";
-import { activeSkillTrigger, extractSkillQuery, removeActiveSkillTrigger } from "./skillTrigger";
+import {
+  filterPromptReferencePickerItems,
+  type PromptReferencePickerItem,
+} from "./referenceMatching";
+import {
+  activeReferenceTrigger,
+  extractReferenceQuery,
+  removeActiveReferenceTrigger,
+} from "./referenceTrigger";
 
-export interface SkillReferenceSuggestion {
+export interface ReferenceSuggestion {
   matches: PromptReferencePickerItem[];
   open: boolean;
   select: (item: PromptReferencePickerItem) => void;
   dismiss: () => void;
 }
 
-export function useSkillReferenceSuggestion({
+export function useReferenceSuggestion({
   buffer,
   availableSkills,
   availableMcpServers,
@@ -39,18 +46,18 @@ export function useSkillReferenceSuggestion({
   maxSelectedSkills: number;
   maxSelectedMemories: number;
   onNotice: (message: string) => void;
-}): SkillReferenceSuggestion {
+}): ReferenceSuggestion {
   const [query, setQuery] = useState<string | null>(null);
 
   useEffect(() => {
     const followsSemanticToken = buffer.tokenSpans.some(
       (span) => span.start < buffer.cursor && buffer.cursor <= span.end,
     );
-    setQuery(followsSemanticToken ? null : extractSkillQuery(buffer.text, buffer.cursor));
+    setQuery(followsSemanticToken ? null : extractReferenceQuery(buffer.text, buffer.cursor));
   }, [buffer.text, buffer.cursor, buffer.tokenSpans]);
 
   const dismiss = useCallback(() => {
-    buffer.apply(removeActiveSkillTrigger);
+    buffer.apply(removeActiveReferenceTrigger);
     setQuery(null);
   }, [buffer.apply]);
   const select = useCallback(
@@ -61,7 +68,7 @@ export function useSkillReferenceSuggestion({
         !selectedSkills.some((selected) => selected.qualifiedName === item.skill.qualifiedName)
       ) {
         onNotice(`At most ${maxSelectedSkills} Skills can be selected for one input.`);
-        buffer.apply(removeActiveSkillTrigger);
+        buffer.apply(removeActiveReferenceTrigger);
         setQuery(null);
         return;
       }
@@ -71,11 +78,11 @@ export function useSkillReferenceSuggestion({
         !selectedMemories.some((selected) => selected.memoryId === item.memory.id)
       ) {
         onNotice(`At most ${maxSelectedMemories} Memories can be selected for one input.`);
-        buffer.apply(removeActiveSkillTrigger);
+        buffer.apply(removeActiveReferenceTrigger);
         setQuery(null);
         return;
       }
-      const trigger = activeSkillTrigger(buffer.text, buffer.cursor);
+      const trigger = activeReferenceTrigger(buffer.text, buffer.cursor);
       if (!trigger) {
         setQuery(null);
         return;

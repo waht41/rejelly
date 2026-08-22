@@ -8,25 +8,22 @@ import { SlashCommandOverlay } from "./commands/SlashCommandOverlay";
 import type { CommandSuggestion } from "./commands/useCommandSuggestion";
 import { FilePickerOverlay } from "./file-reference/FilePickerOverlay";
 import type { FileReferenceSuggestion } from "./file-reference/useFileReferenceSuggestion";
-import { SkillPickerOverlay } from "./skill-reference/SkillPickerOverlay";
+import { ReferencePickerOverlay } from "./semantic-reference/ReferencePickerOverlay";
 import {
   mcpReferenceName,
   memoryReferenceName,
   skillReferenceName,
-} from "./skill-reference/skillTrigger";
-import type { SkillReferenceSuggestion } from "./skill-reference/useSkillReferenceSuggestion";
+} from "./semantic-reference/referenceNaming";
+import type { ReferenceSuggestion } from "./semantic-reference/useReferenceSuggestion";
 
 type CommandSuggestionView = Pick<CommandSuggestion, "matches" | "open" | "select" | "dismiss">;
 type FileSuggestionView = Pick<FileReferenceSuggestion, "query" | "open" | "select" | "dismiss">;
-type SkillSuggestionView = Pick<
-  SkillReferenceSuggestion,
-  "matches" | "open" | "select" | "dismiss"
->;
+type ReferenceSuggestionView = Pick<ReferenceSuggestion, "matches" | "open" | "select" | "dismiss">;
 
 interface ComposerSuggestionOverlayProps {
   command: CommandSuggestionView;
   file: FileSuggestionView;
-  skill: SkillSuggestionView;
+  reference: ReferenceSuggestionView;
   availableSkills: readonly UserSkillListItem[];
   availableMcpServers: readonly UserMcpListItem[];
   availableMemories: readonly UserMemoryListItem[];
@@ -38,7 +35,7 @@ interface ComposerSuggestionOverlayProps {
 export function ComposerSuggestionOverlay({
   command,
   file,
-  skill,
+  reference,
   availableSkills,
   availableMcpServers,
   availableMemories,
@@ -57,10 +54,10 @@ export function ComposerSuggestionOverlay({
     );
   }
 
-  if (skill.open) {
+  if (reference.open) {
     return (
-      <SkillPickerOverlay
-        items={skill.matches}
+      <ReferencePickerOverlay
+        items={reference.matches}
         getReferenceName={(item) =>
           item.kind === "skill"
             ? skillReferenceName(item.skill, availableSkills, availableMcpServers)
@@ -74,8 +71,8 @@ export function ComposerSuggestionOverlay({
                 )
         }
         maxVisibleRows={visibleRows}
-        onSelect={skill.select}
-        onCancel={skill.dismiss}
+        onSelect={reference.select}
+        onCancel={reference.dismiss}
         keySink={keySink}
       />
     );

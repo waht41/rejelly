@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterPromptReferencePickerItems } from "./skillMatching";
+import { filterPromptReferencePickerItems } from "./referenceMatching";
 
 const skill = {
   qualifiedName: "project:review",

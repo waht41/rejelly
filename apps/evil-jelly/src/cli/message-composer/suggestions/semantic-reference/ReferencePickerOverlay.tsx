@@ -2,9 +2,9 @@ import { Box, Text } from "ink";
 import stringWidth from "string-width";
 import type { ComposerPickerKeySink } from "../ComposerPicker";
 import { ComposerPicker } from "../ComposerPicker";
-import type { PromptReferencePickerItem } from "./skillMatching";
+import type { PromptReferencePickerItem } from "./referenceMatching";
 
-interface SkillPickerOverlayProps {
+interface ReferencePickerOverlayProps {
   items: PromptReferencePickerItem[];
   getReferenceName: (item: PromptReferencePickerItem) => string;
   onSelect: (item: PromptReferencePickerItem) => void;
@@ -22,14 +22,14 @@ function pickerDescription(item: PromptReferencePickerItem): string {
   return text.length <= 100 ? text : `${text.slice(0, 99)}…`;
 }
 
-export function SkillPickerOverlay({
+export function ReferencePickerOverlay({
   items,
   getReferenceName,
   onSelect,
   onCancel,
   maxVisibleRows,
   keySink,
-}: SkillPickerOverlayProps) {
+}: ReferencePickerOverlayProps) {
   const displayTitle = (item: PromptReferencePickerItem) => `$${getReferenceName(item)}`;
   const titleColumnWidth = items.reduce(
     (width, item) => Math.max(width, stringWidth(displayTitle(item))),
