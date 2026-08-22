@@ -107,7 +107,20 @@ describe("Skill $ trigger", () => {
         summary: "Summary",
       },
     ];
-    expect(memoryReferenceName(token, memories)).toBe("memory:Squash message");
+    expect(memoryReferenceName(token, memories)).toBe("Squash message");
+    expect(
+      memoryReferenceName(token, [
+        ...memories,
+        {
+          ...memories[0]!,
+          id: "mem_bfe761ca-6383-43e6-8429-445362848d0d",
+          scope: "user",
+        },
+      ]),
+    ).toBe("project:Squash message");
+    expect(memoryReferenceName(token, memories, [{ ...catalog[0]!, name: "Squash message" }])).toBe(
+      "memory:Squash message",
+    );
     expect(memoryTokensFromDocument([token, { type: "text", text: " x " }, token])).toEqual([
       token,
     ]);

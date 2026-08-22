@@ -141,7 +141,7 @@ describe("SkillPickerOverlay", () => {
               },
             },
           ],
-          getReferenceName: () => "memory:Squash message",
+          getReferenceName: () => "Squash message",
           onSelect: vi.fn(),
           onCancel: vi.fn(),
         }),
@@ -149,7 +149,8 @@ describe("SkillPickerOverlay", () => {
       ),
     );
 
-    expect(output).toContain("▸ $memory:Squash message");
-    expect(output).toContain("[Memory] [project] Use the PR description");
+    expect(output).toContain("▸ $Squash message");
+    expect(output).toContain("[Memory] Use the PR description");
+    expect(output).not.toContain("[project]");
   });
 });

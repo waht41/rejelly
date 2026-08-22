@@ -48,9 +48,23 @@ export function mcpReferenceName(
 export function memoryReferenceName(
   reference: { readonly memoryId: string },
   memoryCatalog: readonly UserMemoryListItem[],
+  skillCatalog: readonly UserSkillListItem[] = [],
+  mcpCatalog: readonly UserMcpListItem[] = [],
 ): string {
   const memory = memoryCatalog.find((candidate) => candidate.id === reference.memoryId);
-  return `memory:${memory?.title ?? reference.memoryId}`;
+  if (!memory) return `memory:${reference.memoryId}`;
+  const sameTitle = memoryCatalog.filter((candidate) => candidate.title === memory.title);
+  const sameScope = sameTitle.filter((candidate) => candidate.scope === memory.scope);
+  const scopedName =
+    sameTitle.length === 1
+      ? memory.title
+      : sameScope.length === 1
+        ? `${memory.scope}:${memory.title}`
+        : `${memory.scope}:${memory.title}:${memory.id.slice(-8)}`;
+  const conflictsWithAnotherKind =
+    skillCatalog.some((skill) => skill.name === memory.title) ||
+    mcpCatalog.some((server) => server.serverId === memory.title);
+  return conflictsWithAnotherKind ? `memory:${scopedName}` : scopedName;
 }
 
 /** Return the lowercase Skill query in the active `$token` immediately left of the caret. */

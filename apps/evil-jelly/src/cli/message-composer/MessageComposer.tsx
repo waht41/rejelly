@@ -228,7 +228,9 @@ export function MessageComposer({
         {selectedMemories.map((memory) => (
           <Box key={memory.memoryId} flexDirection="row">
             <Text color="yellow">$ </Text>
-            <Text>{memoryReferenceName(memory, availableMemories)}</Text>
+            <Text>
+              {memoryReferenceName(memory, availableMemories, availableSkills, availableMcpServers)}
+            </Text>
           </Box>
         ))}
       </Box>

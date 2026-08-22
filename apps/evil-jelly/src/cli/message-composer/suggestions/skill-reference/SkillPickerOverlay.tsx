@@ -16,7 +16,7 @@ interface SkillPickerOverlayProps {
 function pickerDescription(item: PromptReferencePickerItem): string {
   if (item.kind === "mcp") return `MCP server ${item.server.serverId}`;
   if (item.kind === "memory") {
-    return `[${item.memory.scope}] ${item.memory.summary}`;
+    return item.memory.summary;
   }
   const text = (item.skill.shortDescription ?? item.skill.description).replace(/\s+/g, " ").trim();
   return text.length <= 100 ? text : `${text.slice(0, 99)}…`;

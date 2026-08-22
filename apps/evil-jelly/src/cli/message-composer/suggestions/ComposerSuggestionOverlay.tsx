@@ -66,7 +66,12 @@ export function ComposerSuggestionOverlay({
             ? skillReferenceName(item.skill, availableSkills, availableMcpServers)
             : item.kind === "mcp"
               ? mcpReferenceName(item.server, availableSkills)
-              : memoryReferenceName({ memoryId: item.memory.id }, availableMemories)
+              : memoryReferenceName(
+                  { memoryId: item.memory.id },
+                  availableMemories,
+                  availableSkills,
+                  availableMcpServers,
+                )
         }
         maxVisibleRows={visibleRows}
         onSelect={skill.select}

@@ -111,7 +111,12 @@ export function useComposerDraft({
         return `$${mcpReferenceName(token, availableSkills)}`;
       }
       if (token.kind === "memory") {
-        return `$${memoryReferenceName(token, availableMemories)}`;
+        return `$${memoryReferenceName(
+          token,
+          availableMemories,
+          availableSkills,
+          availableMcpServers,
+        )}`;
       }
       return defaultPromptTokenDisplayText(token);
     },
