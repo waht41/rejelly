@@ -1,4 +1,4 @@
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useWindowSize } from "ink";
 import { useEffect, useMemo, useState } from "react";
 import type {
   MemoryManagerAction,
@@ -36,8 +36,31 @@ export function MemoryManagerPrompt({
     [request.entries, request.selectedId],
   );
   const [selectedIndex, setSelectedIndex] = useState(initialIndex);
+  const [detailLineIndex, setDetailLineIndex] = useState(0);
+  const { rows: terminalRows } = useWindowSize();
+  const detailViewportLines = Math.max(3, Math.min(12, terminalRows - 12));
+  const detailLines = useMemo(() => {
+    if (!request.detail) return [];
+    const detail = request.detail;
+    return [
+      `ID: ${detail.id}`,
+      `Scope: ${detail.scope}`,
+      `Summary: ${detail.summary}`,
+      `Revision: ${detail.revision}`,
+      `Injected: ${statusLabel(detail)}`,
+      "Detail:",
+      ...detail.detail.split("\n"),
+      `Created: ${detail.createdAt}`,
+      `Updated: ${detail.updatedAt}`,
+      "Provenance:",
+      ...detail.provenance.split("\n"),
+    ];
+  }, [request.detail]);
+  const detailMaxOffset = Math.max(0, detailLines.length - detailViewportLines);
+  const safeDetailOffset = Math.min(detailLineIndex, detailMaxOffset);
 
   useEffect(() => setSelectedIndex(initialIndex), [initialIndex]);
+  useEffect(() => setDetailLineIndex(0), [request.detail?.id]);
 
   useInput((input, key) => {
     const selected = request.detail ?? request.entries[selectedIndex];
@@ -50,6 +73,16 @@ export function MemoryManagerPrompt({
     if (request.detail) {
       if (key.escape) {
         onAction({ action: "back" });
+        return;
+      }
+      if (key.upArrow || key.downArrow || key.pageUp || key.pageDown || key.home || key.end) {
+        const pageStep = Math.max(1, detailViewportLines - 1);
+        setDetailLineIndex((current) => {
+          if (key.home) return 0;
+          if (key.end) return detailMaxOffset;
+          const delta = key.pageUp ? -pageStep : key.pageDown ? pageStep : key.upArrow ? -1 : 1;
+          return Math.max(0, Math.min(detailMaxOffset, current + delta));
+        });
         return;
       }
       return;
@@ -93,23 +126,20 @@ export function MemoryManagerPrompt({
     return (
       <Box flexDirection="column" marginTop={1}>
         <Text bold>Memory · {detail.title}</Text>
-        <Box flexDirection="column" marginTop={1}>
-          <Text>ID: {detail.id}</Text>
-          <Text>Scope: {detail.scope}</Text>
-          <Text>Summary: {detail.summary}</Text>
-          <Text>Revision: {detail.revision}</Text>
-          <Text>Injected: {statusLabel(detail)}</Text>
-          <Text>Detail:</Text>
-          <Text>{detail.detail}</Text>
-          <Text>Created: {detail.createdAt}</Text>
-          <Text>Updated: {detail.updatedAt}</Text>
-          <Text>Provenance:</Text>
-          {detail.provenance.split("\n").map((line, index) => (
-            <Text key={`${index}:${line}`} dimColor>
-              {line || " "}
-            </Text>
-          ))}
+        <Box flexDirection="column" marginTop={1} height={detailViewportLines} overflow="hidden">
+          {detailLines
+            .slice(safeDetailOffset, safeDetailOffset + detailViewportLines)
+            .map((line, index) => (
+              <Text key={`${safeDetailOffset + index}:${line}`} wrap="truncate-end">
+                {line || " "}
+              </Text>
+            ))}
         </Box>
+        <Text dimColor>
+          Lines {safeDetailOffset + 1}–
+          {Math.min(detailLines.length, safeDetailOffset + detailViewportLines)} of{" "}
+          {detailLines.length} · ↑/↓ scroll · Home/End jump
+        </Text>
         {request.canRevealFile ? (
           <Text dimColor>O reveal this memory file · Esc back</Text>
         ) : (
