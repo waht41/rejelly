@@ -243,7 +243,11 @@ describe("materializeUserInput", () => {
         attachments: [],
       },
       {
-        mcpResolution: () => ({ status: "selected", configFingerprint: "config-1" }),
+        mcpResolution: () => ({
+          status: "selected",
+          configFingerprint: "config-1",
+          referenceName: "docs",
+        }),
       },
     );
     const frozen = await freezeResolvedUserInput(resolved, { blobRoot });
@@ -253,6 +257,7 @@ describe("materializeUserInput", () => {
       {
         kind: "mcp",
         serverId: "docs",
+        referenceName: "docs",
         status: "selected",
         configFingerprint: "config-1",
       },
@@ -286,6 +291,7 @@ describe("materializeUserInput", () => {
             title: "Squash message",
             summary: "Use the PR description as the squash message.",
             detail: "Keep it suitable for a final commit message.",
+            referenceName: "Squash message",
           };
         },
       },

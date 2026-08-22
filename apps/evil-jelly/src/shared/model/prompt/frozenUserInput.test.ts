@@ -15,7 +15,13 @@ const input: FrozenResolvedUserInputV1 = {
   kind: "resolved",
   nodes: [
     { kind: "text", text: "review " },
-    { kind: "skill", qualifiedName: "project:review", status: "resolved", context: "skill" },
+    {
+      kind: "skill",
+      qualifiedName: "project:review",
+      referenceName: "review",
+      status: "resolved",
+      context: "skill",
+    },
     {
       kind: "file",
       path: "src/a.ts",
@@ -23,11 +29,24 @@ const input: FrozenResolvedUserInputV1 = {
       status: "resolved",
       context: "<attached_file>body</attached_file>",
     },
-    { kind: "mcp", serverId: "docs", status: "selected", configFingerprint: "config-1" },
-    { kind: "mcp", serverId: "docs", status: "selected", configFingerprint: "config-1" },
+    {
+      kind: "mcp",
+      serverId: "docs",
+      referenceName: "docs",
+      status: "selected",
+      configFingerprint: "config-1",
+    },
+    {
+      kind: "mcp",
+      serverId: "docs",
+      referenceName: "docs",
+      status: "selected",
+      configFingerprint: "config-1",
+    },
     {
       kind: "memory",
       memoryId: "mem_afe761ca-6383-43e6-8429-445362848d0c",
+      referenceName: "Squash message",
       status: "resolved",
       scope: "project",
       revision: 2,
@@ -41,7 +60,7 @@ const input: FrozenResolvedUserInputV1 = {
 describe("frozen user input projections", () => {
   it("derives display and model content from one frozen record", () => {
     expect(projectFrozenUserInputDisplay(input)).toMatchObject({
-      text: "review $project:review@src/a.ts$mcp:docs$mcp:docs$memory:Squash message",
+      text: "review $skill:review@src/a.ts$mcp:docs$mcp:docs$memory:Squash message",
       attachments: [{ type: "file", label: "src/a.ts", action: "read" }],
     });
     expect(projectFrozenUserInputMessage(input).content).toContain('<explicit_skills count="1">');

@@ -153,10 +153,12 @@ export interface UserMessageMaterializationOptions {
   skillResolution?: (qualifiedName: string) => {
     status: "resolved" | "unavailable";
     context?: string;
+    referenceName?: string;
   };
   mcpResolution?: (serverId: string) => {
     status: "selected" | "unavailable" | "disabled" | "untrusted";
     configFingerprint?: string;
+    referenceName?: string;
   };
   memoryResolution?: (memoryId: string) =>
     | {
@@ -166,6 +168,7 @@ export interface UserMessageMaterializationOptions {
         title: string;
         summary: string;
         detail: string;
+        referenceName?: string;
       }
     | { status: "unavailable" }
     | Promise<
@@ -176,6 +179,7 @@ export interface UserMessageMaterializationOptions {
             title: string;
             summary: string;
             detail: string;
+            referenceName?: string;
           }
         | { status: "unavailable" }
       >;
@@ -202,6 +206,7 @@ export async function materializeUserInput(
           title: string;
           summary: string;
           detail: string;
+          referenceName?: string;
         }
       | { status: "unavailable" }
     >

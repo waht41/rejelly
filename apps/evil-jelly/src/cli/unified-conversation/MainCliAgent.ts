@@ -64,6 +64,7 @@ import {
   formatTokenUsageLine,
 } from "../conversation-display/session-summary/format";
 import { materializeSkillAwareUserInput } from "../message-composer/message-materialization/skillAwareUserMessage";
+import { memoryReferenceName } from "../message-composer/suggestions/semantic-reference/referenceNaming";
 import { withAbort } from "../runtime/withAbort";
 import { drainSteers } from "../submission-dispatch/steerQueue";
 import { combineSessionBudget } from "./budget";
@@ -330,7 +331,10 @@ function materializePromptInput(
 ): Promise<ResolvedUserInputV1> {
   return materializeSkillAwareUserInput(input, runtime.skillSnapshot, {
     mcpResolution: (serverId) => {
-      return runtime.resolveMcpUserInput?.(serverId) ?? { status: "unavailable" };
+      return {
+        ...(runtime.resolveMcpUserInput?.(serverId) ?? { status: "unavailable" as const }),
+        referenceName: serverId,
+      };
     },
     memoryResolution: async (memoryId) => {
       if (!runtime.memoryRuntime || !memoryIdSchema.safeParse(memoryId).success) {
@@ -351,6 +355,10 @@ function materializePromptInput(
               title: entry.title,
               summary: entry.summary,
               detail: entry.detail,
+              referenceName: memoryReferenceName(
+                { memoryId: entry.id },
+                runtime.memoryRuntime.epoch.entries,
+              ),
             }
           : { status: "unavailable" };
       } catch {

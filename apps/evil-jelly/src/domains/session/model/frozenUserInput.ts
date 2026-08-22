@@ -44,6 +44,7 @@ const skillNodeSchema = z
   .object({
     kind: z.literal("skill"),
     qualifiedName: nonBlankString,
+    referenceName: nonBlankString.optional(),
     status: z.enum(["resolved", "unavailable"]),
     context: z.string().optional(),
   })
@@ -94,6 +95,7 @@ const mcpNodeSchema = z
   .object({
     kind: z.literal("mcp"),
     serverId: nonBlankString.refine((value) => validateMcpServerId(value).ok),
+    referenceName: nonBlankString.optional(),
     status: z.enum(["selected", "unavailable", "disabled", "untrusted"]),
     configFingerprint: nonBlankString.optional(),
   })
@@ -102,6 +104,7 @@ const memoryNodeSchema = z
   .object({
     kind: z.literal("memory"),
     memoryId: nonBlankString,
+    referenceName: nonBlankString.optional(),
     status: z.enum(["resolved", "unavailable"]),
     scope: z.enum(["user", "project"]).optional(),
     revision: z.number().int().positive().optional(),

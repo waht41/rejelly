@@ -6,6 +6,7 @@ import { qualifiedSkillName } from "../../../domains/skills/definition/skillDefi
 import type { ResolvedUserInputV1 } from "../../../shared/model/prompt/frozenUserInput";
 import { promptTokens } from "../../../shared/model/prompt/promptDocument";
 import type { PromptInput } from "../../../shared/model/prompt/promptInput";
+import { skillReferenceName } from "../suggestions/semantic-reference/referenceNaming";
 import { materializeUserInput, type UserMessageMaterializationOptions } from "./userMessage";
 
 /** Resolve semantic Skill tokens against the enabled process snapshot. */
@@ -40,10 +41,31 @@ export async function materializeSkillAwareUserInput(
     snapshot,
     promptTokens(input.document, "skill").map((token) => token.qualifiedName),
   );
+  const skillCatalog =
+    snapshot?.catalog.entries.map((skill) => ({
+      qualifiedName: qualifiedSkillName(skill),
+      name: skill.name,
+      scope: skill.origin.scope,
+      description: skill.description,
+      ...(skill.shortDescription ? { shortDescription: skill.shortDescription } : {}),
+    })) ?? [];
   const skillByName = new Map(
     skills.map((skill) => [
       qualifiedSkillName(skill),
-      { status: "resolved" as const, context: renderSkillToolResult(skill) },
+      {
+        status: "resolved" as const,
+        context: renderSkillToolResult(skill),
+        referenceName: skillReferenceName(
+          {
+            qualifiedName: qualifiedSkillName(skill),
+            name: skill.name,
+            scope: skill.origin.scope,
+            description: skill.description,
+            ...(skill.shortDescription ? { shortDescription: skill.shortDescription } : {}),
+          },
+          skillCatalog,
+        ),
+      },
     ]),
   );
   return materializeUserInput(input, {

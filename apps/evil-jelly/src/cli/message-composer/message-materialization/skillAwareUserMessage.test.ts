@@ -73,9 +73,25 @@ describe("explicit Skill references", () => {
       content.indexOf("Follow the review workflow."),
     );
     expect(display).toEqual({
-      text: "Please $project:review inspect this.",
+      text: "Please $skill:review inspect this.",
       attachments: [],
     });
+  });
+
+  it("adds Skill scope only when enabled Skills share the same name", async () => {
+    const { display } = await compile(
+      {
+        document: [
+          { type: "token", kind: "skill", qualifiedName: "user:review" },
+          { type: "text", text: " and " },
+          { type: "token", kind: "skill", qualifiedName: "project:review" },
+        ],
+        attachments: [],
+      },
+      snapshot([record("review", "user"), record("review", "project")]),
+    );
+
+    expect(display.text).toBe("$skill:user:review and $skill:project:review");
   });
 
   it("appends multiple Skill instructions once in first-token order", async () => {

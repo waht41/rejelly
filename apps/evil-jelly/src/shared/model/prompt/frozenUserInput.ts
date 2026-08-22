@@ -22,6 +22,7 @@ export type ResolvedUserInputNodeV1 =
   | {
       readonly kind: "skill";
       readonly qualifiedName: string;
+      readonly referenceName?: string;
       readonly status: "resolved" | "unavailable";
       readonly context?: string;
     }
@@ -44,12 +45,14 @@ export type ResolvedUserInputNodeV1 =
   | {
       readonly kind: "mcp";
       readonly serverId: string;
+      readonly referenceName?: string;
       readonly status: "selected" | "unavailable" | "disabled" | "untrusted";
       readonly configFingerprint?: string;
     }
   | {
       readonly kind: "memory";
       readonly memoryId: string;
+      readonly referenceName?: string;
       readonly status: "resolved" | "unavailable";
       readonly scope?: "user" | "project";
       readonly revision?: number;
@@ -223,7 +226,7 @@ export function projectFrozenUserInputDisplay(input: FrozenUserInputV1): UserInp
         text += node.text;
         break;
       case "skill":
-        text += `$${node.qualifiedName}`;
+        text += `$skill:${node.referenceName ?? node.qualifiedName}`;
         break;
       case "file":
         text += `@${node.path}`;
@@ -243,10 +246,13 @@ export function projectFrozenUserInputDisplay(input: FrozenUserInputV1): UserInp
         break;
       }
       case "mcp":
-        text += `$mcp:${node.serverId}`;
+        text += `$mcp:${node.referenceName ?? node.serverId}`;
         break;
       case "memory":
-        text += `$memory:${node.status === "resolved" && node.title ? node.title : node.memoryId}`;
+        text += `$memory:${
+          node.referenceName ??
+          (node.status === "resolved" && node.title ? node.title : node.memoryId)
+        }`;
         break;
     }
   }
