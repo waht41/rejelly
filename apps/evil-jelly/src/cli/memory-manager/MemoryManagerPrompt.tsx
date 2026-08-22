@@ -40,17 +40,22 @@ export function MemoryManagerPrompt({
   useEffect(() => setSelectedIndex(initialIndex), [initialIndex]);
 
   useInput((input, key) => {
+    const selected = request.detail ?? request.entries[selectedIndex];
+    if (input.toLocaleLowerCase() === "o") {
+      if (request.canRevealFile && selected) {
+        onAction({ action: "reveal_file", id: selected.id });
+      }
+      return;
+    }
     if (request.detail) {
       if (key.escape || input.toLocaleLowerCase() === "b") {
         onAction({ action: "back" });
         return;
       }
-      if (input.toLocaleLowerCase() === "o") {
-        if (request.canShowInExplorer) onAction({ action: "show_in_explorer" });
-        return;
-      }
       if (key.return) {
-        if (request.canShowInExplorer) onAction({ action: "show_in_explorer" });
+        if (request.canRevealFile && selected) {
+          onAction({ action: "reveal_file", id: selected.id });
+        }
         return;
       }
       return;
@@ -86,7 +91,6 @@ export function MemoryManagerPrompt({
       );
       return;
     }
-    const selected = request.entries[selectedIndex];
     if (key.return && selected) onAction({ action: "detail", id: selected.id });
   });
 
@@ -112,8 +116,8 @@ export function MemoryManagerPrompt({
             </Text>
           ))}
         </Box>
-        {request.canShowInExplorer ? (
-          <Text dimColor>Enter or O open Memory Store in Explorer · Esc/B back</Text>
+        {request.canRevealFile ? (
+          <Text dimColor>Enter or O reveal this memory file · Esc/B back</Text>
         ) : (
           <Text dimColor>Explorer is unavailable in this host · Esc/B back</Text>
         )}
@@ -142,7 +146,9 @@ export function MemoryManagerPrompt({
         />
       </Box>
       {request.message ? <Text color="green">{request.message}</Text> : null}
-      <Text dimColor>↑/↓ move · Enter details · R refresh · Esc close</Text>
+      <Text dimColor>
+        ↑/↓ move · Enter details · O reveal selected memory file · R refresh · Esc close
+      </Text>
     </Box>
   );
 }

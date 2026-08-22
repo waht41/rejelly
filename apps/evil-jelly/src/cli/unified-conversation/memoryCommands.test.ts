@@ -144,19 +144,19 @@ describe("persistent memory commands", () => {
     );
   });
 
-  it("opens the human-only memory manager and explorer action", async () => {
-    const showMemoryStoreInExplorer = vi.fn(async () => undefined);
+  it("opens the human-only memory manager and reveals the selected scope file", async () => {
+    const revealMemoryFile = vi.fn(async () => undefined);
     const requestMemoryManager = vi
       .fn()
       .mockResolvedValueOnce({ action: "detail" as const, id })
-      .mockResolvedValueOnce({ action: "show_in_explorer" as const })
+      .mockResolvedValueOnce({ action: "reveal_file" as const, id })
       .mockResolvedValueOnce({ action: "close" as const });
-    const command = ports({ requestMemoryManager, showMemoryStoreInExplorer });
+    const command = ports({ requestMemoryManager, revealMemoryFile });
     await handleMemoryCommand("/memory", command);
     expect(requestMemoryManager).toHaveBeenCalledWith(
-      expect.objectContaining({ canShowInExplorer: true }),
+      expect.objectContaining({ canRevealFile: true }),
     );
-    expect(showMemoryStoreInExplorer).toHaveBeenCalledOnce();
+    expect(revealMemoryFile).toHaveBeenCalledWith("project");
     expect(command.logSystem).not.toHaveBeenCalledWith(expect.stringContaining("/memory"));
   });
 

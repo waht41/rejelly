@@ -32,7 +32,7 @@ export interface MemoryCommandPorts {
   readonly sessionId?: string;
   readonly requestConfirmation?: MemoryConfirmationHandler;
   readonly requestMemoryManager?: (request: MemoryManagerRequest) => Promise<MemoryManagerAction>;
-  readonly showMemoryStoreInExplorer?: () => Promise<void>;
+  readonly revealMemoryFile?: (scope: "user" | "project") => Promise<void>;
   logSystem(message: string): void;
 }
 
@@ -246,7 +246,7 @@ async function runMemoryManager(ports: MemoryCommandPorts): Promise<void> {
       ...(selectedDetail ? { detail: selectedDetail } : {}),
       ...(result.diagnostic ? { diagnostic: result.diagnostic } : {}),
       ...(message ? { message } : {}),
-      canShowInExplorer: Boolean(ports.showMemoryStoreInExplorer),
+      canRevealFile: Boolean(ports.revealMemoryFile),
     });
     message = undefined;
     if (action.action === "close") return;
@@ -265,15 +265,18 @@ async function runMemoryManager(ports: MemoryCommandPorts): Promise<void> {
       }
       continue;
     }
-    if (action.action === "show_in_explorer") {
-      if (!ports.showMemoryStoreInExplorer) {
+    if (action.action === "reveal_file") {
+      const selected = entries.find((entry) => entry.id === action.id);
+      if (!selected) {
+        message = `Memory not found: ${action.id}`;
+      } else if (!ports.revealMemoryFile) {
         message = "Explorer is unavailable in this host.";
       } else {
         try {
-          await ports.showMemoryStoreInExplorer();
-          message = "Opened persistent memory in File Explorer.";
+          await ports.revealMemoryFile(selected.scope);
+          message = `Revealed ${selected.scope} memory file in File Explorer.`;
         } catch (error) {
-          message = `Could not open persistent memory: ${errorMessage(error)}`;
+          message = `Could not reveal memory file: ${errorMessage(error)}`;
         }
       }
     }

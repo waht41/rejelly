@@ -54,14 +54,13 @@ export interface MemoryManagerRequest {
   detail?: MemoryManagerEntry;
   diagnostic?: string;
   message?: string;
-  canShowInExplorer: boolean;
+  canRevealFile: boolean;
 }
 
 export type MemoryManagerAction =
   | { action: "close" }
   | { action: "back" | "refresh" }
-  | { action: "detail"; id: string }
-  | { action: "show_in_explorer" };
+  | { action: "detail" | "reveal_file"; id: string };
 
 export interface McpManagerRow {
   serverId: string;
@@ -128,8 +127,8 @@ export interface PromptInputBindings {
   requestMcpManager?: (request: McpManagerRequest) => Promise<McpManagerAction>;
   /** Human-only persistent memory browser; never exposed as an Agent tool. */
   requestMemoryManager?: (request: MemoryManagerRequest) => Promise<MemoryManagerAction>;
-  /** Opens the application-owned Memory Store directory in the host file manager. */
-  showMemoryStoreInExplorer?: () => Promise<void>;
+  /** Reveals the application-owned file for one memory scope in the host file manager. */
+  revealMemoryFile?: (scope: "user" | "project") => Promise<void>;
   /** Resolves an active MCP manager request after an asynchronous refresh completes. */
   dismissMcpManager?: () => void;
 }

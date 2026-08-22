@@ -26,7 +26,7 @@ import {
 import type { InteractiveRunControl } from "../entry/unified-run/interactive/runControl";
 import { createInteractiveShell } from "../interactive-shell/inkLifecycle";
 import { createInteractiveSubmission } from "../interactive-shell/submission";
-import { showMemoryStoreInExplorer } from "../memory-manager/openMemoryStore";
+import { revealMemoryFileInExplorer } from "../memory-manager/openMemoryStore";
 import {
   resetComposerSession,
   useComposerSession,
@@ -211,8 +211,10 @@ function createPromptBindings(options: {
     requestChoice: createInkRequestChoice(),
     requestMcpManager: createInkRequestMcpManager(),
     requestMemoryManager: createInkRequestMemoryManager(),
-    showMemoryStoreInExplorer: async () => {
-      await suspendInkForExternalProcess(showMemoryStoreInExplorer);
+    revealMemoryFile: async (scope) => {
+      await suspendInkForExternalProcess(() =>
+        revealMemoryFileInExplorer({ scope, workspaceRoot: getWorkspaceFsPolicy().getRoot() }),
+      );
     },
     dismissMcpManager: () => useDecisionStore.getState().submitMcpManager({ action: "refresh" }),
     setAvailableSkills: (skills) => {

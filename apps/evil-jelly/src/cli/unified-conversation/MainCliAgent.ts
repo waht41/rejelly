@@ -388,7 +388,7 @@ async function handleMemory(runtime: RouterRuntime, rawInput: string): Promise<v
     sessionId: runtime.props.sessionId,
     requestConfirmation: runtime.host.requestMemoryConfirmation,
     requestMemoryManager: runtime.host.requestMemoryManager,
-    showMemoryStoreInExplorer: runtime.host.showMemoryStoreInExplorer,
+    revealMemoryFile: runtime.host.revealMemoryFile,
     logSystem: runtime.host.logSystemEvent,
   });
 }

@@ -157,7 +157,7 @@ In an interactive session, use the local commands below; they do not call the mo
 /memory delete <id>
 ```
 
-Bare `/memory` displays the live user/project catalog. `/memory show` includes detail and provenance; edit and delete use the same confirmation and compare-and-swap rules as Agent proposals. There is no `/memory list` alias or `/memory add` command. New entries are created by explicitly asking the Agent to remember something.
+Bare `/memory` opens the live user/project catalog. Select an entry and press `O` to reveal its concrete scope file in the host file manager (for example, Explorer selects `projects/<project-id>/memory.json`). `/memory show` includes detail and provenance; edit and delete use the same confirmation and compare-and-swap rules as Agent proposals. There is no `/memory list` alias or `/memory add` command. New entries are created by explicitly asking the Agent to remember something.
 
 Memory is stored outside the workspace at:
 

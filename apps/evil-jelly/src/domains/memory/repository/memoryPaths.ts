@@ -1,3 +1,4 @@
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { resolveGlobalJellyDir } from "../../../shared/globalPath";
 import { type MemoryProjectIdentity, resolveMemoryProjectIdentity } from "./memoryProjectIdentity";
@@ -13,6 +14,10 @@ export interface PersistentMemoryPaths {
 
 export function resolvePersistentMemoryRoot(): string {
   return path.join(resolveGlobalJellyDir(), "memory");
+}
+
+export async function ensurePersistentMemoryRoot(): Promise<void> {
+  await mkdir(resolvePersistentMemoryRoot(), { recursive: true });
 }
 
 function assertInsideRoot(root: string, candidate: string): string {
