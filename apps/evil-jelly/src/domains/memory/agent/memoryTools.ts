@@ -23,7 +23,6 @@ import type {
   MemorySourceContext,
   PersistentMemoryService,
 } from "../service/persistentMemoryService";
-import { createPersistentMemoryService } from "../service/persistentMemoryServiceImpl";
 
 const memoryReadParameters = z
   .object({
@@ -322,24 +321,16 @@ export function createMemoryTools(
 }
 
 export interface EquipMemoryKitOptions {
-  readonly workspaceRoot: string;
+  readonly service: PersistentMemoryService;
   readonly source: MemorySourceContext;
-  readonly memoryRoot?: string;
-  readonly service?: PersistentMemoryService;
   readonly runtime?: SessionMemoryRuntime;
   readonly requestConfirmation?: MemoryConfirmationHandler;
 }
 
 /** Equip the only two model-facing persistent-memory capabilities. */
 export function equipMemoryKit(options: EquipMemoryKitOptions): void {
-  const service =
-    options.service ??
-    createPersistentMemoryService({
-      workspaceRoot: options.workspaceRoot,
-      ...(options.memoryRoot ? { memoryRoot: options.memoryRoot } : {}),
-    });
   const tools: ToolDefinition[] = createMemoryTools({
-    service: options.runtime?.service ?? service,
+    service: options.runtime?.service ?? options.service,
     runtime: options.runtime,
     source: options.source,
     requestConfirmation: options.requestConfirmation,

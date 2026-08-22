@@ -43,7 +43,6 @@ import {
   createDeleteFileTool,
   createEditFileTool,
 } from "../../domains/workspace/write/WriteTools";
-import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
 import { getBinding } from "../../shared/host/context";
 import { evilJellyToolLoggerMiddleware } from "../../shared/tool-observation/middleware";
 import { buildAutoCompactionConfig } from "./contextControl";
@@ -85,16 +84,18 @@ async function useUnifiedTools(props: ConversationAgentProps): Promise<void> {
   // may be equipped on UnifiedAgent; the standalone research agent stays the fan-out-ready unit.
   equipWebResearchKit();
   useArtifact();
-  equipMemoryKit({
-    workspaceRoot: getWorkspaceFsPolicy().getRoot(),
-    ...(memoryRuntime ? { service: memoryRuntime.service, runtime: memoryRuntime } : {}),
-    source: {
-      source: "agent_tool",
-      ...(props.sessionId ? { sessionId: props.sessionId } : {}),
-      ...(props.turnId ? { turnId: props.turnId } : {}),
-    },
-    requestConfirmation: requestMemoryConfirmation,
-  });
+  if (memoryRuntime) {
+    equipMemoryKit({
+      service: memoryRuntime.service,
+      runtime: memoryRuntime,
+      source: {
+        source: "agent_tool",
+        ...(props.sessionId ? { sessionId: props.sessionId } : {}),
+        ...(props.turnId ? { turnId: props.turnId } : {}),
+      },
+      requestConfirmation: requestMemoryConfirmation,
+    });
+  }
 
   equipTool(editTool);
   equipTool(createTool);
