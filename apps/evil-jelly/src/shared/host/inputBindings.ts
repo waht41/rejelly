@@ -60,7 +60,7 @@ export interface MemoryManagerRequest {
 export type MemoryManagerAction =
   | { action: "close" }
   | { action: "back" | "refresh" }
-  | { action: "detail" | "reveal_file"; id: string };
+  | { action: "detail" | "delete" | "reveal_file"; id: string };
 
 export interface McpManagerRow {
   serverId: string;

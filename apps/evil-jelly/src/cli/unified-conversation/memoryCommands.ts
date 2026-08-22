@@ -265,6 +265,10 @@ async function runMemoryManager(ports: MemoryCommandPorts): Promise<void> {
       }
       continue;
     }
+    if (action.action === "delete") {
+      await deleteEntry(ports, action.id);
+      continue;
+    }
     if (action.action === "reveal_file") {
       const selected = entries.find((entry) => entry.id === action.id);
       if (!selected) {

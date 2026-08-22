@@ -71,6 +71,10 @@ export function MemoryManagerPrompt({
       return;
     }
     if (request.detail) {
+      if (input.toLocaleLowerCase() === "d") {
+        onAction({ action: "delete", id: request.detail.id });
+        return;
+      }
       if (key.escape) {
         onAction({ action: "back" });
         return;
@@ -93,6 +97,11 @@ export function MemoryManagerPrompt({
     }
     if (input.toLocaleLowerCase() === "r") {
       onAction({ action: "refresh" });
+      return;
+    }
+    if (input.toLocaleLowerCase() === "d") {
+      const selected = request.entries[selectedIndex];
+      if (selected) onAction({ action: "delete", id: selected.id });
       return;
     }
     if (key.upArrow || key.downArrow || key.pageUp || key.pageDown || key.home || key.end) {
@@ -141,9 +150,9 @@ export function MemoryManagerPrompt({
           {detailLines.length} · ↑/↓ scroll · Home/End jump
         </Text>
         {request.canRevealFile ? (
-          <Text dimColor>O reveal this memory file · Esc back</Text>
+          <Text dimColor>O reveal · D delete · Esc back</Text>
         ) : (
-          <Text dimColor>Explorer is unavailable in this host · Esc back</Text>
+          <Text dimColor>D delete · Esc back</Text>
         )}
         {request.message ? <Text color="green">{request.message}</Text> : null}
       </Box>
@@ -170,9 +179,7 @@ export function MemoryManagerPrompt({
         />
       </Box>
       {request.message ? <Text color="green">{request.message}</Text> : null}
-      <Text dimColor>
-        ↑/↓ move · Enter details · O reveal selected memory file · R refresh · Esc close
-      </Text>
+      <Text dimColor>↑/↓ move · Enter details · O reveal · D delete · R refresh · Esc close</Text>
     </Box>
   );
 }
