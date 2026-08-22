@@ -12,10 +12,7 @@ import type {
 } from "../../shared/host/inputBindings";
 import type { AgentModeBindings } from "../../shared/host/modeBindings";
 import type { ConversationPresentationBindings } from "../../shared/host/presentationBindings";
-import type {
-  MemoryConfirmationHandler,
-  ToolConfirmationBindings,
-} from "../../shared/host/toolConfirmationBindings";
+import type { ToolConfirmationBindings } from "../../shared/host/toolConfirmationBindings";
 import { resetInterruptibleTaskStack } from "../../shared/task-interruption/taskStack";
 import { resetToolTranscriptViewSession } from "../conversation-display/tool-transcript/viewStore";
 import {
@@ -40,6 +37,7 @@ import {
 import { resetSubmissionDispatch } from "../submission-dispatch/dispatcher";
 import { resetModeSession, useModeStore } from "../tool-approval/approvalModeStore";
 import { createToolApproval } from "../tool-approval/createToolApproval";
+import { createInkRequestMemoryConfirmation } from "./memoryConfirmation";
 
 function toDecisionView(view?: PromptChoiceView): DecisionView | undefined {
   if (view === undefined) {
@@ -97,31 +95,6 @@ function createInkRequestMcpManager(): NonNullable<PromptInputBindings["requestM
       return action;
     });
   };
-}
-
-function createInkRequestMemoryConfirmation(): MemoryConfirmationHandler {
-  const decision = createOperatorDecision();
-  return async (request) =>
-    decision.run(async (session) => {
-      useOutputStore
-        .getState()
-        .setPhase("awaiting_user", `memory ${request.operation} → ${request.id}`);
-      const before = request.before ? `\nBefore:\n${JSON.stringify(request.before, null, 2)}` : "";
-      const after = request.after ? `\nAfter:\n${JSON.stringify(request.after, null, 2)}` : "";
-      const selected = await session.requestChoice({
-        message:
-          `Allow persistent memory ${request.operation} (${request.scope})?\n` +
-          `ID: ${request.id}${before}${after}\n\n` +
-          "This is an independent memory confirmation; auto mode does not accept it.",
-        options: [
-          { key: "y", label: "Accept memory change", value: "accept" },
-          { key: "n", label: "Reject", value: "reject" },
-        ],
-        cancelValue: "reject",
-      });
-      useOutputStore.getState().resumeWork("Running…");
-      return selected === "accept" ? { action: "accept" } : { action: "reject" };
-    });
 }
 
 function createOutputBindings(): ConversationPresentationBindings {
