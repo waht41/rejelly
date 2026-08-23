@@ -113,7 +113,7 @@ describe("WorkspaceFsPolicy workspace root", () => {
     }
   });
 
-  it("keeps hidden directories blocked", () => {
+  it("keeps hidden directories out of discovery", () => {
     const policy = createPolicy();
     const hiddenGit = policy.tryResolve(".git/config");
     const hiddenNodeModules = policy.tryResolve("node_modules/pkg/index.js");
@@ -121,6 +121,17 @@ describe("WorkspaceFsPolicy workspace root", () => {
     expect(hiddenGit.ok).toBe(false);
     expect(hiddenNodeModules.ok).toBe(false);
     expect(hiddenDist.ok).toBe(false);
+  });
+
+  it("allows direct access to generated paths but keeps dependencies read-only", () => {
+    const policy = createPolicy();
+
+    expect(policy.tryResolve("dist/index.js", { access: "direct-read" }).ok).toBe(true);
+    expect(policy.tryResolve("dist/index.js", { access: "direct-write" }).ok).toBe(true);
+    expect(policy.tryResolve("node_modules/pkg/index.js", { access: "direct-read" }).ok).toBe(true);
+    expect(policy.tryResolve("node_modules/pkg/index.js", { access: "direct-write" }).ok).toBe(
+      false,
+    );
   });
 
   it("blocks sensitive files", () => {
@@ -177,7 +188,7 @@ describe("WorkspaceFsPolicy workspace root", () => {
     expect(allowedFile.ok).toBe(true);
   });
 
-  it("allowGitignored relaxes only the gitignore guard", async () => {
+  it("direct access relaxes only discovery guards", async () => {
     const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
     fs.mkdirSync(root, { recursive: true });
     fs.writeFileSync(path.join(root, ".gitignore"), "AGENTS.override.md\nnode_modules/\n", "utf-8");
@@ -188,12 +199,40 @@ describe("WorkspaceFsPolicy workspace root", () => {
     const policy = new WorkspaceFsPolicy(root);
 
     expect(policy.tryResolve("AGENTS.override.md").ok).toBe(false);
-    expect(policy.tryResolve("AGENTS.override.md", { allowGitignored: true }).ok).toBe(true);
-    expect(policy.tryResolve("node_modules/pkg.js", { allowGitignored: true }).ok).toBe(false);
-    expect(policy.tryResolve(".env", { allowGitignored: true }).ok).toBe(false);
-    expect(await policy.readFile("AGENTS.override.md", { allowGitignored: true })).toBe(
-      "Override rule",
-    );
+    expect(policy.tryResolve("AGENTS.override.md", { access: "direct-read" }).ok).toBe(true);
+    expect(policy.tryResolve("node_modules/pkg.js", { access: "direct-read" }).ok).toBe(true);
+    expect(policy.tryResolve("node_modules/pkg.js", { access: "direct-write" }).ok).toBe(false);
+    expect(policy.tryResolve(".env", { access: "direct-read" }).ok).toBe(false);
+    expect(await policy.readFile("AGENTS.override.md")).toBe("Override rule");
+  });
+
+  it("allows direct reads and writes for ordinary gitignored paths", async () => {
+    const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
+    fs.mkdirSync(path.join(root, "local"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".gitignore"), "local/\n", "utf-8");
+    fs.writeFileSync(path.join(root, "local", "settings.json"), "{}", "utf-8");
+    const policy = new WorkspaceFsPolicy(root);
+
+    expect(policy.tryResolve("local/settings.json").ok).toBe(false);
+    await expect(policy.readFile("local/settings.json")).resolves.toBe("{}");
+    await policy.writeFile("local/settings.json", '{"enabled":true}');
+    await expect(
+      fsPromises.readFile(path.join(root, "local", "settings.json"), "utf-8"),
+    ).resolves.toBe('{"enabled":true}');
+  });
+
+  it("rejects dependency reads whose real path escapes the workspace", () => {
+    const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
+    const outside = path.join(os.tmpdir(), `evil-jelly-dependency-${Date.now()}-${Math.random()}`);
+    fs.mkdirSync(path.join(root, "node_modules"), { recursive: true });
+    fs.mkdirSync(outside, { recursive: true });
+    fs.writeFileSync(path.join(outside, "index.js"), "export {}", "utf-8");
+    fs.symlinkSync(outside, path.join(root, "node_modules", "escaped"), "junction");
+    const policy = new WorkspaceFsPolicy(root);
+
+    expect(
+      policy.tryResolve("node_modules/escaped/index.js", { access: "direct-read" }),
+    ).toMatchObject({ ok: false });
   });
 
   it("centralizes traversal skip rules for inside and outside directories", () => {

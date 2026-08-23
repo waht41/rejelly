@@ -22,11 +22,11 @@ async function resolveWorkspaceRule(policy: WorkspaceFsPolicy): Promise<Workspac
       // Rule files stay readable even when gitignored: ignoring AGENTS.override.md while
       // keeping it tracked is a Codex convention. Only the gitignore guard is relaxed;
       // sensitive-file and system-hidden checks still apply in the policy.
-      const stat = await policy.stat(fileName, { allowGitignored: true });
+      const stat = await policy.stat(fileName, { access: "direct-read" });
       if (!stat.isFile()) {
         continue;
       }
-      const markdown = (await policy.readFile(fileName, { allowGitignored: true })).trim();
+      const markdown = (await policy.readFile(fileName, { access: "direct-read" })).trim();
       if (markdown.length > 0) {
         return { fileName, markdown };
       }

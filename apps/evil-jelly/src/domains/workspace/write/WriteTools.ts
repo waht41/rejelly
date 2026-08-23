@@ -189,7 +189,7 @@ export function createEditFileTool(
       }
 
       for (const { filePath: normalizedPath, edits } of mergedTargets) {
-        const resolved = await resolveToolFsPath(normalizedPath, "write");
+        const resolved = await resolveToolFsPath(normalizedPath, "write", "direct-write");
         if (!resolved.ok) {
           return resolved.error;
         }
@@ -300,7 +300,7 @@ export function createCreateFileTool(
         }
         seenPaths.add(normalizedPath);
 
-        const resolved = await resolveToolFsPath(normalizedPath, "write");
+        const resolved = await resolveToolFsPath(normalizedPath, "write", "direct-write");
         if (!resolved.ok) {
           return resolved.error;
         }
@@ -422,7 +422,7 @@ export function createDeleteFileTool(
         }
         seenPaths.add(normalizedPath);
 
-        const resolved = policy.tryResolve(normalizedPath);
+        const resolved = policy.tryResolve(normalizedPath, { access: "direct-write" });
         if (!resolved.ok) {
           return resolved.error;
         }
@@ -435,7 +435,7 @@ export function createDeleteFileTool(
         seenResolvedPaths.add(resolved.rel);
 
         try {
-          const stat = await policy.stat(resolved.rel);
+          const stat = await policy.statResolved(resolved);
           existingTargets.push({
             filePath: normalizedPath,
             rel: resolved.rel,

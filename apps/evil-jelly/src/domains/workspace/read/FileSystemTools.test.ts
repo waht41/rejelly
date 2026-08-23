@@ -56,6 +56,26 @@ describe("ReadFileTool", () => {
     expect(output).toContain("content-5");
   });
 
+  it("reads exact gitignored and dependency files", async () => {
+    await fs.mkdir(path.join(tmpDir, "local"), { recursive: true });
+    await fs.mkdir(path.join(tmpDir, "node_modules", "pkg"), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, ".gitignore"), "local/\nnode_modules/\n", "utf8");
+    await fs.writeFile(path.join(tmpDir, "local", "settings.json"), '{"local":true}', "utf8");
+    await fs.writeFile(
+      path.join(tmpDir, "node_modules", "pkg", "index.js"),
+      "export const dependency = true;",
+      "utf8",
+    );
+    setWorkspaceRoot(tmpDir);
+
+    const output = await ReadFileTool.handler({
+      filePaths: ["local/settings.json", "node_modules/pkg/index.js"],
+    });
+
+    expect(output).toContain('{"local":true}');
+    expect(output).toContain("export const dependency = true;");
+  });
+
   it("reads a line range without adding line numbers to the file body", async () => {
     const lines = Array.from({ length: 50 }, (_, i) => `line-${i + 1}`);
     await fs.writeFile(path.join(tmpDir, "ranged.txt"), lines.join("\n"), "utf8");

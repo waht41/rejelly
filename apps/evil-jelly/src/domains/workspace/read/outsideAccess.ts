@@ -1,4 +1,5 @@
 import {
+  type FsAccessKind,
   type FsIntent,
   getWorkspaceFsPolicy,
   type ResolvedFsPath,
@@ -23,6 +24,7 @@ function tryGetBinding(): EvilJellyBindings | null {
 export async function resolveToolFsPath(
   userPath: string,
   intent: ToolFsIntent,
+  access: FsAccessKind,
 ): Promise<ResolveToolFsPathResult> {
   const policy = getWorkspaceFsPolicy();
   const host = tryGetBinding();
@@ -30,6 +32,7 @@ export async function resolveToolFsPath(
   const first = policy.tryResolve(userPath, {
     intent,
     approvalMode: mode,
+    access,
   });
   if (first.ok) {
     return first;
@@ -55,6 +58,7 @@ export async function resolveToolFsPath(
   const second = policy.tryResolve(userPath, {
     intent,
     approvalMode: mode,
+    access,
   });
   if (second.ok) {
     return second;

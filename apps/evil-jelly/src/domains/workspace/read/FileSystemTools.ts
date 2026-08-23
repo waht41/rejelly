@@ -100,7 +100,7 @@ export const ListDirTool: ToolDefinition<typeof listDirParameters> = {
   parameters: listDirParameters,
   handler: async ({ dirPath, depth }) => {
     const policy = getWorkspaceFsPolicy();
-    const resolved = await resolveToolFsPath(dirPath, "read");
+    const resolved = await resolveToolFsPath(dirPath, "read", "discovery");
     if (!resolved.ok) {
       return resolved.error;
     }
@@ -301,7 +301,7 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
     for (const entry of filePaths) {
       const { path: filePath, offset, limit } = typeof entry === "string" ? { path: entry } : entry;
       const hasRange = offset !== undefined || limit !== undefined;
-      const resolved = await resolveToolFsPath(filePath, "read");
+      const resolved = await resolveToolFsPath(filePath, "read", "direct-read");
       if (!resolved.ok) {
         results.push(renderReadFileError(filePath, `Error: ${resolved.error}`));
         continue;
