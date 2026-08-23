@@ -31,7 +31,7 @@ export interface WorkspaceWalkFilesOptions {
 
 export type FsIntent = "inside" | "read" | "write";
 export type FsApprovalMode = "normal" | "auto";
-export type FsAccessKind = "discovery" | "direct-read" | "direct-write";
+export type FsAccessKind = "discovery" | "scoped-discovery" | "direct-read" | "direct-write";
 
 export type ResolvedFsPath = {
   abs: string;
@@ -55,15 +55,17 @@ export type FsResolveOptions = {
   intent?: FsIntent;
   approvalMode?: FsApprovalMode;
   /**
-   * Discovery respects `.gitignore` and bulky/tool directory exclusions. Direct access accepts
-   * exact gitignored paths; dependency directories are direct-read only.
+   * Discovery respects `.gitignore` and bulky/tool directory exclusions. Scoped discovery accepts
+   * one explicitly bounded ignored subtree. Direct access accepts exact gitignored paths;
+   * dependency directories are read-only.
    */
   access?: FsAccessKind;
 };
 
 /**
- * Directory name segments hidden from discovery. Protected names remain unavailable to direct
- * access; generated directories permit direct access, while node_modules is direct-read only.
+ * Directory name segments hidden from discovery. Protected names remain unavailable to scoped or
+ * direct access; generated directories permit scoped/direct access, while node_modules is
+ * read-only.
  */
 export const AGENT_HIDDEN_NAMES = new Set([
   ".agents",
@@ -217,6 +219,53 @@ export class WorkspaceFsPolicy {
     return this.shouldSkipIgnoredWorkspaceEntry(parent.rel, entry);
   }
 
+  /**
+   * Traversal guard after an ignored subtree was explicitly selected. Root `.gitignore` rules no
+   * longer hide its children, but nested bulky/tool directories, protected paths, sensitive files,
+   * and symlinks remain excluded.
+   */
+  shouldSkipScopedResolvedEntry(parent: ResolvedFsPath, entry: WorkspaceDirEntry): boolean {
+    if (entry.isSymbolicLink?.()) {
+      return true;
+    }
+    if (
+      entry.isDirectory() &&
+      (TOOL_ALWAYS_IGNORED_DIR_NAMES.has(entry.name) || AGENT_HIDDEN_NAMES.has(entry.name))
+    ) {
+      return true;
+    }
+    if (parent.outside) {
+      return false;
+    }
+    const child = this.childResolved(parent, entry.name);
+    return isPathSystemHidden(child.rel, "scoped-discovery");
+  }
+
+  /** Validate the root of an opt-in ignored traversal before any entries are inspected. */
+  validateScopedDiscoveryRoot(resolved: ResolvedFsPath): string | undefined {
+    if (resolved.outside) {
+      return "includeIgnored is only available for directories inside the workspace.";
+    }
+    if (resolved.rel === ".") {
+      return "includeIgnored requires an explicit workspace subdirectory; scanning the workspace root is not allowed.";
+    }
+
+    const segments = resolved.rel.split(path.sep).filter(Boolean);
+    const dependencyIndex = segments.lastIndexOf(DEPENDENCY_DIR_NAME);
+    if (dependencyIndex < 0) {
+      return undefined;
+    }
+    const packageSegments = segments.slice(dependencyIndex + 1);
+    if (
+      packageSegments.length === 0 ||
+      packageSegments[0] === ".pnpm" ||
+      (packageSegments[0]?.startsWith("@") && packageSegments.length < 2)
+    ) {
+      return "includeIgnored under node_modules must be scoped to a concrete package (for example node_modules/zod or node_modules/@scope/pkg).";
+    }
+    return undefined;
+  }
+
   childResolved(parent: ResolvedFsPath, childName: string): ResolvedFsPath {
     return {
       abs: path.join(parent.abs, childName),
@@ -317,7 +366,7 @@ export class WorkspaceFsPolicy {
         };
       }
       if (
-        access === "direct-read" &&
+        (access === "direct-read" || access === "scoped-discovery") &&
         relNorm.split(path.sep).includes(DEPENDENCY_DIR_NAME) &&
         fs.existsSync(abs)
       ) {

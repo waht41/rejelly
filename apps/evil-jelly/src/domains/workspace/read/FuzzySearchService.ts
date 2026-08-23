@@ -5,9 +5,9 @@
  */
 
 import { execFileSync } from "node:child_process";
-import path from "node:path";
 import {
   getWorkspaceFsPolicy,
+  type ResolvedFsPath,
   TOOL_ALWAYS_IGNORED_DIR_NAMES,
   toGitignorePath,
   type WorkspaceDirEntry,
@@ -18,6 +18,9 @@ import {
 const MAX_COLLECT = 200_000;
 /** Hard cap on files visited by the Node fallback walk (git path has its own bound). */
 const MAX_FALLBACK_FILES = 50_000;
+/** Tighter caps for opt-in traversal of ignored/generated/dependency subtrees. */
+const MAX_SCOPED_IGNORED_FILES = 10_000;
+const MAX_SCOPED_IGNORED_ENTRIES = 50_000;
 
 // ---------------------------------------------------------------------------
 // Internal helpers (identical to the original FuzzySearchTool)
@@ -160,37 +163,53 @@ function gitListFiles(dirRelPosix: string): string[] | null {
 }
 
 /** Bounded Node directory walk honouring root .gitignore and always-ignored dir names. */
-async function nodeWalkFiles(policy: WorkspaceFsPolicy, startRelPosix: string): Promise<string[]> {
-  const startRel = startRelPosix === "" ? "." : startRelPosix;
+async function nodeWalkFiles(
+  policy: WorkspaceFsPolicy,
+  start: ResolvedSearchDirectory,
+  includeIgnored: boolean,
+): Promise<string[]> {
+  const maxFiles = includeIgnored ? MAX_SCOPED_IGNORED_FILES : MAX_FALLBACK_FILES;
   const out: string[] = [];
+  let visitedEntries = 0;
 
-  async function visit(relDir: string): Promise<void> {
-    if (out.length >= MAX_FALLBACK_FILES) {
+  async function visit(directory: ResolvedSearchDirectory): Promise<void> {
+    if (
+      out.length >= maxFiles ||
+      (includeIgnored && visitedEntries >= MAX_SCOPED_IGNORED_ENTRIES)
+    ) {
       return;
     }
     let entries: WorkspaceDirEntry[];
     try {
-      entries = await policy.readdir(relDir, { withFileTypes: true });
+      entries = await policy.readdirResolved(directory, { withFileTypes: true });
     } catch {
       return;
     }
     for (const entry of entries) {
-      if (out.length >= MAX_FALLBACK_FILES) {
+      if (
+        out.length >= maxFiles ||
+        (includeIgnored && visitedEntries >= MAX_SCOPED_IGNORED_ENTRIES)
+      ) {
         return;
       }
-      const childRel = path.join(relDir, entry.name);
-      if (policy.shouldSkipIgnoredWorkspaceEntry(relDir, entry)) {
+      visitedEntries += 1;
+      if (
+        includeIgnored
+          ? policy.shouldSkipScopedResolvedEntry(directory, entry)
+          : policy.shouldSkipResolvedEntry(directory, entry)
+      ) {
         continue;
       }
+      const child = policy.childResolved(directory, entry.name);
       if (entry.isDirectory()) {
-        await visit(childRel);
+        await visit({ ...child, relPosix: toGitignorePath(child.rel), mtimeMs: 0 });
         continue;
       }
-      out.push(toGitignorePath(childRel));
+      out.push(toGitignorePath(child.rel));
     }
   }
 
-  await visit(startRel);
+  await visit(start);
   return out;
 }
 
@@ -209,9 +228,7 @@ export interface FuzzyPathRefMatch extends FuzzyMatch {
   kind: "file" | "directory";
 }
 
-type ResolvedSearchDirectory = {
-  abs: string;
-  rel: string;
+type ResolvedSearchDirectory = ResolvedFsPath & {
   relPosix: string;
   mtimeMs: number;
 };
@@ -227,6 +244,8 @@ export type FuzzySearchOptions = {
    * `reuse` keeps repeated interactive queries fast by scoring the existing snapshot.
    */
   cachePolicy?: "reuse" | "refresh";
+  /** Traverse one explicitly selected ignored subtree with tighter Node-walk bounds. */
+  includeIgnored?: boolean;
 };
 
 const candidateCache = new Map<string, CandidateCacheEntry>();
@@ -239,18 +258,29 @@ function normalizeDirectoryRel(rel: string): string {
 async function resolveSearchDirectory(
   policy: WorkspaceFsPolicy,
   directory: string,
+  includeIgnored: boolean,
 ): Promise<ResolvedSearchDirectory> {
-  const resolved = policy.tryResolve(directory);
+  const resolved = policy.tryResolve(directory, {
+    access: includeIgnored ? "scoped-discovery" : "discovery",
+  });
   if (!resolved.ok) {
     throw new Error(resolved.error);
   }
-  const stat = await policy.stat(resolved.rel);
+  if (includeIgnored) {
+    const scopeError = policy.validateScopedDiscoveryRoot(resolved);
+    if (scopeError) {
+      throw new Error(scopeError);
+    }
+  }
+  const stat = await policy.statResolved(resolved);
   if (!stat.isDirectory()) {
     throw new Error(`Search directory is not a directory: ${resolved.rel}`);
   }
   return {
     abs: resolved.abs,
     rel: resolved.rel,
+    displayPath: resolved.displayPath,
+    outside: resolved.outside,
     relPosix: normalizeDirectoryRel(resolved.rel),
     mtimeMs: stat.mtimeMs,
   };
@@ -259,19 +289,21 @@ async function resolveSearchDirectory(
 async function getCandidateFiles(
   directory: string,
   cachePolicy: FuzzySearchOptions["cachePolicy"] = "reuse",
+  includeIgnored = false,
 ): Promise<string[]> {
   const policy = getWorkspaceFsPolicy();
-  const resolved = await resolveSearchDirectory(policy, directory);
-  const cacheKey = `${policy.getRoot()}\0${resolved.relPosix}`;
+  const resolved = await resolveSearchDirectory(policy, directory, includeIgnored);
+  const cacheKey = `${policy.getRoot()}\0${includeIgnored ? "ignored" : "default"}\0${resolved.relPosix}`;
   const cached = candidateCache.get(cacheKey);
   if (cachePolicy === "reuse" && cached && cached.mtimeMs === resolved.mtimeMs) {
     return cached.candidates;
   }
 
-  const candidates =
-    rgListFiles(resolved.relPosix) ??
-    gitListFiles(resolved.relPosix) ??
-    (await nodeWalkFiles(policy, resolved.relPosix));
+  const candidates = includeIgnored
+    ? await nodeWalkFiles(policy, resolved, true)
+    : (rgListFiles(resolved.relPosix) ??
+      gitListFiles(resolved.relPosix) ??
+      (await nodeWalkFiles(policy, resolved, false)));
   candidateCache.set(cacheKey, { mtimeMs: resolved.mtimeMs, candidates });
   return candidates;
 }
@@ -337,7 +369,11 @@ export async function fuzzySearchFiles(
     return [];
   }
 
-  const rootRelPaths = await getCandidateFiles(directory, options?.cachePolicy);
+  const rootRelPaths = await getCandidateFiles(
+    directory,
+    options?.cachePolicy,
+    options?.includeIgnored,
+  );
 
   const scored: Array<{ path: string; score: number }> = [];
   for (const rootRel of rootRelPaths) {
