@@ -33,7 +33,8 @@ export interface PromptChoiceOption {
 export type PromptChoiceView =
   | { type: "none" }
   | { type: "diff"; text: string; caption?: string; captionTitle?: string }
-  | { type: "markdown"; text: string };
+  | { type: "markdown"; text: string }
+  | { type: "scrollable_text"; text: string; caption?: string };
 
 export interface PromptChoiceRequest {
   message: string;
