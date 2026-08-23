@@ -61,7 +61,7 @@ cli
   .option("--api-key <key>", "OPENAI_API_KEY override for this command")
   .option(
     "--env <name|path>",
-    "Env profile to load above the shell: a name resolves to ~/.evil-jelly/<name>.env",
+    "Env profile above the shell: a name resolves to ~/.evil-jelly/<name>.env",
   )
   .option(
     "--workspace <dir>",

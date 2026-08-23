@@ -36,8 +36,8 @@ async function main() {
   try {
     loadEvilJellyEnv({ cliApiKey: args.cliApiKey, envFile: args.envFile });
   } catch (error) {
-    // A misnamed profile or a profile that would leak a key across endpoints: user-facing
-    // config errors, so print the line rather than the stack the top-level catch would show.
+    // A misnamed or incomplete profile is a user-facing config error, so print the line rather
+    // than the stack the top-level catch would show.
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
