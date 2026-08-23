@@ -34,6 +34,70 @@ afterEach(() => {
 });
 
 describe("createEditFileTool", () => {
+  it("edits an exact gitignored file through the normal diff confirmation", async () => {
+    const dir = createTempWorkspace();
+    try {
+      mkdirSync(join(dir, "local"), { recursive: true });
+      writeFileSync(join(dir, ".gitignore"), "local/\n", "utf8");
+      writeFileSync(join(dir, "local/settings.json"), '{"enabled":false}\n', "utf8");
+      setWorkspaceRoot(dir);
+
+      const seen: FsWritePayload[] = [];
+      const tool = createEditFileTool(async (params) => {
+        if (params.type !== "fs_write") {
+          throw new Error(`Unexpected payload type: ${params.type}`);
+        }
+        seen.push(params);
+        return { action: "accept" };
+      });
+
+      const result = await tool.handler({
+        targets: [
+          {
+            filePath: "local/settings.json",
+            edits: [{ searchBlock: "false", replaceBlock: "true" }],
+          },
+        ],
+      });
+
+      expect(result).toBe(`Updated ${join("local", "settings.json")} (1 edit(s)).`);
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.unifiedDiff).toContain("settings.json");
+      expect(await readFile(join(dir, "local/settings.json"), "utf8")).toBe('{"enabled":true}\n');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps dependency files read-only", async () => {
+    const dir = createTempWorkspace();
+    try {
+      mkdirSync(join(dir, "node_modules/pkg"), { recursive: true });
+      writeFileSync(join(dir, "node_modules/pkg/index.js"), "export const value = 1;\n", "utf8");
+      setWorkspaceRoot(dir);
+
+      let confirmed = false;
+      const tool = createEditFileTool(async () => {
+        confirmed = true;
+        return { action: "accept" };
+      });
+      const result = await tool.handler({
+        targets: [
+          {
+            filePath: "node_modules/pkg/index.js",
+            edits: [{ searchBlock: "1", replaceBlock: "2" }],
+          },
+        ],
+      });
+
+      expect(result).toContain("hidden or ignored");
+      expect(confirmed).toBe(false);
+      expect(await readFile(join(dir, "node_modules/pkg/index.js"), "utf8")).toContain("1");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("supports single-file edit via one-item targets array", async () => {
     const dir = createTempWorkspace();
     try {

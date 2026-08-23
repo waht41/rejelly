@@ -48,7 +48,7 @@ export async function getParsedAst(
 ): Promise<
   { ok: true; rel: string; text: string; root: SgNode; lang: Lang } | { ok: false; error: string }
 > {
-  const resolved = getWorkspaceFsPolicy().tryResolve(filePath);
+  const resolved = getWorkspaceFsPolicy().tryResolve(filePath, { access: "direct-read" });
   if (!resolved.ok) {
     return { ok: false, error: resolved.error };
   }

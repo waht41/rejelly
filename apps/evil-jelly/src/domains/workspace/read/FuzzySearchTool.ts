@@ -26,6 +26,12 @@ const fuzzySearchPathsParameters = z.object({
     .max(100)
     .optional()
     .describe("Maximum number of paths to return (default 20)."),
+  includeIgnored: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Include ignored files within the explicit directory. Workspace root is refused; node_modules must be scoped to a concrete package.",
+    ),
 });
 
 export const FuzzySearchTool: ToolDefinition<typeof fuzzySearchPathsParameters> = {
@@ -33,18 +39,21 @@ export const FuzzySearchTool: ToolDefinition<typeof fuzzySearchPathsParameters> 
   description:
     "Fast fuzzy search over file paths under a directory: respects .gitignore (via ripgrep, then git, " +
     "then a bounded Node walk), ranks matches, and returns only the best-scoring paths. " +
+    "Set includeIgnored only for one explicit subdirectory; dependency searches require a concrete package path. " +
     "Use when list_directory is too shallow or you need approximate path matching (e.g. typos, shortened names).",
   parameters: fuzzySearchPathsParameters,
-  handler: async ({ keyword, directory, limit }) => {
+  handler: async ({ keyword, directory, limit, includeIgnored }) => {
     try {
       const matches = await fuzzySearchFiles(keyword, directory, limit, {
         cachePolicy: "refresh",
+        includeIgnored,
       });
 
       if (matches.length === 0) {
         return (
           `No file paths matched ${JSON.stringify(keyword)} under ${JSON.stringify(directory)} ` +
-          "(after .gitignore rules). Try a shorter needle or a different directory."
+          `${includeIgnored ? "(bounded ignored-subtree scan)" : "(after .gitignore rules)"}. ` +
+          "Try a shorter needle or a different directory."
         );
       }
       const lines = matches.map((m, i) => `${i + 1}. ${m.path}`);

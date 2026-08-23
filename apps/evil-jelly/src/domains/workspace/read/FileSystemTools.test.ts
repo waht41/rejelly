@@ -9,7 +9,12 @@ import {
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import type { FsOutsideAccessPayload } from "../../../shared/host/toolConfirmationBindings";
 import { createTestHostBindings } from "../__tests__/testHostBindings";
-import { MAX_READ_BYTES_PER_CALL, MAX_READ_LINE_BYTES, ReadFileTool } from "./FileSystemTools";
+import {
+  ListDirTool,
+  MAX_READ_BYTES_PER_CALL,
+  MAX_READ_LINE_BYTES,
+  ReadFileTool,
+} from "./FileSystemTools";
 
 const hostBindingMock = vi.hoisted(() => ({
   current: null as EvilJellyBindings | null,
@@ -54,6 +59,80 @@ describe("ReadFileTool", () => {
     expect(output).toContain('<file path="file-0.txt" path-scope="workspace">');
     expect(output).toContain('<file path="file-5.txt" path-scope="workspace">');
     expect(output).toContain("content-5");
+  });
+
+  it("reads exact gitignored and dependency files", async () => {
+    await fs.mkdir(path.join(tmpDir, "local"), { recursive: true });
+    await fs.mkdir(path.join(tmpDir, "node_modules", "pkg"), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, ".gitignore"), "local/\nnode_modules/\n", "utf8");
+    await fs.writeFile(path.join(tmpDir, "local", "settings.json"), '{"local":true}', "utf8");
+    await fs.writeFile(
+      path.join(tmpDir, "node_modules", "pkg", "index.js"),
+      "export const dependency = true;",
+      "utf8",
+    );
+    setWorkspaceRoot(tmpDir);
+
+    const output = await ReadFileTool.handler({
+      filePaths: ["local/settings.json", "node_modules/pkg/index.js"],
+    });
+
+    expect(output).toContain('{"local":true}');
+    expect(output).toContain("export const dependency = true;");
+  });
+
+  it("lists one explicit ignored subtree without exposing ignored workspace-wide traversal", async () => {
+    await fs.mkdir(path.join(tmpDir, "local", "nested"), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, ".gitignore"), "local/\n", "utf8");
+    await fs.writeFile(path.join(tmpDir, "local", "nested", "settings.json"), "{}", "utf8");
+    setWorkspaceRoot(tmpDir);
+
+    const hidden = await ListDirTool.handler({
+      dirPath: "local",
+      depth: 2,
+      includeIgnored: false,
+    });
+    const listed = await ListDirTool.handler({
+      dirPath: "local",
+      depth: 2,
+      includeIgnored: true,
+    });
+    const workspaceWide = await ListDirTool.handler({
+      dirPath: ".",
+      depth: 2,
+      includeIgnored: true,
+    });
+
+    expect(hidden).toContain("only contains ignored folders");
+    expect(listed).toContain("settings.json");
+    expect(workspaceWide).toContain("explicit workspace subdirectory");
+  });
+
+  it("lists a concrete dependency package but refuses the node_modules root", async () => {
+    await fs.mkdir(path.join(tmpDir, "node_modules", "@scope", "pkg", "src"), {
+      recursive: true,
+    });
+    await fs.writeFile(path.join(tmpDir, ".gitignore"), "node_modules/\n", "utf8");
+    await fs.writeFile(
+      path.join(tmpDir, "node_modules", "@scope", "pkg", "src", "index.ts"),
+      "export {};",
+      "utf8",
+    );
+    setWorkspaceRoot(tmpDir);
+
+    const packageListing = await ListDirTool.handler({
+      dirPath: "node_modules/@scope/pkg",
+      depth: 2,
+      includeIgnored: true,
+    });
+    const rootListing = await ListDirTool.handler({
+      dirPath: "node_modules",
+      depth: 1,
+      includeIgnored: true,
+    });
+
+    expect(packageListing).toContain("index.ts");
+    expect(rootListing).toContain("concrete package");
   });
 
   it("reads a line range without adding line numbers to the file body", async () => {

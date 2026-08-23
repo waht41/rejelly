@@ -235,4 +235,48 @@ describe("GrepSearchTool Node fallback context merge", () => {
     expect(out).toContain("-tail");
     expect(out).not.toContain("�");
   });
+
+  it("searches one explicit ignored subtree", async () => {
+    await fs.mkdir(path.join(tmpDir, "local", "nested"), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, ".gitignore"), "local/\n", "utf8");
+    await fs.writeFile(
+      path.join(tmpDir, "local", "nested", "settings.ts"),
+      "export const ignoredNeedle = true;\n",
+      "utf8",
+    );
+    setWorkspaceRoot(tmpDir);
+
+    const out = await executeGrepSearch("ignoredNeedle", "*.ts", 0, {
+      directory: "local",
+      includeIgnored: true,
+    });
+
+    expect(out).toContain(
+      `${path.join("local", "nested", "settings.ts")}:1:export const ignoredNeedle = true;`,
+    );
+  });
+
+  it("requires a concrete package for ignored dependency searches", async () => {
+    await fs.mkdir(path.join(tmpDir, "node_modules", "pkg", "src"), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, ".gitignore"), "node_modules/\n", "utf8");
+    await fs.writeFile(
+      path.join(tmpDir, "node_modules", "pkg", "src", "index.ts"),
+      "export const dependencyNeedle = true;\n",
+      "utf8",
+    );
+    setWorkspaceRoot(tmpDir);
+
+    const dependencyRoot = await executeGrepSearch("dependencyNeedle", "*.ts", 0, {
+      directory: "node_modules",
+      includeIgnored: true,
+    });
+    const packageResult = await executeGrepSearch("dependencyNeedle", "*.ts", 0, {
+      directory: "node_modules/pkg",
+      includeIgnored: true,
+    });
+
+    expect(dependencyRoot).toContain("concrete package");
+    expect(packageResult).toContain("dependencyNeedle");
+    expect(packageResult).toContain(path.join("node_modules", "pkg", "src", "index.ts"));
+  });
 });

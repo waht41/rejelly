@@ -124,7 +124,7 @@ export const ViewImageTool: ToolDefinition<typeof viewImageParameters> = {
       return toolContent([{ type: "image", image: { url: image } }]);
     }
 
-    const resolved = await resolveToolFsPath(image, "read");
+    const resolved = await resolveToolFsPath(image, "read", "direct-read");
     if (!resolved.ok) {
       return resolved.error;
     }

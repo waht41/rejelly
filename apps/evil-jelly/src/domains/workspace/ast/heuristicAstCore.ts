@@ -30,7 +30,7 @@ export async function readBoundedSource(
 ): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
   const policy = getWorkspaceFsPolicy();
   try {
-    const stat = await policy.stat(rel);
+    const stat = await policy.stat(rel, { access: "direct-read" });
     if (stat.size > MAX_HEURISTIC_AST_BYTES) {
       return {
         ok: false,

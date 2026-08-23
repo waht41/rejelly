@@ -10,6 +10,7 @@ import picomatch from "picomatch";
 import { z } from "zod";
 import {
   getWorkspaceFsPolicy,
+  type ResolvedFsPath,
   TOOL_ALWAYS_IGNORED_DIR_NAMES,
   type WorkspaceDirEntry,
   type WorkspaceFsPolicy,
@@ -17,6 +18,7 @@ import {
 
 const MAX_FALLBACK_FILE_BYTES = 200 * 1024;
 const MAX_FALLBACK_FILES = 8000;
+const MAX_SCOPED_IGNORED_ENTRIES = 50_000;
 const TRUNCATE_MAX_LINES = 300;
 /** Bound every model-facing grep line, including native backend output and context lines. */
 export const MAX_GREP_OUTPUT_LINE_BYTES = 4 * 1024;
@@ -38,6 +40,16 @@ const GrepSearchSchema = z.object({
     .default(DEFAULT_CONTEXT_LINES)
     .describe(
       `Context lines around each match (default ${DEFAULT_CONTEXT_LINES}, max ${MAX_CONTEXT_LINES}; out-of-range values are clamped).`,
+    ),
+  directory: z
+    .string()
+    .default(".")
+    .describe("Workspace-relative directory to search. Defaults to the workspace root."),
+  includeIgnored: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Include ignored files within the explicit directory. Workspace root is refused; node_modules must be scoped to a concrete package.",
     ),
 });
 
@@ -250,31 +262,44 @@ function runGitGrep(
 
 async function collectFiles(
   policy: WorkspaceFsPolicy,
-  relativeDir: string,
+  directory: ResolvedFsPath,
+  includeIgnored: boolean,
   fileList: string[] = [],
+  state: { visitedEntries: number } = { visitedEntries: 0 },
 ): Promise<string[]> {
-  if (fileList.length >= MAX_FALLBACK_FILES) {
+  if (
+    fileList.length >= MAX_FALLBACK_FILES ||
+    (includeIgnored && state.visitedEntries >= MAX_SCOPED_IGNORED_ENTRIES)
+  ) {
     return fileList;
   }
   let entries: WorkspaceDirEntry[];
   try {
-    entries = await policy.readdir(relativeDir, { withFileTypes: true });
+    entries = await policy.readdirResolved(directory, { withFileTypes: true });
   } catch {
     return fileList;
   }
   for (const entry of entries) {
-    if (fileList.length >= MAX_FALLBACK_FILES) {
+    if (
+      fileList.length >= MAX_FALLBACK_FILES ||
+      (includeIgnored && state.visitedEntries >= MAX_SCOPED_IGNORED_ENTRIES)
+    ) {
       break;
     }
-    const childRel = path.join(relativeDir, entry.name);
-    if (policy.shouldSkipIgnoredWorkspaceEntry(relativeDir, entry)) {
+    state.visitedEntries += 1;
+    if (
+      includeIgnored
+        ? policy.shouldSkipScopedResolvedEntry(directory, entry)
+        : policy.shouldSkipResolvedEntry(directory, entry)
+    ) {
       continue;
     }
+    const child = policy.childResolved(directory, entry.name);
     if (entry.isDirectory()) {
-      await collectFiles(policy, childRel, fileList);
+      await collectFiles(policy, child, includeIgnored, fileList, state);
       continue;
     }
-    fileList.push(childRel);
+    fileList.push(child.rel);
   }
   return fileList;
 }
@@ -304,6 +329,7 @@ async function fallbackNodeSearch(
   query: string,
   filePattern?: string,
   contextLines = DEFAULT_CONTEXT_LINES,
+  options: GrepSearchOptions = {},
 ): Promise<string> {
   const policy = getWorkspaceFsPolicy();
   let re: RegExp;
@@ -314,7 +340,31 @@ async function fallbackNodeSearch(
     return `Invalid regex for Node fallback: ${msg}`;
   }
 
-  const allFiles = await collectFiles(policy, ".");
+  const directory = options.directory ?? ".";
+  const includeIgnored = options.includeIgnored ?? false;
+  const resolved = policy.tryResolve(directory, {
+    access: includeIgnored ? "scoped-discovery" : "discovery",
+  });
+  if (!resolved.ok) {
+    return `grep failed: ${resolved.error}`;
+  }
+  if (includeIgnored) {
+    const scopeError = policy.validateScopedDiscoveryRoot(resolved);
+    if (scopeError) {
+      return `grep failed: ${scopeError}`;
+    }
+  }
+  try {
+    const stat = await policy.statResolved(resolved);
+    if (!stat.isDirectory()) {
+      return `grep failed: Search directory is not a directory: ${resolved.rel}`;
+    }
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return `grep failed: ${msg}`;
+  }
+
+  const allFiles = await collectFiles(policy, resolved, includeIgnored);
   const linesOut: string[] = [];
   const normalizedContextLines = clampContextLines(contextLines);
 
@@ -324,11 +374,17 @@ async function fallbackNodeSearch(
     }
     let content: string;
     try {
-      const stat = await policy.stat(fileRel);
+      const file = policy.tryResolve(fileRel, {
+        access: includeIgnored ? "scoped-discovery" : "discovery",
+      });
+      if (!file.ok) {
+        continue;
+      }
+      const stat = await policy.statResolved(file);
       if (stat.size > MAX_FALLBACK_FILE_BYTES) {
         continue;
       }
-      content = await policy.readFile(fileRel);
+      content = await policy.readResolved(file);
     } catch {
       continue;
     }
@@ -371,17 +427,28 @@ async function fallbackNodeSearch(
   }
 
   if (linesOut.length === 0) {
-    return "No matches for pattern (Node fallback; skipped by .gitignore, tool dirs, and oversized files).";
+    return includeIgnored
+      ? "No matches for pattern (bounded ignored-subtree scan; skipped nested tool dirs and oversized files)."
+      : "No matches for pattern (Node fallback; skipped by .gitignore, tool dirs, and oversized files).";
   }
   return truncateOutput(linesOut.join("\n"));
 }
 
 /** Shared ripgrep / git grep / Node fallback pipeline (also used by planner-scoped grep). */
+export interface GrepSearchOptions {
+  directory?: string;
+  includeIgnored?: boolean;
+}
+
 export async function executeGrepSearch(
   query: string,
   filePattern?: string,
   contextLines = DEFAULT_CONTEXT_LINES,
+  options: GrepSearchOptions = {},
 ): Promise<string> {
+  if ((options.directory ?? ".") !== "." || options.includeIgnored) {
+    return await fallbackNodeSearch(query, filePattern, contextLines, options);
+  }
   const rg = runRipgrep(query, filePattern, contextLines);
   if (rg.kind !== "unavailable") {
     return rg.kind === "hits" ? rg.text : "No matches found (ripgrep).";
@@ -392,7 +459,7 @@ export async function executeGrepSearch(
     return git.kind === "hits" ? git.text : "No matches found (git grep).";
   }
 
-  return await fallbackNodeSearch(query, filePattern, contextLines);
+  return await fallbackNodeSearch(query, filePattern, contextLines, options);
 }
 
 export const GrepSearchTool: ToolDefinition<typeof GrepSearchSchema> = {
@@ -401,12 +468,13 @@ export const GrepSearchTool: ToolDefinition<typeof GrepSearchSchema> = {
     "Search the codebase for text or regex patterns (like grep/ripgrep) to find usages and definitions. " +
     "Skips node_modules and .git. Uses ripgrep when available, then git grep if rg is missing, then a bounded Node scan only if both native tools are unavailable. " +
     "Native tools mostly respect .gitignore; git grep expands trailing `*.{ext,...}` style globs into multiple pathspecs. " +
+    "Use directory plus includeIgnored for a bounded ignored-subtree search; node_modules requires a concrete package path. " +
     "Supports configurable context lines (default 3, max 12). " +
     `Every output line is capped at ${MAX_GREP_OUTPUT_LINE_BYTES / 1024} KB; oversized matching or context lines retain their beginning and end with a truncation marker. ` +
     `The complete response is capped at ${MAX_GREP_OUTPUT_BYTES / 1024} KB. ` +
     "The Node fallback uses case-insensitive JavaScript RegExp (`i` flag) and picomatch for filePattern.",
   parameters: GrepSearchSchema,
-  handler: async ({ query, filePattern, contextLines }) => {
-    return executeGrepSearch(query, filePattern, contextLines);
+  handler: async ({ query, filePattern, contextLines, directory, includeIgnored }) => {
+    return executeGrepSearch(query, filePattern, contextLines, { directory, includeIgnored });
   },
 };

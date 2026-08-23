@@ -37,6 +37,7 @@ async function getDirectoryTree(
   dir: ResolvedFsPath,
   currentDepth: number,
   maxDepth: number,
+  includeIgnored: boolean,
 ): Promise<string[]> {
   if (currentDepth > maxDepth) {
     return [];
@@ -51,7 +52,11 @@ async function getDirectoryTree(
   }
 
   for (const entry of entries) {
-    if (policy.shouldSkipResolvedEntry(dir, entry)) {
+    if (
+      includeIgnored
+        ? policy.shouldSkipScopedResolvedEntry(dir, entry)
+        : policy.shouldSkipResolvedEntry(dir, entry)
+    ) {
       continue;
     }
 
@@ -63,6 +68,7 @@ async function getDirectoryTree(
         policy.childResolved(dir, entry.name),
         currentDepth + 1,
         maxDepth,
+        includeIgnored,
       );
       results = results.concat(subEntries);
       continue;
@@ -88,24 +94,41 @@ const listDirParameters = z.object({
     .max(MAX_DIR_DEPTH)
     .default(1)
     .describe(`How many directory levels to list. Max ${MAX_DIR_DEPTH}.`),
+  includeIgnored: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Include files ignored by .gitignore within this explicit subdirectory. Workspace-root scans are refused; node_modules must be scoped to a concrete package.",
+    ),
 });
 
 export const ListDirTool: ToolDefinition<typeof listDirParameters> = {
   name: "list_directory",
   description:
     "List files and nested subdirectories with a bounded depth. " +
-    "Respects workspace root .gitignore and always hides bulky/tool dirs (e.g. node_modules, .git, .cursor). " +
+    "Respects workspace root .gitignore and always hides bulky/tool dirs by default. " +
+    "Set includeIgnored only with an explicit bounded subdirectory; node_modules requires a concrete package path. " +
     `${AGENT_SCRATCH_DIR}/ is the agent scratch directory for temporary files. ` +
     "Use depth > 1 to scan layout faster.",
   parameters: listDirParameters,
-  handler: async ({ dirPath, depth }) => {
+  handler: async ({ dirPath, depth, includeIgnored }) => {
     const policy = getWorkspaceFsPolicy();
-    const resolved = await resolveToolFsPath(dirPath, "read");
+    const resolved = await resolveToolFsPath(
+      dirPath,
+      "read",
+      includeIgnored ? "scoped-discovery" : "discovery",
+    );
     if (!resolved.ok) {
       return resolved.error;
     }
+    if (includeIgnored) {
+      const scopeError = policy.validateScopedDiscoveryRoot(resolved);
+      if (scopeError) {
+        return scopeError;
+      }
+    }
     try {
-      const treeLines = await getDirectoryTree(policy, resolved, 1, depth);
+      const treeLines = await getDirectoryTree(policy, resolved, 1, depth, includeIgnored);
       if (treeLines.length === 0) {
         return `Directory ${resolved.abs} is empty or only contains ignored folders.`;
       }
@@ -301,7 +324,7 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
     for (const entry of filePaths) {
       const { path: filePath, offset, limit } = typeof entry === "string" ? { path: entry } : entry;
       const hasRange = offset !== undefined || limit !== undefined;
-      const resolved = await resolveToolFsPath(filePath, "read");
+      const resolved = await resolveToolFsPath(filePath, "read", "direct-read");
       if (!resolved.ok) {
         results.push(renderReadFileError(filePath, `Error: ${resolved.error}`));
         continue;

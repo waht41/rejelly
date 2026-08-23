@@ -31,6 +31,7 @@ export interface WorkspaceWalkFilesOptions {
 
 export type FsIntent = "inside" | "read" | "write";
 export type FsApprovalMode = "normal" | "auto";
+export type FsAccessKind = "discovery" | "scoped-discovery" | "direct-read" | "direct-write";
 
 export type ResolvedFsPath = {
   abs: string;
@@ -54,16 +55,17 @@ export type FsResolveOptions = {
   intent?: FsIntent;
   approvalMode?: FsApprovalMode;
   /**
-   * Resolve a path even when the root `.gitignore` hides it. System-hidden entries
-   * (`.git`, `node_modules`, ...) and sensitive file patterns are still denied.
-   * Used for workspace rule files whose gitignored state is a Codex convention.
+   * Discovery respects `.gitignore` and bulky/tool directory exclusions. Scoped discovery accepts
+   * one explicitly bounded ignored subtree. Direct access accepts exact gitignored paths;
+   * dependency directories are read-only.
    */
-  allowGitignored?: boolean;
+  access?: FsAccessKind;
 };
 
 /**
- * Directory name segments that must not be exposed to the agent (list/read/write/search).
- * Matches any path segment, e.g. repo/.agents/skills is blocked.
+ * Directory name segments hidden from discovery. Protected names remain unavailable to scoped or
+ * direct access; generated directories permit scoped/direct access, while node_modules is
+ * read-only.
  */
 export const AGENT_HIDDEN_NAMES = new Set([
   ".agents",
@@ -74,6 +76,9 @@ export const AGENT_HIDDEN_NAMES = new Set([
   "build",
   "coverage",
 ]);
+
+const AGENT_PROTECTED_NAMES = new Set([".agents", ".cursor", ".git"]);
+const DEPENDENCY_DIR_NAME = "node_modules";
 
 /**
  * Directory names skipped during traversal before applying root `.gitignore`.
@@ -134,11 +139,15 @@ function sensitiveFileError(displayPath: string): string {
   );
 }
 
-function isPathSystemHidden(relativeNormalized: string): boolean {
+function isPathSystemHidden(relativeNormalized: string, access: FsAccessKind): boolean {
   const parts = relativeNormalized.split(path.sep).filter((p) => p.length > 0);
   const fileName = parts[parts.length - 1];
   for (const segment of parts) {
-    if (AGENT_HIDDEN_NAMES.has(segment)) {
+    if (
+      AGENT_PROTECTED_NAMES.has(segment) ||
+      (access === "discovery" && AGENT_HIDDEN_NAMES.has(segment)) ||
+      (access === "direct-write" && segment === DEPENDENCY_DIR_NAME)
+    ) {
       return true;
     }
   }
@@ -210,6 +219,53 @@ export class WorkspaceFsPolicy {
     return this.shouldSkipIgnoredWorkspaceEntry(parent.rel, entry);
   }
 
+  /**
+   * Traversal guard after an ignored subtree was explicitly selected. Root `.gitignore` rules no
+   * longer hide its children, but nested bulky/tool directories, protected paths, sensitive files,
+   * and symlinks remain excluded.
+   */
+  shouldSkipScopedResolvedEntry(parent: ResolvedFsPath, entry: WorkspaceDirEntry): boolean {
+    if (entry.isSymbolicLink?.()) {
+      return true;
+    }
+    if (
+      entry.isDirectory() &&
+      (TOOL_ALWAYS_IGNORED_DIR_NAMES.has(entry.name) || AGENT_HIDDEN_NAMES.has(entry.name))
+    ) {
+      return true;
+    }
+    if (parent.outside) {
+      return false;
+    }
+    const child = this.childResolved(parent, entry.name);
+    return isPathSystemHidden(child.rel, "scoped-discovery");
+  }
+
+  /** Validate the root of an opt-in ignored traversal before any entries are inspected. */
+  validateScopedDiscoveryRoot(resolved: ResolvedFsPath): string | undefined {
+    if (resolved.outside) {
+      return "includeIgnored is only available for directories inside the workspace.";
+    }
+    if (resolved.rel === ".") {
+      return "includeIgnored requires an explicit workspace subdirectory; scanning the workspace root is not allowed.";
+    }
+
+    const segments = resolved.rel.split(path.sep).filter(Boolean);
+    const dependencyIndex = segments.lastIndexOf(DEPENDENCY_DIR_NAME);
+    if (dependencyIndex < 0) {
+      return undefined;
+    }
+    const packageSegments = segments.slice(dependencyIndex + 1);
+    if (
+      packageSegments.length === 0 ||
+      packageSegments[0] === ".pnpm" ||
+      (packageSegments[0]?.startsWith("@") && packageSegments.length < 2)
+    ) {
+      return "includeIgnored under node_modules must be scoped to a concrete package (for example node_modules/zod or node_modules/@scope/pkg).";
+    }
+    return undefined;
+  }
+
   childResolved(parent: ResolvedFsPath, childName: string): ResolvedFsPath {
     return {
       abs: path.join(parent.abs, childName),
@@ -219,8 +275,8 @@ export class WorkspaceFsPolicy {
     };
   }
 
-  private isPathHidden(relativeNormalized: string, allowGitignored = false): boolean {
-    if (isPathSystemHidden(relativeNormalized)) {
+  private isPathHidden(relativeNormalized: string, access: FsAccessKind): boolean {
+    if (isPathSystemHidden(relativeNormalized, access)) {
       return true;
     }
     const gitignorePath = toGitignorePath(relativeNormalized);
@@ -230,7 +286,7 @@ export class WorkspaceFsPolicy {
     ) {
       return false;
     }
-    if (allowGitignored) {
+    if (access !== "discovery") {
       return false;
     }
     if (
@@ -261,6 +317,7 @@ export class WorkspaceFsPolicy {
     try {
       const intent = options.intent ?? "inside";
       const approvalMode = options.approvalMode ?? "normal";
+      const access = options.access ?? "discovery";
       const abs = path.resolve(this.rootResolved, userPath);
       const rel = path.relative(this.rootResolved, abs);
       // Block path traversal and any escape outside workspace root.
@@ -302,11 +359,25 @@ export class WorkspaceFsPolicy {
           error: sensitiveFileError(relNorm),
         };
       }
-      if (this.isPathHidden(relNorm, options.allowGitignored)) {
+      if (this.isPathHidden(relNorm, access)) {
         return {
           ok: false,
           error: `Access denied: Path '${relNorm}' is hidden or ignored.`,
         };
+      }
+      if (
+        (access === "direct-read" || access === "scoped-discovery") &&
+        relNorm.split(path.sep).includes(DEPENDENCY_DIR_NAME) &&
+        fs.existsSync(abs)
+      ) {
+        const rootRealPath = fs.realpathSync.native(this.rootResolved);
+        const realPath = fs.realpathSync.native(abs);
+        if (!isPathInside(rootRealPath, realPath)) {
+          return {
+            ok: false,
+            error: `Access denied: Dependency path '${relNorm}' resolves outside the workspace.`,
+          };
+        }
       }
       return { ok: true, abs, rel: relNorm, displayPath: relNorm, outside: false };
     } catch (e: unknown) {
@@ -316,7 +387,10 @@ export class WorkspaceFsPolicy {
   }
 
   async readFile(relativePath: string, options: FsResolveOptions = {}): Promise<string> {
-    return fsPromises.readFile(this.resolvePath(relativePath, options), "utf-8");
+    return fsPromises.readFile(
+      this.resolvePath(relativePath, { access: "direct-read", ...options }),
+      "utf-8",
+    );
   }
 
   async readResolved(resolved: ResolvedFsPath): Promise<string> {
@@ -324,12 +398,12 @@ export class WorkspaceFsPolicy {
   }
 
   async readAstFile(relativePath: string): Promise<string> {
-    return this.readFile(relativePath);
+    return this.readFile(relativePath, { access: "direct-read" });
   }
 
   /** Read a file as raw bytes (for binary assets such as images). */
   async readBinaryFile(relativePath: string): Promise<Buffer> {
-    return fsPromises.readFile(this.resolvePath(relativePath));
+    return fsPromises.readFile(this.resolvePath(relativePath, { access: "direct-read" }));
   }
 
   async readResolvedBinary(resolved: ResolvedFsPath): Promise<Buffer> {
@@ -337,7 +411,11 @@ export class WorkspaceFsPolicy {
   }
 
   async writeFile(relativePath: string, content: string): Promise<void> {
-    await fsPromises.writeFile(this.resolvePath(relativePath), content, "utf-8");
+    await fsPromises.writeFile(
+      this.resolvePath(relativePath, { access: "direct-write" }),
+      content,
+      "utf-8",
+    );
   }
 
   async writeResolved(resolved: ResolvedFsPath, content: string): Promise<void> {
@@ -345,10 +423,14 @@ export class WorkspaceFsPolicy {
   }
 
   async writeNewFile(relativePath: string, content: string): Promise<void> {
-    await fsPromises.writeFile(this.resolvePath(relativePath), content, {
-      encoding: "utf-8",
-      flag: "wx",
-    });
+    await fsPromises.writeFile(
+      this.resolvePath(relativePath, { access: "direct-write" }),
+      content,
+      {
+        encoding: "utf-8",
+        flag: "wx",
+      },
+    );
   }
 
   async writeNewResolved(resolved: ResolvedFsPath, content: string): Promise<void> {
@@ -417,7 +499,7 @@ export class WorkspaceFsPolicy {
       if (files.length >= maxFiles || path.basename(resolved.rel).startsWith(".")) {
         return;
       }
-      if (this.isPathHidden(resolved.rel)) {
+      if (this.isPathHidden(resolved.rel, "discovery")) {
         return;
       }
       const relPosix = toGitignorePath(resolved.rel);
@@ -459,7 +541,7 @@ export class WorkspaceFsPolicy {
           continue;
         }
         const child = this.childResolved(directory, entry.name);
-        if (this.isPathHidden(child.rel)) {
+        if (this.isPathHidden(child.rel, "discovery")) {
           continue;
         }
         if (entry.isDirectory()) {
@@ -502,7 +584,7 @@ export class WorkspaceFsPolicy {
   }
 
   async mkdir(relativeDir: string, options?: { recursive?: boolean }): Promise<string | undefined> {
-    return fsPromises.mkdir(this.resolvePath(relativeDir), options);
+    return fsPromises.mkdir(this.resolvePath(relativeDir, { access: "direct-write" }), options);
   }
 
   async mkdirResolved(
@@ -513,7 +595,7 @@ export class WorkspaceFsPolicy {
   }
 
   async deleteEntry(relativePath: string): Promise<void> {
-    const resolved = this.tryResolve(relativePath);
+    const resolved = this.tryResolve(relativePath, { access: "direct-write" });
     if (!resolved.ok) {
       throw new Error(resolved.error);
     }
@@ -525,7 +607,7 @@ export class WorkspaceFsPolicy {
 
   async pruneEmptyParentsInside(startRelativeDir: string): Promise<string[]> {
     const removed: string[] = [];
-    let current = this.resolvePath(startRelativeDir);
+    let current = this.resolvePath(startRelativeDir, { access: "direct-write" });
 
     while (current !== this.rootResolved) {
       const relToRoot = path.relative(this.rootResolved, current);
@@ -534,7 +616,7 @@ export class WorkspaceFsPolicy {
       }
 
       const relNorm = path.normalize(relToRoot);
-      const currentAbs = this.resolvePath(relNorm);
+      const currentAbs = this.resolvePath(relNorm, { access: "direct-write" });
 
       try {
         const entries = await fsPromises.readdir(currentAbs);

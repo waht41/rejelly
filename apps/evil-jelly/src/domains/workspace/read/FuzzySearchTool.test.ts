@@ -29,10 +29,14 @@ describe("FuzzySearchTool", () => {
   });
 
   it("refreshes candidates on every tool invocation", async () => {
-    await FuzzySearchTool.handler({ keyword: "seed", directory: "." });
+    await FuzzySearchTool.handler({ keyword: "seed", directory: ".", includeIgnored: false });
     await fs.writeFile(path.join(workspace, "nested", "NewReport.md"), "# report\n");
 
-    const result = await FuzzySearchTool.handler({ keyword: "newreport", directory: "." });
+    const result = await FuzzySearchTool.handler({
+      keyword: "newreport",
+      directory: ".",
+      includeIgnored: false,
+    });
 
     expect(result).toContain("nested/NewReport.md");
   });
@@ -62,5 +66,47 @@ describe("FuzzySearchTool", () => {
     const result = await FuzzySearchTool.handler(args);
 
     expect(result).toMatch(/escape|working directory|not allowed/i);
+  });
+
+  it("searches one explicit ignored subtree", async () => {
+    await fs.mkdir(path.join(workspace, "local", "nested"), { recursive: true });
+    await fs.writeFile(path.join(workspace, ".gitignore"), "local/\n", "utf8");
+    await fs.writeFile(path.join(workspace, "local", "nested", "IgnoredReport.md"), "# report\n");
+    setWorkspaceRoot(workspace);
+
+    const result = await FuzzySearchTool.handler({
+      keyword: "ignoredreport",
+      directory: "local",
+      includeIgnored: true,
+    });
+
+    expect(result).toContain("local/nested/IgnoredReport.md");
+  });
+
+  it("requires ignored scans to use a bounded subtree and concrete dependency package", async () => {
+    await fs.mkdir(path.join(workspace, "node_modules", "pkg"), { recursive: true });
+    await fs.writeFile(path.join(workspace, ".gitignore"), "node_modules/\n", "utf8");
+    await fs.writeFile(path.join(workspace, "node_modules", "pkg", "DependencyTypes.d.ts"), "");
+    setWorkspaceRoot(workspace);
+
+    const workspaceWide = await FuzzySearchTool.handler({
+      keyword: "types",
+      directory: ".",
+      includeIgnored: true,
+    });
+    const dependencyRoot = await FuzzySearchTool.handler({
+      keyword: "types",
+      directory: "node_modules",
+      includeIgnored: true,
+    });
+    const packageResult = await FuzzySearchTool.handler({
+      keyword: "types",
+      directory: "node_modules/pkg",
+      includeIgnored: true,
+    });
+
+    expect(workspaceWide).toContain("explicit workspace subdirectory");
+    expect(dependencyRoot).toContain("concrete package");
+    expect(packageResult).toContain("node_modules/pkg/DependencyTypes.d.ts");
   });
 });
