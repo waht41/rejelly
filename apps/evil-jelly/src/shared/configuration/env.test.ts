@@ -21,12 +21,27 @@ const trackedEnvKeys = [
   "OPENAI_PROVIDER",
   "OPENAI_MODEL_ID",
   "OPENAI_CONTEXT_WINDOW",
+  "OPENAI_AUTO_COMPACT_TOKENS",
+  "OPENAI_AUTO_COMPACT_RATIO",
+  "OPENAI_REASONING_EFFORT",
+  "OPENAI_RETRY_MAX_ATTEMPTS",
+  "REJELLY_ENABLE_REVIEW",
+  "REJELLY_REVIEW_ENDPOINT",
+  "WEB_PROXY_URL",
+  "WEB_USE_PROXY",
+  "WEB_USER_AGENT",
   "WEB_TIMEOUT_MS",
+  "WEB_MAX_FETCH_BYTES",
+  "WEB_SEARCH_PROVIDER",
+  "WEB_SEARCH_LLM_BASE_URL",
+  "WEB_SEARCH_LLM_API_KEY",
+  "WEB_SEARCH_LLM_MODEL",
   "USE_PROXY",
   "PROXY_URL",
   "HTTP_PROXY",
   "HTTPS_PROXY",
   "NO_PROXY",
+  "GITHUB_TOKEN",
 ];
 const proxyOnce = Symbol.for("rejelly.env.proxyConfigured");
 const originalWorkspaceRoot = getWorkspaceFsPolicy().getRoot();
@@ -250,7 +265,7 @@ describe("loadEvilJellyEnv with --env", () => {
     expect(process.env.OPENAI_API_KEY).toBe("luna-key");
   });
 
-  it("still loses to --api-key", () => {
+  it("allows --api-key to override the profile", () => {
     const homeDir = useHomeDir();
     writeEnvProfile(homeDir, "luna", "OPENAI_API_KEY=luna-key\n");
     createWorkspaceWithEnv("");
@@ -260,16 +275,58 @@ describe("loadEvilJellyEnv with --env", () => {
     expect(process.env.OPENAI_API_KEY).toBe("cli-key");
   });
 
-  it("falls through to the lower layers for vars the profile does not set", () => {
+  it("inherits shell config but skips workspace and global env files", () => {
     const homeDir = useHomeDir();
     writeEnvProfile(homeDir, "luna", "OPENAI_API_KEY=luna-key\n");
-    writeGlobalEnv(homeDir, "WEB_TIMEOUT_MS=9000\n");
-    createWorkspaceWithEnv("");
+    writeGlobalEnv(homeDir, "WEB_TIMEOUT_MS=9000\nUSE_PROXY=true\nPROXY_URL=http://global:7890\n");
+    createWorkspaceWithEnv("OPENAI_BASE_URL=https://workspace.example/v1\n");
+    process.env.OPENAI_MODEL_ID = "shell-model";
+    process.env.WEB_SEARCH_PROVIDER = "llm";
+    process.env.GITHUB_TOKEN = "integration-secret";
+    delete process.env.OPENAI_BASE_URL;
     delete process.env.WEB_TIMEOUT_MS;
+    delete process.env.USE_PROXY;
+    delete process.env.PROXY_URL;
 
     loadEvilJellyEnv({ envFile: "luna" });
 
-    expect(process.env.WEB_TIMEOUT_MS).toBe("9000");
+    expect(process.env.OPENAI_MODEL_ID).toBe("shell-model");
+    expect(process.env.OPENAI_BASE_URL).toBeUndefined();
+    expect(process.env.WEB_TIMEOUT_MS).toBeUndefined();
+    expect(process.env.WEB_SEARCH_PROVIDER).toBe("llm");
+    expect(process.env.USE_PROXY).toBeUndefined();
+    expect(process.env.PROXY_URL).toBeUndefined();
+    expect(process.env.GITHUB_TOKEN).toBe("integration-secret");
+    expect(undiciMock.EnvHttpProxyAgent).not.toHaveBeenCalled();
+  });
+
+  it("lets profile proxy values override the same shell variables", () => {
+    const homeDir = useHomeDir();
+    writeEnvProfile(
+      homeDir,
+      "luna",
+      "OPENAI_API_KEY=luna-key\nUSE_PROXY=true\nHTTPS_PROXY=http://profile:7891\n",
+    );
+    process.env.HTTPS_PROXY = "http://shell:7892";
+
+    loadEvilJellyEnv({ envFile: "luna" });
+
+    expect(process.env.HTTP_PROXY).toBe("http://profile:7891");
+    expect(process.env.HTTPS_PROXY).toBe("http://profile:7891");
+    expect(undiciMock.EnvHttpProxyAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it("inherits proxy configuration from the shell", () => {
+    const homeDir = useHomeDir();
+    writeEnvProfile(homeDir, "luna", "OPENAI_API_KEY=luna-key\n");
+    process.env.USE_PROXY = "true";
+    process.env.HTTPS_PROXY = "http://shell:7892";
+
+    loadEvilJellyEnv({ envFile: "luna" });
+
+    expect(process.env.HTTP_PROXY).toBe("http://shell:7892");
+    expect(process.env.HTTPS_PROXY).toBe("http://shell:7892");
+    expect(undiciMock.EnvHttpProxyAgent).toHaveBeenCalledTimes(1);
   });
 
   it("accepts a path instead of a profile name", () => {
@@ -295,16 +352,26 @@ describe("loadEvilJellyEnv with --env", () => {
     expect(() => loadEvilJellyEnv({ envFile: "typo" })).toThrow("Known profiles: ds-max, luna.");
   });
 
-  it("aborts when a profile redirects the endpoint without carrying its own key", () => {
+  it("requires every explicit profile to carry its own key", () => {
     const homeDir = useHomeDir();
-    writeEnvProfile(homeDir, "luna", "OPENAI_BASE_URL=https://elsewhere.example/v1\n");
+    writeEnvProfile(homeDir, "luna", "OPENAI_MODEL_ID=luna-model\n");
     writeGlobalEnv(homeDir, "OPENAI_API_KEY=global-key\n");
     createWorkspaceWithEnv("");
-    delete process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "shell-key";
 
     expect(() => loadEvilJellyEnv({ envFile: "luna" })).toThrow(
-      /sets OPENAI_BASE_URL without OPENAI_API_KEY/,
+      /does not set OPENAI_API_KEY.*do not borrow API keys from the shell or default env files/,
     );
+  });
+
+  it("accepts a keyless profile when --api-key supplies the key", () => {
+    const homeDir = useHomeDir();
+    writeEnvProfile(homeDir, "luna", "OPENAI_MODEL_ID=luna-model\n");
+
+    loadEvilJellyEnv({ envFile: "luna", cliApiKey: "cli-key" });
+
+    expect(process.env.OPENAI_API_KEY).toBe("cli-key");
+    expect(process.env.OPENAI_MODEL_ID).toBe("luna-model");
   });
 
   it("accepts routing vars when the profile carries its own key", () => {

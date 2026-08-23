@@ -206,9 +206,9 @@ export function readGlobalEnvValues(): Record<string, string> {
 /**
  * Resolve `--env <name|path>`. A bare name (no separator, no `.env` suffix) is a profile
  * beside the global file, `~/.evil-jelly/<name>.env`; anything else is a filesystem path.
- * Naming a profile is the expected use — one file per endpoint identity, so key, model,
- * proxy, and web-search substrate switch together and can never be half-applied. The default
- * `.env` sits in the same directory on purpose: it is the identity used when none is named.
+ * Naming a profile is the expected use — one file can group an endpoint's key, model, proxy,
+ * and web-search substrate. The default `.env` sits in the same directory on purpose: it is
+ * the identity used when none is named.
  */
 export function resolveEnvProfilePath(nameOrPath: string): string {
   const raw = nameOrPath.trim();
@@ -310,33 +310,28 @@ function readEnvProfile(filePath: string, requested: string): Record<string, str
   return readEnvFile(filePath);
 }
 
-/**
- * A profile that redirects the endpoint must carry its own key. Vars absent from the profile
- * fall through to the layers below — deliberate, so shared knobs (timeouts, review, audit)
- * stay in one place — but for the routing vars that fall-through means sending the previous
- * provider's key to a new endpoint. Cheap to get wrong and impossible to take back, so this
- * one aborts where the workspace equivalent only warns.
- */
-function assertSelfContainedRouting(values: Record<string, string>, filePath: string): void {
-  const routing = KEY_ROUTING_VARS.filter((name) => hasEnvValue(values[name]));
-  if (routing.length === 0 || hasEnvValue(values.OPENAI_API_KEY)) {
+/** An explicit profile is a complete identity and must provide its own key (or receive one by CLI). */
+function assertProfileHasApiKey(
+  values: Record<string, string>,
+  filePath: string,
+  cliApiKey: string | undefined,
+): void {
+  if (hasEnvValue(values.OPENAI_API_KEY) || hasEnvValue(cliApiKey)) {
     return;
   }
   throw new Error(
-    `${filePath} sets ${routing.join(" and ")} without OPENAI_API_KEY. An env profile that ` +
-      `redirects the endpoint must carry its own key, otherwise the key from a lower layer ` +
-      `is sent to it. Add OPENAI_API_KEY to the profile.`,
+    `${filePath} does not set OPENAI_API_KEY. Explicit profiles do not borrow API keys from the ` +
+      `shell or default env files; add OPENAI_API_KEY to the profile or pass --api-key.`,
   );
 }
 
 /**
- * Load env with cascading priority (closest to the invocation wins):
- * CLI --api-key > --env <profile> > process.env (shell) > workspace .evil-jelly/.env >
- * ~/.evil-jelly/.env.
+ * Without `--env`, load with cascading priority (closest to the invocation wins):
+ * CLI --api-key > process.env (shell) > workspace .evil-jelly/.env > ~/.evil-jelly/.env.
  *
- * `--env` outranks the shell on purpose, unlike the other file layers: it is per-run intent,
- * not a machine fact, and a profile silently losing its model id to an exported OPENAI_MODEL_ID
- * is the exact failure the flag exists to prevent. Vars it does not set still fall through.
+ * With `--env`, resolution is CLI --api-key > profile > process.env (shell) > built-in defaults.
+ * Workspace and global env files are skipped, so selecting one profile never mixes two files.
+ * The profile must still provide its own API key (or receive one explicitly from the CLI).
  *
  * The workspace's plain `.env` is deliberately NOT read: it belongs to the app under
  * development (tests/examples), not to evil the tool. Evil-specific values live in the tool's
@@ -357,13 +352,19 @@ export function loadEvilJellyEnv(options?: {
   if (hasEnvValue(requestedProfile)) {
     const profilePath = resolveEnvProfilePath(requestedProfile);
     const values = readEnvProfile(profilePath, requestedProfile);
-    assertSelfContainedRouting(values, profilePath);
+    assertProfileHasApiKey(values, profilePath, options?.cliApiKey);
     for (const [key, value] of Object.entries(values)) {
       if (hasEnvValue(value)) {
         process.env[key] = value;
         sources.set(key, "envFile");
       }
     }
+    const cliApiKey = options?.cliApiKey?.trim();
+    if (hasEnvValue(cliApiKey)) {
+      process.env.OPENAI_API_KEY = cliApiKey;
+    }
+    setupProxy();
+    return;
   }
 
   const workspaceEnvPath = path.join(getWorkspaceFsPolicy().getRoot(), WORKSPACE_ENV_REL_PATH);

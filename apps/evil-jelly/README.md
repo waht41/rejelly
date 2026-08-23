@@ -218,7 +218,7 @@ pnpm --filter @rejelly/evil-jelly start -- audit --family clone --workspace ../.
 
 `OPENAI_API_KEY` is the only required setting. The recommended setup is `evil init`; you can also provide it through the shell or `.evil-jelly/.env`. Defaults use the OpenAI-compatible endpoint and `gpt-5.6-luna`.
 
-Environment configuration is resolved in this order: **CLI arguments > `--env <profile>` > shell environment > workspace `.evil-jelly/.env` > `~/.evil-jelly/.env`**. Non-secret settings use a separate cascade: **CLI arguments > workspace `.evil-jelly/settings.jsonc` > user `~/.evil-jelly/settings.jsonc` > built-in defaults**. Documentation mappings live in `.evil-jelly/doc-map.jsonc`; secrets belong in `.evil-jelly/.env`.
+Without `--env`, environment configuration is resolved in this order: **CLI arguments > shell environment > workspace `.evil-jelly/.env` > `~/.evil-jelly/.env`**. With `--env <profile>`, resolution is **CLI arguments > profile > shell environment > built-in defaults**; workspace and global env files do not fill missing profile values. Non-secret settings use a separate cascade: **CLI arguments > workspace `.evil-jelly/settings.jsonc` > user `~/.evil-jelly/settings.jsonc` > built-in defaults**. Documentation mappings live in `.evil-jelly/doc-map.jsonc`; secrets belong in `.evil-jelly/.env`.
 
 <details>
 <summary><strong>Complete environment variables</strong></summary>
@@ -227,12 +227,12 @@ Environment configuration is resolved in this order: **CLI arguments > `--env <p
 
 A regular `.env` at the workspace root is not loaded: it belongs to the application being developed, not to Evil Jelly. When `OPENAI_BASE_URL` or `OPENAI_PROVIDER` comes from a workspace file but `OPENAI_API_KEY` comes from the shell or global file, startup warns that the repository is redirecting a key it does not own. Keep the key and endpoint in the same layer.
 
-`--env <name|path>` loads one file above the shell environment (`evil --env luna` reads `~/.evil-jelly/luna.env`; `evil --env ./ops/staging.env` reads that path). Named profiles sit beside the default `~/.evil-jelly/.env`, which is simply the identity used when none is named. A profile is a complete endpoint identity: key, model, base URL, proxy, and web-search variables switch together, which is what makes moving between models safe when they do not share a proxy or a search substrate. Two rules follow from where it sits in the cascade:
+`--env <name|path>` selects one explicit file (`evil --env luna` reads `~/.evil-jelly/luna.env`; `evil --env ./ops/staging.env` reads that path). Named profiles sit beside the default `~/.evil-jelly/.env`, which is used only when none is named. A profile groups an endpoint identity: key, model, base URL, proxy, and web-search variables can switch together. Two rules follow:
 
-- It outranks the shell, unlike the other file layers, because it is per-run intent rather than a machine fact. Naming a profile and silently getting an exported `OPENAI_MODEL_ID` instead is the failure the flag exists to prevent. Only `--api-key` wins over it.
-- Variables the profile does not set still fall through to the layers below, so shared knobs stay in one place. To drop an inherited value, set it explicitly — for example `USE_PROXY=false` in a profile whose endpoint needs a direct connection.
+- Profile values override the same variables from the shell; only `--api-key` overrides the profile. Optional values omitted by the profile can come from the shell, then use built-in defaults.
+- Workspace `.evil-jelly/.env` and global `~/.evil-jelly/.env` are not read when a profile is selected, so two env files are never mixed. Ordinary process variables remain available to the OS, child processes, and external integrations.
 
-A profile that sets `OPENAI_BASE_URL` or `OPENAI_PROVIDER` must also set `OPENAI_API_KEY`. Startup aborts otherwise, because fall-through would send a lower layer's key to the profile's endpoint — the same hazard the workspace warning above describes, but unrecoverable rather than merely surprising. `evil init --env <name>` creates and updates these files.
+Every profile must set `OPENAI_API_KEY`, unless the invocation supplies `--api-key`. Startup aborts otherwise instead of borrowing a key from another identity. `evil init --env <name>` creates and updates these files.
 
 When `evil init` finds an existing key, press Enter to retain it. In a TTY it also asks for an optional Base URL and model. For non-interactive endpoint/model setup when the key is already saved (otherwise also pass `--api-key <key>`):
 
@@ -311,7 +311,7 @@ pnpm typecheck      # TypeScript checking
 ### Options and subcommands
 
 - `--api-key <key>`: override `OPENAI_API_KEY` for this invocation. Prefer `evil init` for persistent setup and avoid exposing keys in shell history.
-- `--env <name|path>`: load an env profile above the shell environment. A bare name resolves to `~/.evil-jelly/<name>.env`, beside the default `.env`; anything containing a separator or ending in `.env` is a path.
+- `--env <name|path>`: select an explicit env profile above the shell. A bare name resolves to `~/.evil-jelly/<name>.env`, beside the default `.env`; anything containing a separator or ending in `.env` is a path.
 - `--review`: enable Review trace export, optionally with `REJELLY_REVIEW_ENDPOINT`.
 - `--devtool`: compatibility shortcut that adds the dynamic `evil.devtool` server to the interactive coding run. It uses the same MCP runtime and gateway as configured servers; Audit and headless runs reject it.
 - `--doc-map <path>`: workspace-relative doc-map for doc-drift validation. Defaults to `.evil-jelly/doc-map.jsonc`.
