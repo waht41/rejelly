@@ -217,8 +217,11 @@ async function executeMemoryEdit(
 
     if (confirmation.action === "reject") {
       return {
-        status: "not_confirmed",
-        code: "not_confirmed",
+        status: "rejected",
+        code: "rejected_by_user",
+        committed: false,
+        message:
+          "The user rejected this memory change. Nothing was saved. Do not retry unless the user explicitly requests another memory change.",
         id: proposal.id,
         scope: proposal.scope,
         proposalSha256,
@@ -228,6 +231,8 @@ async function executeMemoryEdit(
       return {
         status: "not_confirmed",
         code: "confirmation_unavailable",
+        committed: false,
+        message: "Memory confirmation was unavailable. Nothing was saved.",
         id: proposal.id,
         scope: proposal.scope,
         proposalSha256,
@@ -243,7 +248,13 @@ async function executeMemoryEdit(
     return {
       ...result,
       ...(result.entry ? { entry: result.entry } : {}),
-      ...(result.status === "committed" ? { instructionEffect: "next_epoch" } : {}),
+      ...(result.status === "committed"
+        ? {
+            committed: true,
+            message: "The user accepted this memory change and it was saved.",
+            instructionEffect: "next_epoch",
+          }
+        : { committed: false }),
     };
   } catch (error) {
     return publicError(error);
