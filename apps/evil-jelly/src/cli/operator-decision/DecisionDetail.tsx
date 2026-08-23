@@ -25,14 +25,14 @@ export function DecisionDetail({ view, columns }: { view: PromptChoiceView; colu
 
   useEffect(() => setScrollOffset(0), [view]);
   useInput(
-    (_input, key) => {
+    (input, key) => {
       if (view.type !== "scrollable_text") return;
-      if (!(key.pageUp || key.pageDown || key.home || key.end)) return;
-      const pageStep = Math.max(1, viewportRows - 1);
+      const scrollKey = input.toLocaleLowerCase();
+      if (!(scrollKey === "j" || scrollKey === "k" || key.home || key.end)) return;
       setScrollOffset((current) => {
         if (key.home) return 0;
         if (key.end) return maxOffset;
-        return Math.max(0, Math.min(maxOffset, current + (key.pageUp ? -pageStep : pageStep)));
+        return Math.max(0, Math.min(maxOffset, current + (scrollKey === "k" ? -1 : 1)));
       });
     },
     { isActive: view.type === "scrollable_text" && maxOffset > 0 },
@@ -63,7 +63,7 @@ export function DecisionDetail({ view, columns }: { view: PromptChoiceView; colu
         </Box>
         <Text dimColor>
           Lines {firstLine}–{lastLine} of {scrollableLines.length}
-          {maxOffset > 0 ? " · PgUp/PgDn scroll · Home/End jump" : ""}
+          {maxOffset > 0 ? " · J/K scroll · Home/End jump" : ""}
         </Text>
       </Box>
     );
