@@ -80,14 +80,23 @@ describe("memory agent tools", () => {
     const rejected = await edit.handler({
       change: { kind: "add", title: "One", summary: "Summary.", detail: "First detail." },
     });
-    expect(rejected).toMatchObject({ status: "not_confirmed", code: "not_confirmed" });
+    expect(rejected).toMatchObject({
+      status: "rejected",
+      code: "rejected_by_user",
+      committed: false,
+      message: expect.stringContaining("Nothing was saved"),
+    });
     expect((await service.list()).entries).toHaveLength(0);
 
     accepted = true;
     const added = await edit.handler({
       change: { kind: "add", title: "One", summary: "Summary.", detail: "First detail." },
     });
-    expect(added).toMatchObject({ status: "committed" });
+    expect(added).toMatchObject({
+      status: "committed",
+      committed: true,
+      message: expect.stringContaining("accepted"),
+    });
     const id = (added as { id: string }).id;
 
     const updated = await edit.handler({
@@ -113,7 +122,12 @@ describe("memory agent tools", () => {
     const result = await edit.handler({
       change: { kind: "add", title: "One", summary: "Summary.", detail: "No write." },
     });
-    expect(result).toMatchObject({ status: "not_confirmed", code: "confirmation_unavailable" });
+    expect(result).toMatchObject({
+      status: "not_confirmed",
+      code: "confirmation_unavailable",
+      committed: false,
+      message: expect.stringContaining("Nothing was saved"),
+    });
     expect((await service.list()).entries).toHaveLength(0);
   });
 
