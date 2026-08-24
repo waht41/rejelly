@@ -73,6 +73,8 @@ export type FrozenUserInputNodeV1 =
       readonly kind: "image";
       readonly blob: SessionBlobMetadata;
       readonly detail: "auto" | "low" | "high";
+      /** Stable, one-based image reference number within the owning session. */
+      readonly imageOrdinal?: number;
     };
 
 export interface FrozenResolvedUserInputV1 {
@@ -161,7 +163,7 @@ export function projectFrozenUserInputMessage(input: FrozenUserInputV1): Message
 
   const contentParts: ContentPart[] = [];
   let modelText = "";
-  let imageIndex = 0;
+  let nextFallbackImageOrdinal = 1;
   const flushText = () => {
     if (!modelText) return;
     contentParts.push({ type: "text", text: modelText });
@@ -181,8 +183,11 @@ export function projectFrozenUserInputMessage(input: FrozenUserInputV1): Message
         modelText += `@${node.path}\n\n${node.context}`;
         break;
       case "image":
-        imageIndex += 1;
-        modelText += `[Image #${imageIndex}]`;
+        {
+          const imageOrdinal = node.imageOrdinal ?? nextFallbackImageOrdinal;
+          nextFallbackImageOrdinal = Math.max(nextFallbackImageOrdinal, imageOrdinal + 1);
+          modelText += `[Image #${imageOrdinal}]`;
+        }
         flushText();
         contentParts.push({
           type: "image",
@@ -205,8 +210,11 @@ export function projectFrozenUserInputMessage(input: FrozenUserInputV1): Message
   if (skillContext) modelText += `${modelText ? "\n\n" : ""}${skillContext}`;
   const memoryContext = resolvedMemoryContext(input);
   if (memoryContext) modelText += `${modelText ? "\n\n" : ""}${memoryContext}`;
-  if (imageIndex > 0) flushText();
-  return { role: "user", content: imageIndex > 0 ? contentParts : modelText };
+  if (contentParts.some((part) => part.type === "image")) flushText();
+  return {
+    role: "user",
+    content: contentParts.some((part) => part.type === "image") ? contentParts : modelText,
+  };
 }
 
 export function projectFrozenUserInputDisplay(input: FrozenUserInputV1): UserInputDisplay {
@@ -217,7 +225,7 @@ export function projectFrozenUserInputDisplay(input: FrozenUserInputV1): UserInp
     };
   }
   let text = "";
-  let imageIndex = 0;
+  let nextFallbackImageOrdinal = 1;
   const attachments: UserInputAttachmentDisplay[] = [];
   for (const node of input.nodes) {
     switch (node.kind) {
@@ -239,8 +247,9 @@ export function projectFrozenUserInputDisplay(input: FrozenUserInputV1): UserInp
         });
         break;
       case "image": {
-        imageIndex += 1;
-        const label = `[Image #${imageIndex}]`;
+        const imageOrdinal = node.imageOrdinal ?? nextFallbackImageOrdinal;
+        nextFallbackImageOrdinal = Math.max(nextFallbackImageOrdinal, imageOrdinal + 1);
+        const label = `[Image #${imageOrdinal}]`;
         text += label;
         attachments.push({ type: "image", label, action: "attach" });
         break;

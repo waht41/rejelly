@@ -51,6 +51,8 @@ export interface SessionRecorder extends SessionMessageSink {
   readonly sessionId: string;
   readonly traceId: string;
   readonly ended: boolean;
+  /** Next stable, one-based image reference number for this session. */
+  readonly nextImageOrdinal: number;
   recordUserInput(
     turnId: string,
     inputKind: "initial" | "steer",
@@ -108,6 +110,7 @@ class JsonlSessionRecorder implements SessionRecorder {
   #title: string;
   #traceIds: string[];
   #budget: SessionBudget | undefined;
+  #nextImageOrdinal: number;
 
   // A recorder instance only sees newly appended turns. This set prevents a duplicated initial
   // input callback from incrementing the checkpoint count twice without retaining all old turn ids.
@@ -133,6 +136,7 @@ class JsonlSessionRecorder implements SessionRecorder {
     this.#title = summary.title;
     this.#traceIds = summary.traceIds;
     this.#budget = summary.budget;
+    this.#nextImageOrdinal = nextImageOrdinalFromEvents(events);
     const priorCompactState = [...events]
       .reverse()
       .find(
@@ -153,6 +157,10 @@ class JsonlSessionRecorder implements SessionRecorder {
 
   get ended(): boolean {
     return this.#ended;
+  }
+
+  get nextImageOrdinal(): number {
+    return this.#nextImageOrdinal;
   }
 
   async #append(event: NewSessionEvent): Promise<LocatedSessionEvent> {
@@ -188,13 +196,17 @@ class JsonlSessionRecorder implements SessionRecorder {
     inputKind: "initial" | "steer",
     input: ResolvedUserInputV1,
   ): Promise<FrozenUserInputV1> {
-    const frozen = await freezeResolvedUserInput(input, this.storagePaths);
+    const frozen = await freezeResolvedUserInput(input, {
+      ...this.storagePaths,
+      imageOrdinalStart: this.#nextImageOrdinal,
+    });
     await this.#append({
       type: "user_input_recorded",
       turnId,
       inputKind,
       input: frozen,
     });
+    this.#nextImageOrdinal += frozen.nodes.filter((node) => node.kind === "image").length;
     if (inputKind === "initial" && !this.#newUserTurnIds.has(turnId)) {
       this.#newUserTurnIds.add(turnId);
       this.#userTurns += 1;
@@ -353,6 +365,28 @@ class JsonlSessionRecorder implements SessionRecorder {
     this.#closed = true;
     await this.writer.close();
   }
+}
+
+function nextImageOrdinalFromEvents(events: readonly SessionEvent[]): number {
+  let nextImageOrdinal = 1;
+  for (const event of events) {
+    if (!isKnownSessionEvent(event) || event.type !== "user_input_recorded") continue;
+    if (event.input.kind === "resolved") {
+      for (const node of event.input.nodes) {
+        if (node.kind !== "image") continue;
+        if (node.imageOrdinal === undefined) {
+          nextImageOrdinal += 1;
+        } else {
+          nextImageOrdinal = Math.max(nextImageOrdinal, node.imageOrdinal + 1);
+        }
+      }
+      continue;
+    }
+    nextImageOrdinal += event.input.display.attachments.filter(
+      (attachment) => attachment.type === "image",
+    ).length;
+  }
+  return nextImageOrdinal;
 }
 
 export async function openSessionRecorder(

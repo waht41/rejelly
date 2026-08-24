@@ -72,6 +72,7 @@ export function prepareSessionReplay(events: readonly SessionEvent[]): PreparedS
   const prepared: PreparedSessionEvent[] = [];
   let lastSeq = 0;
   let lastTimestamp: number | undefined;
+  let nextImageOrdinal = 1;
 
   for (const event of events) {
     // Strict ordering is checked before filtering unknown events. A future event type still occupies
@@ -99,7 +100,24 @@ export function prepareSessionReplay(events: readonly SessionEvent[]): PreparedS
         });
         break;
       case "user_input_recorded": {
-        const input = parseFrozenUserInputV1(event.input);
+        const parsedInput = parseFrozenUserInputV1(event.input);
+        const input =
+          parsedInput.kind === "resolved"
+            ? {
+                ...parsedInput,
+                nodes: parsedInput.nodes.map((node) => {
+                  if (node.kind !== "image") return node;
+                  const imageOrdinal = node.imageOrdinal ?? nextImageOrdinal;
+                  nextImageOrdinal = Math.max(nextImageOrdinal, imageOrdinal + 1);
+                  return node.imageOrdinal === imageOrdinal ? node : { ...node, imageOrdinal };
+                }),
+              }
+            : parsedInput;
+        if (parsedInput.kind === "legacy") {
+          nextImageOrdinal += parsedInput.display.attachments.filter(
+            (attachment) => attachment.type === "image",
+          ).length;
+        }
         const runtimeMessage = projectFrozenUserInputRuntimeMessage(input);
         prepared.push({ ...event, input, runtimeMessage });
         break;

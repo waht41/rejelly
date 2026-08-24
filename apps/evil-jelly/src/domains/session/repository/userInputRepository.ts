@@ -5,14 +5,17 @@ import type {
   ResolvedUserInputV1,
 } from "../../../shared/model/prompt/frozenUserInput";
 import type { SessionBlobStoreOptions } from "../journal/sessionBlobStore";
-import { freezeResolvedUserInput } from "../journal/userInputStorage";
+import {
+  type FreezeResolvedUserInputOptions,
+  freezeResolvedUserInput,
+} from "../journal/userInputStorage";
 import { projectFrozenUserInputRuntimeMessage } from "../projection/frozenUserInputProjection";
 import { materializeMessageImageBlobs } from "./sessionMessageMaterializer";
 
 /** Commit a transient resolver result into the canonical post-submit representation. */
 export function commitResolvedUserInput(
   input: ResolvedUserInputV1,
-  options: SessionBlobStoreOptions = {},
+  options: FreezeResolvedUserInputOptions = {},
 ): Promise<FrozenResolvedUserInputV1> {
   return freezeResolvedUserInput(input, options);
 }

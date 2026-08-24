@@ -9,6 +9,21 @@ import { projectSessionMcpState } from "../projection/sessionMcpProjection";
 import { prepareSessionReplay } from "../projection/sessionReplay";
 import { openSessionRecorder } from "./sessionRecorder";
 
+function resolvedImageInput(sourceId: string) {
+  return {
+    version: 1 as const,
+    nodes: [
+      {
+        kind: "image" as const,
+        sourceId,
+        bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+        mediaType: "image/png" as const,
+        detail: "auto" as const,
+      },
+    ],
+  };
+}
+
 describe("sessionRecorder", () => {
   let tmpDir: string;
   let sessionsRoot: string;
@@ -211,6 +226,52 @@ describe("sessionRecorder", () => {
       type: "session_state",
       traceIds: ["trace-1", "trace-2"],
     });
+  });
+
+  it("continues stable image ordinals across turns and resumed segments", async () => {
+    const blobRoot = path.join(tmpDir, "blobs");
+    const recorderOptions = {
+      workspaceRoot,
+      sessionId: "session-images",
+      originator: "evil-jelly-cli",
+      appVersion: "0.1.0",
+      modelId: "model-a",
+      cwd: workspaceRoot,
+      sessionsRoot,
+      blobRoot,
+    };
+    const first = await openSessionRecorder({ ...recorderOptions, traceId: "trace-1" });
+
+    const firstImage = await first.recordUserInput(
+      "turn-1",
+      "initial",
+      resolvedImageInput("image-1"),
+    );
+    await first.completeTurn("turn-1", "completed");
+    const secondImage = await first.recordUserInput(
+      "turn-2",
+      "initial",
+      resolvedImageInput("image-2"),
+    );
+    await first.completeTurn("turn-2", "completed");
+    expect(first.nextImageOrdinal).toBe(3);
+    await first.endSegment({ status: "completed", reason: "exit" });
+    await first.close();
+
+    const resumed = await openSessionRecorder({ ...recorderOptions, traceId: "trace-2" });
+    expect(resumed.nextImageOrdinal).toBe(3);
+    const thirdImage = await resumed.recordUserInput(
+      "turn-3",
+      "initial",
+      resolvedImageInput("image-3"),
+    );
+    await resumed.close();
+
+    const ordinal = (input: typeof firstImage) =>
+      input.kind === "resolved"
+        ? input.nodes.flatMap((node) => (node.kind === "image" ? [node.imageOrdinal] : []))
+        : [];
+    expect([firstImage, secondImage, thirdImage].flatMap(ordinal)).toEqual([1, 2, 3]);
   });
 
   it("records initial and steer exactly once through the dedicated V3 event", async () => {

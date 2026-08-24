@@ -199,6 +199,9 @@ function createPromptBindings(options: {
     setAvailableMemories: (memories) => {
       useComposerSession.getState().setAvailableMemories(memories);
     },
+    setNextImageOrdinal: (ordinal) => {
+      useComposerSession.getState().setNextImageOrdinal(ordinal);
+    },
   };
 }
 

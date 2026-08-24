@@ -187,6 +187,8 @@ interface RouterRuntime {
   resolveMcpUserInput?: MainCliAgentProps["resolveMcpUserInput"];
   sessionMcpState: () => SessionMcpState;
   setSessionMcpState: (state: SessionMcpState) => void;
+  nextImageOrdinal: () => number;
+  setNextImageOrdinal: (ordinal: number) => void;
   mcpBindingFactory?: ConversationAgentProps["mcpBindingFactory"];
   memoryRuntime?: SessionMemoryRuntime;
 }
@@ -376,7 +378,17 @@ async function commitUserInput(
 ): Promise<{ readonly frozen: FrozenUserInputV1; readonly message: Message }> {
   const frozen = runtime.props.sessionRecorder
     ? await runtime.props.sessionRecorder.recordUserInput(turnId, inputKind, resolved)
-    : await commitResolvedUserInput(resolved, { blobRoot: runtime.props.sessionBlobRoot });
+    : await commitResolvedUserInput(resolved, {
+        blobRoot: runtime.props.sessionBlobRoot,
+        imageOrdinalStart: runtime.nextImageOrdinal(),
+      });
+  const nextImageOrdinal = runtime.props.sessionRecorder
+    ? runtime.props.sessionRecorder.nextImageOrdinal
+    : runtime.nextImageOrdinal() +
+      (frozen.kind === "resolved"
+        ? frozen.nodes.filter((node) => node.kind === "image").length
+        : 0);
+  runtime.setNextImageOrdinal(nextImageOrdinal);
   runtime.host.logUserMessage(formatUserInputDisplay(projectFrozenUserInputDisplay(frozen)));
   return {
     frozen,
@@ -612,15 +624,26 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
       "main_cli:mcp_state",
       props.seedMcpState ?? createSessionMcpState(),
     );
+    const [storedNextImageOrdinal, storeNextImageOrdinal] = equipMemory<number>(
+      "main_cli:next_image_ordinal",
+      props.sessionRecorder?.nextImageOrdinal ?? 1,
+    );
     // Local mirrors initialized from the carried values and updated live during the turn (the
     // equipMemory getters are frozen at entry, so we mirror writes here for same-turn reads).
     let liveContextTokens = storedContextTokens;
     let liveCacheTokens = storedCacheTokens;
     let liveSessionMcpState = storedSessionMcpState;
+    let liveNextImageOrdinal = storedNextImageOrdinal;
     const setSessionMcpState = (state: SessionMcpState) => {
       liveSessionMcpState = state;
       storeSessionMcpState(state);
     };
+    const setNextImageOrdinal = (ordinal: number) => {
+      liveNextImageOrdinal = ordinal;
+      storeNextImageOrdinal(ordinal);
+      host.setNextImageOrdinal?.(ordinal);
+    };
+    host.setNextImageOrdinal?.(liveNextImageOrdinal);
     // Root-context budget config fires for every model call in descendant agents (the update walks
     // the parent chain), so delta.promptTokens of the latest call tracks current context occupancy.
     equipBudget({
@@ -665,6 +688,8 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
       resolveMcpUserInput: props.resolveMcpUserInput,
       sessionMcpState: () => liveSessionMcpState,
       setSessionMcpState,
+      nextImageOrdinal: () => liveNextImageOrdinal,
+      setNextImageOrdinal,
       mcpBindingFactory: props.mcpBindingFactory,
       memoryRuntime,
     };

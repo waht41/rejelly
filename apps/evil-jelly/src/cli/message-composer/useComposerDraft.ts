@@ -90,6 +90,7 @@ export function useComposerDraft({
   const availableSkills = useComposerSession((state) => state.availableSkills);
   const availableMcpServers = useComposerSession((state) => state.availableMcpServers);
   const availableMemories = useComposerSession((state) => state.availableMemories);
+  const nextImageOrdinal = useComposerSession((state) => state.nextImageOrdinal);
   const draftSeed = useComposerSession((state) => state.draftSeed);
   const clearDraftSeed = useComposerSession((state) => state.clearDraftSeed);
   const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
@@ -107,7 +108,7 @@ export function useComposerDraft({
       }
       if (token.kind === "image") {
         const index = promptTokens(document, "image").indexOf(token) + 1;
-        return `[Image #${Math.max(1, index)}]`;
+        return `[Image #${nextImageOrdinal + Math.max(1, index) - 1}]`;
       }
       if (token.kind === "mcp") {
         return `$${mcpReferenceName(token, availableSkills)}`;
@@ -122,7 +123,7 @@ export function useComposerDraft({
       }
       return defaultPromptTokenDisplayText(token);
     },
-    [attachments, availableMcpServers, availableMemories, availableSkills],
+    [attachments, availableMcpServers, availableMemories, availableSkills, nextImageOrdinal],
   );
   const buffer = useTextBuffer("", tokenDisplayText);
   const collapsedPaste = useCollapsedPaste(buffer);
