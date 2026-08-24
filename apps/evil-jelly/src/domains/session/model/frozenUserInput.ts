@@ -80,6 +80,7 @@ const imageNodeSchema = z
     kind: z.literal("image"),
     blob: sessionBlobMetadataSchema,
     detail: z.enum(["auto", "low", "high"]),
+    imageOrdinal: z.number().int().positive().optional(),
   })
   .strict()
   .superRefine((node, context) => {

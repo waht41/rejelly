@@ -49,10 +49,11 @@ describe("V3 user-input storage preparation", () => {
     const resolved = await materializeUserInput(input);
     const frozen = await freezeResolvedUserInput(resolved, {
       blobRoot: path.join(tmpDir, "blobs"),
+      imageOrdinalStart: 4,
     });
 
     expect(projectFrozenUserInputMessage(frozen).content).toEqual([
-      { type: "text", text: "[Image #1]" },
+      { type: "text", text: "[Image #4]" },
       expect.objectContaining({
         type: "image",
         image: expect.objectContaining({ url: expect.stringMatching(/^rejelly-blob:\/\//) }),
@@ -60,7 +61,13 @@ describe("V3 user-input storage preparation", () => {
     ]);
     expect(frozen).toMatchObject({
       kind: "resolved",
-      nodes: [{ kind: "image", blob: { blobRef: expect.stringMatching(/^rejelly-blob:\/\//) } }],
+      nodes: [
+        {
+          kind: "image",
+          imageOrdinal: 4,
+          blob: { blobRef: expect.stringMatching(/^rejelly-blob:\/\//) },
+        },
+      ],
     });
   });
 

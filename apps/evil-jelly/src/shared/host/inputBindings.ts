@@ -132,6 +132,8 @@ export interface PromptInputBindings {
   setAvailableSkills?: (skills: UserSkillListItem[]) => void;
   setAvailableMcpServers?: (servers: UserMcpListItem[]) => void;
   setAvailableMemories?: (memories: UserMemoryListItem[]) => void;
+  /** Updates the composer's preview base for stable session-level image labels. */
+  setNextImageOrdinal?: (ordinal: number) => void;
   requestChoice: (request: PromptChoiceRequest) => Promise<string>;
   /** Rich interactive MCP manager; non-Ink hosts may omit it and use the choice fallback. */
   requestMcpManager?: (request: McpManagerRequest) => Promise<McpManagerAction>;

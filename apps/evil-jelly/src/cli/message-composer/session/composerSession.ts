@@ -22,6 +22,7 @@ interface ComposerSessionState {
   availableSkills: SkillPickerItem[];
   availableMcpServers: McpPickerItem[];
   availableMemories: MemoryPickerItem[];
+  nextImageOrdinal: number;
   draftSeed: DraftSeed | null;
   backgroundLineHandler: ((value: PromptInput) => void) | null;
 
@@ -29,6 +30,7 @@ interface ComposerSessionState {
   setAvailableSkills: (skills: SkillPickerItem[]) => void;
   setAvailableMcpServers: (servers: McpPickerItem[]) => void;
   setAvailableMemories: (memories: MemoryPickerItem[]) => void;
+  setNextImageOrdinal: (ordinal: number) => void;
   seedDraft: (value: PromptInput) => void;
   clearDraftSeed: (id: number) => void;
   setBackgroundLineHandler: (handler: ((value: PromptInput) => void) | null) => void;
@@ -38,6 +40,7 @@ export const useComposerSession = create<ComposerSessionState>((set, get) => ({
   availableSkills: [],
   availableMcpServers: [],
   availableMemories: [],
+  nextImageOrdinal: 1,
   draftSeed: null,
   backgroundLineHandler: null,
 
@@ -63,6 +66,8 @@ export const useComposerSession = create<ComposerSessionState>((set, get) => ({
           left.id.localeCompare(right.id),
       ),
     }),
+  setNextImageOrdinal: (ordinal) =>
+    set({ nextImageOrdinal: Number.isInteger(ordinal) && ordinal > 0 ? ordinal : 1 }),
   seedDraft: (value) => {
     const replaced = get().draftSeed;
     set({
@@ -85,6 +90,7 @@ export function resetComposerSession(): void {
     availableSkills: [],
     availableMcpServers: [],
     availableMemories: [],
+    nextImageOrdinal: 1,
     draftSeed: null,
     backgroundLineHandler: null,
   });

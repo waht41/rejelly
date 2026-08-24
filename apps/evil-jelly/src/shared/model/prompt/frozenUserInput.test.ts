@@ -1,5 +1,6 @@
 import type { Message } from "@rejelly/core";
 import { describe, expect, it } from "vitest";
+import type { SessionBlobRef } from "../../session/blobContract";
 import {
   copyFrozenUserInputOrigin,
   type FrozenResolvedUserInputV1,
@@ -58,6 +59,35 @@ const input: FrozenResolvedUserInputV1 = {
 };
 
 describe("frozen user input projections", () => {
+  it("uses a persisted session image ordinal in both model and display projections", () => {
+    const imageInput: FrozenResolvedUserInputV1 = {
+      version: 1,
+      kind: "resolved",
+      nodes: [
+        {
+          kind: "image",
+          imageOrdinal: 7,
+          detail: "auto",
+          blob: {
+            blobRef: `rejelly-blob://${"a".repeat(64)}` as SessionBlobRef,
+            sha256: "a".repeat(64),
+            mediaType: "image/png",
+            byteLength: 1,
+          },
+        },
+      ],
+    };
+
+    expect(projectFrozenUserInputDisplay(imageInput)).toMatchObject({
+      text: "[Image #7]",
+      attachments: [{ type: "image", label: "[Image #7]" }],
+    });
+    expect(projectFrozenUserInputMessage(imageInput).content).toEqual([
+      { type: "text", text: "[Image #7]" },
+      expect.objectContaining({ type: "image" }),
+    ]);
+  });
+
   it("derives display and model content from one frozen record", () => {
     expect(projectFrozenUserInputDisplay(input)).toMatchObject({
       text: "review $skill:review@src/a.ts$mcp:docs$mcp:docs$memory:Squash message",

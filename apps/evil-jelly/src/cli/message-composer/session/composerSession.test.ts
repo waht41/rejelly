@@ -62,6 +62,14 @@ describe("composer session bridge", () => {
     ]);
   });
 
+  it("tracks and resets the next session image ordinal", () => {
+    useComposerSession.getState().setNextImageOrdinal(8);
+    expect(useComposerSession.getState().nextImageOrdinal).toBe(8);
+
+    resetComposerSession();
+    expect(useComposerSession.getState().nextImageOrdinal).toBe(1);
+  });
+
   it("releases a pending composer-owned draft when a newer seed replaces it", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "evil-draft-seed-cleanup-"));
     roots.push(root);

@@ -29,6 +29,10 @@ export class LazySessionRecorder implements SessionRecorder {
     return this.#recorder?.ended ?? this.#ended;
   }
 
+  get nextImageOrdinal(): number {
+    return this.#recorder?.nextImageOrdinal ?? 1;
+  }
+
   async #ensureOpen(): Promise<SessionRecorder> {
     if (this.#closed) {
       throw new Error("Session recorder is closed");

@@ -3,6 +3,40 @@ import type { SessionEvent } from "../model/sessionEvents";
 import { prepareSessionReplay } from "./sessionReplay";
 
 describe("prepareSessionReplay", () => {
+  it("upgrades pre-ordinal resolved images in session order without rewriting storage", () => {
+    const blob = {
+      blobRef: `rejelly-blob://${"a".repeat(64)}`,
+      sha256: "a".repeat(64),
+      mediaType: "image/png" as const,
+      byteLength: 1,
+    };
+    const events = [1, 2].map(
+      (seq): SessionEvent => ({
+        type: "user_input_recorded",
+        seq,
+        timestamp: seq,
+        turnId: `turn-${seq}`,
+        inputKind: "initial",
+        input: {
+          version: 1,
+          kind: "resolved",
+          nodes: [{ kind: "image", blob, detail: "auto" }],
+        },
+      }),
+    );
+
+    const replay = prepareSessionReplay(events);
+
+    expect(
+      replay.events.flatMap((event) =>
+        event.type === "user_input_recorded" && event.input.kind === "resolved"
+          ? event.input.nodes.flatMap((node) => (node.kind === "image" ? [node.imageOrdinal] : []))
+          : [],
+      ),
+    ).toEqual([1, 2]);
+    expect(events[0]).not.toHaveProperty("input.nodes.0.imageOrdinal");
+  });
+
   it("normalizes stored messages once and filters unknown events without losing tail coordinates", () => {
     const events: SessionEvent[] = [
       {
