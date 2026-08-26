@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { VerifyOptions } from "../../contracts.js";
 import {
@@ -5,7 +8,9 @@ import {
   compactProcessOutput,
   createVerifyPlan,
   extractFailureFacts,
+  isSafeRelatedTestPath,
   resolveAffectedScope,
+  resolveRelatedTestPlan,
   selectBiomeFiles,
 } from "../verify.js";
 
@@ -17,6 +22,7 @@ const defaults: VerifyOptions = {
   fixBranch: false,
   json: false,
   maxFiles: 100,
+  relatedTests: false,
   scope: { kind: "affected" },
   tests: true,
   verbose: false,
@@ -86,6 +92,71 @@ describe("createVerifyPlan", () => {
         ],
         kind: "process",
         label: "workspace tasks",
+      },
+    ]);
+  });
+
+  it("separates related direct-package tests from safe full-test fallbacks", () => {
+    const plan = createVerifyPlan(
+      { ...defaults, relatedTests: true },
+      {
+        filters: ["@rejelly/app", "@rejelly/downstream"],
+        kind: "packages",
+        source: "affected",
+      },
+      {
+        relatedTestPlan: {
+          fullPackageFilters: ["@rejelly/downstream"],
+          relatedPackages: [{ files: ["src/feature.ts"], packageName: "@rejelly/app" }],
+        },
+      },
+    );
+
+    expect(plan.steps).toEqual([
+      { kind: "biome-changed", label: "Biome check (changed files)", write: false },
+      {
+        command: "pnpm",
+        args: [
+          "exec",
+          "turbo",
+          "run",
+          "typecheck",
+          "lint:jelly",
+          "lint:doc",
+          "--output-logs=errors-only",
+          "--filter=@rejelly/app",
+          "--filter=@rejelly/downstream",
+        ],
+        kind: "process",
+        label: "workspace tasks",
+      },
+      {
+        command: "pnpm",
+        args: [
+          "exec",
+          "turbo",
+          "run",
+          "test",
+          "--output-logs=errors-only",
+          "--filter=@rejelly/downstream",
+        ],
+        kind: "process",
+        label: "full tests (safe fallback)",
+      },
+      {
+        command: "pnpm",
+        args: [
+          "--filter",
+          "@rejelly/app",
+          "exec",
+          "vitest",
+          "related",
+          "src/feature.ts",
+          "--run",
+          "--passWithNoTests",
+        ],
+        kind: "process",
+        label: "related tests (@rejelly/app)",
       },
     ]);
   });
@@ -161,6 +232,52 @@ describe("verify scope guards", () => {
     expect(
       selectBiomeFiles({ fix: true, fixBranch: true }, ["old.ts", "new.ts"], ["new.ts"]),
     ).toEqual(["old.ts", "new.ts"]);
+  });
+});
+
+describe("related test selection", () => {
+  it("accepts ordinary source and test files but rejects entrypoints and implicit fixtures", () => {
+    expect(isSafeRelatedTestPath("src/feature.ts")).toBe(true);
+    expect(isSafeRelatedTestPath("src/feature.test.ts")).toBe(true);
+    expect(isSafeRelatedTestPath("src/cli/index.ts")).toBe(false);
+    expect(isSafeRelatedTestPath("src/domain/__tests__/fixtures/child.ts")).toBe(false);
+    expect(isSafeRelatedTestPath("vitest.config.ts")).toBe(false);
+  });
+
+  it("uses related tests only for directly changed Vitest packages", () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "repo-tool-related-"));
+    try {
+      const appPath = path.join(repoRoot, "packages", "app");
+      const downstreamPath = path.join(repoRoot, "packages", "downstream");
+      fs.mkdirSync(path.join(appPath, "src"), { recursive: true });
+      fs.mkdirSync(path.join(downstreamPath, "src"), { recursive: true });
+      fs.writeFileSync(
+        path.join(appPath, "package.json"),
+        JSON.stringify({ name: "@repo/app", scripts: { test: "vitest run" } }),
+      );
+      fs.writeFileSync(
+        path.join(downstreamPath, "package.json"),
+        JSON.stringify({ name: "@repo/downstream", scripts: { test: "vitest run" } }),
+      );
+      fs.writeFileSync(path.join(appPath, "src", "feature.ts"), "export {};\n");
+
+      expect(
+        resolveRelatedTestPlan({
+          changedFiles: ["packages/app/src/feature.ts"],
+          directPackageNames: ["@repo/app"],
+          repoRoot,
+          selectedPackages: [
+            { name: "@repo/app", path: appPath },
+            { name: "@repo/downstream", path: downstreamPath },
+          ],
+        }),
+      ).toEqual({
+        fullPackageFilters: ["@repo/downstream"],
+        relatedPackages: [{ files: ["src/feature.ts"], packageName: "@repo/app" }],
+      });
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
   });
 });
 

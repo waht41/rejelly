@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import type {
   BiomeChangedSelection,
   ProcessVerifyStep,
@@ -21,8 +23,19 @@ import {
   mapChangedPathsToPackages,
   resolveExactWorkspaceFilters,
   resolveTurboFilteredPackages,
+  type WorkspacePackage,
 } from "../lib/workspace.js";
 import { existingBiomeCandidateFiles, runBiomeChanged } from "./biome-changed.js";
+
+export interface RelatedTestPackageSelection {
+  files: string[];
+  packageName: string;
+}
+
+export interface RelatedTestPlan {
+  fullPackageFilters: string[];
+  relatedPackages: RelatedTestPackageSelection[];
+}
 
 export function createVerifyPlan(
   options: VerifyOptions,
@@ -31,6 +44,7 @@ export function createVerifyPlan(
     biomeSelection?: BiomeChangedSelection;
     changedFileCount?: number;
     changeSummary?: VerifyChangeSummary;
+    relatedTestPlan?: RelatedTestPlan;
     unmappedFiles?: string[];
   } = {},
 ): VerifyPlan {
@@ -52,12 +66,51 @@ export function createVerifyPlan(
   }
 
   if (scope.kind !== "none") {
-    const tasks = ["typecheck", "lint:jelly", "lint:doc", ...(options.tests ? ["test"] : [])];
+    const relatedTestPlan =
+      options.tests && options.relatedTests ? context.relatedTestPlan : undefined;
+    const tasks = [
+      "typecheck",
+      "lint:jelly",
+      "lint:doc",
+      ...(options.tests && !relatedTestPlan ? ["test"] : []),
+    ];
     const turboArgs = ["exec", "turbo", "run", ...tasks, "--output-logs=errors-only"];
     if (scope.kind === "packages") {
       for (const filter of scope.filters) turboArgs.push(`--filter=${filter}`);
     }
     steps.push({ command: "pnpm", args: turboArgs, kind: "process", label: "workspace tasks" });
+    if (relatedTestPlan?.fullPackageFilters.length) {
+      steps.push({
+        command: "pnpm",
+        args: [
+          "exec",
+          "turbo",
+          "run",
+          "test",
+          "--output-logs=errors-only",
+          ...relatedTestPlan.fullPackageFilters.map((filter) => `--filter=${filter}`),
+        ],
+        kind: "process",
+        label: "full tests (safe fallback)",
+      });
+    }
+    for (const selection of relatedTestPlan?.relatedPackages ?? []) {
+      steps.push({
+        command: "pnpm",
+        args: [
+          "--filter",
+          selection.packageName,
+          "exec",
+          "vitest",
+          "related",
+          ...selection.files,
+          "--run",
+          "--passWithNoTests",
+        ],
+        kind: "process",
+        label: `related tests (${selection.packageName})`,
+      });
+    }
   }
   return {
     ...(context.changeSummary ? { changeSummary: context.changeSummary } : {}),
@@ -67,6 +120,83 @@ export function createVerifyPlan(
     scope,
     steps,
     ...(context.unmappedFiles ? { unmappedFiles: context.unmappedFiles } : {}),
+  };
+}
+
+function isInsidePackage(packagePath: string, absolutePath: string): boolean {
+  const relative = path.relative(packagePath, absolutePath);
+  return (
+    relative !== "" &&
+    !relative.startsWith(`..${path.sep}`) &&
+    relative !== ".." &&
+    !path.isAbsolute(relative)
+  );
+}
+
+export function isSafeRelatedTestPath(relativePath: string): boolean {
+  const normalized = relativePath.replaceAll("\\", "/").toLowerCase();
+  if (!normalized.startsWith("src/")) return false;
+  if (!/\.[cm]?[jt]sx?$/.test(normalized)) return false;
+  if (/(?:^|\/)__tests__\/fixtures?\//.test(normalized)) return false;
+  if (/(?:^|\/)[^/]+\.fixture\.[cm]?[jt]sx?$/.test(normalized)) return false;
+  return normalized !== "src/index.ts" && normalized !== "src/cli/index.ts";
+}
+
+function packageUsesVitest(packagePath: string): boolean {
+  try {
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(packagePath, "package.json"), "utf8"),
+    ) as {
+      scripts?: { test?: unknown };
+    };
+    return (
+      typeof manifest.scripts?.test === "string" &&
+      /(?:^|\s)vitest(?:\s|$)/.test(manifest.scripts.test)
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function resolveRelatedTestPlan(input: {
+  changedFiles: readonly string[];
+  directPackageNames: readonly string[];
+  repoRoot: string;
+  selectedPackages: readonly WorkspacePackage[];
+}): RelatedTestPlan {
+  const directNames = new Set(input.directPackageNames);
+  const fullPackageFilters: string[] = [];
+  const relatedPackages: RelatedTestPackageSelection[] = [];
+
+  for (const workspacePackage of input.selectedPackages) {
+    const ownedFiles = input.changedFiles.flatMap((file) => {
+      const absolutePath = path.resolve(input.repoRoot, file);
+      if (!isInsidePackage(workspacePackage.path, absolutePath)) return [];
+      return [path.relative(workspacePackage.path, absolutePath).replaceAll("\\", "/")];
+    });
+    const canRunRelated =
+      directNames.has(workspacePackage.name) &&
+      ownedFiles.length > 0 &&
+      packageUsesVitest(workspacePackage.path) &&
+      ownedFiles.every(
+        (file) =>
+          isSafeRelatedTestPath(file) && fs.existsSync(path.resolve(workspacePackage.path, file)),
+      );
+    if (canRunRelated) {
+      relatedPackages.push({
+        files: [...new Set(ownedFiles)].sort(),
+        packageName: workspacePackage.name,
+      });
+    } else {
+      fullPackageFilters.push(workspacePackage.name);
+    }
+  }
+
+  return {
+    fullPackageFilters: fullPackageFilters.sort(),
+    relatedPackages: relatedPackages.sort((left, right) =>
+      left.packageName.localeCompare(right.packageName),
+    ),
   };
 }
 
@@ -155,6 +285,16 @@ export function resolveVerifyPlan(repoRoot: string, options: VerifyOptions): Ver
       repoRoot,
       selectBiomeFiles(options, branchBiomeFiles, workingTreeBiomeFiles),
     );
+    const selectedNames = new Set(selectedPackages.map((entry) => entry.name));
+    const relatedTestPlan =
+      options.relatedTests && rootImpact.globalFiles.length === 0
+        ? resolveRelatedTestPlan({
+            changedFiles: changed.files,
+            directPackageNames: affected.packages.filter((name) => selectedNames.has(name)),
+            repoRoot,
+            selectedPackages,
+          })
+        : undefined;
     return createVerifyPlan(
       options,
       {
@@ -176,6 +316,7 @@ export function resolveVerifyPlan(repoRoot: string, options: VerifyOptions): Ver
           workingTreeFiles: changed.workingTreeFiles,
         }),
         changedFileCount: changed.files.length,
+        ...(relatedTestPlan ? { relatedTestPlan } : {}),
         unmappedFiles: affected.unmappedFiles,
       },
     );
@@ -197,6 +338,15 @@ export function resolveVerifyPlan(repoRoot: string, options: VerifyOptions): Ver
     repoRoot,
     selectBiomeFiles(options, changed.files, changed.workingTreeFiles),
   );
+  const relatedTestPlan =
+    options.relatedTests && scope.kind === "packages"
+      ? resolveRelatedTestPlan({
+          changedFiles: changed.files,
+          directPackageNames: affected.packages,
+          repoRoot,
+          selectedPackages: expandedPackages,
+        })
+      : undefined;
   return createVerifyPlan(options, scope, {
     biomeSelection: { base: changed.base, files: biomeFiles },
     changeSummary: changeSummary({
@@ -208,6 +358,7 @@ export function resolveVerifyPlan(repoRoot: string, options: VerifyOptions): Ver
       workingTreeFiles: changed.workingTreeFiles,
     }),
     changedFileCount: changed.files.length,
+    ...(relatedTestPlan ? { relatedTestPlan } : {}),
     unmappedFiles: affected.unmappedFiles,
   });
 }

@@ -39,6 +39,10 @@ export function normalizeVerifyOptions(options: Record<string, unknown>): Verify
       ? undefined
       : positiveInteger(options.timeout, "--timeout", 1) * 1_000;
   if (all && filters.length > 0) throw new Error("--all cannot be combined with --filter");
+  if (all && options.relatedTests === true)
+    throw new Error("--related-tests cannot be combined with --all");
+  if (options.relatedTests === true && options.tests === false)
+    throw new Error("--related-tests cannot be combined with --no-tests");
   if (fix && biome === "skip") throw new Error("--fix cannot be combined with --biome skip");
   if (fixBranch && !fix) throw new Error("--branch requires --fix");
   return {
@@ -50,6 +54,7 @@ export function normalizeVerifyOptions(options: Record<string, unknown>): Verify
     fixBranch,
     json: options.json === true,
     maxFiles: positiveInteger(options.maxFiles, "--max-files", 100),
+    relatedTests: options.relatedTests === true,
     scope: all
       ? { kind: "all" }
       : filters.length > 0
@@ -71,6 +76,10 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     .option("--fix", "Apply Biome safe fixes, formatting, and import sorting before verification")
     .option("--branch", "With --fix, include committed branch changes instead of only dirty files")
     .option("--no-tests", "Skip test tasks")
+    .option(
+      "--related-tests",
+      "Run Vitest tests related to ordinary direct-package source changes; safely fall back to full tests",
+    )
     .option("--biome <scope>", "Biome scope: changed, all, or skip")
     .option("--base <ref>", "Base ref used by the changed-file Biome check")
     .option("--max-files <count>", "Changed-file write safety limit", { default: 100 })
