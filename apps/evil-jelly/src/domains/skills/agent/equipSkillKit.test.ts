@@ -27,6 +27,15 @@ function record(): SkillRecord {
 function snapshot(records: readonly SkillRecord[]): SkillRuntimeSnapshot {
   return Object.freeze({
     catalog: createSkillCatalog(records),
+    access: Object.freeze({
+      get: (skill: SkillRecord) =>
+        Object.freeze({
+          kind: "host-filesystem" as const,
+          rootPath: `/skills/${skill.origin.scope}/${skill.name}`,
+          mainResource: "SKILL.md" as const,
+          pathConvention: "posix" as const,
+        }),
+    }),
     resources: Object.freeze({
       readText: async () => ({
         ok: false as const,

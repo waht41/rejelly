@@ -34,7 +34,7 @@ Run `evil` to chat, inspect and search code, edit files with diff confirmation, 
 
 ### Local Skills
 
-Evil Jelly loads local, instruction-only Skills from exactly two directories:
+Evil Jelly loads local, filesystem-backed instruction Skills from exactly two directories:
 
 ```text
 ~/.evil-jelly/skills/<skill-name>/SKILL.md
@@ -78,17 +78,26 @@ Skill with `read_skill`, and read an inventoried text resource with `read_skill_
 #### Optional Skill resources
 
 A Skill may place supporting files under `references/` and `assets/`. These directories are
-inventoried recursively with bounded count, depth, and size metadata. Paths exposed to the model
-are Skill-relative POSIX paths, never host absolute paths. `read_skill_resource` reads only bounded
-UTF-8 text that was present in that inventory; binary assets may be listed but are not returned as
-text. Directory symlinks/junctions, file links that escape the Skill, files outside those two
-directories, and resources added after startup are not readable through the Skill resource tool.
+inventoried recursively with bounded count, depth, and size metadata. Catalog and resource paths
+are Skill-relative POSIX paths. Activating a local Skill through `read_skill` or an explicit Skill
+token additionally reveals its canonical host filesystem root so the model can resolve bundled
+files. The locator is absent from the catalog, startup summaries, and `read_skill_resource` output.
+It grants no permission: reading, modifying, or executing a bundled file still uses the ordinary
+host tools, approval, filesystem policy, and sandbox path.
+
+`read_skill_resource` reads only bounded UTF-8 text that was present in the startup inventory;
+binary assets may be listed but are not returned as text. Directory symlinks/junctions, file links
+that escape the Skill, files outside `references/` and `assets/`, and resources added after startup
+are not readable through the Skill resource tool. Ordinary host tools may still access a revealed
+local Skill directory when their existing policy allows it.
 
 Skills do not have a plugin manifest, installer, marketplace, configurable extra roots, file
-watcher, or hot reload. They cannot declare or execute scripts/hooks, dependencies, models, effort,
-or allowed tools. A Skill is model instruction content—not a capability or permission grant. Any
-tool or MCP call it recommends still follows the existing host registration, approval, and policy
-path.
+watcher, or hot reload. They cannot declare hooks, dependencies, models, effort, or allowed tools,
+and they cannot execute scripts automatically. A Skill may recommend using or editing bundled
+files, but it is model instruction content—not a capability or permission grant. Any file, shell,
+or MCP call it recommends still follows the existing host registration, approval, and policy path.
+An edited `SKILL.md` takes effect after restart because the activated instruction body remains a
+startup snapshot.
 
 #### Skill loading diagnostics
 

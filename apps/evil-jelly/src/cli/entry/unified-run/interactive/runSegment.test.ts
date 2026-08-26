@@ -46,6 +46,15 @@ describe("runEvilJellyHost session teardown", () => {
           resources: Object.freeze([]),
         }),
       ]),
+      access: Object.freeze({
+        get: () =>
+          Object.freeze({
+            kind: "host-filesystem" as const,
+            rootPath: "/skills/project/review",
+            mainResource: "SKILL.md" as const,
+            pathConvention: "posix" as const,
+          }),
+      }),
       resources: Object.freeze({
         readText: async () => ({
           ok: false as const,

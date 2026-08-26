@@ -50,23 +50,25 @@ export async function materializeSkillAwareUserInput(
       ...(skill.shortDescription ? { shortDescription: skill.shortDescription } : {}),
     })) ?? [];
   const skillByName = new Map(
-    skills.map((skill) => [
-      qualifiedSkillName(skill),
-      {
-        status: "resolved" as const,
-        context: renderSkillToolResult(skill),
-        referenceName: skillReferenceName(
+    snapshot
+      ? skills.map((skill) => [
+          qualifiedSkillName(skill),
           {
-            qualifiedName: qualifiedSkillName(skill),
-            name: skill.name,
-            scope: skill.origin.scope,
-            description: skill.description,
-            ...(skill.shortDescription ? { shortDescription: skill.shortDescription } : {}),
+            status: "resolved" as const,
+            context: renderSkillToolResult(skill, snapshot.access.get(skill)),
+            referenceName: skillReferenceName(
+              {
+                qualifiedName: qualifiedSkillName(skill),
+                name: skill.name,
+                scope: skill.origin.scope,
+                description: skill.description,
+                ...(skill.shortDescription ? { shortDescription: skill.shortDescription } : {}),
+              },
+              skillCatalog,
+            ),
           },
-          skillCatalog,
-        ),
-      },
-    ]),
+        ])
+      : [],
   );
   return materializeUserInput(input, {
     ...options,

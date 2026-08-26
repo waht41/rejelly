@@ -32,10 +32,11 @@ export function isSkillEnabled(
   return settings.enabled && (settings.overrides[qualifiedSkillName(skill)]?.enabled ?? true);
 }
 
-/** Join path-free catalog state with the separate path-owning resource repository. */
+/** Join the path-free catalog with separate host-owned access and resource repositories. */
 export function createSkillRuntimeSnapshot(loaded: LoadedSkillSources): SkillRuntimeSnapshot {
   return Object.freeze({
     catalog: createSkillCatalog(loaded.records),
+    access: loaded.access,
     resources: loaded.resources,
   });
 }

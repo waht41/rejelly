@@ -34,6 +34,12 @@ describe("SkillRuntimeSnapshot", () => {
     expect(resolved.ok).toBe(true);
     if (resolved.ok) {
       expect(JSON.stringify(resolved.skill)).not.toContain(root);
+      expect(built.snapshot.access.get(resolved.skill)).toEqual({
+        kind: "host-filesystem",
+        rootPath: await fs.realpath(skill),
+        mainResource: "SKILL.md",
+        pathConvention: process.platform === "win32" ? "windows" : "posix",
+      });
       await expect(
         built.snapshot.resources.readText(resolved.skill, "references/guide.md"),
       ).resolves.toEqual({
@@ -49,7 +55,10 @@ describe("SkillRuntimeSnapshot", () => {
     const skillOutput = await tools.readSkill.handler({ skill: "review" });
     expect(skillOutput).toContain("Use the guide.");
     expect(skillOutput).not.toContain("Changed instruction.");
-    expect(skillOutput).not.toContain(root);
+    expect(skillOutput).toContain(await fs.realpath(skill));
+
+    const listOutput = await tools.listSkills.handler({});
+    expect(listOutput).not.toContain(root);
 
     const resourceOutput = await tools.readSkillResource.handler({
       skill: "review",

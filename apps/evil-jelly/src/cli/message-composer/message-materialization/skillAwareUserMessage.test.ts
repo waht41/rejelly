@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { freezeResolvedUserInput } from "../../../domains/session/journal/userInputStorage";
 import type { SkillRuntimeSnapshot } from "../../../domains/skills/agent/skillRuntime";
 import { createSkillCatalog } from "../../../domains/skills/catalog/skillCatalog";
-import type { SkillRecord } from "../../../domains/skills/definition/skillDefinition";
+import type { SkillAccess, SkillRecord } from "../../../domains/skills/definition/skillDefinition";
 import { skillOrigin } from "../../../domains/skills/definition/skillDefinition";
 import {
   projectFrozenUserInputDisplay,
@@ -24,6 +24,14 @@ function record(name: string, scope: "user" | "project" = "project"): SkillRecor
 function snapshot(records: readonly SkillRecord[]): SkillRuntimeSnapshot {
   return Object.freeze({
     catalog: createSkillCatalog(records),
+    access: {
+      get: (skill: SkillRecord): SkillAccess => ({
+        kind: "host-filesystem",
+        rootPath: `/skills/${skill.origin.scope}/${skill.name}`,
+        mainResource: "SKILL.md",
+        pathConvention: "posix",
+      }),
+    },
     resources: { readText: vi.fn() },
   });
 }
@@ -72,6 +80,7 @@ describe("explicit Skill references", () => {
     expect(content.indexOf("inspect this.")).toBeLessThan(
       content.indexOf("Follow the review workflow."),
     );
+    expect(content).toContain('root-path="/skills/project/review"');
     expect(display).toEqual({
       text: "Please $skill:review inspect this.",
       attachments: [],

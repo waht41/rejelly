@@ -2,16 +2,24 @@ import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { compareStringsByCodeUnit } from "../../../shared/foundation/string";
-import type { SkillRecord, SkillResourceRepository } from "../definition/skillDefinition";
+import type {
+  SkillAccessRepository,
+  SkillRecord,
+  SkillResourceRepository,
+} from "../definition/skillDefinition";
 import { qualifiedSkillName, skillOrigin } from "../definition/skillDefinition";
 import { type SkillLoadDiagnostic, skillDiagnostic } from "./diagnostics";
 import { SKILL_LOADER_LIMITS } from "./limits";
 import { type LoadedSkill, loadSkill, type SkillLoadCandidate } from "./skillLoader";
-import { createSkillResourceRepository } from "./skillResourceRepository";
+import {
+  createSkillAccessRepository,
+  createSkillResourceRepository,
+} from "./skillResourceRepository";
 import type { SkillSource } from "./skillSourceRoots";
 
 export interface LoadedSkillSources {
   readonly records: readonly SkillRecord[];
+  readonly access: SkillAccessRepository;
   readonly resources: SkillResourceRepository;
   readonly diagnostics: readonly SkillLoadDiagnostic[];
 }
@@ -176,10 +184,13 @@ export async function loadLooseSkills(
     compareStringsByCodeUnit(qualifiedSkillName(left.record), qualifiedSkillName(right.record)),
   );
   const records = Object.freeze(accepted.map((skill) => skill.record));
-  const resources = createSkillResourceRepository(accepted.map((skill) => skill.location));
+  const locations = accepted.map((skill) => skill.location);
+  const access = createSkillAccessRepository(locations);
+  const resources = createSkillResourceRepository(locations);
 
   return Object.freeze({
     records,
+    access,
     resources,
     diagnostics: Object.freeze(diagnostics),
   });
