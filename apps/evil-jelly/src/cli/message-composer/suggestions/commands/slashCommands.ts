@@ -17,7 +17,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/status", description: "Show workspace, token usage, and context window" },
   { name: "/mcp", description: "Open the MCP server manager" },
   { name: "/memory", description: "View and manage persistent memory" },
-  { name: "/skills", description: "List and inspect local Skills" },
+  { name: "/skills", description: "Open the local Skill browser" },
   { name: "/clear", description: "Start a new empty session" },
   { name: "/compress", description: "Compress the current session history" },
   { name: "/mode", description: "Toggle interaction mode (normal ⇄ auto)" },

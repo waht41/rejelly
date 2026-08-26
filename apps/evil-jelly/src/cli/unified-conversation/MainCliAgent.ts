@@ -481,6 +481,8 @@ async function handleSkills(runtime: RouterRuntime, rawInput: string): Promise<v
   await handleSkillsCommand(rawInput, {
     snapshot: runtime.skillSnapshot,
     diagnose: runtime.props.diagnoseSkills,
+    requestSkillManager: runtime.host.requestSkillManager,
+    openSkillFolder: runtime.host.openSkillFolder,
     logSystem: (message) => runtime.host.logSystemEvent(message),
   });
 }

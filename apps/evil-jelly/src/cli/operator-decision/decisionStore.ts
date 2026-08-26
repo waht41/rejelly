@@ -8,6 +8,8 @@ import type {
   ManagerRequest,
   MemoryManagerActionType,
   MemoryManagerRequestType,
+  SkillManagerActionType,
+  SkillManagerRequestType,
 } from "./model";
 
 type PendingDecision =
@@ -16,6 +18,7 @@ type PendingDecision =
   | { type: "confirm"; resolve: (value: boolean) => void }
   | { type: "mcp_manager"; resolve: (value: ManagerAction) => void }
   | { type: "memory_manager"; resolve: (value: MemoryManagerActionType) => void }
+  | { type: "skill_manager"; resolve: (value: SkillManagerActionType) => void }
   | {
       type: "choice";
       options: DecisionOption[];
@@ -40,6 +43,8 @@ interface DecisionState {
   submitMcpManager(action: ManagerAction): void;
   requestMemoryManager(request: MemoryManagerRequestType): Promise<MemoryManagerActionType>;
   submitMemoryManager(action: MemoryManagerActionType): void;
+  requestSkillManager(request: SkillManagerRequestType): Promise<SkillManagerActionType>;
+  submitSkillManager(action: SkillManagerActionType): void;
 }
 
 function idleState(): Pick<DecisionState, "view" | "decision" | "pending"> {
@@ -129,6 +134,21 @@ export const useDecisionStore = create<DecisionState>((set, get) => ({
   submitMemoryManager: (action) => {
     const pending = get().pending;
     if (pending.type !== "memory_manager") return;
+    if (action.action === "close") set(idleState());
+    else set({ pending: idleDecision });
+    pending.resolve(action);
+  },
+  requestSkillManager: (request) =>
+    new Promise((resolve) => {
+      set({
+        view: { type: "none" },
+        decision: { type: "skill_manager", request },
+        pending: { type: "skill_manager", resolve },
+      });
+    }),
+  submitSkillManager: (action) => {
+    const pending = get().pending;
+    if (pending.type !== "skill_manager") return;
     if (action.action === "close") set(idleState());
     else set({ pending: idleDecision });
     pending.resolve(action);

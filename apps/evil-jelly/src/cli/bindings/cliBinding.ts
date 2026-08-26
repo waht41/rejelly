@@ -34,6 +34,7 @@ import {
   createOperatorDecision,
   resetOperatorDecisionSession,
 } from "../operator-decision/operatorDecision";
+import { openSkillFolderInFileManager } from "../skill-manager/openSkillFolder";
 import { resetSubmissionDispatch } from "../submission-dispatch/dispatcher";
 import { resetModeSession, useModeStore } from "../tool-approval/approvalModeStore";
 import { createToolApproval } from "../tool-approval/createToolApproval";
@@ -95,6 +96,17 @@ function createInkRequestMcpManager(): NonNullable<PromptInputBindings["requestM
       return action;
     });
   };
+}
+
+function createInkRequestSkillManager(): NonNullable<PromptInputBindings["requestSkillManager"]> {
+  const decision = createOperatorDecision();
+  return async (request) =>
+    decision.run(async (session) => {
+      useOutputStore.getState().setPhase("awaiting_user", "Browsing local Skills…");
+      const action = await session.requestSkillManager(request);
+      useOutputStore.getState().resumeWork("Running…");
+      return action;
+    });
 }
 
 function createOutputBindings(): ConversationPresentationBindings {
@@ -184,10 +196,14 @@ function createPromptBindings(options: {
     requestChoice: createInkRequestChoice(),
     requestMcpManager: createInkRequestMcpManager(),
     requestMemoryManager: createInkRequestMemoryManager(),
+    requestSkillManager: createInkRequestSkillManager(),
     revealMemoryFile: async (scope) => {
       await suspendInkForExternalProcess(() =>
         revealMemoryFileInExplorer({ scope, workspaceRoot: getWorkspaceFsPolicy().getRoot() }),
       );
+    },
+    openSkillFolder: async (rootPath) => {
+      await suspendInkForExternalProcess(() => openSkillFolderInFileManager(rootPath));
     },
     dismissMcpManager: () => useDecisionStore.getState().submitMcpManager({ action: "refresh" }),
     setAvailableSkills: (skills) => {

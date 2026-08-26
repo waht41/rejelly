@@ -1,5 +1,11 @@
 import path from "node:path";
 import type { SkillRuntimeSnapshot } from "../../domains/skills/agent/skillRuntime";
+import type {
+  SkillManagerAction,
+  SkillManagerDetail,
+  SkillManagerEntry,
+  SkillManagerRequest,
+} from "../../shared/host/inputBindings";
 
 const MAX_LIST_ENTRIES = 50;
 const MAX_RESOURCE_ENTRIES = 50;
@@ -21,10 +27,13 @@ export interface SkillDoctorReport {
 export interface SkillsCommandPorts {
   readonly snapshot?: SkillRuntimeSnapshot;
   readonly diagnose?: () => Promise<SkillDoctorReport>;
+  readonly requestSkillManager?: (request: SkillManagerRequest) => Promise<SkillManagerAction>;
+  readonly openSkillFolder?: (rootPath: string) => Promise<void>;
   logSystem(message: string): void;
 }
 
 type SkillsCommand =
+  | { readonly kind: "manager" }
   | { readonly kind: "list" }
   | { readonly kind: "show"; readonly name: string }
   | { readonly kind: "doctor" }
@@ -33,7 +42,7 @@ type SkillsCommand =
 function parseSkillsCommand(rawInput: string): SkillsCommand | null {
   const args = rawInput.trim().split(/\s+/);
   if (args[0]?.toLocaleLowerCase() !== "/skills") return null;
-  if (args.length === 1) return { kind: "list" };
+  if (args.length === 1) return { kind: "manager" };
 
   const action = args[1]?.toLocaleLowerCase();
   if (action === "list") {
@@ -60,6 +69,35 @@ export function isSkillsLocalCommand(rawInput: string): boolean {
 
 function qualifiedName(skill: SkillRuntimeSnapshot["catalog"]["entries"][number]): string {
   return `${skill.origin.scope}:${skill.name}`;
+}
+
+function managerEntry(
+  skill: SkillRuntimeSnapshot["catalog"]["entries"][number],
+): SkillManagerEntry {
+  return {
+    qualifiedName: qualifiedName(skill),
+    name: skill.name,
+    scope: skill.origin.scope,
+    description: skill.description,
+    ...(skill.shortDescription ? { shortDescription: skill.shortDescription } : {}),
+    resourceCount: skill.resources.length,
+  };
+}
+
+function managerDetail(
+  snapshot: SkillRuntimeSnapshot,
+  skill: SkillRuntimeSnapshot["catalog"]["entries"][number],
+): SkillManagerDetail {
+  const access = snapshot.access.get(skill);
+  return {
+    ...managerEntry(skill),
+    rootPath: access.rootPath,
+    mainPath: path.join(access.rootPath, access.mainResource),
+    pathConvention: access.pathConvention,
+    instructionCharacters: skill.instruction.length,
+    instruction: skill.instruction,
+    resources: skill.resources.map((resource) => ({ ...resource })),
+  };
 }
 
 function boundedLine(value: string): string {
@@ -166,6 +204,60 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+async function runSkillManager(ports: SkillsCommandPorts): Promise<void> {
+  const { snapshot, requestSkillManager } = ports;
+  if (!snapshot || !requestSkillManager) {
+    ports.logSystem(formatList(snapshot));
+    return;
+  }
+  const entries = snapshot.catalog.entries.map(managerEntry);
+  let selectedQualifiedName: string | undefined;
+  let detailQualifiedName: string | undefined;
+  let message: string | undefined;
+  for (;;) {
+    const detailSkill = detailQualifiedName
+      ? snapshot.catalog.entries.find((skill) => qualifiedName(skill) === detailQualifiedName)
+      : undefined;
+    const action = await requestSkillManager({
+      entries,
+      ...(selectedQualifiedName ? { selectedQualifiedName } : {}),
+      ...(detailSkill ? { detail: managerDetail(snapshot, detailSkill) } : {}),
+      ...(message ? { message } : {}),
+      canOpenFolder: Boolean(ports.openSkillFolder),
+    });
+    message = undefined;
+    if (action.action === "close") return;
+    if (action.action === "back") {
+      detailQualifiedName = undefined;
+      continue;
+    }
+    selectedQualifiedName = action.qualifiedName;
+    const selected = snapshot.catalog.entries.find(
+      (skill) => qualifiedName(skill) === action.qualifiedName,
+    );
+    if (!selected) {
+      detailQualifiedName = undefined;
+      message = `Skill not found: ${action.qualifiedName}`;
+      continue;
+    }
+    if (action.action === "detail") {
+      detailQualifiedName = action.qualifiedName;
+      continue;
+    }
+    detailQualifiedName = action.qualifiedName;
+    if (!ports.openSkillFolder) {
+      message = "Opening Skill folders is unavailable in this host.";
+      continue;
+    }
+    try {
+      await ports.openSkillFolder(snapshot.access.get(selected).rootPath);
+      message = `Opened ${action.qualifiedName} in the file manager.`;
+    } catch (error) {
+      message = `Could not open Skill folder: ${errorMessage(error)}`;
+    }
+  }
+}
+
 export async function handleSkillsCommand(
   rawInput: string,
   ports: SkillsCommandPorts,
@@ -174,6 +266,10 @@ export async function handleSkillsCommand(
   if (!command) return;
   if (command.kind === "invalid") {
     ports.logSystem(`${command.message}\n`);
+    return;
+  }
+  if (command.kind === "manager") {
+    await runSkillManager(ports);
     return;
   }
   if (command.kind === "list") {

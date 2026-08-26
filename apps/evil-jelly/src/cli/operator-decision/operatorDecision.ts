@@ -6,6 +6,7 @@ const session: OperatorDecisionSession = {
   requestChoice: (request) => useDecisionStore.getState().requestChoice(request),
   requestMcpManager: (request) => useDecisionStore.getState().requestMcpManager(request),
   requestMemoryManager: (request) => useDecisionStore.getState().requestMemoryManager(request),
+  requestSkillManager: (request) => useDecisionStore.getState().requestSkillManager(request),
   requestConfirm: (message, initial, view) =>
     useDecisionStore.getState().requestConfirm(message, initial, view),
   requestText: (label) => useDecisionStore.getState().requestText(label),
@@ -18,6 +19,8 @@ export function createOperatorDecision(): OperatorDecision {
     requestMcpManager: (request) => runDecisionSession(() => session.requestMcpManager(request)),
     requestMemoryManager: (request) =>
       runDecisionSession(() => session.requestMemoryManager(request)),
+    requestSkillManager: (request) =>
+      runDecisionSession(() => session.requestSkillManager(request)),
   };
 }
 

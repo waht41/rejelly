@@ -83,13 +83,62 @@ describe("local Skills commands", () => {
   it("lists the frozen session catalog without filesystem locations", async () => {
     const command = ports(runtime([record("project", "review"), record("user", "explain")]));
 
-    await handleSkillsCommand("/skills", command);
+    await handleSkillsCommand("/skills list", command);
 
     const output = command.logSystem.mock.calls[0]?.[0] as string;
     expect(output).toContain("Local Skills (2, snapshot 1234abcd)");
     expect(output).toContain("project:review — Short description for review (1 resources)");
     expect(output).toContain("user:explain — Short description for explain (1 resources)");
     expect(output).not.toContain("C:\\skills");
+  });
+
+  it("opens the Skill manager, enters detail, and opens the selected folder", async () => {
+    const snapshot = runtime([record("project", "review"), record("user", "explain")]);
+    const requestSkillManager = vi
+      .fn()
+      .mockResolvedValueOnce({ action: "detail" as const, qualifiedName: "project:review" })
+      .mockResolvedValueOnce({ action: "open_folder" as const, qualifiedName: "project:review" })
+      .mockResolvedValueOnce({ action: "close" as const });
+    const openSkillFolder = vi.fn(async () => undefined);
+    const command = { ...ports(snapshot), requestSkillManager, openSkillFolder };
+
+    await handleSkillsCommand("/skills", command);
+
+    expect(requestSkillManager).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        entries: expect.arrayContaining([
+          expect.objectContaining({ qualifiedName: "project:review", resourceCount: 1 }),
+        ]),
+        canOpenFolder: true,
+      }),
+    );
+    expect(requestSkillManager.mock.calls[0]?.[0]).not.toHaveProperty("detail");
+    expect(requestSkillManager).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          qualifiedName: "project:review",
+          rootPath: path.join("C:\\skills", "project", "review"),
+          mainPath: path.join("C:\\skills", "project", "review", "SKILL.md"),
+          resources: [{ path: "references/guide.md", kind: "reference", sizeBytes: 42 }],
+        }),
+      }),
+    );
+    expect(openSkillFolder).toHaveBeenCalledWith(path.join("C:\\skills", "project", "review"));
+    expect(requestSkillManager).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ message: "Opened project:review in the file manager." }),
+    );
+    expect(command.logSystem).not.toHaveBeenCalled();
+  });
+
+  it("falls back to text when the host has no Skill manager", async () => {
+    const command = ports(runtime([record("project", "review")]));
+
+    await handleSkillsCommand("/skills", command);
+
+    expect(command.logSystem).toHaveBeenCalledWith(expect.stringContaining("project:review"));
   });
 
   it("requires a qualifier for ambiguous names", async () => {

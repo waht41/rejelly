@@ -84,10 +84,12 @@ The interactive CLI also provides read-only local commands that do not call the 
 /skills doctor
 ```
 
-`/skills` and `/skills list` show the frozen catalog for the current session. `/skills show` accepts
-a plain or source-qualified name and reveals that Skill's host filesystem locator and inventoried
-resources. `/skills doctor` performs a fresh effective scan and reports loading warnings, but does
-not replace the current session snapshot; restart Evil Jelly to apply Skill changes.
+`/skills` opens a keyboard-driven browser for the frozen catalog. Enter opens the selected Skill's
+detail panel, including its host filesystem locator and inventoried resources; `O` opens that Skill
+folder in the host file manager. `/skills list` prints the same catalog as text, while `/skills show`
+accepts a plain or source-qualified name and prints one detail directly. `/skills doctor` performs a
+fresh effective scan and reports loading warnings, but does not replace the current session snapshot;
+restart Evil Jelly to apply Skill changes.
 
 Outside an interactive session, `evil skills`, `evil skills show <name>`, and `evil skills doctor`
 provide the corresponding effective catalog, detail, and fresh diagnostics as versioned JSON. These

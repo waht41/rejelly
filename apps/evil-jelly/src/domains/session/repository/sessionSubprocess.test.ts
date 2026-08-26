@@ -25,7 +25,11 @@ const tsxLoaderUrl = pathToFileURL(require.resolve("tsx")).href;
 const helperPath = fileURLToPath(
   new URL("./__tests__/fixtures/sessionSubprocessHelper.ts", import.meta.url),
 );
-const MESSAGE_TIMEOUT_MS = 10_000;
+// A TSX child cold-start competes with Vitest workers during the full Windows suite. The actual
+// cross-process race starts only after both children report ready, so give boot/IPC a CI-sized
+// budget while keeping a bounded failure for genuine hangs.
+const MESSAGE_TIMEOUT_MS = 30_000;
+const SUBPROCESS_TEST_TIMEOUT_MS = 45_000;
 
 interface TrackedChild {
   process: ChildProcess;
@@ -151,102 +155,113 @@ describe("session subprocess persistence", () => {
     return child;
   }
 
-  it("reclaims a writer claim after the owning process is terminated", async () => {
-    const sessionId = "killed-writer";
-    const child = start("hold-writer", sessionId);
-    await waitForMessage(child, "writer-ready");
+  it(
+    "reclaims a writer claim after the owning process is terminated",
+    { timeout: SUBPROCESS_TEST_TIMEOUT_MS },
+    async () => {
+      const sessionId = "killed-writer";
+      const child = start("hold-writer", sessionId);
+      await waitForMessage(child, "writer-ready");
 
-    const meta = createSessionMetaLine({
-      sessionId,
-      workspaceRoot,
-      createdAt: 100,
-      originator: "evil-jelly-subprocess-test",
-      appVersion: "0.1.0",
-    });
-    await expect(
-      openSessionWriter(meta, { sessionsRoot, traceId: "parent-trace" }),
-    ).rejects.toMatchObject({
-      name: "SessionWriterLockedError",
-      reason: "active_writer",
-      lockInfo: { traceId: "child-trace" },
-    });
-
-    expect(child.process.kill()).toBe(true);
-    await waitForExit(child);
-
-    const resumed = await openSessionWriter(meta, {
-      sessionsRoot,
-      traceId: "parent-trace",
-    });
-    await resumed.append(
-      {
-        type: "run_segment_started",
-        kind: "resumed",
-        traceId: "parent-trace",
-        modelId: "test-model",
-        cwd: workspaceRoot,
-      },
-      { timestamp: 102 },
-    );
-    await resumed.close();
-
-    const stored = await readSessionEvents(workspaceRoot, sessionId, { sessionsRoot });
-    expect(stored.events.map((event) => event.seq)).toEqual([1, 2]);
-    expect(stored.events).toMatchObject([
-      { type: "run_segment_started", traceId: "child-trace" },
-      { type: "run_segment_started", traceId: "parent-trace" },
-    ]);
-  });
-
-  it("publishes one valid V3 file when two processes migrate the same V1 session", async () => {
-    const sessionId = "migration-race";
-    const legacyPath = resolveLegacySessionPath(workspaceRoot, sessionId, { sessionsRoot });
-    const legacy = {
-      meta: {
-        id: sessionId,
+      const meta = createSessionMetaLine({
+        sessionId,
         workspaceRoot,
-        title: "legacy",
         createdAt: 100,
-        updatedAt: 200,
-        turns: 1,
-        traceIds: ["legacy-trace"],
-      },
-      messages: [{ role: "user" as const, content: "legacy message" }],
-    };
-    await fs.mkdir(path.dirname(legacyPath), { recursive: true });
-    const legacyBytes = JSON.stringify(legacy);
-    await fs.writeFile(legacyPath, legacyBytes);
+        originator: "evil-jelly-subprocess-test",
+        appVersion: "0.1.0",
+      });
+      await expect(
+        openSessionWriter(meta, { sessionsRoot, traceId: "parent-trace" }),
+      ).rejects.toMatchObject({
+        name: "SessionWriterLockedError",
+        reason: "active_writer",
+        lockInfo: { traceId: "child-trace" },
+      });
 
-    const first = start("migrate", sessionId);
-    const second = start("migrate", sessionId);
-    await Promise.all([
-      waitForMessage(first, "migration-ready"),
-      waitForMessage(second, "migration-ready"),
-    ]);
-    const firstResult = waitForMessage(first, "migration-result");
-    const secondResult = waitForMessage(second, "migration-result");
-    first.process.send?.({ type: "start" });
-    second.process.send?.({ type: "start" });
+      expect(child.process.kill()).toBe(true);
+      await waitForExit(child);
 
-    await expect(Promise.all([firstResult, secondResult])).resolves.toMatchObject([
-      { kind: "found" },
-      { kind: "found" },
-    ]);
-    await expect(Promise.all([waitForExit(first), waitForExit(second)])).resolves.toMatchObject([
-      { code: 0 },
-      { code: 0 },
-    ]);
+      const resumed = await openSessionWriter(meta, {
+        sessionsRoot,
+        traceId: "parent-trace",
+      });
+      await resumed.append(
+        {
+          type: "run_segment_started",
+          kind: "resumed",
+          traceId: "parent-trace",
+          modelId: "test-model",
+          cwd: workspaceRoot,
+        },
+        { timestamp: 102 },
+      );
+      await resumed.close();
 
-    await expect(fs.readFile(legacyPath, "utf8")).resolves.toBe(legacyBytes);
-    await expect(
-      fs.stat(resolveV3SessionPath(workspaceRoot, sessionId, { sessionsRoot })),
-    ).resolves.toBeDefined();
-    await expect(readV3Session(workspaceRoot, sessionId, { sessionsRoot })).resolves.toMatchObject({
-      kind: "found",
-      value: {
-        meta: { id: sessionId, title: "legacy", turns: 1 },
-        messages: [{ role: "user", content: "legacy message" }],
-      },
-    });
-  });
+      const stored = await readSessionEvents(workspaceRoot, sessionId, { sessionsRoot });
+      expect(stored.events.map((event) => event.seq)).toEqual([1, 2]);
+      expect(stored.events).toMatchObject([
+        { type: "run_segment_started", traceId: "child-trace" },
+        { type: "run_segment_started", traceId: "parent-trace" },
+      ]);
+    },
+  );
+
+  it(
+    "publishes one valid V3 file when two processes migrate the same V1 session",
+    { timeout: SUBPROCESS_TEST_TIMEOUT_MS },
+    async () => {
+      const sessionId = "migration-race";
+      const legacyPath = resolveLegacySessionPath(workspaceRoot, sessionId, { sessionsRoot });
+      const legacy = {
+        meta: {
+          id: sessionId,
+          workspaceRoot,
+          title: "legacy",
+          createdAt: 100,
+          updatedAt: 200,
+          turns: 1,
+          traceIds: ["legacy-trace"],
+        },
+        messages: [{ role: "user" as const, content: "legacy message" }],
+      };
+      await fs.mkdir(path.dirname(legacyPath), { recursive: true });
+      const legacyBytes = JSON.stringify(legacy);
+      await fs.writeFile(legacyPath, legacyBytes);
+
+      // Serialize loader startup, not migration. Both children remain behind the explicit start
+      // gate, so sending both start messages below still exercises the real publish race without
+      // making simultaneous TSX compilation part of what this persistence test measures.
+      const first = start("migrate", sessionId);
+      await waitForMessage(first, "migration-ready");
+      const second = start("migrate", sessionId);
+      await waitForMessage(second, "migration-ready");
+      const firstResult = waitForMessage(first, "migration-result");
+      const secondResult = waitForMessage(second, "migration-result");
+      first.process.send?.({ type: "start" });
+      second.process.send?.({ type: "start" });
+
+      await expect(Promise.all([firstResult, secondResult])).resolves.toMatchObject([
+        { kind: "found" },
+        { kind: "found" },
+      ]);
+      await expect(Promise.all([waitForExit(first), waitForExit(second)])).resolves.toMatchObject([
+        { code: 0 },
+        { code: 0 },
+      ]);
+
+      await expect(fs.readFile(legacyPath, "utf8")).resolves.toBe(legacyBytes);
+      await expect(
+        fs.stat(resolveV3SessionPath(workspaceRoot, sessionId, { sessionsRoot })),
+      ).resolves.toBeDefined();
+      await expect(
+        readV3Session(workspaceRoot, sessionId, { sessionsRoot }),
+      ).resolves.toMatchObject({
+        kind: "found",
+        value: {
+          meta: { id: sessionId, title: "legacy", turns: 1 },
+          messages: [{ role: "user", content: "legacy message" }],
+        },
+      });
+    },
+  );
 });

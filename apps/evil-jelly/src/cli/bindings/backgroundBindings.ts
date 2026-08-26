@@ -108,6 +108,7 @@ function createStubHostBindings(
       return value;
     },
     requestMemoryManager: async () => ({ action: "close" as const }),
+    requestSkillManager: async () => ({ action: "close" as const }),
   };
 }
 
