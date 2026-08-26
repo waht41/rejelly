@@ -87,15 +87,23 @@ describe("analyze agent", () => {
     expect(thirdRequest.at(-1)).toEqual({ role: "user", content: "Another question" });
   });
 
-  it("keeps legacy turns bare and strips all fields except role and content", () => {
+  it("keeps legacy user turns bare and preserves model protocol fields", () => {
     const messages = buildAnalyzeMessages(
       [
         { role: "user", content: "Old question" },
         {
           role: "assistant",
-          content: "Old answer",
+          content: null,
           reasoning_content: "internal",
           extra: { provider: "metadata" },
+          tool_calls: [
+            {
+              id: "call-1",
+              name: "inspect",
+              arguments: "{}",
+              extra: { provider: "tool-metadata" },
+            },
+          ],
         },
         {
           role: "tool",
@@ -109,10 +117,68 @@ describe("analyze agent", () => {
 
     expect(messages).toEqual([
       { role: "user", content: "Old question" },
-      { role: "assistant", content: "Old answer" },
-      { role: "tool", content: "Tool result" },
+      {
+        role: "assistant",
+        content: null,
+        reasoning_content: "internal",
+        extra: { provider: "metadata" },
+        tool_calls: [
+          {
+            id: "call-1",
+            name: "inspect",
+            arguments: "{}",
+            extra: { provider: "tool-metadata" },
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: "Tool result",
+        tool_call_id: "call-1",
+        name: "inspect",
+      },
       { role: "user", content: "New question" },
     ]);
+  });
+
+  it("continues a conversation after a completed tool round", async () => {
+    const mock = createMockModel();
+    mock.setDefaultResponse("Follow-up answer");
+
+    const response = await createAnalyzeAgent(mock.adapter)({
+      question: "Follow up",
+      history: [
+        { role: "user", content: "Inspect this trace.", context: TRACE_A },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [{ id: "call-1", name: "get_trace_profile", arguments: "{}" }],
+        },
+        {
+          role: "tool",
+          content: "Trace profile result",
+          tool_call_id: "call-1",
+          name: "get_trace_profile",
+        },
+        { role: "assistant", content: "First answer" },
+      ],
+      context: TRACE_A,
+    });
+
+    expect(response.message).toBe("Follow-up answer");
+    expect(mock.calls.last()?.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "assistant",
+          tool_calls: [expect.objectContaining({ id: "call-1", name: "get_trace_profile" })],
+        }),
+        expect.objectContaining({
+          role: "tool",
+          tool_call_id: "call-1",
+          name: "get_trace_profile",
+        }),
+      ]),
+    );
   });
 
   it("uses the same static system prompt for different current contexts", async () => {

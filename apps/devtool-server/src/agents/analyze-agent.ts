@@ -125,7 +125,11 @@ export function buildAnalyzeMessages(
       }
     }
 
-    return { role: turn.role, content } satisfies Message;
+    if (turn.role === "user") {
+      return { role: turn.role, content } satisfies Message;
+    }
+
+    return { ...turn, content } satisfies Message;
   });
 }
 
