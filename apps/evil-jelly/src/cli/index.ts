@@ -2,10 +2,14 @@
  * CLI entry: initialize process-wide configuration and dispatch user-facing run modes.
  */
 
+import { startupTimeline } from "../shared/startupTimeline";
 import { getCliVersion, parseCliArgs } from "./entry/args";
+
+startupTimeline.mark("cli_module_ready");
 
 async function main() {
   const args = parseCliArgs();
+  startupTimeline.mark("cli_args_parsed");
   if (args.kind === "init") {
     const { runInit } = await import("./entry/init-run/runInit");
     await runInit({
@@ -23,6 +27,7 @@ async function main() {
   ]);
   applyWorkspaceRootFromArgs(args.workspace);
   initSettings(args.settings);
+  startupTimeline.mark("workspace_ready");
   if (args.kind === "mcp") {
     const { runMcpCommand } = await import("./entry/mcp-run/runMcp");
     await runMcpCommand(args.mcpCommand);
@@ -39,6 +44,7 @@ async function main() {
   );
   try {
     loadEvilJellyEnv({ cliApiKey: args.cliApiKey, envFile: args.envFile });
+    startupTimeline.mark("env_ready");
   } catch (error) {
     // A misnamed or incomplete profile is a user-facing config error, so print the line rather
     // than the stack the top-level catch would show.
@@ -76,6 +82,7 @@ async function main() {
         import("./bindings/cliBinding"),
         import("./model-composition/createModelFromEnv"),
       ]);
+      startupTimeline.mark("unified_modules_ready");
       await runUnified({
         startup: args.startup,
         headless: args.headless,

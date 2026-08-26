@@ -8,6 +8,7 @@ import {
 } from "../../../shared/configuration/env";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import { textPromptInput } from "../../../shared/model/prompt/promptInput";
+import { startupTimeline } from "../../../shared/startupTimeline";
 import { enqueueMainInput } from "../../submission-dispatch/mainInputQueue";
 import type { RunStartupArgs } from "./args";
 import { runHeadless } from "./headless/runHeadless";
@@ -37,6 +38,7 @@ export interface RunUnifiedOptions {
 }
 
 export async function runUnified(options: RunUnifiedOptions): Promise<void> {
+  startupTimeline.mark("unified_run_entered");
   const { startup, appVersion } = options;
   const dynamicMcpServers = options.devtool
     ? [createDevtoolMcpDesiredServer(`${new URL(getReviewEndpointFromEnv()).origin}/mcp`)]
@@ -64,6 +66,7 @@ export async function runUnified(options: RunUnifiedOptions): Promise<void> {
     resumeSessionId: startup.kind === "resume" ? startup.sessionId : undefined,
     appVersion,
   });
+  startupTimeline.mark("session_resolved");
 
   const runControl = createInteractiveRunControl();
   const { bindings, dispose } = options.createInteractiveBindings({
@@ -72,6 +75,7 @@ export async function runUnified(options: RunUnifiedOptions): Promise<void> {
     reviewCliFlag: options.review,
     runControl,
   });
+  startupTimeline.mark("ink_mounted");
   const mockTraceId = startup.kind === "mock" ? startup.traceId : undefined;
   const mockReplay = mockTraceId ? await loadMockReplayFromTraceId(mockTraceId) : undefined;
   if (mockReplay) {

@@ -13,6 +13,7 @@ import type {
 import type { AgentModeBindings } from "../../shared/host/modeBindings";
 import type { ConversationPresentationBindings } from "../../shared/host/presentationBindings";
 import type { ToolConfirmationBindings } from "../../shared/host/toolConfirmationBindings";
+import { startupTimeline } from "../../shared/startupTimeline";
 import { resetInterruptibleTaskStack } from "../../shared/task-interruption/taskStack";
 import { resetToolTranscriptViewSession } from "../conversation-display/tool-transcript/viewStore";
 import {
@@ -256,7 +257,10 @@ export function createCliHostBindings(options: CreateCliHostBindingsOptions): {
   });
   const outputBindings = createOutputBindings();
   const promptBindings = createPromptBindings({
-    getInput: submission.getInput,
+    getInput: async () => {
+      startupTimeline.finish("input_ready");
+      return submission.getInput();
+    },
     suspendInkForExternalProcess: lifecycle.suspendForExternalProcess,
   });
   const showBanner = () => showSessionBanner(version);
