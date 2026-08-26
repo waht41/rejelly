@@ -89,6 +89,10 @@ a plain or source-qualified name and reveals that Skill's host filesystem locato
 resources. `/skills doctor` performs a fresh effective scan and reports loading warnings, but does
 not replace the current session snapshot; restart Evil Jelly to apply Skill changes.
 
+Outside an interactive session, `evil skills`, `evil skills show <name>`, and `evil skills doctor`
+provide the corresponding effective catalog, detail, and fresh diagnostics as versioned JSON. These
+commands resolve workspace settings but do not require an OpenAI API key or start an Agent session.
+
 #### Optional Skill resources
 
 A Skill may place supporting files under `references/` and `assets/`. These directories are
@@ -222,6 +226,9 @@ evil audit --family doc-drift              # Validate docs against code
 evil audit --family doc-sync               # Compare bilingual docs
 evil audit --family fragmentation --only-actionable
 evil --review audit --family doc-drift     # Export a Review trace
+evil skills                                # List effective local Skills as JSON
+evil skills show project:review            # Show one Skill, including absolute host paths
+evil skills doctor                         # Scan Skills and report loader diagnostics
 
 # Interactive local memory commands (inside an `evil` session)
 /memory

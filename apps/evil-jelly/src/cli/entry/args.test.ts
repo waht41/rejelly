@@ -60,6 +60,24 @@ describe("parseCliArgs", () => {
     );
   });
 
+  it("describes the Skill inspection subcommands", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+
+    expect(() => parseCliArgs(["node", "evil", "skills", "--help"])).toThrow("exit 0");
+    const help = log.mock.calls.flat().join("\n");
+    expect(help).toContain("$ evil skills list|show|doctor [name]");
+    expect(help).toContain("--workspace <dir>");
+    expect(help).not.toContain("--api-key");
+    expect(help).not.toContain("--env");
+    expect(help).not.toContain("--review");
+    expect(help).not.toContain("--devtool");
+    expect(help).not.toContain("--doc-map");
+  });
+
   it("resolves relative workspace paths from the current directory", () => {
     const args = parseCliArgs(["node", "evil", "--workspace", "subdir"]);
     expect(args.workspace).toBe(path.resolve("subdir"));
@@ -102,6 +120,33 @@ describe("parseCliArgs", () => {
     expect(get.kind).toBe("mcp");
     if (get.kind !== "mcp") throw new Error("expected mcp args");
     expect(get.mcpCommand).toEqual({ action: "get", serverId: "docs", scope: "effective" });
+  });
+
+  it("parses read-only Skill management commands", () => {
+    const list = parseCliArgs(["node", "evil", "skills"]);
+    expect(list.kind).toBe("skills");
+    if (list.kind !== "skills") throw new Error("expected skills args");
+    expect(list.skillCommand).toEqual({ action: "list" });
+
+    const show = parseCliArgs(["node", "evil", "skills", "show", "project:review"]);
+    expect(show.kind).toBe("skills");
+    if (show.kind !== "skills") throw new Error("expected skills args");
+    expect(show.skillCommand).toEqual({ action: "show", name: "project:review" });
+
+    const doctor = parseCliArgs(["node", "evil", "skills", "doctor"]);
+    expect(doctor.kind).toBe("skills");
+    if (doctor.kind !== "skills") throw new Error("expected skills args");
+    expect(doctor.skillCommand).toEqual({ action: "doctor" });
+  });
+
+  it("rejects global options that have no effect on Skills inspection", () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+
+    expect(() => parseCliArgs(["node", "evil", "skills", "--devtool"])).toThrow("exit 1");
+    expect(console.error).toHaveBeenCalledWith("Unsupported skills option: --devtool.");
   });
 
   it("parses HTTP and stdio MCP additions", () => {

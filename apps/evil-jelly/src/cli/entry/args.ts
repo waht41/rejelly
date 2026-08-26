@@ -19,6 +19,7 @@ import {
   parseMcpArgs,
   registerMcpArgs,
 } from "./mcp-run/args";
+import { parseSkillsArgs, registerSkillsArgs, type SkillsCommandArgs } from "./skill-run/args";
 import {
   parseUnifiedRunArgs,
   registerUnifiedRunArgs,
@@ -29,10 +30,12 @@ export type ParsedInitArgs = CommonParsedArgs & InitCommandArgs;
 export type ParsedAuditArgs = CommonParsedArgs & AuditCommandArgs;
 export type ParsedUnifiedArgs = CommonParsedArgs & UnifiedRunCommandArgs;
 export type ParsedMcpArgs = CommonParsedArgs & McpCommandArgs;
+export type ParsedSkillsArgs = CommonParsedArgs & SkillsCommandArgs;
 export type ParsedEvilJellyArgs =
   | ParsedInitArgs
   | ParsedAuditArgs
   | ParsedMcpArgs
+  | ParsedSkillsArgs
   | ParsedUnifiedArgs;
 
 export function getCliVersion(): string {
@@ -56,6 +59,27 @@ export function getCliVersion(): string {
 
 const cli = cac("evil");
 
+const SKILLS_HELP_OPTION_PREFIXES = ["--workspace", "-h, --help"] as const;
+
+function customizeHelpSections(
+  sections: Array<{ readonly title?: string; readonly body: string }>,
+): Array<{ readonly title?: string; readonly body: string }> {
+  const commandName = cli.matchedCommandName ?? cli.matchedCommand?.name ?? "";
+  return sections.map((section) => {
+    // CAC models --no-* flags as default=true booleans. Hide that parser implementation detail.
+    let body = section.body.replace(/^(\s+--no-\S+.*?) \(default: true\)$/gm, "$1");
+    if (commandName === "skills" && section.title === "Options") {
+      body = body
+        .split("\n")
+        .filter((line) =>
+          SKILLS_HELP_OPTION_PREFIXES.some((prefix) => line.trimStart().startsWith(prefix)),
+        )
+        .join("\n");
+    }
+    return { ...section, body };
+  });
+}
+
 cli
   .usage("[command] [options]")
   .option("--api-key <key>", "OPENAI_API_KEY override for this command")
@@ -73,18 +97,9 @@ registerUnifiedRunArgs(cli);
 registerInitArgs(cli);
 registerAuditArgs(cli);
 registerMcpArgs(cli);
+registerSkillsArgs(cli);
 
-cli
-  .help((sections) =>
-    sections.map((section) => ({
-      ...section,
-      // CAC models --no-* flags as default=true booleans and prints that parser default next to
-      // the negated flag. Hiding the implementation detail avoids implying the disabling flag is
-      // active by default.
-      body: section.body.replace(/^(\s+--no-\S+.*?) \(default: true\)$/gm, "$1"),
-    })),
-  )
-  .version(getCliVersion());
+cli.help(customizeHelpSections).version(getCliVersion());
 
 export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs {
   cli.unsetMatchedCommand();
@@ -131,6 +146,21 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
   }
   if (commandName === "mcp") {
     return { ...common, ...parseMcpArgs(args, options, extractMcpAddCommand(argv)) };
+  }
+  if (commandName === "skills") {
+    const unsupported = [
+      options.apiKey !== undefined ? "--api-key" : undefined,
+      options.env !== undefined ? "--env" : undefined,
+      options.review ? "--review" : undefined,
+      options.devtool ? "--devtool" : undefined,
+      options.docMap !== undefined ? "--doc-map" : undefined,
+    ].filter((flag): flag is string => flag !== undefined);
+    if (unsupported.length > 0) {
+      failArgs(
+        `Unsupported skills option${unsupported.length === 1 ? "" : "s"}: ${unsupported.join(", ")}.`,
+      );
+    }
+    return { ...common, ...parseSkillsArgs(args) };
   }
   if (hasAuditOnlyArgs(options)) {
     failArgs(
