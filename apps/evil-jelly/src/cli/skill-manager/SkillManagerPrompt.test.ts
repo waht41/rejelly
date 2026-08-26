@@ -2,7 +2,7 @@ import { renderToString } from "ink";
 import { createElement } from "react";
 import stripAnsi from "strip-ansi";
 import { describe, expect, it, vi } from "vitest";
-import { SkillManagerPrompt } from "./SkillManagerPrompt";
+import { buildSkillDetailLines, SkillManagerPrompt } from "./SkillManagerPrompt";
 
 const entry = {
   qualifiedName: "project:review",
@@ -30,24 +30,25 @@ describe("SkillManagerPrompt", () => {
     expect(output).toContain("Enter details");
   });
 
-  it("renders access paths, resources, and the open-folder action in detail", () => {
+  it("renders clearly separated detail sections while keeping instructions raw", () => {
+    const detail = {
+      ...entry,
+      description:
+        "Review a change carefully across the complete workspace. The ending remains visible after wrapping.",
+      rootPath: "E:\\skills\\review",
+      mainPath: "E:\\skills\\review\\SKILL.md",
+      pathConvention: "windows" as const,
+      instructionCharacters: 120,
+      instruction: "# Inspect every changed file.\n\n- Report concrete findings.",
+      resources: [{ path: "references/guide.md", kind: "reference" as const, sizeBytes: 42 }],
+    };
     const output = stripAnsi(
       renderToString(
         createElement(SkillManagerPrompt, {
           request: {
             entries: [entry],
             canOpenFolder: true,
-            detail: {
-              ...entry,
-              description:
-                "Review a change carefully across the complete workspace. The ending remains visible after wrapping.",
-              rootPath: "E:\\skills\\review",
-              mainPath: "E:\\skills\\review\\SKILL.md",
-              pathConvention: "windows",
-              instructionCharacters: 120,
-              instruction: "Inspect every changed file.\nReport concrete findings.",
-              resources: [{ path: "references/guide.md", kind: "reference", sizeBytes: 42 }],
-            },
+            detail,
           },
           onAction: vi.fn(),
         }),
@@ -57,14 +58,29 @@ describe("SkillManagerPrompt", () => {
     const normalizedOutput = output.replace(/\s+/g, " ");
 
     expect(output).toContain("Skill · review");
+    expect(output).toContain("Identity");
+    expect(output).toContain("Name: review");
+    expect(output).toContain("Description");
     expect(normalizedOutput).toContain(
-      "Description: Review a change carefully across the complete workspace. The ending remains visible after wrapping.",
+      "Review a change carefully across the complete workspace. The ending remains visible after wrapping.",
     );
-    expect(output).toContain("Instructions (120 characters):");
-    expect(output).toContain("Inspect every changed file.");
-    expect(output).toContain("Root: E:\\skills\\review");
-    expect(output).toContain("Main: E:\\skills\\review\\SKILL.md");
-    expect(output).toContain("references/guide.md (reference, 42 bytes)");
+    expect(output).toContain("Instructions · 120 characters");
+    expect(output).toContain("# Inspect every changed file.");
     expect(output).toContain("O open folder · Esc back");
+
+    const visualLines = buildSkillDetailLines(detail, 80);
+    expect(visualLines.filter((line) => line.tone === "section").map((line) => line.text)).toEqual([
+      "Identity",
+      "Description",
+      "Instructions · 120 characters",
+      "Filesystem",
+      "Resources · 1",
+      "Access policy",
+    ]);
+    const fullDetail = visualLines.map((line) => line.text).join("\n");
+    expect(fullDetail).toContain("# Inspect every changed file.\n\n- Report concrete findings.");
+    expect(fullDetail).toContain("Root: E:\\skills\\review");
+    expect(fullDetail).toContain("Main: E:\\skills\\review\\SKILL.md");
+    expect(fullDetail).toContain("references/guide.md (reference, 42 bytes)");
   });
 });

@@ -1,7 +1,11 @@
 import { Box, Text, useInput, useWindowSize } from "ink";
 import { useEffect, useMemo, useState } from "react";
 import wrapAnsi from "wrap-ansi";
-import type { SkillManagerAction, SkillManagerRequest } from "../../shared/host/inputBindings";
+import type {
+  SkillManagerAction,
+  SkillManagerDetail,
+  SkillManagerRequest,
+} from "../../shared/host/inputBindings";
 import { ListViewport } from "../terminal-ui/picker/ListViewport";
 import { moveListSelection } from "../terminal-ui/picker/listNavigation";
 
@@ -9,6 +13,78 @@ const VISIBLE_ROWS = 10;
 const DETAIL_VIEWPORT_MAX_ROWS = 12;
 const DETAIL_VIEWPORT_RESERVED_ROWS = 12;
 const DETAIL_HORIZONTAL_SAFETY_COLUMNS = 4;
+
+export interface SkillDetailVisualLine {
+  text: string;
+  tone: "blank" | "body" | "muted" | "section";
+}
+
+function wrapDetailText({
+  text,
+  width,
+  indent = 0,
+  tone = "body",
+}: {
+  text: string;
+  width: number;
+  indent?: number;
+  tone?: SkillDetailVisualLine["tone"];
+}): SkillDetailVisualLine[] {
+  const prefix = " ".repeat(indent);
+  const contentWidth = Math.max(1, width - indent);
+  return text.split("\n").flatMap((sourceLine) => {
+    if (sourceLine.length === 0) return [{ text: "", tone }];
+    return wrapAnsi(sourceLine, contentWidth, { hard: true, trim: false })
+      .split("\n")
+      .map((line) => ({ text: `${prefix}${line}`, tone }));
+  });
+}
+
+export function buildSkillDetailLines(
+  detail: SkillManagerDetail,
+  columns: number,
+): SkillDetailVisualLine[] {
+  // Ink/Yoga may reserve a couple more cells than the terminal width reported to this leaf.
+  // Leave a small safety gutter so a pre-wrapped line is never truncated a second time.
+  const width = Math.max(1, columns - DETAIL_HORIZONTAL_SAFETY_COLUMNS);
+  const section = (text: string): SkillDetailVisualLine => ({ text, tone: "section" });
+  const blank: SkillDetailVisualLine = { text: "", tone: "blank" };
+  const field = (text: string) => wrapDetailText({ text, width, indent: 2 });
+
+  return [
+    section("Identity"),
+    ...field(`Name: ${detail.name}`),
+    ...field(`Qualified name: ${detail.qualifiedName}`),
+    ...field(`Scope: ${detail.scope}`),
+    blank,
+    section("Description"),
+    ...wrapDetailText({ text: detail.description, width, indent: 2 }),
+    blank,
+    section(`Instructions · ${detail.instructionCharacters} characters`),
+    // Instructions deliberately remain raw: Markdown punctuation and indentation are data here.
+    ...wrapDetailText({ text: detail.instruction, width }),
+    blank,
+    section("Filesystem"),
+    ...field(`Root: ${detail.rootPath}`),
+    ...field(`Main: ${detail.mainPath}`),
+    ...field(`Path convention: ${detail.pathConvention}`),
+    blank,
+    section(`Resources · ${detail.resources.length}`),
+    ...(detail.resources.length === 0
+      ? field("(none)")
+      : detail.resources.flatMap((resource) =>
+          field(`${resource.path} (${resource.kind}, ${resource.sizeBytes} bytes)`),
+        )),
+    blank,
+    section("Access policy"),
+    ...wrapDetailText({
+      text: "Locator only; ordinary host permissions still apply.",
+      width,
+      indent: 2,
+      tone: "muted",
+    }),
+  ];
+}
 
 export function SkillManagerPrompt({
   request,
@@ -34,34 +110,7 @@ export function SkillManagerPrompt({
   );
   const detailLines = useMemo(() => {
     if (!request.detail) return [];
-    const detail = request.detail;
-    const logicalLines = [
-      `Qualified name: ${detail.qualifiedName}`,
-      `Scope: ${detail.scope}`,
-      `Description: ${detail.description}`,
-      `Instructions (${detail.instructionCharacters} characters):`,
-      ...detail.instruction.split("\n"),
-      `Root: ${detail.rootPath}`,
-      `Main: ${detail.mainPath}`,
-      `Path convention: ${detail.pathConvention}`,
-      `Resources (${detail.resources.length}):`,
-      ...(detail.resources.length === 0
-        ? ["- (none)"]
-        : detail.resources.map(
-            (resource) => `- ${resource.path} (${resource.kind}, ${resource.sizeBytes} bytes)`,
-          )),
-      "Access policy: locator only; ordinary host permissions still apply.",
-    ];
-    // Ink/Yoga may reserve a couple more cells than the terminal width reported to this leaf.
-    // Leave a small safety gutter so a pre-wrapped line is never truncated a second time.
-    return wrapAnsi(
-      logicalLines.join("\n"),
-      Math.max(1, columns - DETAIL_HORIZONTAL_SAFETY_COLUMNS),
-      {
-        hard: true,
-        trim: false,
-      },
-    ).split("\n");
+    return buildSkillDetailLines(request.detail, columns);
   }, [columns, request.detail]);
   const detailMaxOffset = Math.max(0, detailLines.length - detailViewportLines);
   const safeDetailOffset = Math.min(detailLineIndex, detailMaxOffset);
@@ -132,8 +181,14 @@ export function SkillManagerPrompt({
           {detailLines
             .slice(safeDetailOffset, safeDetailOffset + detailViewportLines)
             .map((line, index) => (
-              <Text key={`${safeDetailOffset + index}:${line}`} wrap="truncate-end">
-                {line || " "}
+              <Text
+                key={`${safeDetailOffset + index}:${line.tone}:${line.text}`}
+                wrap="truncate-end"
+                bold={line.tone === "section"}
+                color={line.tone === "section" ? "cyan" : undefined}
+                dimColor={line.tone === "muted"}
+              >
+                {line.text || " "}
               </Text>
             ))}
         </Box>
