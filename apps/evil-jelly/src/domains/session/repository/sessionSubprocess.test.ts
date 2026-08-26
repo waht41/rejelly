@@ -1,10 +1,10 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs/promises";
-import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { fileURLToPath } from "node:url";
+import { build } from "tsup";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   createSessionMetaLine,
   openSessionWriter,
@@ -20,16 +20,14 @@ type ChildMessage =
   | { type: "migration-result"; kind: string }
   | { type: "error"; message: string; stack?: string };
 
-const require = createRequire(import.meta.url);
-const tsxLoaderUrl = pathToFileURL(require.resolve("tsx")).href;
-const helperPath = fileURLToPath(
+const helperSourcePath = fileURLToPath(
   new URL("./__tests__/fixtures/sessionSubprocessHelper.ts", import.meta.url),
 );
-// A TSX child cold-start competes with Vitest workers during the full Windows suite. The actual
-// cross-process race starts only after both children report ready, so give boot/IPC a CI-sized
-// budget while keeping a bounded failure for genuine hangs.
-const MESSAGE_TIMEOUT_MS = 30_000;
-const SUBPROCESS_TEST_TIMEOUT_MS = 45_000;
+const packageRoot = fileURLToPath(new URL("../../../../", import.meta.url));
+const MESSAGE_TIMEOUT_MS = 10_000;
+const SUBPROCESS_TEST_TIMEOUT_MS = 20_000;
+let helperBundleDir = "";
+let helperPath = "";
 
 interface TrackedChild {
   process: ChildProcess;
@@ -44,7 +42,7 @@ function spawnHelper(
 ): TrackedChild {
   const child = spawn(
     process.execPath,
-    ["--import", tsxLoaderUrl, helperPath, command, workspaceRoot, sessionsRoot, sessionId],
+    [helperPath, command, workspaceRoot, sessionsRoot, sessionId],
     {
       stdio: ["ignore", "pipe", "pipe", "ipc"],
       windowsHide: true,
@@ -130,6 +128,32 @@ describe("session subprocess persistence", () => {
   let sessionsRoot: string;
   let workspaceRoot: string;
   const children = new Set<TrackedChild>();
+
+  beforeAll(async () => {
+    // Bundle the TypeScript helper once. Each test child can then start plain Node without paying
+    // for a separate TSX loader and project compilation while Vitest workers are also starting.
+    helperBundleDir = await fs.mkdtemp(path.join(packageRoot, ".session-subprocess-helper-"));
+    await build({
+      entry: { sessionSubprocessHelper: helperSourcePath },
+      outDir: helperBundleDir,
+      format: ["esm"],
+      platform: "node",
+      target: "node18",
+      splitting: false,
+      sourcemap: false,
+      clean: false,
+      dts: false,
+      silent: true,
+      config: false,
+    });
+    helperPath = path.join(helperBundleDir, "sessionSubprocessHelper.js");
+  });
+
+  afterAll(async () => {
+    if (helperBundleDir) {
+      await fs.rm(helperBundleDir, { recursive: true, force: true });
+    }
+  });
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "evil-session-subprocess-"));
