@@ -7,6 +7,7 @@ describe("normalizeVerifyOptions", () => {
       biome: "changed",
       fix: false,
       fixBranch: false,
+      relatedTests: false,
       scope: { kind: "affected" },
       verbose: false,
     });
@@ -28,6 +29,19 @@ describe("normalizeVerifyOptions", () => {
       filters: ["a", "b"],
       kind: "filtered",
     });
+  });
+
+  it("enables related tests as an explicit fast mode", () => {
+    expect(normalizeVerifyOptions({ relatedTests: true }).relatedTests).toBe(true);
+  });
+
+  it("rejects related tests with incompatible test scopes", () => {
+    expect(() => normalizeVerifyOptions({ all: true, relatedTests: true })).toThrow(
+      "--related-tests cannot be combined with --all",
+    );
+    expect(() => normalizeVerifyOptions({ relatedTests: true, tests: false })).toThrow(
+      "--related-tests cannot be combined with --no-tests",
+    );
   });
 
   it("rejects ambiguous all-plus-filter scope", () => {

@@ -19,6 +19,7 @@ export interface VerifyOptions {
   fixBranch: boolean;
   json: boolean;
   maxFiles: number;
+  relatedTests: boolean;
   scope: VerifyScope;
   tests: boolean;
   timeoutMs?: number;
