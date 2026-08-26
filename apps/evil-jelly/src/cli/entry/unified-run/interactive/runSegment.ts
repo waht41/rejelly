@@ -64,6 +64,8 @@ export interface RunEvilJellyHostOptions {
   mcpSessionControl?: McpSessionControl;
   /** Borrowed process-lifetime loose Skill snapshot, reused across run segments. */
   skillSnapshot?: SkillRuntimeSnapshot;
+  /** Fresh read-only Skill scan used by `/skills doctor`; it never replaces skillSnapshot. */
+  diagnoseSkills?: MainCliAgentProps["diagnoseSkills"];
   /** Session-scoped persistent-memory runtime; rebuilt at each logical session boundary. */
   memoryRuntime?: SessionMemoryRuntime;
   /**
@@ -220,6 +222,7 @@ export async function runEvilJellyHost(
           sessionRecorder: recorder,
           mcpBindingFactory: options.mcpBindingFactory,
           mcpSessionControl: options.mcpSessionControl,
+          diagnoseSkills: options.diagnoseSkills,
         }),
       runWithOptions: {
         snapshot,

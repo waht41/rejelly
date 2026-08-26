@@ -75,6 +75,20 @@ applies the full Skill instructions to that input. Ordinary text such as `$HOME`
 bounded catalog with `list_skills`, load one
 Skill with `read_skill`, and read an inventoried text resource with `read_skill_resource`.
 
+The interactive CLI also provides read-only local commands that do not call the model:
+
+```text
+/skills
+/skills list
+/skills show <name>
+/skills doctor
+```
+
+`/skills` and `/skills list` show the frozen catalog for the current session. `/skills show` accepts
+a plain or source-qualified name and reveals that Skill's host filesystem locator and inventoried
+resources. `/skills doctor` performs a fresh effective scan and reports loading warnings, but does
+not replace the current session snapshot; restart Evil Jelly to apply Skill changes.
+
 #### Optional Skill resources
 
 A Skill may place supporting files under `references/` and `assets/`. These directories are
@@ -619,7 +633,7 @@ shared → services → tools → features → shell → cli (entrypoint)
 | **shell** | `shell/` | Top-level session orchestration; `MainCliAgent` directly drives `UnifiedAgent`. |
 | **cli** | `cli/` | Ink UI, `runHost`, configuration loading, and the current process's sole entrypoint. |
 
-`MainCliAgent` routes local slash commands such as `/memory`, `/mcp`, `/resume`, and `/status` without a model call; ordinary messages are forwarded to `UnifiedAgent`. Read-only and permission scopes are Agent modes/sandboxes, while specialists should be delegated subagents. One-shot audits bypass the interactive session and invoke `AuditAgent` from the `evil audit` subcommand.
+`MainCliAgent` routes local slash commands such as `/skills`, `/memory`, `/mcp`, `/resume`, and `/status` without a model call; ordinary messages are forwarded to `UnifiedAgent`. Read-only and permission scopes are Agent modes/sandboxes, while specialists should be delegated subagents. One-shot audits bypass the interactive session and invoke `AuditAgent` from the `evil audit` subcommand.
 
 `UnifiedAgent` in `features/unified/` handles conversation, explanation, search, implementation, bug fixes, refactoring, file creation, and ad hoc web search; the `cli/` layer does not write files directly. Writes require a displayed unified diff and `confirmWrite`; post-change verification is chosen by the Agent through `run_command`, not an automatic verification pipeline.
 
