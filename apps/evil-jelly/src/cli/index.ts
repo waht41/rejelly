@@ -2,23 +2,12 @@
  * CLI entry: initialize process-wide configuration and dispatch user-facing run modes.
  */
 
-import { env, exitIfMissingOpenAIKey, loadEvilJellyEnv } from "../shared/configuration/env";
-import { initSettings } from "../shared/configuration/settings";
-import { createBackgroundHostBindings } from "./bindings/backgroundBindings";
-import { createCliHostBindings } from "./bindings/cliBinding";
 import { getCliVersion, parseCliArgs } from "./entry/args";
-import { runAudit } from "./entry/audit-run/runAudit";
-import { applyWorkspaceRootFromArgs } from "./entry/bootstrap";
-import { runInit } from "./entry/init-run/runInit";
-import { runMcpCommand } from "./entry/mcp-run/runMcp";
-import { runSkillCommand } from "./entry/skill-run/runSkill";
-import { runUnified } from "./entry/unified-run/runUnified";
-import { createOpenAIModelFromEnv } from "./model-composition/createModelFromEnv";
 
 async function main() {
   const args = parseCliArgs();
-  const appVersion = getCliVersion();
   if (args.kind === "init") {
+    const { runInit } = await import("./entry/init-run/runInit");
     await runInit({
       apiKey: args.cliApiKey,
       baseUrl: args.initBaseUrl,
@@ -27,17 +16,27 @@ async function main() {
     });
     process.exit(0);
   }
+
+  const [{ applyWorkspaceRootFromArgs }, { initSettings }] = await Promise.all([
+    import("./entry/bootstrap"),
+    import("../shared/configuration/settings"),
+  ]);
   applyWorkspaceRootFromArgs(args.workspace);
   initSettings(args.settings);
   if (args.kind === "mcp") {
+    const { runMcpCommand } = await import("./entry/mcp-run/runMcp");
     await runMcpCommand(args.mcpCommand);
     process.exit(0);
   }
   if (args.kind === "skills") {
+    const { runSkillCommand } = await import("./entry/skill-run/runSkill");
     await runSkillCommand(args.skillCommand);
     process.exit(0);
   }
 
+  const { env, exitIfMissingOpenAIKey, loadEvilJellyEnv } = await import(
+    "../shared/configuration/env"
+  );
   try {
     loadEvilJellyEnv({ cliApiKey: args.cliApiKey, envFile: args.envFile });
   } catch (error) {
@@ -48,7 +47,13 @@ async function main() {
   }
 
   switch (args.kind) {
-    case "audit":
+    case "audit": {
+      const [{ runAudit }, { createBackgroundHostBindings }, { createOpenAIModelFromEnv }] =
+        await Promise.all([
+          import("./entry/audit-run/runAudit"),
+          import("./bindings/backgroundBindings"),
+          import("./model-composition/createModelFromEnv"),
+        ]);
       exitIfMissingOpenAIKey();
       await runAudit({
         model: createOpenAIModelFromEnv(),
@@ -58,19 +63,32 @@ async function main() {
       });
       process.exit(process.exitCode ?? 0);
       break;
-    case "unified":
+    }
+    case "unified": {
+      const [
+        { runUnified },
+        { createBackgroundHostBindings },
+        { createCliHostBindings },
+        { createOpenAIModelFromEnv },
+      ] = await Promise.all([
+        import("./entry/unified-run/runUnified"),
+        import("./bindings/backgroundBindings"),
+        import("./bindings/cliBinding"),
+        import("./model-composition/createModelFromEnv"),
+      ]);
       await runUnified({
         startup: args.startup,
         headless: args.headless,
         autoAccept: args.autoAccept,
         review: args.review,
-        appVersion,
+        appVersion: getCliVersion(),
         devtool: args.devtool,
         createModel: createOpenAIModelFromEnv,
         createBackgroundBindings: createBackgroundHostBindings,
         createInteractiveBindings: createCliHostBindings,
       });
       break;
+    }
   }
 }
 
