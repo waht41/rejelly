@@ -23,6 +23,7 @@ describe("startup timeline", () => {
       now: () => times.shift()!,
       enabled: () => true,
       write: (line) => output.push(line),
+      isStderrTTY: () => false,
     });
 
     timeline.mark("cli_module_ready");
@@ -53,6 +54,7 @@ describe("startup timeline", () => {
     const timeline = createStartupTimeline({
       now: () => 25,
       write: (line) => output.push(line),
+      isStderrTTY: () => false,
     });
 
     timeline.mark("before_env_load");
@@ -69,6 +71,7 @@ describe("startup timeline", () => {
       now: () => times.shift()!,
       enabled: () => true,
       write: () => undefined,
+      isStderrTTY: () => false,
     });
 
     timeline.mark("workspace_ready");
@@ -102,10 +105,39 @@ describe("startup timeline", () => {
       now: () => 10,
       enabled: () => false,
       write: (line) => output.push(line),
+      isStderrTTY: () => false,
     });
 
     timeline.mark("cli_module_ready");
     expect(timeline.finish("input_ready")).toBeUndefined();
     expect(output).toEqual([]);
+  });
+
+  it("keeps successful machine reports out of an Ink TTY", () => {
+    const output: string[] = [];
+    const timeline = createStartupTimeline({
+      now: () => 25,
+      enabled: () => true,
+      write: (line) => output.push(line),
+      isStderrTTY: () => true,
+    });
+
+    expect(timeline.finish("input_ready")?.totalMs).toBe(25);
+    expect(output).toEqual([]);
+  });
+
+  it("still writes a failure report when a TTY process exits before input is ready", () => {
+    const output: string[] = [];
+    const timeline = createStartupTimeline({
+      now: () => 25,
+      enabled: () => true,
+      write: (line) => output.push(line),
+      isStderrTTY: () => true,
+    });
+
+    timeline.finish("process_exit");
+
+    expect(output).toHaveLength(1);
+    expect(output[0]).toContain('"name":"process_exit"');
   });
 });

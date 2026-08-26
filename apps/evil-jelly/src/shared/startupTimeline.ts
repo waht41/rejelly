@@ -99,6 +99,7 @@ interface StartupTimelineOptions {
   readonly now?: () => number;
   readonly enabled?: () => boolean;
   readonly write?: (line: string) => void;
+  readonly isStderrTTY?: () => boolean;
 }
 
 function roundMs(value: number): number {
@@ -123,6 +124,7 @@ export function createStartupTimeline(options: StartupTimelineOptions = {}): {
   const now = options.now ?? (() => performance.now());
   const enabled = options.enabled ?? startupTimelineEnabled;
   const write = options.write ?? ((line: string) => process.stderr.write(line));
+  const isStderrTTY = options.isStderrTTY ?? (() => process.stderr.isTTY === true);
   const milestones: StartupMilestone[] = [];
   let finished = false;
 
@@ -149,7 +151,12 @@ export function createStartupTimeline(options: StartupTimelineOptions = {}): {
       totalMs: reportedMilestones.at(-1)?.atMs ?? 0,
       milestones: reportedMilestones,
     };
-    write(`[evil-jelly:startup-profile] ${JSON.stringify(report)}\n`);
+    // Ink patches stderr after mounting and renders writes as UI content. A full JSON line would
+    // then wrap across the prompt and distort the layout, while the compact report is already
+    // shown through Ink. Preserve machine output for pipes and failure diagnostics.
+    if (!isStderrTTY() || name === "process_exit") {
+      write(`[evil-jelly:startup-profile] ${JSON.stringify(report)}\n`);
+    }
     return report;
   };
 
