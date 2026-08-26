@@ -242,7 +242,9 @@ export function createCliHostBindings(options: CreateCliHostBindingsOptions): {
   dispose: () => void;
 } {
   const { version, seedInput, reviewCliFlag, runControl } = options;
+  startupTimeline.mark("cli_bindings_started");
   resetCliBindingSession();
+  startupTimeline.mark("cli_session_reset");
 
   const submission = createInteractiveSubmission(
     {
@@ -251,10 +253,12 @@ export function createCliHostBindings(options: CreateCliHostBindingsOptions): {
     },
     seedInput !== undefined ? { seedLine: seedInput } : undefined,
   );
+  startupTimeline.mark("cli_submission_ready");
   const lifecycle = createInteractiveShell({
     requestRunAbort: runControl.segment.requestAbort,
     cancelSubmission: submission.cancel,
   });
+  startupTimeline.mark("cli_shell_ready");
   const outputBindings = createOutputBindings();
   const promptBindings = createPromptBindings({
     getInput: async () => {
@@ -269,6 +273,7 @@ export function createCliHostBindings(options: CreateCliHostBindingsOptions): {
   const showBanner = () => showSessionBanner(version);
 
   logCliStartup(outputBindings.logSystemEvent, showBanner, reviewCliFlag);
+  startupTimeline.mark("cli_bindings_ready");
   return {
     bindings: {
       ...promptBindings,

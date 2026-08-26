@@ -71,16 +71,31 @@ async function main() {
       break;
     }
     case "unified": {
+      startupTimeline.mark("unified_imports_started");
+      const profiledImport = async <T>(
+        readyMilestone: string,
+        importer: () => Promise<T>,
+      ): Promise<T> => {
+        const imported = await importer();
+        startupTimeline.mark(readyMilestone);
+        return imported;
+      };
       const [
         { runUnified },
         { createBackgroundHostBindings },
         { createCliHostBindings },
         { createOpenAIModelFromEnv },
       ] = await Promise.all([
-        import("./entry/unified-run/runUnified"),
-        import("./bindings/backgroundBindings"),
-        import("./bindings/cliBinding"),
-        import("./model-composition/createModelFromEnv"),
+        profiledImport("unified_run_module_ready", () => import("./entry/unified-run/runUnified")),
+        profiledImport(
+          "background_bindings_module_ready",
+          () => import("./bindings/backgroundBindings"),
+        ),
+        profiledImport("cli_bindings_module_ready", () => import("./bindings/cliBinding")),
+        profiledImport(
+          "model_composition_module_ready",
+          () => import("./model-composition/createModelFromEnv"),
+        ),
       ]);
       startupTimeline.mark("unified_modules_ready");
       await runUnified({

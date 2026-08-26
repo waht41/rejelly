@@ -61,6 +61,41 @@ describe("startup timeline", () => {
     expect(output).toHaveLength(1);
   });
 
+  it("keeps phase summaries stable when detailed milestones are present", () => {
+    const times = [
+      10, 30, 31, 40, 50, 60, 90, 91, 100, 101, 103, 105, 106, 110, 160, 161, 169, 170, 200,
+    ];
+    const timeline = createStartupTimeline({
+      now: () => times.shift()!,
+      enabled: () => true,
+      write: () => undefined,
+    });
+
+    timeline.mark("workspace_ready");
+    timeline.mark("env_ready");
+    timeline.mark("unified_imports_started");
+    timeline.mark("background_bindings_module_ready");
+    timeline.mark("model_composition_module_ready");
+    timeline.mark("unified_run_module_ready");
+    timeline.mark("cli_bindings_module_ready");
+    timeline.mark("unified_modules_ready");
+    timeline.mark("session_resolved");
+    timeline.mark("cli_bindings_started");
+    timeline.mark("cli_session_reset");
+    timeline.mark("cli_submission_ready");
+    timeline.mark("ink_shell_started");
+    timeline.mark("ink_render_started");
+    timeline.mark("ink_render_returned");
+    timeline.mark("cli_shell_ready");
+    timeline.mark("cli_bindings_ready");
+    timeline.mark("ink_mounted");
+    const report = timeline.finish("input_ready");
+
+    expect(formatStartupTimelineSummary(report!)).toBe(
+      "Startup profile: 200 ms total · modules 61 ms (slowest cli 59 ms) · env 20 ms · bindings+Ink 70 ms (render 50 ms) · post-bindings 30 ms.",
+    );
+  });
+
   it("stays silent when profiling is disabled", () => {
     const output: string[] = [];
     const timeline = createStartupTimeline({

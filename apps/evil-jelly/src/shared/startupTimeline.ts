@@ -22,22 +22,75 @@ function milestoneDelta(report: StartupTimelineReport, name: string): number | u
   return report.milestones.find((milestone) => milestone.name === name)?.deltaMs;
 }
 
+function milestoneAt(report: StartupTimelineReport, name: string): number | undefined {
+  return report.milestones.find((milestone) => milestone.name === name)?.atMs;
+}
+
+function milestoneSpan(
+  report: StartupTimelineReport,
+  startName: string,
+  endName: string,
+): number | undefined {
+  const startMs = milestoneAt(report, startName);
+  const endMs = milestoneAt(report, endName);
+  return startMs === undefined || endMs === undefined ? undefined : endMs - startMs;
+}
+
+const moduleReadyLabels = [
+  ["unified_run_module_ready", "unified"],
+  ["background_bindings_module_ready", "background"],
+  ["cli_bindings_module_ready", "cli"],
+  ["model_composition_module_ready", "model"],
+] as const;
+
+function slowestModuleReady(
+  report: StartupTimelineReport,
+): { label: string; durationMs: number } | undefined {
+  const startedAtMs = milestoneAt(report, "unified_imports_started");
+  if (startedAtMs === undefined) return undefined;
+
+  return moduleReadyLabels.reduce<{ label: string; durationMs: number } | undefined>(
+    (slowest, [name, label]) => {
+      const readyAtMs = milestoneAt(report, name);
+      if (readyAtMs === undefined) return slowest;
+      const candidate = { label, durationMs: readyAtMs - startedAtMs };
+      return slowest === undefined || candidate.durationMs > slowest.durationMs
+        ? candidate
+        : slowest;
+    },
+    undefined,
+  );
+}
+
 /** Compact human-readable projection; the complete machine-readable report stays on stderr. */
 export function formatStartupTimelineSummary(report: StartupTimelineReport): string {
   const parts = [`Startup profile: ${Math.round(report.totalMs)} ms total`];
-  const phases = [
-    ["modules", milestoneDelta(report, "unified_modules_ready")],
-    ["env", milestoneDelta(report, "env_ready")],
-    ["Ink", milestoneDelta(report, "ink_mounted")],
-  ] as const;
-  for (const [label, durationMs] of phases) {
-    if (durationMs !== undefined) {
-      parts.push(`${label} ${Math.round(durationMs)} ms`);
-    }
+  const modulesMs =
+    milestoneSpan(report, "env_ready", "unified_modules_ready") ??
+    milestoneDelta(report, "unified_modules_ready");
+  if (modulesMs !== undefined) {
+    const slowest = slowestModuleReady(report);
+    const detail = slowest
+      ? ` (slowest ${slowest.label} ${Math.round(slowest.durationMs)} ms)`
+      : "";
+    parts.push(`modules ${Math.round(modulesMs)} ms${detail}`);
+  }
+  const envMs =
+    milestoneSpan(report, "workspace_ready", "env_ready") ?? milestoneDelta(report, "env_ready");
+  if (envMs !== undefined) {
+    parts.push(`env ${Math.round(envMs)} ms`);
+  }
+  const bindingsMs =
+    milestoneSpan(report, "session_resolved", "ink_mounted") ??
+    milestoneDelta(report, "ink_mounted");
+  if (bindingsMs !== undefined) {
+    const renderMs = milestoneSpan(report, "ink_render_started", "ink_render_returned");
+    const detail = renderMs === undefined ? "" : ` (render ${Math.round(renderMs)} ms)`;
+    parts.push(`bindings+Ink ${Math.round(bindingsMs)} ms${detail}`);
   }
   const inkMounted = report.milestones.find((milestone) => milestone.name === "ink_mounted");
   if (inkMounted) {
-    parts.push(`post-Ink ${Math.round(report.totalMs - inkMounted.atMs)} ms`);
+    parts.push(`post-bindings ${Math.round(report.totalMs - inkMounted.atMs)} ms`);
   }
   return `${parts.join(" · ")}.`;
 }
