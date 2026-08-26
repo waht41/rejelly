@@ -18,6 +18,30 @@ export interface StartupTimelineReport {
   }[];
 }
 
+function milestoneDelta(report: StartupTimelineReport, name: string): number | undefined {
+  return report.milestones.find((milestone) => milestone.name === name)?.deltaMs;
+}
+
+/** Compact human-readable projection; the complete machine-readable report stays on stderr. */
+export function formatStartupTimelineSummary(report: StartupTimelineReport): string {
+  const parts = [`Startup profile: ${Math.round(report.totalMs)} ms total`];
+  const phases = [
+    ["modules", milestoneDelta(report, "unified_modules_ready")],
+    ["env", milestoneDelta(report, "env_ready")],
+    ["Ink", milestoneDelta(report, "ink_mounted")],
+  ] as const;
+  for (const [label, durationMs] of phases) {
+    if (durationMs !== undefined) {
+      parts.push(`${label} ${Math.round(durationMs)} ms`);
+    }
+  }
+  const inkMounted = report.milestones.find((milestone) => milestone.name === "ink_mounted");
+  if (inkMounted) {
+    parts.push(`post-Ink ${Math.round(report.totalMs - inkMounted.atMs)} ms`);
+  }
+  return `${parts.join(" · ")}.`;
+}
+
 interface StartupTimelineOptions {
   readonly now?: () => number;
   readonly enabled?: () => boolean;

@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createStartupTimeline, STARTUP_PROFILE_ENV } from "./startupTimeline";
+import {
+  createStartupTimeline,
+  formatStartupTimelineSummary,
+  STARTUP_PROFILE_ENV,
+} from "./startupTimeline";
 
 const originalStartupProfileEnv = process.env[STARTUP_PROFILE_ENV];
 
@@ -36,6 +40,9 @@ describe("startup timeline", () => {
       ],
     });
     expect(output).toEqual([`[evil-jelly:startup-profile] ${JSON.stringify(report)}\n`]);
+    expect(formatStartupTimelineSummary(report!)).toBe(
+      "Startup profile: 411 ms total · modules 255 ms.",
+    );
     expect(timeline.finish("ignored")).toBeUndefined();
     expect(output).toHaveLength(1);
   });
