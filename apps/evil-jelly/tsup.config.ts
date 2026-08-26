@@ -8,7 +8,7 @@ export default defineConfig({
   platform: "node",
   target: "node18",
   clean: true,
-  splitting: false,
+  splitting: true,
   sourcemap: false,
   external: ["undici"],
   // Ink delegates every `<Text wrap="wrap">` to wrap-ansi. Keep the patched
