@@ -11,6 +11,7 @@ import { runAudit } from "./entry/audit-run/runAudit";
 import { applyWorkspaceRootFromArgs } from "./entry/bootstrap";
 import { runInit } from "./entry/init-run/runInit";
 import { runMcpCommand } from "./entry/mcp-run/runMcp";
+import { runSkillCommand } from "./entry/skill-run/runSkill";
 import { runUnified } from "./entry/unified-run/runUnified";
 import { createOpenAIModelFromEnv } from "./model-composition/createModelFromEnv";
 
@@ -30,6 +31,10 @@ async function main() {
   initSettings(args.settings);
   if (args.kind === "mcp") {
     await runMcpCommand(args.mcpCommand);
+    process.exit(0);
+  }
+  if (args.kind === "skills") {
+    await runSkillCommand(args.skillCommand);
     process.exit(0);
   }
 

@@ -3,6 +3,14 @@ import { mapWithConcurrency } from "./mapWithConcurrency";
 
 const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 describe("audit mapWithConcurrency", () => {
   it("returns results in input order despite out-of-order completion", async () => {
     const input = [30, 10, 20, 5];
@@ -16,22 +24,41 @@ describe("audit mapWithConcurrency", () => {
   it("never exceeds the concurrency limit and has no head-of-line blocking", async () => {
     let active = 0;
     let peak = 0;
+    const startedOrder: number[] = [];
     const completionOrder: number[] = [];
-    // Item 0 is slow; with a sliding window it would stall item 4. The pool must let fast
-    // items finish first while item 0 runs.
-    const durations = [100, 10, 10, 10, 10, 10];
-    await mapWithConcurrency(durations, 3, async (ms, i) => {
+    const items = [0, 1, 2, 3, 4, 5];
+    const starts = items.map(deferred);
+    const releases = items.map(deferred);
+    const running = mapWithConcurrency(items, 3, async (_item, i) => {
       active++;
       peak = Math.max(peak, active);
-      await tick(ms);
+      startedOrder.push(i);
+      starts[i]!.resolve();
+      await releases[i]!.promise;
       active--;
       completionOrder.push(i);
       return i;
     });
+
+    await Promise.all(starts.slice(0, 3).map((start) => start.promise));
+    expect(startedOrder).toEqual([0, 1, 2]);
+    expect(peak).toBe(3);
+
+    // Keep item 0 pending. Once item 1 settles, its worker must claim item 3 immediately instead
+    // of waiting for the earlier item 0 to finish.
+    releases[1]!.resolve();
+    await starts[3]!.promise;
+
+    expect(startedOrder).toEqual([0, 1, 2, 3]);
+    expect(completionOrder).toEqual([1]);
+    expect(completionOrder).not.toContain(0);
     expect(peak).toBeLessThanOrEqual(3);
-    // The slow first item completes last, after items the window would have blocked behind it.
-    expect(completionOrder[completionOrder.length - 1]).toBe(0);
-    expect(completionOrder).toContain(4);
+
+    for (const release of releases) {
+      release.resolve();
+    }
+    expect(await running).toEqual(items);
+    expect(active).toBe(0);
   });
 
   it("invokes onSettled once per item with a monotonically increasing completed count", async () => {

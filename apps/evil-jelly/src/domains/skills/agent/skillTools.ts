@@ -50,11 +50,14 @@ export function createReadSkillTool(
     name: "read_skill",
     description:
       "Load the complete instructions and bounded resource inventory for one available local Skill. " +
-      "Use a qualified name when a plain name is ambiguous.",
+      "The activated Skill includes its host filesystem root for resolving bundled files; the " +
+      "location does not grant tool permissions. Use a qualified name when a plain name is ambiguous.",
     parameters: readSkillParameters,
     handler: async ({ skill }) => {
       const resolved = snapshot.catalog.resolve(skill);
-      return resolved.ok ? renderSkillToolResult(resolved.skill) : lookupError(resolved);
+      return resolved.ok
+        ? renderSkillToolResult(resolved.skill, snapshot.access.get(resolved.skill))
+        : lookupError(resolved);
     },
   };
 }

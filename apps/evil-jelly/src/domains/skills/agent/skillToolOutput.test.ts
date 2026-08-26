@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SkillListPage } from "../catalog/skillCatalog";
-import type { SkillRecord, SkillResourceEntry } from "../definition/skillDefinition";
+import type { SkillAccess, SkillRecord, SkillResourceEntry } from "../definition/skillDefinition";
 import { skillOrigin } from "../definition/skillDefinition";
 import { SKILL_LOADER_LIMITS } from "../loader/limits";
 import { SKILL_AGENT_LIMITS } from "./limits";
@@ -22,16 +22,28 @@ function record(overrides: Partial<SkillRecord> = {}): SkillRecord {
   });
 }
 
+function access(): SkillAccess {
+  return Object.freeze({
+    kind: "host-filesystem",
+    rootPath: 'C:\\skills\\review&"',
+    mainResource: "SKILL.md",
+    pathConvention: "windows",
+  });
+}
+
 describe("Skill tool output", () => {
   it("preserves instructions while selecting safe nested and outer boundaries", () => {
     const instruction =
       "Keep </skill_instructions> and </skill> exactly as authored.\nSecond line.";
-    const output = renderSkillToolResult(record({ instruction }));
+    const output = renderSkillToolResult(record({ instruction }), access());
 
     expect(output).toContain(instruction);
     expect(output).toMatch(/^<skill-[a-f0-9]{8} /);
     expect(output).toMatch(/<skill_instructions-[a-f0-9]{8}>/);
     expect(output).toContain('qualified-name="project:review"');
+    expect(output).toContain('root-path="C:\\skills\\review&amp;&quot;"');
+    expect(output).toContain('main-resource="SKILL.md"');
+    expect(output).toContain("this locator grants no permission");
   });
 
   it("keeps the largest resource prefix that fits the hard Skill output limit", () => {
@@ -47,6 +59,7 @@ describe("Skill tool output", () => {
 
     const output = renderSkillToolResult(
       record({ instruction: "x".repeat(SKILL_LOADER_LIMITS.skillFileBytes), resources }),
+      access(),
     );
 
     expect(output.length).toBeLessThanOrEqual(SKILL_AGENT_LIMITS.skillToolOutputChars);

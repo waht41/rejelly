@@ -65,6 +65,18 @@ export interface SkillRecord {
   readonly resources: readonly SkillResourceEntry[];
 }
 
+export type SkillPathConvention = "posix" | "windows";
+
+/** Model-facing access locator revealed only after a local Skill is activated. */
+export interface HostSkillFilesystemAccess {
+  readonly kind: "host-filesystem";
+  readonly rootPath: string;
+  readonly mainResource: "SKILL.md";
+  readonly pathConvention: SkillPathConvention;
+}
+
+export type SkillAccess = HostSkillFilesystemAccess;
+
 export function qualifiedSkillName(skill: Pick<SkillRecord, "name" | "origin">): string {
   return `${skill.origin.scope}:${skill.name}`;
 }
@@ -89,4 +101,9 @@ export type SkillResourceReadResult =
 /** Path-free resource access port implemented by the host-backed loader. */
 export interface SkillResourceRepository {
   readText(skill: SkillRecord, resourcePath: string): Promise<SkillResourceReadResult>;
+}
+
+/** Host-owned access lookup kept separate from the path-free Skill catalog. */
+export interface SkillAccessRepository {
+  get(skill: SkillRecord): SkillAccess;
 }

@@ -4,7 +4,7 @@ import {
 } from "../../../shared/model/prompt/pseudoXml";
 import { truncateSkillDisplayText } from "../catalog/displayText";
 import type { SkillListPage } from "../catalog/skillCatalog";
-import type { SkillRecord, SkillResourceEntry } from "../definition/skillDefinition";
+import type { SkillAccess, SkillRecord, SkillResourceEntry } from "../definition/skillDefinition";
 import { qualifiedSkillName } from "../definition/skillDefinition";
 import { SKILL_AGENT_LIMITS } from "./limits";
 
@@ -46,10 +46,29 @@ function renderResourceInventory(
   );
 }
 
-function renderSkillWithResources(skill: SkillRecord, returnedResources: number): string {
+const SKILL_LOCATION_POLICY =
+  "Resolve bundled Skill files from this directory. Reading, modifying, or executing them still uses the ordinary host tools and policy path; this locator grants no permission.";
+
+function renderSkillAccess(access: SkillAccess): string {
+  const location = renderPseudoXmlEmptyElement("skill_location", {
+    kind: access.kind,
+    "root-path": access.rootPath,
+    "main-resource": access.mainResource,
+    "path-convention": access.pathConvention,
+  });
+  const policy = renderPseudoXmlElement("skill_location_policy", SKILL_LOCATION_POLICY);
+  return `${location}\n${policy}`;
+}
+
+function renderSkillWithResources(
+  skill: SkillRecord,
+  access: SkillAccess,
+  returnedResources: number,
+): string {
+  const location = renderSkillAccess(access);
   const instruction = renderPseudoXmlElement("skill_instructions", skill.instruction);
   const resources = renderResourceInventory(skill.resources, returnedResources);
-  return renderPseudoXmlElement("skill", `${instruction}\n${resources}`, {
+  return renderPseudoXmlElement("skill", `${location}\n${instruction}\n${resources}`, {
     name: skill.name,
     "qualified-name": qualifiedSkillName(skill),
     scope: skill.origin.scope,
@@ -57,13 +76,13 @@ function renderSkillWithResources(skill: SkillRecord, returnedResources: number)
 }
 
 /** Render the complete snapshot instruction plus the largest bounded resource inventory prefix. */
-export function renderSkillToolResult(skill: SkillRecord): string {
-  let output = renderSkillWithResources(skill, 0);
+export function renderSkillToolResult(skill: SkillRecord, access: SkillAccess): string {
+  let output = renderSkillWithResources(skill, access, 0);
   if (output.length > SKILL_AGENT_LIMITS.skillToolOutputChars) {
     throw new Error("Skill instruction exceeded the validated tool output invariant.");
   }
   for (let returned = 1; returned <= skill.resources.length; returned += 1) {
-    const candidate = renderSkillWithResources(skill, returned);
+    const candidate = renderSkillWithResources(skill, access, returned);
     if (candidate.length > SKILL_AGENT_LIMITS.skillToolOutputChars) {
       break;
     }

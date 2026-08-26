@@ -34,7 +34,7 @@ Run `evil` to chat, inspect and search code, edit files with diff confirmation, 
 
 ### Local Skills
 
-Evil Jelly loads local, instruction-only Skills from exactly two directories:
+Evil Jelly loads local, filesystem-backed instruction Skills from exactly two directories:
 
 ```text
 ~/.evil-jelly/skills/<skill-name>/SKILL.md
@@ -75,20 +75,49 @@ applies the full Skill instructions to that input. Ordinary text such as `$HOME`
 bounded catalog with `list_skills`, load one
 Skill with `read_skill`, and read an inventoried text resource with `read_skill_resource`.
 
+The interactive CLI also provides read-only local commands that do not call the model:
+
+```text
+/skills
+/skills list
+/skills show <name>
+/skills doctor
+```
+
+`/skills` opens a keyboard-driven browser for the frozen catalog. Enter opens the selected Skill's
+detail panel, including its host filesystem locator and inventoried resources; `O` opens that Skill
+folder in the host file manager. `/skills list` prints the same catalog as text, while `/skills show`
+accepts a plain or source-qualified name and prints one detail directly. `/skills doctor` performs a
+fresh effective scan and reports loading warnings, but does not replace the current session snapshot;
+restart Evil Jelly to apply Skill changes.
+
+Outside an interactive session, `evil skills`, `evil skills show <name>`, and `evil skills doctor`
+provide the corresponding effective catalog, detail, and fresh diagnostics as versioned JSON. These
+commands resolve workspace settings but do not require an OpenAI API key or start an Agent session.
+
 #### Optional Skill resources
 
 A Skill may place supporting files under `references/` and `assets/`. These directories are
-inventoried recursively with bounded count, depth, and size metadata. Paths exposed to the model
-are Skill-relative POSIX paths, never host absolute paths. `read_skill_resource` reads only bounded
-UTF-8 text that was present in that inventory; binary assets may be listed but are not returned as
-text. Directory symlinks/junctions, file links that escape the Skill, files outside those two
-directories, and resources added after startup are not readable through the Skill resource tool.
+inventoried recursively with bounded count, depth, and size metadata. Catalog and resource paths
+are Skill-relative POSIX paths. Activating a local Skill through `read_skill` or an explicit Skill
+token additionally reveals its canonical host filesystem root so the model can resolve bundled
+files. The locator is absent from the catalog, startup summaries, and `read_skill_resource` output.
+It grants no permission: reading, modifying, or executing a bundled file still uses the ordinary
+host tools, approval, filesystem policy, and sandbox path.
+
+`read_skill_resource` reads only bounded UTF-8 text that was present in the startup inventory;
+binary assets may be listed but are not returned as text. Directory symlinks/junctions, file links
+that escape the Skill, files outside `references/` and `assets/`, and resources added after startup
+are not readable through the Skill resource tool. Ordinary host tools may still access a revealed
+local Skill directory when their existing policy allows it.
 
 Skills do not have a plugin manifest, installer, marketplace, configurable extra roots, file
-watcher, or hot reload. They cannot declare or execute scripts/hooks, dependencies, models, effort,
-or allowed tools. A Skill is model instruction content—not a capability or permission grant. Any
-tool or MCP call it recommends still follows the existing host registration, approval, and policy
-path.
+watcher, or hot reload. They cannot declare hooks, dependencies, models, effort, or allowed tools,
+and they cannot execute scripts automatically. A Skill may recommend using or editing bundled
+files, but it is model instruction content—not a capability or permission grant. Any file, shell,
+or MCP call it recommends still follows the existing host registration, approval, and policy path.
+An edited `SKILL.md` takes effect after restart because the activated instruction body remains a
+startup snapshot.
 
 #### Skill loading diagnostics
 
@@ -199,6 +228,9 @@ evil audit --family doc-drift              # Validate docs against code
 evil audit --family doc-sync               # Compare bilingual docs
 evil audit --family fragmentation --only-actionable
 evil --review audit --family doc-drift     # Export a Review trace
+evil skills                                # List effective local Skills as JSON
+evil skills show project:review            # Show one Skill, including absolute host paths
+evil skills doctor                         # Scan Skills and report loader diagnostics
 
 # Interactive local memory commands (inside an `evil` session)
 /memory
@@ -610,7 +642,7 @@ shared → services → tools → features → shell → cli (entrypoint)
 | **shell** | `shell/` | Top-level session orchestration; `MainCliAgent` directly drives `UnifiedAgent`. |
 | **cli** | `cli/` | Ink UI, `runHost`, configuration loading, and the current process's sole entrypoint. |
 
-`MainCliAgent` routes local slash commands such as `/memory`, `/mcp`, `/resume`, and `/status` without a model call; ordinary messages are forwarded to `UnifiedAgent`. Read-only and permission scopes are Agent modes/sandboxes, while specialists should be delegated subagents. One-shot audits bypass the interactive session and invoke `AuditAgent` from the `evil audit` subcommand.
+`MainCliAgent` routes local slash commands such as `/skills`, `/memory`, `/mcp`, `/resume`, and `/status` without a model call; ordinary messages are forwarded to `UnifiedAgent`. Read-only and permission scopes are Agent modes/sandboxes, while specialists should be delegated subagents. One-shot audits bypass the interactive session and invoke `AuditAgent` from the `evil audit` subcommand.
 
 `UnifiedAgent` in `features/unified/` handles conversation, explanation, search, implementation, bug fixes, refactoring, file creation, and ad hoc web search; the `cli/` layer does not write files directly. Writes require a displayed unified diff and `confirmWrite`; post-change verification is chosen by the Agent through `run_command`, not an automatic verification pipeline.
 

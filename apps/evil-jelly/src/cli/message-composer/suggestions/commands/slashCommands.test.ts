@@ -42,6 +42,7 @@ describe("filterSlashCommands", () => {
     expect(filterSlashCommands("copy").map((c) => c.name)).toEqual(["/copy-last"]);
     expect(filterSlashCommands("clear").map((c) => c.name)).toEqual(["/clear"]);
     expect(filterSlashCommands("comp").map((c) => c.name)).toEqual(["/compress"]);
+    expect(filterSlashCommands("skill").map((c) => c.name)).toEqual(["/skills"]);
   });
 
   it("returns nothing when no command matches", () => {

@@ -30,6 +30,15 @@ function snapshot(
   return {
     snapshot: Object.freeze({
       catalog: createSkillCatalog(records),
+      access: Object.freeze({
+        get: (skill: SkillRecord) =>
+          Object.freeze({
+            kind: "host-filesystem" as const,
+            rootPath: `/skills/${skill.origin.scope}/${skill.name}`,
+            mainResource: "SKILL.md" as const,
+            pathConvention: "posix" as const,
+          }),
+      }),
       resources: Object.freeze({ readText }),
     }),
     readText,
@@ -58,6 +67,8 @@ describe("Skill tools", () => {
 
     expect(output).toContain("Snapshot instruction for project:explain");
     expect(output).toContain('qualified-name="project:explain"');
+    expect(output).toContain('root-path="/skills/project/explain"');
+    expect(output).toContain("this locator grants no permission");
     expect(built.readText).not.toHaveBeenCalled();
   });
 

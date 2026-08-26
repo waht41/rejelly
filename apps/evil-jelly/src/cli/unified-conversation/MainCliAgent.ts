@@ -70,6 +70,11 @@ import { drainSteers } from "../submission-dispatch/steerQueue";
 import { combineSessionBudget } from "./budget";
 import { handleMcpCommand, isMcpLocalCommand } from "./mcpCommands";
 import { handleMemoryCommand, isMemoryLocalCommand } from "./memoryCommands";
+import {
+  handleSkillsCommand,
+  isSkillsLocalCommand,
+  type SkillDoctorReport,
+} from "./skillsCommands";
 
 const UnifiedAgentWithAbort = UnifiedAgent.fork({ middlewares: [withAbort()] });
 
@@ -163,6 +168,8 @@ export interface MainCliAgentProps extends EvilJellyBindings {
   mcpBindingFactory?: ConversationAgentProps["mcpBindingFactory"];
   /** Interactive status/reload/trust operations over the process-owned MCP runtime. */
   mcpSessionControl?: McpSessionControl;
+  /** Fresh read-only Skill scan for the local `/skills doctor` command. */
+  diagnoseSkills?: () => Promise<SkillDoctorReport>;
 }
 
 type RouterIntent =
@@ -174,6 +181,7 @@ type RouterIntent =
   | { kind: "resume"; rawInput: string }
   | { kind: "mcp"; rawInput: string }
   | { kind: "memory"; rawInput: string }
+  | { kind: "skills"; rawInput: string }
   | { kind: "message"; promptInput: PromptInput; userInput: string };
 
 interface RouterRuntime {
@@ -224,6 +232,9 @@ function classifyRouterIntent(promptInput: PromptInput): RouterIntent {
   }
   if (commandText && isMcpLocalCommand(commandText)) {
     return { kind: "mcp", rawInput: commandText };
+  }
+  if (commandText && isSkillsLocalCommand(commandText)) {
+    return { kind: "skills", rawInput: commandText };
   }
   return { kind: "message", promptInput, userInput: promptInputPlainText(promptInput).trim() };
 }
@@ -463,6 +474,16 @@ async function handleMcp(runtime: RouterRuntime, rawInput: string): Promise<void
     ...(runtime.host.requestMcpManager ? { requestManager: runtime.host.requestMcpManager } : {}),
     ...(runtime.host.dismissMcpManager ? { dismissManager: runtime.host.dismissMcpManager } : {}),
     logSystem: runtime.host.logSystemEvent,
+  });
+}
+
+async function handleSkills(runtime: RouterRuntime, rawInput: string): Promise<void> {
+  await handleSkillsCommand(rawInput, {
+    snapshot: runtime.skillSnapshot,
+    diagnose: runtime.props.diagnoseSkills,
+    requestSkillManager: runtime.host.requestSkillManager,
+    openSkillFolder: runtime.host.openSkillFolder,
+    logSystem: (message) => runtime.host.logSystemEvent(message),
   });
 }
 
@@ -732,6 +753,9 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
           return reborn();
         case "memory":
           await handleMemory(runtime, intent.rawInput);
+          return reborn();
+        case "skills":
+          await handleSkills(runtime, intent.rawInput);
           return reborn();
         case "message":
           await runConversationTurn(runtime, intent.promptInput, intent.userInput);

@@ -71,6 +71,41 @@ export type MemoryManagerAction =
   | { action: "back" | "refresh" }
   | { action: "detail" | "delete" | "reveal_file"; id: string };
 
+export interface SkillManagerEntry {
+  qualifiedName: string;
+  name: string;
+  scope: "user" | "project";
+  description: string;
+  shortDescription?: string;
+  resourceCount: number;
+}
+
+export interface SkillManagerDetail extends SkillManagerEntry {
+  rootPath: string;
+  mainPath: string;
+  pathConvention: "posix" | "windows";
+  instructionCharacters: number;
+  instruction: string;
+  resources: Array<{
+    path: string;
+    kind: "reference" | "asset";
+    sizeBytes: number;
+  }>;
+}
+
+export interface SkillManagerRequest {
+  entries: SkillManagerEntry[];
+  selectedQualifiedName?: string;
+  detail?: SkillManagerDetail;
+  message?: string;
+  canOpenFolder: boolean;
+}
+
+export type SkillManagerAction =
+  | { action: "close" }
+  | { action: "back" }
+  | { action: "detail" | "open_folder"; qualifiedName: string };
+
 export interface McpManagerRow {
   serverId: string;
   source: string;
@@ -139,8 +174,12 @@ export interface PromptInputBindings {
   requestMcpManager?: (request: McpManagerRequest) => Promise<McpManagerAction>;
   /** Human-only persistent memory browser; never exposed as an Agent tool. */
   requestMemoryManager?: (request: MemoryManagerRequest) => Promise<MemoryManagerAction>;
+  /** Human-only local Skill browser; never exposed as an Agent tool. */
+  requestSkillManager?: (request: SkillManagerRequest) => Promise<SkillManagerAction>;
   /** Reveals the application-owned file for one memory scope in the host file manager. */
   revealMemoryFile?: (scope: "user" | "project") => Promise<void>;
+  /** Opens a trusted Skill root selected from the current host-owned snapshot. */
+  openSkillFolder?: (rootPath: string) => Promise<void>;
   /** Resolves an active MCP manager request after an asynchronous refresh completes. */
   dismissMcpManager?: () => void;
 }

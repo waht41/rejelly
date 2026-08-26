@@ -152,6 +152,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
         mcpSessionControl: mcp.sessionControl,
         resolveMcpUserInput: mcp.resolveUserInput,
         skillSnapshot: skillRuntime.snapshot,
+        diagnoseSkills: buildConfiguredSkillRuntimeSnapshot,
         memoryRuntime,
         mockSourceTraceId,
         isolateSessionState,

@@ -69,6 +69,34 @@ describe("operator decision", () => {
     expect(useDecisionStore.getState().decision).toMatchObject({ type: "mcp_manager" });
   });
 
+  it("routes a Skill manager detail action through the serialized decision channel", async () => {
+    const pending = createOperatorDecision().requestSkillManager({
+      entries: [
+        {
+          qualifiedName: "project:review",
+          name: "review",
+          scope: "project",
+          description: "Review changes",
+          resourceCount: 0,
+        },
+      ],
+      canOpenFolder: true,
+    });
+    await Promise.resolve();
+
+    expect(useDecisionStore.getState().decision).toMatchObject({ type: "skill_manager" });
+    useDecisionStore.getState().submitSkillManager({
+      action: "detail",
+      qualifiedName: "project:review",
+    });
+
+    await expect(pending).resolves.toEqual({
+      action: "detail",
+      qualifiedName: "project:review",
+    });
+    expect(useDecisionStore.getState().decision).toMatchObject({ type: "skill_manager" });
+  });
+
   it("resolves cancellation only through the explicit cancel value", async () => {
     const pending = createOperatorDecision().requestChoice({
       message: "Pick",

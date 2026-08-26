@@ -28,6 +28,7 @@ import { ConfirmPrompt } from "../operator-decision/ConfirmPrompt";
 import { DecisionDetail } from "../operator-decision/DecisionDetail";
 import { useDecisionStore } from "../operator-decision/decisionStore";
 import { TextDecisionPrompt } from "../operator-decision/TextDecisionPrompt";
+import { SkillManagerPrompt } from "../skill-manager/SkillManagerPrompt";
 import { getQueuedSteers, subscribeSteers } from "../submission-dispatch/steerQueue";
 import { MODE_META, useModeStore } from "../tool-approval/approvalModeStore";
 import { saveClipboardImage } from "./clipboard/clipboardImage";
@@ -116,6 +117,7 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
   const cancelChoice = useDecisionStore((state) => state.cancelChoice);
   const submitMcpManager = useDecisionStore((state) => state.submitMcpManager);
   const submitMemoryManager = useDecisionStore((state) => state.submitMemoryManager);
+  const submitSkillManager = useDecisionStore((state) => state.submitSkillManager);
   const [queuedSteers, setQueuedSteers] = useState<PromptInput[]>(() => getQueuedSteers());
 
   // Ink's <Static> counts flushed items in instance state, so its items array must only grow
@@ -208,6 +210,8 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
               />
             ) : decision.type === "memory_manager" ? (
               <MemoryManagerPrompt request={decision.request} onAction={submitMemoryManager} />
+            ) : decision.type === "skill_manager" ? (
+              <SkillManagerPrompt request={decision.request} onAction={submitSkillManager} />
             ) : decision.type === "confirm" ? (
               <ConfirmPrompt message={decision.message} defaultYes={decision.defaultYes} />
             ) : decision.type === "choice" ? (

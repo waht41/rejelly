@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fromPosixPath } from "../../../shared/foundation/path";
 import type {
+  SkillAccessRepository,
   SkillRecord,
   SkillResourceReadResult,
   SkillResourceRepository,
@@ -14,6 +15,39 @@ export interface LoadedSkillLocation {
   readonly rootRealPath: string;
 }
 
+function skillRoots(locations: readonly LoadedSkillLocation[]): WeakMap<SkillRecord, string> {
+  const roots = new WeakMap<SkillRecord, string>();
+  for (const location of locations) {
+    roots.set(location.skill, location.rootRealPath);
+  }
+  return roots;
+}
+
+function requireSkillRoot(roots: WeakMap<SkillRecord, string>, skill: SkillRecord): string {
+  const rootRealPath = roots.get(skill);
+  if (!rootRealPath) {
+    throw new Error("Skill repository received a record that is not part of this snapshot.");
+  }
+  return rootRealPath;
+}
+
+/** Build the activation-only filesystem locator lookup for local host Skills. */
+export function createSkillAccessRepository(
+  locations: readonly LoadedSkillLocation[],
+): SkillAccessRepository {
+  const roots = skillRoots(locations);
+  return Object.freeze({
+    get(skill: SkillRecord) {
+      return Object.freeze({
+        kind: "host-filesystem" as const,
+        rootPath: requireSkillRoot(roots, skill),
+        mainResource: "SKILL.md" as const,
+        pathConvention: process.platform === "win32" ? ("windows" as const) : ("posix" as const),
+      });
+    },
+  });
+}
+
 function result(
   reason: Exclude<SkillResourceReadResult, { ok: true }>["reason"],
   message: string,
@@ -25,21 +59,13 @@ function result(
 export function createSkillResourceRepository(
   locations: readonly LoadedSkillLocation[],
 ): SkillResourceRepository {
-  const roots = new WeakMap<SkillRecord, string>();
-  for (const location of locations) {
-    roots.set(location.skill, location.rootRealPath);
-  }
+  const roots = skillRoots(locations);
 
   return Object.freeze({
     async readText(skill: SkillRecord, resourcePath: string): Promise<SkillResourceReadResult> {
-      const rootRealPath = roots.get(skill);
-      if (!rootRealPath) {
-        // Catalog and repository are built from the same immutable record set, so a record with
-        // no location is a broken host invariant rather than a model-facing input error.
-        throw new Error(
-          "Skill resource repository received a record that is not part of this snapshot.",
-        );
-      }
+      // Catalog and repositories are built from the same immutable record set, so a record with
+      // no location is a broken host invariant rather than a model-facing input error.
+      const rootRealPath = requireSkillRoot(roots, skill);
       const lexicalError = validateRelativeSkillPath(resourcePath);
       const normalized = path.posix.normalize(resourcePath);
       if (
