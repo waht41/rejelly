@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { executeShellCommand, getShellEnvironmentSummary } from "./executeShellCommand";
+import {
+  combineCapturedShellOutput,
+  decodeShellOutput,
+  ShellOutputStreamDecoder,
+} from "./shellOutput";
 
 function makeNodeCommand(jsCode: string): string {
   if (process.platform === "win32") {
@@ -19,57 +24,33 @@ describe("executeShellCommand", () => {
     }
   });
 
-  it("preserves literal newlines inside one Windows command argument", async () => {
-    if (process.platform !== "win32") {
-      return;
-    }
+  it("runs through the host shell, preserves arguments, and streams both output channels", async () => {
     const value = "## Summary\n\n- First line\n- Second line";
-    const command = `${makeNodeCommand(
-      "process.stdout.write(JSON.stringify(process.argv[1]));",
-    )} "${value}"`;
-
-    const result = await executeShellCommand({ command, cwd: process.cwd() });
-
-    expect(result.exitCode).toBe(0);
-    expect(JSON.parse(result.output)).toBe(value);
-  });
-
-  it("streams stdout/stderr chunks through onData", async () => {
     const chunks: string[] = [];
-    const result = await executeShellCommand(
-      {
-        command: makeNodeCommand("process.stdout.write('hello'); process.stderr.write('world');"),
-        cwd: process.cwd(),
-      },
-      (data) => {
-        chunks.push(data);
-      },
-    );
+    const command = `${makeNodeCommand("const ESC=String.fromCharCode(27); process.stdout.write(JSON.stringify(process.argv[1])+'\\n'+ESC+'[32mgreen'+ESC+'[39m plain'); process.stderr.write('world');")} "${value}"`;
+
+    const result = await executeShellCommand({ command, cwd: process.cwd() }, (data) => {
+      chunks.push(data);
+    });
 
     expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.output.split("\n")[0]!)).toBe(value);
+    expect(result.output).toContain("green plain");
+    expect(result.output).not.toContain("\x1b[");
+    expect(result.output).toContain("world");
     const streamed = chunks.join("");
-    expect(streamed).toContain("hello");
+    expect(streamed).toContain(JSON.stringify(value));
+    expect(streamed).toContain("\x1b[32m");
     expect(streamed).toContain("world");
   });
 
-  it("strips ANSI sequences from captured output but streams them raw", async () => {
-    const chunks: string[] = [];
-    const result = await executeShellCommand(
-      {
-        command: makeNodeCommand(
-          "const ESC=String.fromCharCode(27); process.stdout.write(ESC+'[1m'+ESC+'[32mgreen'+ESC+'[39m'+ESC+'[22m plain');",
-        ),
-        cwd: process.cwd(),
-      },
-      (data) => {
-        chunks.push(data);
-      },
+  it("strips terminal control sequences from captured output", () => {
+    const captured = combineCapturedShellOutput(
+      Buffer.from("\x1b[1m\x1b[32mgreen\x1b[39m\x1b[22m plain"),
+      Buffer.from("world"),
     );
 
-    expect(result.exitCode).toBe(0);
-    expect(result.output).toContain("green plain");
-    expect(result.output).not.toContain("\x1b[");
-    expect(chunks.join("")).toContain("\x1b[32m");
+    expect(captured).toBe("green plain\nworld");
   });
 
   it("returns non-zero exit code for failed command", async () => {
@@ -81,78 +62,28 @@ describe("executeShellCommand", () => {
     expect(result.output).toContain("boom");
   });
 
-  it("falls back to GB18030 for Windows command output that is not valid UTF-8", async () => {
-    if (process.platform !== "win32") {
-      return;
-    }
-    const chunks: string[] = [];
-    const result = await executeShellCommand(
-      {
-        command: makeNodeCommand(
-          "process.stdout.write(Buffer.from([0xc7,0xfd,0xb6,0xaf,0xc6,0xf7]));",
-        ),
-        cwd: process.cwd(),
-      },
-      (data) => {
-        chunks.push(data);
-      },
-    );
+  it("falls back to GB18030 for captured Windows output that is not valid UTF-8", () => {
+    const bytes = Buffer.from([0xc7, 0xfd, 0xb6, 0xaf, 0xc6, 0xf7]);
 
-    expect(result.exitCode).toBe(0);
-    expect(result.output).toContain("驱动器");
-    expect(chunks.join("")).toContain("驱动器");
+    expect(decodeShellOutput(bytes, true)).toBe("驱动器");
   });
 
-  it("does not lock Windows output to UTF-8 when only the first chunk is valid UTF-8", async () => {
-    if (process.platform !== "win32") {
-      return;
-    }
+  it("does not lock streaming Windows output to UTF-8 from one valid prefix", () => {
     const bytes = Buffer.from([0xc2, 0xa1, 0xc7, 0xfd, 0xb6, 0xaf, 0xc6, 0xf7]);
     const expected = new TextDecoder("gb18030").decode(bytes);
-    const chunks: string[] = [];
-    const result = await executeShellCommand(
-      {
-        command: makeNodeCommand(
-          "process.stdout.write(Buffer.from([0xc2,0xa1])); setTimeout(() => process.stdout.end(Buffer.from([0xc7,0xfd,0xb6,0xaf,0xc6,0xf7])), 20);",
-        ),
-        cwd: process.cwd(),
-      },
-      (data) => {
-        chunks.push(data);
-      },
-    );
+    const decoder = new ShellOutputStreamDecoder(true);
 
-    expect(result.exitCode).toBe(0);
-    expect(result.output).toContain(expected);
-    expect(chunks.join("")).toContain(expected);
+    expect(decoder.write(bytes.subarray(0, 2))).toBe("");
+    expect(decoder.write(bytes.subarray(2))).toBe(expected);
+    expect(decoder.end()).toBe("");
   });
 
-  it("locks live Windows output to GB18030 as soon as UTF-8 is impossible", async () => {
-    if (process.platform !== "win32") {
-      return;
-    }
-    let sawGbBeforeTail = false;
-    let sawTail = false;
-    const result = await executeShellCommand(
-      {
-        command: makeNodeCommand(
-          "process.stdout.write(Buffer.from([0xc7,0xfd,0xb6,0xaf,0xc6,0xf7])); setTimeout(() => process.stdout.end('tail'), 100);",
-        ),
-        cwd: process.cwd(),
-      },
-      (data) => {
-        if (data.includes("驱动器") && !data.includes("tail") && !sawTail) {
-          sawGbBeforeTail = true;
-        }
-        if (data.includes("tail")) {
-          sawTail = true;
-        }
-      },
-    );
+  it("locks streaming Windows output to GB18030 as soon as UTF-8 is impossible", () => {
+    const decoder = new ShellOutputStreamDecoder(true);
 
-    expect(result.exitCode).toBe(0);
-    expect(result.output).toContain("驱动器tail");
-    expect(sawGbBeforeTail).toBe(true);
+    expect(decoder.write(Buffer.from([0xc7, 0xfd, 0xb6, 0xaf, 0xc6, 0xf7]))).toBe("驱动器");
+    expect(decoder.write(Buffer.from("tail"))).toBe("tail");
+    expect(decoder.end()).toBe("");
   });
 
   it("keeps already streamed output when aborted", async () => {
