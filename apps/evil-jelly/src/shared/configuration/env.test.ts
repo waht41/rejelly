@@ -222,7 +222,7 @@ describe("loadEvilJellyEnv", () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
-  it("configures the LLM API proxy after loading layered env", () => {
+  it("configures the LLM API proxy after loading layered env", async () => {
     createWorkspaceWithEnv("USE_PROXY=true\nPROXY_URL=http://127.0.0.1:7891\n");
     delete process.env.USE_PROXY;
     delete process.env.PROXY_URL;
@@ -230,7 +230,9 @@ describe("loadEvilJellyEnv", () => {
     delete process.env.HTTPS_PROXY;
     delete process.env.NO_PROXY;
 
-    loadEvilJellyEnv();
+    const { startProxy } = loadEvilJellyEnv();
+    expect(undiciMock.EnvHttpProxyAgent).not.toHaveBeenCalled();
+    await Promise.all([startProxy(), startProxy()]);
 
     expect(process.env.HTTP_PROXY).toBe("http://127.0.0.1:7891");
     expect(process.env.HTTPS_PROXY).toBe("http://127.0.0.1:7891");
@@ -300,7 +302,7 @@ describe("loadEvilJellyEnv with --env", () => {
     expect(undiciMock.EnvHttpProxyAgent).not.toHaveBeenCalled();
   });
 
-  it("lets profile proxy values override the same shell variables", () => {
+  it("lets profile proxy values override the same shell variables", async () => {
     const homeDir = useHomeDir();
     writeEnvProfile(
       homeDir,
@@ -309,20 +311,22 @@ describe("loadEvilJellyEnv with --env", () => {
     );
     process.env.HTTPS_PROXY = "http://shell:7892";
 
-    loadEvilJellyEnv({ envFile: "luna" });
+    const { startProxy } = loadEvilJellyEnv({ envFile: "luna" });
+    await startProxy();
 
     expect(process.env.HTTP_PROXY).toBe("http://profile:7891");
     expect(process.env.HTTPS_PROXY).toBe("http://profile:7891");
     expect(undiciMock.EnvHttpProxyAgent).toHaveBeenCalledTimes(1);
   });
 
-  it("inherits proxy configuration from the shell", () => {
+  it("inherits proxy configuration from the shell", async () => {
     const homeDir = useHomeDir();
     writeEnvProfile(homeDir, "luna", "OPENAI_API_KEY=luna-key\n");
     process.env.USE_PROXY = "true";
     process.env.HTTPS_PROXY = "http://shell:7892";
 
-    loadEvilJellyEnv({ envFile: "luna" });
+    const { startProxy } = loadEvilJellyEnv({ envFile: "luna" });
+    await startProxy();
 
     expect(process.env.HTTP_PROXY).toBe("http://shell:7892");
     expect(process.env.HTTPS_PROXY).toBe("http://shell:7892");

@@ -42,8 +42,12 @@ async function main() {
   const { env, exitIfMissingOpenAIKey, loadEvilJellyEnv } = await import(
     "../shared/configuration/env"
   );
+  let startProxy: () => Promise<void>;
   try {
-    loadEvilJellyEnv({ cliApiKey: args.cliApiKey, envFile: args.envFile });
+    startProxy = loadEvilJellyEnv({
+      cliApiKey: args.cliApiKey,
+      envFile: args.envFile,
+    }).startProxy;
     startupTimeline.mark("env_ready");
   } catch (error) {
     // A misnamed or incomplete profile is a user-facing config error, so print the line rather
@@ -51,6 +55,13 @@ async function main() {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
+  const startProfiledProxy = (): Promise<void> => {
+    const ready = startProxy().then(() => startupTimeline.mark("proxy_ready"));
+    // Interactive startup may not await this until after Ink mounts. Observe rejection now to
+    // prevent an unhandled-rejection event while preserving it for the later await.
+    void ready.catch(() => undefined);
+    return ready;
+  };
 
   switch (args.kind) {
     case "audit": {
@@ -60,7 +71,9 @@ async function main() {
           import("./bindings/backgroundBindings"),
           import("./model-composition/createModelFromEnv"),
         ]);
+      const proxyReady = startProfiledProxy();
       exitIfMissingOpenAIKey();
+      await proxyReady;
       await runAudit({
         model: createOpenAIModelFromEnv(),
         bindings: createBackgroundHostBindings(),
@@ -98,6 +111,7 @@ async function main() {
         ),
       ]);
       startupTimeline.mark("unified_modules_ready");
+      const proxyReady = startProfiledProxy();
       await runUnified({
         startup: args.startup,
         headless: args.headless,
@@ -108,6 +122,7 @@ async function main() {
         createModel: createOpenAIModelFromEnv,
         createBackgroundBindings: createBackgroundHostBindings,
         createInteractiveBindings: createCliHostBindings,
+        proxyReady,
       });
       break;
     }

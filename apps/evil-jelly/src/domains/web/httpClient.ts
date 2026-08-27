@@ -8,22 +8,30 @@
  */
 
 import { getContextSignal } from "@rejelly/core";
-import { Agent, type Dispatcher, ProxyAgent, fetch as undiciFetch } from "undici";
+import type { Dispatcher } from "undici";
 import { getWebConfig } from "./webConfig";
 
-let cachedDirectAgent: Agent | null = null;
-let cachedProxyAgent: ProxyAgent | null = null;
+type UndiciRuntime = typeof import("undici");
+
+let undiciRuntime: Promise<UndiciRuntime> | undefined;
+let cachedDirectAgent: Dispatcher | null = null;
+let cachedProxyAgent: Dispatcher | null = null;
 let cachedProxyUrl: string | null = null;
 
-function resolveDispatcher(proxyUrl: string | null): Dispatcher {
+function loadUndici(): Promise<UndiciRuntime> {
+  undiciRuntime ??= import("undici");
+  return undiciRuntime;
+}
+
+function resolveDispatcher(undici: UndiciRuntime, proxyUrl: string | null): Dispatcher {
   if (!proxyUrl) {
-    cachedDirectAgent ??= new Agent();
+    cachedDirectAgent ??= new undici.Agent();
     return cachedDirectAgent;
   }
   if (cachedProxyAgent && cachedProxyUrl === proxyUrl) {
     return cachedProxyAgent;
   }
-  cachedProxyAgent = new ProxyAgent(proxyUrl);
+  cachedProxyAgent = new undici.ProxyAgent(proxyUrl);
   cachedProxyUrl = proxyUrl;
   return cachedProxyAgent;
 }
@@ -82,11 +90,12 @@ export async function fetchText(
   const config = getWebConfig();
   const { signal, dispose } = buildSignal(config.timeoutMs);
   try {
-    const response = await undiciFetch(url, {
+    const undici = await loadUndici();
+    const response = await undici.fetch(url, {
       method: "GET",
       redirect: "follow",
       signal,
-      dispatcher: resolveDispatcher(config.proxyUrl),
+      dispatcher: resolveDispatcher(undici, config.proxyUrl),
       headers: {
         "User-Agent": config.userAgent,
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5",
@@ -169,10 +178,11 @@ export async function fetchJson(
   const config = getWebConfig();
   const { signal, dispose } = buildSignal(options.timeoutMs ?? config.timeoutMs);
   try {
-    const response = await undiciFetch(url, {
+    const undici = await loadUndici();
+    const response = await undici.fetch(url, {
       method: options.method ?? "POST",
       signal,
-      dispatcher: resolveDispatcher(config.proxyUrl),
+      dispatcher: resolveDispatcher(undici, config.proxyUrl),
       headers: { "content-type": "application/json", ...options.headers },
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     });

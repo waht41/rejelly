@@ -35,6 +35,8 @@ export interface RunUnifiedOptions {
     bindings: EvilJellyBindings;
     dispose: () => void;
   };
+  /** Proxy dispatcher initialization started by the composition root after env resolution. */
+  proxyReady: Promise<void>;
 }
 
 export async function runUnified(options: RunUnifiedOptions): Promise<void> {
@@ -53,6 +55,7 @@ export async function runUnified(options: RunUnifiedOptions): Promise<void> {
       console.error("--headless direct UnifiedAgent mode requires --input <text>");
       process.exit(1);
     }
+    await options.proxyReady;
     await runHeadless(options.createBackgroundBindings({ autoAcceptWrite: options.autoAccept }), {
       model: options.createModel(),
       userInput: seedInput,
@@ -101,6 +104,7 @@ export async function runUnified(options: RunUnifiedOptions): Promise<void> {
     ));
   const model = mockReplay?.model ?? options.createModel();
   try {
+    await options.proxyReady;
     await runInteractiveLoop({
       bindings,
       runControl,
