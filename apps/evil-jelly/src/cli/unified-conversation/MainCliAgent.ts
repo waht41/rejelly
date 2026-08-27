@@ -58,6 +58,7 @@ import {
   promptInputCommandText,
   promptInputPlainText,
 } from "../../shared/model/prompt/promptInput";
+import { startupTimeline } from "../../shared/startupTimeline";
 import { formatUserInputDisplay } from "../conversation-display/history/userInputDisplay";
 import {
   formatSessionStatus,
@@ -725,6 +726,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
         })) ?? [],
       );
       const lineInput = await host.getInput();
+      startupTimeline.emitLateMilestone("first_input_dispatched");
       const intent = classifyRouterIntent(lineInput);
       switch (intent.kind) {
         case "empty":

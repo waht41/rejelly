@@ -18,6 +18,14 @@ export interface StartupTimelineReport {
   }[];
 }
 
+export interface StartupTimelineLateMilestone {
+  readonly type: "evil_jelly_startup_profile_late_milestone";
+  readonly version: 1;
+  readonly name: string;
+  readonly atMs: number;
+  readonly sinceInputReadyMs?: number;
+}
+
 function milestoneDelta(report: StartupTimelineReport, name: string): number | undefined {
   return report.milestones.find((milestone) => milestone.name === name)?.deltaMs;
 }
@@ -120,12 +128,14 @@ function startupTimelineEnabled(): boolean {
 export function createStartupTimeline(options: StartupTimelineOptions = {}): {
   mark: (name: string) => void;
   finish: (name: string) => StartupTimelineReport | undefined;
+  emitLateMilestone: (name: string) => StartupTimelineLateMilestone | undefined;
 } {
   const now = options.now ?? (() => performance.now());
   const enabled = options.enabled ?? startupTimelineEnabled;
   const write = options.write ?? ((line: string) => process.stderr.write(line));
   const isStderrTTY = options.isStderrTTY ?? (() => process.stderr.isTTY === true);
   const milestones: StartupMilestone[] = [];
+  const emittedLateMilestones = new Set<string>();
   let finished = false;
 
   const mark = (name: string): void => {
@@ -160,7 +170,27 @@ export function createStartupTimeline(options: StartupTimelineOptions = {}): {
     return report;
   };
 
-  return { mark, finish };
+  const emitLateMilestone = (name: string): StartupTimelineLateMilestone | undefined => {
+    if (!finished || emittedLateMilestones.has(name) || !enabled()) return undefined;
+    emittedLateMilestones.add(name);
+    const atMs = roundMs(now());
+    const inputReadyMs = milestones.find((milestone) => milestone.name === "input_ready")?.atMs;
+    const event: StartupTimelineLateMilestone = {
+      type: "evil_jelly_startup_profile_late_milestone",
+      version: 1,
+      name,
+      atMs,
+      ...(inputReadyMs === undefined ? {} : { sinceInputReadyMs: roundMs(atMs - inputReadyMs) }),
+    };
+    // A late event can occur after the user has started editing. Keep raw machine output away
+    // from Ink's patched stderr just like the successful startup report.
+    if (!isStderrTTY()) {
+      write(`[evil-jelly:startup-profile-late] ${JSON.stringify(event)}\n`);
+    }
+    return event;
+  };
+
+  return { mark, finish, emitLateMilestone };
 }
 
 export const startupTimeline = createStartupTimeline();

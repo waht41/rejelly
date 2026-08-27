@@ -131,6 +131,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
     if (skillSummary) {
       bindings.logSystemEvent(`${skillSummary}\n`);
     }
+    let startupRuntimePending = true;
     // Outer loop: each iteration is one runWith segment (own traceId). A mid-session /resume ends
     // the current run, queues a loop intent, and we restart with the loaded history.
     while (true) {
@@ -140,6 +141,10 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
       startupTimeline.mark("memory_ready");
       for (const diagnostic of memoryRuntime.diagnostics) {
         bindings.logSystemEvent(`Memory warning: ${diagnostic}\n`);
+      }
+      if (startupRuntimePending) {
+        startupTimeline.mark("runtime_ready");
+        startupRuntimePending = false;
       }
       await runEvilJellyHost(bindings, {
         runControl,

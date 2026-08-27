@@ -63,6 +63,33 @@ describe("startup timeline", () => {
     expect(output).toHaveLength(1);
   });
 
+  it("emits a first-occurrence late milestone without extending startup total", () => {
+    const times = [100, 160];
+    const output: string[] = [];
+    const timeline = createStartupTimeline({
+      now: () => times.shift()!,
+      enabled: () => true,
+      write: (line) => output.push(line),
+      isStderrTTY: () => false,
+    });
+
+    expect(timeline.emitLateMilestone("first_input_dispatched")).toBeUndefined();
+    const report = timeline.finish("input_ready");
+    const lateMilestone = timeline.emitLateMilestone("first_input_dispatched");
+
+    expect(report?.totalMs).toBe(100);
+    expect(lateMilestone).toEqual({
+      type: "evil_jelly_startup_profile_late_milestone",
+      version: 1,
+      name: "first_input_dispatched",
+      atMs: 160,
+      sinceInputReadyMs: 60,
+    });
+    expect(timeline.emitLateMilestone("first_input_dispatched")).toBeUndefined();
+    expect(output).toHaveLength(2);
+    expect(output[1]).toBe(`[evil-jelly:startup-profile-late] ${JSON.stringify(lateMilestone)}\n`);
+  });
+
   it("keeps phase summaries stable when detailed milestones are present", () => {
     const times = [
       10, 30, 31, 40, 50, 60, 90, 91, 100, 101, 103, 105, 106, 110, 160, 161, 169, 170, 200,
