@@ -28,10 +28,10 @@ describe("startup profile selection", () => {
 
   it("rejects empty and unavailable selectors with the available list", () => {
     expect(() => parseProfileSelectors("")).toThrow(
-      'Unknown profile selector "". Available: startup, startup:imports.',
+      'Unknown profile selector "". Available: startup, startup:imports, startup:ink.',
     );
-    expect(() => parseProfileSelectors("startup:ink")).toThrow(
-      'Unknown profile selector "startup:ink". Available: startup, startup:imports.',
+    expect(() => parseProfileSelectors("startup:runtime")).toThrow(
+      'Unknown profile selector "startup:runtime". Available: startup, startup:imports, startup:ink.',
     );
   });
 

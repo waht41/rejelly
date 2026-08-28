@@ -39,7 +39,7 @@ describe("parseCliArgs", () => {
     expect(help).toContain("--mock-inputs");
     expect(help).toContain("requires --mock and cannot be combined with --input");
     expect(help).toContain("--profile <selector>");
-    expect(help).toContain("available: startup, startup:imports");
+    expect(help).toContain("available: startup, startup:imports, startup:ink");
   });
 
   it("describes required audit options without a misleading negated default", () => {
@@ -102,9 +102,9 @@ describe("parseCliArgs", () => {
       throw new Error(`exit ${String(code)}`);
     });
 
-    expect(() => parseCliArgs(["node", "evil", "--profile", "startup:ink"])).toThrow("exit 1");
+    expect(() => parseCliArgs(["node", "evil", "--profile", "startup:runtime"])).toThrow("exit 1");
     expect(error).toHaveBeenCalledWith(
-      'Unknown profile selector "startup:ink". Available: startup, startup:imports.',
+      'Unknown profile selector "startup:runtime". Available: startup, startup:imports, startup:ink.',
     );
   });
 

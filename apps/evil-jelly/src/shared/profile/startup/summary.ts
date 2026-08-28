@@ -67,6 +67,34 @@ interface GanttSegment {
   readonly fill: "█" | "▒";
 }
 
+function splitGanttSegmentByWindow(
+  startMs: number,
+  endMs: number,
+  windowStartMs: number | undefined,
+  windowEndMs: number | undefined,
+): GanttSegment[] {
+  if (
+    windowStartMs === undefined ||
+    windowEndMs === undefined ||
+    windowEndMs <= startMs ||
+    windowStartMs >= endMs
+  ) {
+    return [{ startMs, endMs, fill: "█" }];
+  }
+
+  const overlapStartMs = Math.max(startMs, windowStartMs);
+  const overlapEndMs = Math.min(endMs, windowEndMs);
+  const segments: GanttSegment[] = [];
+  if (startMs < overlapStartMs) {
+    segments.push({ startMs, endMs: overlapStartMs, fill: "█" });
+  }
+  segments.push({ startMs: overlapStartMs, endMs: overlapEndMs, fill: "▒" });
+  if (overlapEndMs < endMs) {
+    segments.push({ startMs: overlapEndMs, endMs, fill: "█" });
+  }
+  return segments;
+}
+
 function ganttPosition(atMs: number, totalMs: number): number {
   return Math.round((atMs / totalMs) * GANTT_WIDTH);
 }
@@ -234,7 +262,7 @@ function formatStartupGantt(report: StartupTimelineReport): string | undefined {
       axis.guidePositions,
     ),
     renderGanttRow(
-      "Ink",
+      "Ink⁺",
       report.totalMs,
       inkStartedAt,
       inkReadyAt,
@@ -259,8 +287,8 @@ function formatStartupGantt(report: StartupTimelineReport): string | undefined {
     ),
     renderGanttMilestone("Both ready", report.totalMs, joinedAt),
     renderGanttMilestone("Ready", report.totalMs, inputReadyAt),
-    `${indent}█ critical path · ▒ overlapped/hidden · ▲ milestone`,
-    `${indent}⁺ drill-down available: --profile startup:imports`,
+    `${indent}█ critical path · ▒ overlap window · ▲ milestone`,
+    `${indent}⁺ drill-down: startup:imports · startup:ink`,
     `${indent}1 cell ≈ ${Math.round(report.totalMs / GANTT_WIDTH)} ms · numeric times are exact`,
   ].join("\n");
 }
@@ -268,6 +296,8 @@ function formatStartupGantt(report: StartupTimelineReport): string | undefined {
 function formatImportsDrilldownGantt(report: StartupTimelineReport): string | undefined {
   const importsStartedAt = milestoneAt(report, "unified_imports_started");
   const importsReadyAt = importPhaseReadyAt(report);
+  const inkStartedAt = milestoneAt(report, "cli_bindings_started");
+  const inkReadyAt = milestoneAt(report, "ink_mounted");
   if (
     importsStartedAt === undefined ||
     importsReadyAt === undefined ||
@@ -294,28 +324,118 @@ function formatImportsDrilldownGantt(report: StartupTimelineReport): string | un
   const axis = renderGanttAxis(durationMs, importsStartedAt);
   const indent = " ".repeat(GANTT_LABEL_WIDTH);
   const rows = [
-    `Imports drill-down: ${Math.round(durationMs)} ms`,
+    `Import availability: ${Math.round(durationMs)} ms`,
     `${indent}${axis.labels}`,
     `${indent}${axis.ruler}`,
   ];
   for (const span of spans) {
-    const fill = span.readyAt === slowestReadyAt ? "█" : "▒";
+    const determinesJoin = span.readyAt === slowestReadyAt;
     rows.push(
       renderGanttRow(
-        span.label,
+        determinesJoin ? `${span.label}*` : span.label,
         durationMs,
         span.startAt,
         span.readyAt,
-        [{ startMs: span.startAt, endMs: span.readyAt, fill }],
+        splitGanttSegmentByWindow(span.startAt, span.readyAt, inkStartedAt, inkReadyAt),
         axis.guidePositions,
         importsStartedAt,
       ),
     );
   }
+  if (inkStartedAt !== undefined && inkReadyAt !== undefined) {
+    const overlapStartAt = Math.max(importsStartedAt, inkStartedAt);
+    const overlapEndAt = Math.min(importsReadyAt, inkReadyAt);
+    if (overlapEndAt > overlapStartAt) {
+      rows.push(
+        renderGanttRow(
+          "Ink overlap",
+          durationMs,
+          overlapStartAt,
+          overlapEndAt,
+          [{ startMs: overlapStartAt, endMs: overlapEndAt, fill: "▒" }],
+          axis.guidePositions,
+          importsStartedAt,
+        ),
+      );
+    }
+  }
   rows.push(
     renderGanttMilestone("Import join", durationMs, importsReadyAt, importsStartedAt),
-    `${indent}█ determines import join · ▒ completes before join · ▲ milestone`,
-    `${indent}bars are wall-clock Promise spans, not exclusive CPU time`,
+    `${indent}* determines import join · █ outside Ink · ▒ overlaps Ink window`,
+    `${indent}wall-clock availability; ▒ may include main-thread scheduling delay`,
+  );
+  return rows.join("\n");
+}
+
+function formatInkDrilldownGantt(report: StartupTimelineReport): string | undefined {
+  const bindingsStartedAt = milestoneAt(report, "cli_bindings_started");
+  const renderStartedAt = milestoneAt(report, "ink_render_started");
+  const renderReturnedAt = milestoneAt(report, "ink_render_returned");
+  const inkReadyAt = milestoneAt(report, "ink_mounted");
+  if (
+    bindingsStartedAt === undefined ||
+    renderStartedAt === undefined ||
+    renderReturnedAt === undefined ||
+    inkReadyAt === undefined ||
+    renderStartedAt < bindingsStartedAt ||
+    renderReturnedAt < renderStartedAt ||
+    inkReadyAt < renderReturnedAt
+  ) {
+    return undefined;
+  }
+
+  const durationMs = inkReadyAt - bindingsStartedAt;
+  if (durationMs <= 0) return undefined;
+  const axis = renderGanttAxis(durationMs, bindingsStartedAt);
+  const indent = " ".repeat(GANTT_LABEL_WIDTH);
+  const rows = [
+    `Ink drill-down: ${Math.round(durationMs)} ms`,
+    `${indent}${axis.labels}`,
+    `${indent}${axis.ruler}`,
+    renderGanttRow(
+      "Bindings",
+      durationMs,
+      bindingsStartedAt,
+      renderStartedAt,
+      [{ startMs: bindingsStartedAt, endMs: renderStartedAt, fill: "█" }],
+      axis.guidePositions,
+      bindingsStartedAt,
+    ),
+    renderGanttRow(
+      "Ink render",
+      durationMs,
+      renderStartedAt,
+      renderReturnedAt,
+      [{ startMs: renderStartedAt, endMs: renderReturnedAt, fill: "█" }],
+      axis.guidePositions,
+      bindingsStartedAt,
+    ),
+    renderGanttRow(
+      "Post-render",
+      durationMs,
+      renderReturnedAt,
+      inkReadyAt,
+      [{ startMs: renderReturnedAt, endMs: inkReadyAt, fill: "█" }],
+      axis.guidePositions,
+      bindingsStartedAt,
+    ),
+  ];
+  for (const [label, milestoneName] of [
+    ["Session reset", "cli_session_reset"],
+    ["Submission", "cli_submission_ready"],
+    ["Shell start", "ink_shell_started"],
+    ["Composer", "composer_mounted"],
+    ["Render return", "ink_render_returned"],
+    ["Ink ready", "ink_mounted"],
+  ] as const) {
+    const atMs = milestoneAt(report, milestoneName);
+    if (atMs !== undefined) {
+      rows.push(renderGanttMilestone(label, durationMs, atMs, bindingsStartedAt));
+    }
+  }
+  rows.push(
+    `${indent}█ phase wall time · ▲ internal milestone`,
+    `${indent}numeric times are exact; renderer phases are not exclusive CPU samples`,
   );
   return rows.join("\n");
 }
@@ -371,9 +491,15 @@ export function formatStartupTimelineSummary(
   return selectors
     .map((selector) => {
       if (selector === "startup") return formatStartupOverview(report);
+      if (selector === "startup:imports") {
+        return (
+          formatImportsDrilldownGantt(report) ??
+          "Profile startup:imports: required milestones were not recorded."
+        );
+      }
       return (
-        formatImportsDrilldownGantt(report) ??
-        "Profile startup:imports: required milestones were not recorded."
+        formatInkDrilldownGantt(report) ??
+        "Profile startup:ink: required milestones were not recorded."
       );
     })
     .join("\n\n");

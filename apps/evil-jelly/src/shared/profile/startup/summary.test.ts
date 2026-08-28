@@ -69,8 +69,9 @@ describe("startup profile summary", () => {
     expect(summary).toContain("290 → 300  (10 ms)");
     expect(summary).toContain("Both ready");
     expect(summary).toContain("Ready");
-    expect(summary).toContain("█ critical path · ▒ overlapped/hidden · ▲ milestone");
-    expect(summary).toContain("⁺ drill-down available: --profile startup:imports");
+    expect(summary).toContain("Ink⁺");
+    expect(summary).toContain("█ critical path · ▒ overlap window · ▲ milestone");
+    expect(summary).toContain("⁺ drill-down: startup:imports · startup:ink");
     expect(summary).toContain("1 cell ≈ 8 ms · numeric times are exact");
   });
 
@@ -100,16 +101,81 @@ describe("startup profile summary", () => {
     expect(summary).toContain("673 → 1480  (807 ms)");
     expect(summary).toContain("1480 → 1569  (89 ms)");
     expect(summary).not.toContain("123 → 1499");
-    expect(summary).toContain("Imports drill-down: 549 ms");
+    expect(summary).toContain("Import availability: 549 ms");
     expect(summary).toContain("runUnified");
     expect(summary).toContain("123 → 654  (531 ms)");
-    expect(summary).toContain("cliBinding");
+    expect(summary).toContain("cliBinding*");
     expect(summary).toContain("124 → 672  (548 ms)");
     expect(summary).toContain("Import join");
     expect(summary).toContain("@ 672 ms");
-    expect(summary).toContain("bars are wall-clock Promise spans, not exclusive CPU time");
+    expect(summary).toContain("* determines import join · █ outside Ink · ▒ overlaps Ink window");
+    expect(summary).toContain(
+      "wall-clock availability; ▒ may include main-thread scheduling delay",
+    );
     expect(summary.indexOf("Startup: 1576 ms")).toBeLessThan(
-      summary.indexOf("Imports drill-down: 549 ms"),
+      summary.indexOf("Import availability: 549 ms"),
+    );
+  });
+
+  it("separates Ink overlap from an import availability span", () => {
+    const summary = formatStartupTimelineSummary(
+      report(1_680, [
+        milestone("unified_imports_started", 119),
+        milestone("unified_run_module_started", 119),
+        milestone("background_bindings_module_started", 119),
+        milestone("cli_bindings_module_started", 120),
+        milestone("model_composition_module_started", 120),
+        milestone("background_bindings_module_ready", 153),
+        milestone("model_composition_module_ready", 264),
+        milestone("cli_bindings_module_ready", 435),
+        milestone("cli_bindings_started", 435),
+        milestone("ink_mounted", 1_238),
+        milestone("unified_run_module_ready", 1_599),
+        milestone("unified_imports_ready", 1_599),
+        milestone("runtime_ready", 1_670),
+        milestone("input_ready", 1_680),
+      ]),
+      { selectors: ["startup:imports"] },
+    );
+
+    expect(summary).toContain("Import availability: 1480 ms");
+    expect(summary).toContain("runUnified*");
+    expect(summary).toContain("119 → 1599  (1480 ms)");
+    expect(summary).toContain("Ink overlap");
+    expect(summary).toContain("435 → 1238  (803 ms)");
+    expect(summary).toContain(
+      "wall-clock availability; ▒ may include main-thread scheduling delay",
+    );
+  });
+
+  it("breaks the Ink window into binding, render, and post-render phases", () => {
+    const summary = formatStartupTimelineSummary(
+      report(1_609, [
+        milestone("cli_bindings_started", 671),
+        milestone("cli_session_reset", 672),
+        milestone("cli_submission_ready", 673),
+        milestone("ink_shell_started", 674),
+        milestone("ink_render_started", 675),
+        milestone("composer_mounted", 1_450),
+        milestone("ink_render_returned", 1_508),
+        milestone("cli_shell_ready", 1_508),
+        milestone("cli_bindings_ready", 1_510),
+        milestone("ink_mounted", 1_510),
+      ]),
+      { selectors: ["startup:ink"] },
+    );
+
+    expect(summary).toContain("Ink drill-down: 839 ms");
+    expect(summary).toContain("Bindings");
+    expect(summary).toContain("671 → 675  (4 ms)");
+    expect(summary).toContain("Ink render");
+    expect(summary).toContain("675 → 1508  (833 ms)");
+    expect(summary).toContain("Post-render");
+    expect(summary).toContain("1508 → 1510  (2 ms)");
+    expect(summary).toContain("Composer");
+    expect(summary).toContain("@ 1450 ms");
+    expect(summary).toContain(
+      "numeric times are exact; renderer phases are not exclusive CPU samples",
     );
   });
 });
