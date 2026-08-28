@@ -127,7 +127,7 @@ describe("startup timeline", () => {
   });
 
   it("summarizes bindings when Ink mounts before session resolution", () => {
-    const times = [100, 110, 190, 200, 250, 300];
+    const times = [20, 100, 110, 190, 200, 250, 260, 290, 300];
     const timeline = createStartupTimeline({
       now: () => times.shift()!,
       enabled: () => true,
@@ -135,16 +135,30 @@ describe("startup timeline", () => {
       isStderrTTY: () => false,
     });
 
+    timeline.mark("unified_imports_started");
     timeline.mark("cli_bindings_started");
     timeline.mark("ink_render_started");
     timeline.mark("ink_render_returned");
     timeline.mark("ink_mounted");
+    timeline.mark("unified_modules_ready");
     timeline.mark("session_resolved");
+    timeline.mark("runtime_ready");
     const report = timeline.finish("input_ready");
 
-    expect(formatStartupTimelineSummary(report!)).toBe(
-      "Startup profile: 300 ms total · bindings+Ink 100 ms (render 80 ms) · post-bindings 100 ms.",
-    );
+    const summary = formatStartupTimelineSummary(report!);
+    expect(summary).toContain("Startup: 300 ms");
+    expect(summary).toContain("Imports");
+    expect(summary).toContain("20 → 250  (230 ms)");
+    expect(summary).toContain("Ink");
+    expect(summary).toContain("100 → 200  (100 ms)");
+    expect(summary).toContain("Runtime");
+    expect(summary).toContain("250 → 290  (40 ms)");
+    expect(summary).toContain("Input");
+    expect(summary).toContain("290 → 300  (10 ms)");
+    expect(summary).toContain("Both ready");
+    expect(summary).toContain("Ready");
+    expect(summary).toContain("█ critical path · ▒ overlapped/hidden · ▲ milestone");
+    expect(summary).toContain("1 cell ≈ 8 ms · numeric times are exact");
   });
 
   it("stays silent when profiling is disabled", () => {
