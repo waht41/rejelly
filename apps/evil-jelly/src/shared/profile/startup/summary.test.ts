@@ -1,17 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { STARTUP_PROFILE_DRILLDOWN_ENV } from "./selection";
+import { describe, expect, it } from "vitest";
 import { formatStartupTimelineSummary } from "./summary";
 import type { StartupTimelineReport } from "./timeline";
-
-const originalStartupProfileDrilldownEnv = process.env[STARTUP_PROFILE_DRILLDOWN_ENV];
-
-afterEach(() => {
-  if (originalStartupProfileDrilldownEnv === undefined) {
-    delete process.env[STARTUP_PROFILE_DRILLDOWN_ENV];
-  } else {
-    process.env[STARTUP_PROFILE_DRILLDOWN_ENV] = originalStartupProfileDrilldownEnv;
-  }
-});
 
 const milestone = (name: string, atMs: number) => ({ name, atMs, deltaMs: 0 });
 
@@ -70,7 +59,7 @@ describe("startup profile summary", () => {
     );
 
     expect(summary).toContain("Startup: 300 ms");
-    expect(summary).toContain("Imports");
+    expect(summary).toContain("Imports⁺");
     expect(summary).toContain("20 → 250  (230 ms)");
     expect(summary).toContain("Ink");
     expect(summary).toContain("100 → 200  (100 ms)");
@@ -81,11 +70,11 @@ describe("startup profile summary", () => {
     expect(summary).toContain("Both ready");
     expect(summary).toContain("Ready");
     expect(summary).toContain("█ critical path · ▒ overlapped/hidden · ▲ milestone");
+    expect(summary).toContain("⁺ drill-down available: --profile startup:imports");
     expect(summary).toContain("1 cell ≈ 8 ms · numeric times are exact");
   });
 
   it("ends imports at actual completion rather than after a blocking Ink mount", () => {
-    process.env[STARTUP_PROFILE_DRILLDOWN_ENV] = "imports";
     const summary = formatStartupTimelineSummary(
       report(1_576, [
         milestone("unified_imports_started", 123),
@@ -104,6 +93,7 @@ describe("startup profile summary", () => {
         milestone("runtime_ready", 1_569),
         milestone("input_ready", 1_576),
       ]),
+      { selectors: ["startup", "startup:imports"] },
     );
 
     expect(summary).toContain("123 → 672  (549 ms)");
@@ -118,5 +108,8 @@ describe("startup profile summary", () => {
     expect(summary).toContain("Import join");
     expect(summary).toContain("@ 672 ms");
     expect(summary).toContain("bars are wall-clock Promise spans, not exclusive CPU time");
+    expect(summary.indexOf("Startup: 1576 ms")).toBeLessThan(
+      summary.indexOf("Imports drill-down: 549 ms"),
+    );
   });
 });

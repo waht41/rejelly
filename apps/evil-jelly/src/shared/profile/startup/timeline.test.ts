@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { STARTUP_PROFILE_ENV } from "./selection";
+import { PROFILE_ENV } from "./selection";
 import { createStartupTimeline } from "./timeline";
 
-const originalStartupProfileEnv = process.env[STARTUP_PROFILE_ENV];
+const originalProfileEnv = process.env[PROFILE_ENV];
 
 afterEach(() => {
-  if (originalStartupProfileEnv === undefined) {
-    delete process.env[STARTUP_PROFILE_ENV];
+  if (originalProfileEnv === undefined) {
+    delete process.env[PROFILE_ENV];
   } else {
-    process.env[STARTUP_PROFILE_ENV] = originalStartupProfileEnv;
+    process.env[PROFILE_ENV] = originalProfileEnv;
   }
 });
 
@@ -44,7 +44,7 @@ describe("startup timeline", () => {
 
   it("keeps recording before the dynamic environment switch is enabled", () => {
     const output: string[] = [];
-    delete process.env[STARTUP_PROFILE_ENV];
+    delete process.env[PROFILE_ENV];
     const timeline = createStartupTimeline({
       now: () => 25,
       write: (line) => output.push(line),
@@ -52,7 +52,7 @@ describe("startup timeline", () => {
     });
 
     timeline.mark("before_env_load");
-    process.env[STARTUP_PROFILE_ENV] = "true";
+    process.env[PROFILE_ENV] = "true";
     expect(timeline.finish("input_ready")?.milestones).toHaveLength(2);
     expect(output).toHaveLength(1);
   });

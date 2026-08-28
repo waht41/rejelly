@@ -2,6 +2,7 @@
  * CLI entry: initialize process-wide configuration and dispatch user-facing run modes.
  */
 
+import { setProfileSelectorOverride } from "../shared/profile/startup/selection";
 import { startupTimeline } from "../shared/profile/startup/timeline";
 import { getCliVersion, parseCliArgs } from "./entry/args";
 import { createInteractiveRunControl } from "./entry/unified-run/interactive/runControl";
@@ -11,6 +12,7 @@ startupTimeline.mark("cli_module_ready");
 
 async function main() {
   const args = parseCliArgs();
+  setProfileSelectorOverride(args.profileSelectors);
   startupTimeline.mark("cli_args_parsed");
   if (args.kind === "init") {
     const { runInit } = await import("./entry/init-run/runInit");

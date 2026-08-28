@@ -1,8 +1,8 @@
-import { type StartupProfileDrilldown, startupProfileDrilldown } from "./selection";
+import { type ProfileSelector, selectedStartupProfileViews } from "./selection";
 import type { StartupTimelineReport } from "./timeline";
 
 export interface StartupTimelineSummaryOptions {
-  readonly drilldown?: StartupProfileDrilldown | false;
+  readonly selectors?: readonly ProfileSelector[];
 }
 
 function milestoneDelta(report: StartupTimelineReport, name: string): number | undefined {
@@ -226,7 +226,7 @@ function formatStartupGantt(report: StartupTimelineReport): string | undefined {
     `${indent}${axis.labels}`,
     `${indent}${axis.ruler}`,
     renderGanttRow(
-      "Imports",
+      "Imports⁺",
       report.totalMs,
       importsStartedAt,
       importsReadyAt,
@@ -260,6 +260,7 @@ function formatStartupGantt(report: StartupTimelineReport): string | undefined {
     renderGanttMilestone("Both ready", report.totalMs, joinedAt),
     renderGanttMilestone("Ready", report.totalMs, inputReadyAt),
     `${indent}█ critical path · ▒ overlapped/hidden · ▲ milestone`,
+    `${indent}⁺ drill-down available: --profile startup:imports`,
     `${indent}1 cell ≈ ${Math.round(report.totalMs / GANTT_WIDTH)} ms · numeric times are exact`,
   ].join("\n");
 }
@@ -319,11 +320,7 @@ function formatImportsDrilldownGantt(report: StartupTimelineReport): string | un
   return rows.join("\n");
 }
 
-/** Compact human-readable projection; the complete machine-readable report stays on stderr. */
-export function formatStartupTimelineSummary(
-  report: StartupTimelineReport,
-  options: StartupTimelineSummaryOptions = {},
-): string {
+function formatStartupOverview(report: StartupTimelineReport): string {
   const gantt = formatStartupGantt(report);
   const parts = [`Startup profile: ${Math.round(report.totalMs)} ms total`];
   const envReadyAt = milestoneAt(report, "env_ready");
@@ -362,9 +359,22 @@ export function formatStartupTimelineSummary(
   if (inkMounted) {
     parts.push(`post-bindings ${Math.round(report.totalMs - inkMounted.atMs)} ms`);
   }
-  const overview = gantt ?? `${parts.join(" · ")}.`;
-  const drilldown = options.drilldown ?? startupProfileDrilldown();
-  if (drilldown !== "imports") return overview;
-  const importsDrilldown = formatImportsDrilldownGantt(report);
-  return importsDrilldown === undefined ? overview : `${overview}\n\n${importsDrilldown}`;
+  return gantt ?? `${parts.join(" · ")}.`;
+}
+
+/** Renders the selected startup profile views in selector order. */
+export function formatStartupTimelineSummary(
+  report: StartupTimelineReport,
+  options: StartupTimelineSummaryOptions = {},
+): string {
+  const selectors = options.selectors ?? selectedStartupProfileViews();
+  return selectors
+    .map((selector) => {
+      if (selector === "startup") return formatStartupOverview(report);
+      return (
+        formatImportsDrilldownGantt(report) ??
+        "Profile startup:imports: required milestones were not recorded."
+      );
+    })
+    .join("\n\n");
 }
