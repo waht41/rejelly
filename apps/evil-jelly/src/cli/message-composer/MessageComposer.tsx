@@ -33,7 +33,7 @@ import {
   MAX_EXPLICIT_MEMORY_REFERENCES,
   promptDocumentCommandText,
 } from "../../shared/model/prompt/promptDocument";
-import { startupTimeline } from "../../shared/startupTimeline";
+import { startupTimeline } from "../../shared/profile/startup/timeline";
 import { BufferView } from "./editor/BufferView";
 import { useLineKeybindings } from "./editor/keyboard/useLineKeybindings";
 import { usePromptLayout } from "./editor/usePromptLayout";

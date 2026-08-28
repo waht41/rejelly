@@ -58,7 +58,7 @@ import {
   promptInputCommandText,
   promptInputPlainText,
 } from "../../shared/model/prompt/promptInput";
-import { startupTimeline } from "../../shared/startupTimeline";
+import { startupTimeline } from "../../shared/profile/startup/timeline";
 import { formatUserInputDisplay } from "../conversation-display/history/userInputDisplay";
 import {
   formatSessionStatus,

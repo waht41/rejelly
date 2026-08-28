@@ -13,7 +13,8 @@ import type {
 import type { AgentModeBindings } from "../../shared/host/modeBindings";
 import type { ConversationPresentationBindings } from "../../shared/host/presentationBindings";
 import type { ToolConfirmationBindings } from "../../shared/host/toolConfirmationBindings";
-import { formatStartupTimelineSummary, startupTimeline } from "../../shared/startupTimeline";
+import { formatStartupTimelineSummary } from "../../shared/profile/startup/summary";
+import { startupTimeline } from "../../shared/profile/startup/timeline";
 import { resetInterruptibleTaskStack } from "../../shared/task-interruption/taskStack";
 import { resetToolTranscriptViewSession } from "../conversation-display/tool-transcript/viewStore";
 import {

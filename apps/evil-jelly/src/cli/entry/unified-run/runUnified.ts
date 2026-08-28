@@ -8,7 +8,7 @@ import {
 } from "../../../shared/configuration/env";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import { textPromptInput } from "../../../shared/model/prompt/promptInput";
-import { startupTimeline } from "../../../shared/startupTimeline";
+import { startupTimeline } from "../../../shared/profile/startup/timeline";
 import { enqueueMainInput } from "../../submission-dispatch/mainInputQueue";
 import type { RunStartupArgs } from "./args";
 import { runHeadless } from "./headless/runHeadless";

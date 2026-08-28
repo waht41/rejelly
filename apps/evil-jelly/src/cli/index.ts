@@ -2,7 +2,7 @@
  * CLI entry: initialize process-wide configuration and dispatch user-facing run modes.
  */
 
-import { startupTimeline } from "../shared/startupTimeline";
+import { startupTimeline } from "../shared/profile/startup/timeline";
 import { getCliVersion, parseCliArgs } from "./entry/args";
 import { createInteractiveRunControl } from "./entry/unified-run/interactive/runControl";
 import type { RunUnifiedOptions } from "./entry/unified-run/runUnified";
@@ -87,27 +87,40 @@ async function main() {
     }
     case "unified": {
       startupTimeline.mark("unified_imports_started");
+      let pendingProfiledImports = 4;
       const profiledImport = async <T>(
+        startedMilestone: string,
         readyMilestone: string,
         importer: () => Promise<T>,
       ): Promise<T> => {
+        startupTimeline.mark(startedMilestone);
         const imported = await importer();
         startupTimeline.mark(readyMilestone);
+        pendingProfiledImports -= 1;
+        if (pendingProfiledImports === 0) {
+          // Record inside the final import continuation. Waiting on Promise.all later can be
+          // delayed by the synchronous Ink mount and would overstate the import phase.
+          startupTimeline.mark("unified_imports_ready");
+        }
         return imported;
       };
       const runUnifiedImport = profiledImport(
+        "unified_run_module_started",
         "unified_run_module_ready",
         () => import("./entry/unified-run/runUnified"),
       );
       const backgroundBindingsImport = profiledImport(
+        "background_bindings_module_started",
         "background_bindings_module_ready",
         () => import("./bindings/backgroundBindings"),
       );
       const cliBindingsImport = profiledImport(
+        "cli_bindings_module_started",
         "cli_bindings_module_ready",
         () => import("./bindings/cliBinding"),
       );
       const modelCompositionImport = profiledImport(
+        "model_composition_module_started",
         "model_composition_module_ready",
         () => import("./model-composition/createModelFromEnv"),
       );

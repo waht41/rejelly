@@ -1,29 +1,8 @@
-import { performance } from "node:perf_hooks";
+import { type StartupProfileDrilldown, startupProfileDrilldown } from "./selection";
+import type { StartupTimelineReport } from "./timeline";
 
-export const STARTUP_PROFILE_ENV = "EVIL_STARTUP_PROFILE";
-
-interface StartupMilestone {
-  readonly name: string;
-  readonly atMs: number;
-}
-
-export interface StartupTimelineReport {
-  readonly type: "evil_jelly_startup_profile";
-  readonly version: 1;
-  readonly totalMs: number;
-  readonly milestones: readonly {
-    readonly name: string;
-    readonly atMs: number;
-    readonly deltaMs: number;
-  }[];
-}
-
-export interface StartupTimelineLateMilestone {
-  readonly type: "evil_jelly_startup_profile_late_milestone";
-  readonly version: 1;
-  readonly name: string;
-  readonly atMs: number;
-  readonly sinceInputReadyMs?: number;
+export interface StartupTimelineSummaryOptions {
+  readonly drilldown?: StartupProfileDrilldown | false;
 }
 
 function milestoneDelta(report: StartupTimelineReport, name: string): number | undefined {
@@ -44,12 +23,21 @@ function milestoneSpan(
   return startMs === undefined || endMs === undefined ? undefined : endMs - startMs;
 }
 
-const moduleReadyLabels = [
-  ["unified_run_module_ready", "unified"],
-  ["background_bindings_module_ready", "background"],
-  ["cli_bindings_module_ready", "cli"],
-  ["model_composition_module_ready", "model"],
+const moduleImportDefinitions = [
+  ["unified_run_module_started", "unified_run_module_ready", "runUnified", "unified"],
+  [
+    "background_bindings_module_started",
+    "background_bindings_module_ready",
+    "background",
+    "background",
+  ],
+  ["cli_bindings_module_started", "cli_bindings_module_ready", "cliBinding", "cli"],
+  ["model_composition_module_started", "model_composition_module_ready", "model", "model"],
 ] as const;
+
+function importPhaseReadyAt(report: StartupTimelineReport): number | undefined {
+  return milestoneAt(report, "unified_imports_ready");
+}
 
 function slowestModuleReady(
   report: StartupTimelineReport,
@@ -57,11 +45,11 @@ function slowestModuleReady(
   const startedAtMs = milestoneAt(report, "unified_imports_started");
   if (startedAtMs === undefined) return undefined;
 
-  return moduleReadyLabels.reduce<{ label: string; durationMs: number } | undefined>(
-    (slowest, [name, label]) => {
-      const readyAtMs = milestoneAt(report, name);
+  return moduleImportDefinitions.reduce<{ label: string; durationMs: number } | undefined>(
+    (slowest, [, readyName, , summaryLabel]) => {
+      const readyAtMs = milestoneAt(report, readyName);
       if (readyAtMs === undefined) return slowest;
-      const candidate = { label, durationMs: readyAtMs - startedAtMs };
+      const candidate = { label: summaryLabel, durationMs: readyAtMs - startedAtMs };
       return slowest === undefined || candidate.durationMs > slowest.durationMs
         ? candidate
         : slowest;
@@ -118,7 +106,10 @@ function niceGanttStep(totalMs: number): number {
   return factor * magnitude;
 }
 
-function renderGanttAxis(totalMs: number): {
+function renderGanttAxis(
+  totalMs: number,
+  offsetMs = 0,
+): {
   labels: string;
   ruler: string;
   guidePositions: readonly number[];
@@ -133,8 +124,8 @@ function renderGanttAxis(totalMs: number): {
     }
   };
 
-  place("0", 0);
-  const totalLabel = String(Math.round(totalMs));
+  place(String(Math.round(offsetMs)), 0);
+  const totalLabel = String(Math.round(offsetMs + totalMs));
   const totalLabelStart = GANTT_WIDTH - totalLabel.length + 1;
   place(totalLabel, totalLabelStart);
   ruler[0] = "│";
@@ -143,7 +134,7 @@ function renderGanttAxis(totalMs: number): {
 
   const step = niceGanttStep(totalMs);
   for (let tickMs = step; tickMs < totalMs; tickMs += step) {
-    const text = String(Math.round(tickMs));
+    const text = String(Math.round(offsetMs + tickMs));
     const position = ganttPosition(tickMs, totalMs);
     const start = Math.max(0, position - Math.floor(text.length / 2));
     const end = start + text.length;
@@ -165,21 +156,32 @@ function renderGanttRow(
   endMs: number,
   segments: readonly GanttSegment[],
   guidePositions: readonly number[],
+  barOffsetMs = 0,
 ): string {
-  return `${label.padEnd(GANTT_LABEL_WIDTH)}${renderGanttBar(totalMs, segments, guidePositions)}  ${Math.round(startMs)} → ${Math.round(endMs)}  (${Math.round(endMs - startMs)} ms)`;
+  const barSegments = segments.map((segment) => ({
+    ...segment,
+    startMs: segment.startMs - barOffsetMs,
+    endMs: segment.endMs - barOffsetMs,
+  }));
+  return `${label.padEnd(GANTT_LABEL_WIDTH)}${renderGanttBar(totalMs, barSegments, guidePositions)}  ${Math.round(startMs)} → ${Math.round(endMs)}  (${Math.round(endMs - startMs)} ms)`;
 }
 
-function renderGanttMilestone(label: string, totalMs: number, atMs: number): string {
+function renderGanttMilestone(
+  label: string,
+  totalMs: number,
+  atMs: number,
+  barOffsetMs = 0,
+): string {
   const cells = Array<string>(GANTT_WIDTH + 1).fill(" ");
   cells[0] = "│";
   cells[GANTT_WIDTH] = "│";
-  cells[Math.max(1, Math.min(GANTT_WIDTH, ganttPosition(atMs, totalMs)))] = "▲";
+  cells[Math.max(1, Math.min(GANTT_WIDTH, ganttPosition(atMs - barOffsetMs, totalMs)))] = "▲";
   return `${label.padEnd(GANTT_LABEL_WIDTH)}${cells.join("")}  @ ${Math.round(atMs)} ms`;
 }
 
 function formatStartupGantt(report: StartupTimelineReport): string | undefined {
   const importsStartedAt = milestoneAt(report, "unified_imports_started");
-  const importsReadyAt = milestoneAt(report, "unified_modules_ready");
+  const importsReadyAt = importPhaseReadyAt(report);
   const inkStartedAt = milestoneAt(report, "cli_bindings_started");
   const inkReadyAt = milestoneAt(report, "ink_mounted");
   const runtimeReadyAt = milestoneAt(report, "runtime_ready");
@@ -262,15 +264,74 @@ function formatStartupGantt(report: StartupTimelineReport): string | undefined {
   ].join("\n");
 }
 
-/** Compact human-readable projection; the complete machine-readable report stays on stderr. */
-export function formatStartupTimelineSummary(report: StartupTimelineReport): string {
-  const gantt = formatStartupGantt(report);
-  if (gantt) return gantt;
+function formatImportsDrilldownGantt(report: StartupTimelineReport): string | undefined {
+  const importsStartedAt = milestoneAt(report, "unified_imports_started");
+  const importsReadyAt = importPhaseReadyAt(report);
+  if (
+    importsStartedAt === undefined ||
+    importsReadyAt === undefined ||
+    importsReadyAt <= importsStartedAt
+  ) {
+    return undefined;
+  }
 
+  const spans = moduleImportDefinitions.flatMap(([startedName, readyName, label]) => {
+    const readyAt = milestoneAt(report, readyName);
+    if (readyAt === undefined) return [];
+    return [
+      {
+        label,
+        startAt: milestoneAt(report, startedName) ?? importsStartedAt,
+        readyAt,
+      },
+    ];
+  });
+  if (spans.length === 0) return undefined;
+
+  const slowestReadyAt = Math.max(...spans.map((span) => span.readyAt));
+  const durationMs = importsReadyAt - importsStartedAt;
+  const axis = renderGanttAxis(durationMs, importsStartedAt);
+  const indent = " ".repeat(GANTT_LABEL_WIDTH);
+  const rows = [
+    `Imports drill-down: ${Math.round(durationMs)} ms`,
+    `${indent}${axis.labels}`,
+    `${indent}${axis.ruler}`,
+  ];
+  for (const span of spans) {
+    const fill = span.readyAt === slowestReadyAt ? "█" : "▒";
+    rows.push(
+      renderGanttRow(
+        span.label,
+        durationMs,
+        span.startAt,
+        span.readyAt,
+        [{ startMs: span.startAt, endMs: span.readyAt, fill }],
+        axis.guidePositions,
+        importsStartedAt,
+      ),
+    );
+  }
+  rows.push(
+    renderGanttMilestone("Import join", durationMs, importsReadyAt, importsStartedAt),
+    `${indent}█ determines import join · ▒ completes before join · ▲ milestone`,
+    `${indent}bars are wall-clock Promise spans, not exclusive CPU time`,
+  );
+  return rows.join("\n");
+}
+
+/** Compact human-readable projection; the complete machine-readable report stays on stderr. */
+export function formatStartupTimelineSummary(
+  report: StartupTimelineReport,
+  options: StartupTimelineSummaryOptions = {},
+): string {
+  const gantt = formatStartupGantt(report);
   const parts = [`Startup profile: ${Math.round(report.totalMs)} ms total`];
+  const envReadyAt = milestoneAt(report, "env_ready");
+  const importsReadyAt = importPhaseReadyAt(report);
   const modulesMs =
-    milestoneSpan(report, "env_ready", "unified_modules_ready") ??
-    milestoneDelta(report, "unified_modules_ready");
+    envReadyAt !== undefined && importsReadyAt !== undefined
+      ? importsReadyAt - envReadyAt
+      : undefined;
   if (modulesMs !== undefined) {
     const slowest = slowestModuleReady(report);
     const detail = slowest
@@ -301,101 +362,9 @@ export function formatStartupTimelineSummary(report: StartupTimelineReport): str
   if (inkMounted) {
     parts.push(`post-bindings ${Math.round(report.totalMs - inkMounted.atMs)} ms`);
   }
-  return `${parts.join(" · ")}.`;
+  const overview = gantt ?? `${parts.join(" · ")}.`;
+  const drilldown = options.drilldown ?? startupProfileDrilldown();
+  if (drilldown !== "imports") return overview;
+  const importsDrilldown = formatImportsDrilldownGantt(report);
+  return importsDrilldown === undefined ? overview : `${overview}\n\n${importsDrilldown}`;
 }
-
-interface StartupTimelineOptions {
-  readonly now?: () => number;
-  readonly enabled?: () => boolean;
-  readonly write?: (line: string) => void;
-  readonly isStderrTTY?: () => boolean;
-}
-
-function roundMs(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-function startupTimelineEnabled(): boolean {
-  // biome-ignore lint/style/noProcessEnv: profiling must be switchable before config/env loading.
-  const value = process.env[STARTUP_PROFILE_ENV]?.trim().toLowerCase();
-  return value === "1" || value === "true";
-}
-
-/**
- * Records process-relative startup milestones and emits one machine-readable report on finish.
- * `performance.now()` starts near process launch, so the first mark also includes static imports
- * evaluated before the CLI module body runs.
- */
-export function createStartupTimeline(options: StartupTimelineOptions = {}): {
-  mark: (name: string) => void;
-  finish: (name: string) => StartupTimelineReport | undefined;
-  emitLateMilestone: (name: string) => StartupTimelineLateMilestone | undefined;
-} {
-  const now = options.now ?? (() => performance.now());
-  const enabled = options.enabled ?? startupTimelineEnabled;
-  const write = options.write ?? ((line: string) => process.stderr.write(line));
-  const isStderrTTY = options.isStderrTTY ?? (() => process.stderr.isTTY === true);
-  const milestones: StartupMilestone[] = [];
-  const emittedLateMilestones = new Set<string>();
-  let finished = false;
-
-  const mark = (name: string): void => {
-    if (finished) return;
-    milestones.push({ name, atMs: roundMs(now()) });
-  };
-
-  const finish = (name: string): StartupTimelineReport | undefined => {
-    if (finished) return undefined;
-    mark(name);
-    finished = true;
-    if (!enabled()) return undefined;
-
-    let previousMs = 0;
-    const reportedMilestones = milestones.map((milestone) => {
-      const deltaMs = roundMs(milestone.atMs - previousMs);
-      previousMs = milestone.atMs;
-      return { ...milestone, deltaMs };
-    });
-    const report: StartupTimelineReport = {
-      type: "evil_jelly_startup_profile",
-      version: 1,
-      totalMs: reportedMilestones.at(-1)?.atMs ?? 0,
-      milestones: reportedMilestones,
-    };
-    // Ink patches stderr after mounting and renders writes as UI content. A full JSON line would
-    // then wrap across the prompt and distort the layout, while the compact report is already
-    // shown through Ink. Preserve machine output for pipes and failure diagnostics.
-    if (!isStderrTTY() || name === "process_exit") {
-      write(`[evil-jelly:startup-profile] ${JSON.stringify(report)}\n`);
-    }
-    return report;
-  };
-
-  const emitLateMilestone = (name: string): StartupTimelineLateMilestone | undefined => {
-    if (!finished || emittedLateMilestones.has(name) || !enabled()) return undefined;
-    emittedLateMilestones.add(name);
-    const atMs = roundMs(now());
-    const inputReadyMs = milestones.find((milestone) => milestone.name === "input_ready")?.atMs;
-    const event: StartupTimelineLateMilestone = {
-      type: "evil_jelly_startup_profile_late_milestone",
-      version: 1,
-      name,
-      atMs,
-      ...(inputReadyMs === undefined ? {} : { sinceInputReadyMs: roundMs(atMs - inputReadyMs) }),
-    };
-    // A late event can occur after the user has started editing. Keep raw machine output away
-    // from Ink's patched stderr just like the successful startup report.
-    if (!isStderrTTY()) {
-      write(`[evil-jelly:startup-profile-late] ${JSON.stringify(event)}\n`);
-    }
-    return event;
-  };
-
-  return { mark, finish, emitLateMilestone };
-}
-
-export const startupTimeline = createStartupTimeline();
-
-// A failed startup is often the case that most needs timing data. Normal interactive startup
-// finishes at `input_ready`; this is then a no-op when the process eventually exits.
-process.once("exit", () => startupTimeline.finish("process_exit"));

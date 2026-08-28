@@ -9,7 +9,7 @@ import {
 import { qualifiedSkillName } from "../../../../domains/skills/definition/skillDefinition";
 import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
-import { startupTimeline } from "../../../../shared/startupTimeline";
+import { startupTimeline } from "../../../../shared/profile/startup/timeline";
 import { createMcpChatRuntime } from "../../../mcp-runtime/mcpChatRuntime";
 import { buildConfiguredSkillRuntimeSnapshot } from "../../../skill-runtime/configuredRuntime";
 import { formatSkillRuntimeStartupSummary } from "../../../skill-runtime/startupSummary";

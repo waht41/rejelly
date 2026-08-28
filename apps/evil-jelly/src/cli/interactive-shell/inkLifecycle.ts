@@ -1,6 +1,6 @@
 import { type Instance, render } from "ink";
 import React from "react";
-import { startupTimeline } from "../../shared/startupTimeline";
+import { startupTimeline } from "../../shared/profile/startup/timeline";
 import { pruneClearedStaticTurns } from "../conversation-display/useOutputStore";
 import { cleanupStaleClipboardImages } from "./clipboard/clipboardImage";
 import { Dashboard } from "./Dashboard";
