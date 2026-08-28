@@ -126,6 +126,27 @@ describe("startup timeline", () => {
     );
   });
 
+  it("summarizes bindings when Ink mounts before session resolution", () => {
+    const times = [100, 110, 190, 200, 250, 300];
+    const timeline = createStartupTimeline({
+      now: () => times.shift()!,
+      enabled: () => true,
+      write: () => undefined,
+      isStderrTTY: () => false,
+    });
+
+    timeline.mark("cli_bindings_started");
+    timeline.mark("ink_render_started");
+    timeline.mark("ink_render_returned");
+    timeline.mark("ink_mounted");
+    timeline.mark("session_resolved");
+    const report = timeline.finish("input_ready");
+
+    expect(formatStartupTimelineSummary(report!)).toBe(
+      "Startup profile: 300 ms total · bindings+Ink 100 ms (render 80 ms) · post-bindings 100 ms.",
+    );
+  });
+
   it("stays silent when profiling is disabled", () => {
     const output: string[] = [];
     const timeline = createStartupTimeline({

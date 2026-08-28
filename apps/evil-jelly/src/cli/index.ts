@@ -4,6 +4,8 @@
 
 import { startupTimeline } from "../shared/startupTimeline";
 import { getCliVersion, parseCliArgs } from "./entry/args";
+import { createInteractiveRunControl } from "./entry/unified-run/interactive/runControl";
+import type { RunUnifiedOptions } from "./entry/unified-run/runUnified";
 
 startupTimeline.mark("cli_module_ready");
 
@@ -93,37 +95,77 @@ async function main() {
         startupTimeline.mark(readyMilestone);
         return imported;
       };
-      const [
-        { runUnified },
-        { createBackgroundHostBindings },
-        { createCliHostBindings },
-        { createOpenAIModelFromEnv },
-      ] = await Promise.all([
-        profiledImport("unified_run_module_ready", () => import("./entry/unified-run/runUnified")),
-        profiledImport(
-          "background_bindings_module_ready",
-          () => import("./bindings/backgroundBindings"),
-        ),
-        profiledImport("cli_bindings_module_ready", () => import("./bindings/cliBinding")),
-        profiledImport(
-          "model_composition_module_ready",
-          () => import("./model-composition/createModelFromEnv"),
-        ),
+      const runUnifiedImport = profiledImport(
+        "unified_run_module_ready",
+        () => import("./entry/unified-run/runUnified"),
+      );
+      const backgroundBindingsImport = profiledImport(
+        "background_bindings_module_ready",
+        () => import("./bindings/backgroundBindings"),
+      );
+      const cliBindingsImport = profiledImport(
+        "cli_bindings_module_ready",
+        () => import("./bindings/cliBinding"),
+      );
+      const modelCompositionImport = profiledImport(
+        "model_composition_module_ready",
+        () => import("./model-composition/createModelFromEnv"),
+      );
+      const unifiedImports = Promise.all([
+        runUnifiedImport,
+        backgroundBindingsImport,
+        cliBindingsImport,
+        modelCompositionImport,
       ]);
-      startupTimeline.mark("unified_modules_ready");
-      const proxyReady = startProfiledProxy();
-      await runUnified({
-        startup: args.startup,
-        headless: args.headless,
-        autoAccept: args.autoAccept,
-        review: args.review,
-        appVersion: getCliVersion(),
-        devtool: args.devtool,
-        createModel: createOpenAIModelFromEnv,
-        createBackgroundBindings: createBackgroundHostBindings,
-        createInteractiveBindings: createCliHostBindings,
-        proxyReady,
-      });
+      // The shell may own the foreground while another import fails. Observe the aggregate now;
+      // the later await still receives and reports the original rejection.
+      void unifiedImports.catch(() => undefined);
+
+      let preparedInteractiveShell: RunUnifiedOptions["preparedInteractiveShell"];
+      let shellOwnershipTransferred = false;
+      try {
+        if (!args.headless) {
+          const { createCliHostBindings } = await cliBindingsImport;
+          const runControl = createInteractiveRunControl();
+          preparedInteractiveShell = {
+            ...createCliHostBindings({
+              version: getCliVersion(),
+              seedInput: args.startup.seedInput,
+              reviewCliFlag: args.review,
+              runControl,
+            }),
+            runControl,
+          };
+          startupTimeline.mark("ink_mounted");
+        }
+
+        const [
+          { runUnified },
+          { createBackgroundHostBindings },
+          { createCliHostBindings },
+          { createOpenAIModelFromEnv },
+        ] = await unifiedImports;
+        startupTimeline.mark("unified_modules_ready");
+        const proxyReady = startProfiledProxy();
+        shellOwnershipTransferred = preparedInteractiveShell !== undefined;
+        await runUnified({
+          startup: args.startup,
+          headless: args.headless,
+          autoAccept: args.autoAccept,
+          review: args.review,
+          appVersion: getCliVersion(),
+          devtool: args.devtool,
+          createModel: createOpenAIModelFromEnv,
+          createBackgroundBindings: createBackgroundHostBindings,
+          createInteractiveBindings: createCliHostBindings,
+          proxyReady,
+          ...(preparedInteractiveShell ? { preparedInteractiveShell } : {}),
+        });
+      } finally {
+        if (!shellOwnershipTransferred) {
+          preparedInteractiveShell?.dispose();
+        }
+      }
       break;
     }
   }

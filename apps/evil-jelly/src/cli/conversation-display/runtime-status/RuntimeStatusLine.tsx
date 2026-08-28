@@ -14,6 +14,7 @@ const WORKING_DETAIL: Partial<Record<RuntimePhase, string>> = {
 };
 const NETWORK_PHASES = new Set<RuntimePhase>(["connecting", "compacting"]);
 const GENERIC_STATUS_DETAILS = new Set(["Ready", "Waiting for input"]);
+const STARTING_RUNTIME_DETAIL = "Starting runtime…";
 
 function useNowTick(active: boolean): number {
   const [now, setNow] = useState(() => Date.now());
@@ -61,6 +62,14 @@ export function RuntimeStatusLine() {
   }
 
   if (phase === "awaiting_user") {
+    if (detail === STARTING_RUNTIME_DETAIL) {
+      return (
+        <Box>
+          <Text color="gray">● </Text>
+          <Text color="gray">{STARTING_RUNTIME_DETAIL}</Text>
+        </Box>
+      );
+    }
     const detailSuffix = detail && !GENERIC_STATUS_DETAILS.has(detail) ? ` · ${detail}` : "";
     return (
       <Box>

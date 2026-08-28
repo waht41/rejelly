@@ -93,6 +93,14 @@ describe("RuntimeStatusLine", () => {
     expect(displayedSeconds(statusLine())).toBeNull();
   });
 
+  it("shows an untimed startup state while early input is being queued", () => {
+    setRuntime({ phase: "awaiting_user", detail: "Starting runtime…" });
+
+    expect(statusLine()).toContain("Starting runtime…");
+    expect(statusLine()).not.toContain("Waiting for you");
+    expect(displayedSeconds(statusLine())).toBeNull();
+  });
+
   it("names what the agent is waiting to be allowed to do", () => {
     setRuntime({ phase: "awaiting_user", detail: "shell → workspace root" });
     expect(statusLine()).toContain("shell → workspace root");

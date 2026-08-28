@@ -244,6 +244,7 @@ export function createCliHostBindings(options: CreateCliHostBindingsOptions): {
   const { version, seedInput, reviewCliFlag, runControl } = options;
   startupTimeline.mark("cli_bindings_started");
   resetCliBindingSession();
+  useOutputStore.getState().setPhase("awaiting_user", "Starting runtime…");
   startupTimeline.mark("cli_session_reset");
 
   const submission = createInteractiveSubmission(

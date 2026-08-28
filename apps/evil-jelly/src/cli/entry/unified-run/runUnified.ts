@@ -37,6 +37,12 @@ export interface RunUnifiedOptions {
   };
   /** Proxy dispatcher initialization started by the composition root after env resolution. */
   proxyReady: Promise<void>;
+  /** Interactive shell mounted by the composition root while the remaining runtime imports. */
+  preparedInteractiveShell?: {
+    bindings: EvilJellyBindings;
+    dispose: () => void;
+    runControl: InteractiveRunControl;
+  };
 }
 
 export async function runUnified(options: RunUnifiedOptions): Promise<void> {
@@ -64,46 +70,53 @@ export async function runUnified(options: RunUnifiedOptions): Promise<void> {
     process.exit(process.exitCode ?? 0);
   }
 
-  const { sessionId, resumeSeed } = await resolveInitialSession({
-    resume: startup.kind === "resume",
-    resumeSessionId: startup.kind === "resume" ? startup.sessionId : undefined,
-    appVersion,
-  });
-  startupTimeline.mark("session_resolved");
-
-  const runControl = createInteractiveRunControl();
-  const { bindings, dispose } = options.createInteractiveBindings({
-    version: appVersion,
-    seedInput: startup.seedInput,
-    reviewCliFlag: options.review,
-    runControl,
-  });
-  startupTimeline.mark("ink_mounted");
-  const mockTraceId = startup.kind === "mock" ? startup.traceId : undefined;
-  const mockReplay = mockTraceId ? await loadMockReplayFromTraceId(mockTraceId) : undefined;
-  if (mockReplay) {
-    bindings.logSystemEvent(
-      `Mock replay loaded from trace ${mockTraceId} (${mockReplay.sequenceLength} model turn(s)).\n`,
-    );
-    if (startup.kind === "mock" && startup.enqueueTraceInputs) {
-      for (const input of mockReplay.inputs) {
-        enqueueMainInput(textPromptInput(input));
-      }
-      bindings.logSystemEvent(
-        mockReplay.inputs.length > 0
-          ? `Queued ${mockReplay.inputs.length} user input(s) from trace.\n`
-          : "No user inputs found in trace; falling back to manual input.\n",
-      );
-    }
-  }
-  const snapshot =
-    mockReplay?.snapshot ??
-    (await loadStartupSnapshot(
-      startup.kind === "snapshot" ? startup.traceId : undefined,
-      bindings,
-    ));
-  const model = mockReplay?.model ?? options.createModel();
+  let interactiveShell = options.preparedInteractiveShell;
   try {
+    const { sessionId, resumeSeed } = await resolveInitialSession({
+      resume: startup.kind === "resume",
+      resumeSessionId: startup.kind === "resume" ? startup.sessionId : undefined,
+      appVersion,
+    });
+    startupTimeline.mark("session_resolved");
+
+    if (!interactiveShell) {
+      const runControl = createInteractiveRunControl();
+      interactiveShell = {
+        ...options.createInteractiveBindings({
+          version: appVersion,
+          seedInput: startup.seedInput,
+          reviewCliFlag: options.review,
+          runControl,
+        }),
+        runControl,
+      };
+      startupTimeline.mark("ink_mounted");
+    }
+    const { bindings, runControl } = interactiveShell;
+    const mockTraceId = startup.kind === "mock" ? startup.traceId : undefined;
+    const mockReplay = mockTraceId ? await loadMockReplayFromTraceId(mockTraceId) : undefined;
+    if (mockReplay) {
+      bindings.logSystemEvent(
+        `Mock replay loaded from trace ${mockTraceId} (${mockReplay.sequenceLength} model turn(s)).\n`,
+      );
+      if (startup.kind === "mock" && startup.enqueueTraceInputs) {
+        for (const input of mockReplay.inputs) {
+          enqueueMainInput(textPromptInput(input));
+        }
+        bindings.logSystemEvent(
+          mockReplay.inputs.length > 0
+            ? `Queued ${mockReplay.inputs.length} user input(s) from trace.\n`
+            : "No user inputs found in trace; falling back to manual input.\n",
+        );
+      }
+    }
+    const snapshot =
+      mockReplay?.snapshot ??
+      (await loadStartupSnapshot(
+        startup.kind === "snapshot" ? startup.traceId : undefined,
+        bindings,
+      ));
+    const model = mockReplay?.model ?? options.createModel();
     await options.proxyReady;
     await runInteractiveLoop({
       bindings,
@@ -119,7 +132,7 @@ export async function runUnified(options: RunUnifiedOptions): Promise<void> {
       dynamicMcpServers,
     });
   } finally {
-    dispose();
+    interactiveShell?.dispose();
   }
 
   process.stdout.write("\n");

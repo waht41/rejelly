@@ -88,9 +88,15 @@ export function formatStartupTimelineSummary(report: StartupTimelineReport): str
   if (envMs !== undefined) {
     parts.push(`env ${Math.round(envMs)} ms`);
   }
+  const sessionResolvedAt = milestoneAt(report, "session_resolved");
+  const inkMountedAt = milestoneAt(report, "ink_mounted");
   const bindingsMs =
-    milestoneSpan(report, "session_resolved", "ink_mounted") ??
-    milestoneDelta(report, "ink_mounted");
+    sessionResolvedAt !== undefined &&
+    inkMountedAt !== undefined &&
+    sessionResolvedAt <= inkMountedAt
+      ? inkMountedAt - sessionResolvedAt
+      : (milestoneSpan(report, "cli_bindings_started", "ink_mounted") ??
+        milestoneDelta(report, "ink_mounted"));
   if (bindingsMs !== undefined) {
     const renderMs = milestoneSpan(report, "ink_render_started", "ink_render_returned");
     const detail = renderMs === undefined ? "" : ` (render ${Math.round(renderMs)} ms)`;
