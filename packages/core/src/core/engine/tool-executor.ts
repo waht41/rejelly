@@ -434,6 +434,7 @@ async function runSingleTool(
   tool: ToolDefinition,
   args: JsonObject,
   ctx?: AgentContext,
+  toolCallId?: string,
 ): Promise<RunSingleToolResult> {
   // Validate with Zod schema
   const parseResult = tool.parameters.safeParse(args);
@@ -456,8 +457,8 @@ async function runSingleTool(
     description: tool.description,
     metadata: {
       agentId: ctx?.agentId || "",
-      sessionId: ctx?.trace?.traceId,
       traceId: ctx?.trace?.traceId,
+      toolCallId,
       fromCache: false,
     },
     definition: tool,
@@ -533,7 +534,7 @@ async function executeSingleToolCore(
   const elapsed = startTimer();
 
   try {
-    const result = await runSingleTool(tool, args, ctx);
+    const result = await runSingleTool(tool, args, ctx, callId);
     return {
       content: result.content,
       rawOutput: result.rawOutput,
