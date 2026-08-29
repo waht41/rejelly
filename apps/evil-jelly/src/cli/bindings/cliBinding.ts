@@ -13,6 +13,7 @@ import type {
 import type { AgentModeBindings } from "../../shared/host/modeBindings";
 import type { ConversationPresentationBindings } from "../../shared/host/presentationBindings";
 import type { ToolConfirmationBindings } from "../../shared/host/toolConfirmationBindings";
+import { dispatchStartupReadyTasks } from "../../shared/profile/startup/readyTasks";
 import { formatStartupTimelineSummary } from "../../shared/profile/startup/summary";
 import { startupTimeline } from "../../shared/profile/startup/timeline";
 import { resetInterruptibleTaskStack } from "../../shared/task-interruption/taskStack";
@@ -268,6 +269,7 @@ export function createCliHostBindings(options: CreateCliHostBindingsOptions): {
       if (startupReport) {
         outputBindings.logSystemEvent(formatStartupTimelineSummary(startupReport));
       }
+      dispatchStartupReadyTasks();
       return submission.getInput();
     },
     suspendInkForExternalProcess: lifecycle.suspendForExternalProcess,

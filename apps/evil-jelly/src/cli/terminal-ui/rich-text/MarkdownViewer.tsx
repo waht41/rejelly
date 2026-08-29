@@ -1,6 +1,6 @@
 import { link as terminalLink } from "ansi-escapes";
 import { Box, Text } from "ink";
-import type { ReactNode } from "react";
+import { type ReactNode, useSyncExternalStore } from "react";
 import stringWidth from "string-width";
 import wrapAnsi from "wrap-ansi";
 import { normalizeNewlines } from "../../../shared/foundation/string";
@@ -13,7 +13,11 @@ import {
   phrasingText,
   type TableAlignment,
 } from "./markdownParser";
-import { highlightCodeLines } from "./syntaxHighlight";
+import {
+  highlightCodeLines,
+  subscribeSyntaxHighlighter,
+  syntaxHighlighterSnapshot,
+} from "./syntaxHighlight";
 
 const MAX_RENDER_BLOCKS = 500;
 const MIN_TABLE_COLUMN_WIDTH = 3;
@@ -654,6 +658,38 @@ export function StreamMarkdownViewer({ text, columns }: { text: string; columns:
   );
 }
 
+function MarkdownCodeBlock({
+  lines,
+  language,
+  marginTop,
+  keyPrefix,
+}: {
+  lines: string[];
+  language?: string;
+  marginTop: number;
+  keyPrefix: string;
+}) {
+  useSyncExternalStore(
+    subscribeSyntaxHighlighter,
+    syntaxHighlighterSnapshot,
+    syntaxHighlighterSnapshot,
+  );
+  const highlightedLines = highlightCodeLines(lines, language);
+  return (
+    <Box flexDirection="column" marginTop={marginTop}>
+      {highlightedLines.length > 0 ? (
+        highlightedLines.map((line, lineIndex) => (
+          <Text key={`${keyPrefix}-${lineIndex}`} wrap="hard">
+            {line.length > 0 ? withTerminalLinks(line) : " "}
+          </Text>
+        ))
+      ) : (
+        <Text> </Text>
+      )}
+    </Box>
+  );
+}
+
 export function MarkdownViewer({ text, columns }: { text: string; columns: number }) {
   const blocks = parseMarkdownBlocks(text);
   const truncated = blocks.length > MAX_RENDER_BLOCKS;
@@ -760,19 +796,14 @@ export function MarkdownViewer({ text, columns }: { text: string; columns: numbe
           );
         }
         if (block.type === "code") {
-          const lines = highlightCodeLines(block.lines, block.language);
           return (
-            <Box key={key} flexDirection="column" marginTop={index === 0 ? 0 : 1}>
-              {lines.length > 0 ? (
-                lines.map((line, lineIndex) => (
-                  <Text key={`${key}-${lineIndex}`} wrap="hard">
-                    {line.length > 0 ? withTerminalLinks(line) : " "}
-                  </Text>
-                ))
-              ) : (
-                <Text> </Text>
-              )}
-            </Box>
+            <MarkdownCodeBlock
+              key={key}
+              lines={block.lines}
+              language={block.language}
+              marginTop={index === 0 ? 0 : 1}
+              keyPrefix={key}
+            />
           );
         }
         return (

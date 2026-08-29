@@ -1,12 +1,20 @@
-import { highlight, supportsLanguage, type Theme } from "cli-highlight";
+import { registerStartupReadyTask } from "../../../shared/profile/startup/readyTasks";
 import { DIFF_COLORS } from "./diffTheme";
 
 const MAX_HIGHLIGHT_BYTES = 512 * 1024;
 const MAX_HIGHLIGHT_LINES = 10_000;
 const MAX_HIGHLIGHT_LINE_BYTES = 4 * 1024;
+const HIGHLIGHT_WARMUP_DELAY_MS = 250;
 const ANSI_FOREGROUND_RESET = "\u001B[39m";
 
 type ColorFormatter = (text: string) => string;
+type SyntaxHighlighter = (lines: string[], language: string) => string[];
+type SyntaxHighlightListener = () => void;
+
+let highlighter: SyntaxHighlighter | undefined;
+let highlighterLoad: Promise<void> | undefined;
+let snapshotVersion = 0;
+const listeners = new Set<SyntaxHighlightListener>();
 
 function rgb(red: number, green: number, blue: number): ColorFormatter {
   const open = `\u001B[38;2;${red};${green};${blue}m`;
@@ -24,6 +32,18 @@ const DIFF_FORMATTERS = {
   hunk: hex(DIFF_COLORS.hunk),
   meta: hex(DIFF_COLORS.meta),
 };
+
+function normalizedLanguage(language: string): string {
+  return language.trim().split(/[,\s]/, 1)[0]?.toLowerCase() ?? "";
+}
+
+function exceedsHighlightLimits(code: string, lines: string[]): boolean {
+  return (
+    Buffer.byteLength(code) > MAX_HIGHLIGHT_BYTES ||
+    lines.length > MAX_HIGHLIGHT_LINES ||
+    lines.some((line) => Buffer.byteLength(line) > MAX_HIGHLIGHT_LINE_BYTES)
+  );
+}
 
 function highlightDiffLines(lines: string[]): string[] {
   return lines.map((line) => {
@@ -48,92 +68,54 @@ function highlightDiffLines(lines: string[]): string[] {
   });
 }
 
-// Catppuccin Mocha keeps the same low-contrast, background-free character as
-// Codex's adaptive dark-terminal default. Only foreground colors are emitted,
-// so the code remains readable against the user's own terminal palette.
-const CATPPUCCIN_MOCHA_THEME: Theme = {
-  keyword: rgb(203, 166, 247),
-  built_in: rgb(243, 139, 168),
-  type: rgb(249, 226, 175),
-  literal: rgb(250, 179, 135),
-  number: rgb(250, 179, 135),
-  regexp: rgb(243, 139, 168),
-  string: rgb(166, 227, 161),
-  subst: rgb(137, 220, 235),
-  symbol: rgb(242, 205, 205),
-  class: rgb(249, 226, 175),
-  function: rgb(137, 180, 250),
-  title: rgb(137, 180, 250),
-  comment: rgb(108, 112, 134),
-  doctag: rgb(148, 226, 213),
-  meta: rgb(250, 179, 135),
-  "meta-keyword": rgb(203, 166, 247),
-  "meta-string": rgb(166, 227, 161),
-  section: rgb(137, 180, 250),
-  tag: rgb(203, 166, 247),
-  name: rgb(137, 180, 250),
-  "builtin-name": rgb(243, 139, 168),
-  attr: rgb(249, 226, 175),
-  attribute: rgb(137, 220, 235),
-  variable: rgb(205, 214, 244),
-  bullet: rgb(249, 226, 175),
-  code: rgb(166, 227, 161),
-  formula: rgb(148, 226, 213),
-  link: rgb(137, 180, 250),
-  quote: rgb(166, 173, 200),
-  "selector-tag": rgb(203, 166, 247),
-  "selector-id": rgb(137, 180, 250),
-  "selector-class": rgb(249, 226, 175),
-  "selector-attr": rgb(148, 226, 213),
-  "selector-pseudo": rgb(245, 194, 231),
-  "template-tag": rgb(203, 166, 247),
-  "template-variable": rgb(137, 220, 235),
-  addition: rgb(166, 227, 161),
-  deletion: rgb(243, 139, 168),
-};
-
-const LANGUAGE_ALIASES: Record<string, string> = {
-  csharp: "cs",
-  "c-sharp": "cs",
-  golang: "go",
-  python3: "python",
-  shell: "bash",
-};
-
-function normalizedLanguage(language: string): string {
-  const token = language.trim().split(/[,\s]/, 1)[0]?.toLowerCase() ?? "";
-  return LANGUAGE_ALIASES[token] ?? token;
+function notifyHighlighterReady(): void {
+  snapshotVersion += 1;
+  for (const listener of listeners) listener();
 }
 
-function exceedsHighlightLimits(code: string, lines: string[]): boolean {
-  return (
-    Buffer.byteLength(code) > MAX_HIGHLIGHT_BYTES ||
-    lines.length > MAX_HIGHLIGHT_LINES ||
-    lines.some((line) => Buffer.byteLength(line) > MAX_HIGHLIGHT_LINE_BYTES)
-  );
+/**
+ * Loads the optional syntax engine once. A failed warmup intentionally leaves
+ * code blocks as plain text rather than affecting the CLI or retrying forever.
+ */
+export function warmSyntaxHighlighter(): Promise<void> {
+  highlighterLoad ??= import("./syntaxHighlightRuntime")
+    .then((runtime) => {
+      highlighter = runtime.highlightCodeLines;
+      notifyHighlighterReady();
+    })
+    .catch(() => undefined);
+  return highlighterLoad;
 }
 
+export function subscribeSyntaxHighlighter(listener: SyntaxHighlightListener): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+export function syntaxHighlighterSnapshot(): number {
+  return snapshotVersion;
+}
+
+/**
+ * Diff fences stay available on the lightweight startup path. Other languages
+ * render plainly until the background syntax engine becomes ready.
+ */
 export function highlightCodeLines(lines: string[], language?: string): string[] {
-  if (!language || lines.length === 0) {
-    return lines;
-  }
+  if (!language || lines.length === 0) return lines;
 
   const code = lines.join("\n");
   const normalized = normalizedLanguage(language);
   if (normalized === "diff") {
     return exceedsHighlightLimits(code, lines) ? lines : highlightDiffLines(lines);
   }
-  if (!normalized || !supportsLanguage(normalized) || exceedsHighlightLimits(code, lines)) {
-    return lines;
-  }
+  if (!normalized || !highlighter || exceedsHighlightLimits(code, lines)) return lines;
 
-  try {
-    return highlight(code, {
-      language: normalized,
-      ignoreIllegals: true,
-      theme: CATPPUCCIN_MOCHA_THEME,
-    }).split("\n");
-  } catch {
-    return lines;
-  }
+  return highlighter(lines, normalized);
 }
+
+registerStartupReadyTask(() => {
+  const timer = setTimeout(() => {
+    void warmSyntaxHighlighter();
+  }, HIGHLIGHT_WARMUP_DELAY_MS);
+  timer.unref();
+});

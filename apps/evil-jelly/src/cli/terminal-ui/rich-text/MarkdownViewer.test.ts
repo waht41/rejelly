@@ -11,6 +11,7 @@ import {
   terminalCellWidth,
 } from "./MarkdownViewer";
 import { parseMarkdownBlocks } from "./markdownParser";
+import { warmSyntaxHighlighter } from "./syntaxHighlight";
 
 function renderedInlineText(markdown: string): string {
   const [block] = parseMarkdownBlocks(markdown);
@@ -337,11 +338,18 @@ describe("inline emphasis from the block AST", () => {
 });
 
 describe("MarkdownViewer code blocks", () => {
-  it("syntax-highlights known languages without a border or language label", () => {
+  it("renders plainly before warmup, then highlights known languages", async () => {
     const code = ["interface User {", "  active: boolean;", '  name: "Alice";', "}"];
+    const text = ["```typescript", ...code, "```"].join("\n");
+    const plainOutput = renderToString(createElement(MarkdownViewer, { text, columns: 80 }), {
+      columns: 80,
+    });
+
+    expect(plainOutput).toBe(code.join("\n"));
+    await warmSyntaxHighlighter();
     const output = renderToString(
       createElement(MarkdownViewer, {
-        text: ["```typescript", ...code, "```"].join("\n"),
+        text,
         columns: 80,
       }),
       { columns: 80 },
