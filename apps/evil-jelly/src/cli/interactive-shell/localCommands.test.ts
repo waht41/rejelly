@@ -48,6 +48,29 @@ describe("interactive commands", () => {
     expect(ports.logSystem).toHaveBeenCalledWith(expect.stringContaining("#2 read_file"));
   });
 
+  it("labels an expanded proposal that was not applied", () => {
+    const ports = createPorts({
+      listTools: () => [
+        {
+          ordinal: 4,
+          toolName: "edit_file",
+          summary: "Edit config",
+          detail: {
+            type: "diff",
+            text: "--- a.ts\n+++ a.ts\n@@\n-old\n+new",
+            phase: "proposed",
+          },
+          fullResult: "Write denied by user; files unchanged.",
+        },
+      ],
+    });
+
+    expect(createInteractiveCommandHandler(ports)("/expand-tool #4")).toBe(true);
+    expect(ports.logSystem).toHaveBeenCalledWith(
+      expect.stringContaining("Proposed diff (not applied)"),
+    );
+  });
+
   it("copies the last assistant message", async () => {
     const copyText = vi.fn(async () => {});
     const ports = createPorts({ getLastAssistantMessage: () => "raw markdown", copyText });

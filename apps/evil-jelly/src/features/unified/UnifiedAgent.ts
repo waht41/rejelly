@@ -44,6 +44,7 @@ import {
   createEditFileTool,
 } from "../../domains/workspace/write/WriteTools";
 import { getBinding } from "../../shared/host/context";
+import { recordAppliedToolDiff } from "../../shared/tool-observation/invocationContext";
 import { evilJellyToolLoggerMiddleware } from "../../shared/tool-observation/middleware";
 import { buildAutoCompactionConfig } from "./contextControl";
 import type { ConversationAgentProps, ConversationAgentResult } from "./conversationRun";
@@ -70,11 +71,14 @@ async function useUnifiedTools(props: ConversationAgentProps): Promise<void> {
   const memoryRuntime = expectResource<SessionMemoryRuntime>(MEMORY_RUNTIME_PROVIDER_KEY, {
     optional: true,
   });
-  const editTool = augmentTool(createEditFileTool(confirmTool), [evilJellyToolLoggerMiddleware]);
-  const createTool = augmentTool(createCreateFileTool(confirmTool), [
+  const writeObservation = { recordAppliedDiff: recordAppliedToolDiff };
+  const editTool = augmentTool(createEditFileTool(confirmTool, writeObservation), [
     evilJellyToolLoggerMiddleware,
   ]);
-  const deleteTool = augmentTool(createDeleteFileTool(confirmTool), [
+  const createTool = augmentTool(createCreateFileTool(confirmTool, writeObservation), [
+    evilJellyToolLoggerMiddleware,
+  ]);
+  const deleteTool = augmentTool(createDeleteFileTool(confirmTool, writeObservation), [
     evilJellyToolLoggerMiddleware,
   ]);
 

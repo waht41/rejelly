@@ -1,4 +1,5 @@
 import { highlight, supportsLanguage, type Theme } from "cli-highlight";
+import { DIFF_COLORS } from "./diffTheme";
 
 const MAX_HIGHLIGHT_BYTES = 512 * 1024;
 const MAX_HIGHLIGHT_LINES = 10_000;
@@ -10,6 +11,41 @@ type ColorFormatter = (text: string) => string;
 function rgb(red: number, green: number, blue: number): ColorFormatter {
   const open = `\u001B[38;2;${red};${green};${blue}m`;
   return (text) => (text.length > 0 ? `${open}${text}${ANSI_FOREGROUND_RESET}` : text);
+}
+
+function hex(color: string): ColorFormatter {
+  const value = Number.parseInt(color.slice(1), 16);
+  return rgb((value >> 16) & 255, (value >> 8) & 255, value & 255);
+}
+
+const DIFF_FORMATTERS = {
+  addition: hex(DIFF_COLORS.addition),
+  deletion: hex(DIFF_COLORS.deletion),
+  hunk: hex(DIFF_COLORS.hunk),
+  meta: hex(DIFF_COLORS.meta),
+};
+
+function highlightDiffLines(lines: string[]): string[] {
+  return lines.map((line) => {
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      return DIFF_FORMATTERS.addition(line);
+    }
+    if (line.startsWith("-") && !line.startsWith("---")) {
+      return DIFF_FORMATTERS.deletion(line);
+    }
+    if (line.startsWith("@@")) {
+      return DIFF_FORMATTERS.hunk(line);
+    }
+    if (
+      line.startsWith("diff --git ") ||
+      line.startsWith("index ") ||
+      line.startsWith("--- ") ||
+      line.startsWith("+++ ")
+    ) {
+      return DIFF_FORMATTERS.meta(line);
+    }
+    return line;
+  });
 }
 
 // Catppuccin Mocha keeps the same low-contrast, background-free character as
@@ -84,6 +120,9 @@ export function highlightCodeLines(lines: string[], language?: string): string[]
 
   const code = lines.join("\n");
   const normalized = normalizedLanguage(language);
+  if (normalized === "diff") {
+    return exceedsHighlightLimits(code, lines) ? lines : highlightDiffLines(lines);
+  }
   if (!normalized || !supportsLanguage(normalized) || exceedsHighlightLimits(code, lines)) {
     return lines;
   }

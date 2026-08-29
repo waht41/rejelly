@@ -1,3 +1,8 @@
+import {
+  type DiffLineKind,
+  projectDiffForDisplay,
+} from "../../terminal-ui/rich-text/diffProjection";
+import { DIFF_COLORS } from "../../terminal-ui/rich-text/diffTheme";
 import type { ToolBlock, Turn } from "../history/model";
 
 export interface ToolTranscriptEntry {
@@ -11,6 +16,10 @@ export interface ToolTranscriptRenderLine {
   text: string;
   color?: string;
   dim?: boolean;
+  gutter?: string;
+  marker?: string;
+  content?: string;
+  continuation?: boolean;
 }
 
 export function buildToolTranscriptEntries(history: readonly Turn[]): ToolTranscriptEntry[] {
@@ -44,40 +53,38 @@ function appendVisualLines(
   }
 }
 
-function getDiffLineStyle(line: string): Pick<ToolTranscriptRenderLine, "color" | "dim"> {
-  if (line.startsWith("+") && !line.startsWith("+++")) {
-    return { color: "green" };
+function getDiffLineStyle(kind: DiffLineKind): Pick<ToolTranscriptRenderLine, "color" | "dim"> {
+  if (kind === "addition") {
+    return { color: DIFF_COLORS.addition };
   }
-  if (line.startsWith("-") && !line.startsWith("---")) {
-    return { color: "red" };
+  if (kind === "deletion") {
+    return { color: DIFF_COLORS.deletion };
   }
-  if (line.startsWith("@@")) {
-    return { color: "cyan" };
+  if (kind === "hunk") {
+    return { color: DIFF_COLORS.hunk };
   }
-  if (line.startsWith("---") || line.startsWith("+++")) {
-    return { dim: true };
+  if (kind === "meta" || kind === "fold") {
+    return { color: DIFF_COLORS.meta, dim: true };
   }
   return {};
 }
 
-function appendFramedDiffLines(
+function appendDiffLines(
   target: ToolTranscriptRenderLine[],
   diffText: string,
   columns: number,
 ): void {
-  const width = Math.max(8, columns);
-  const innerWidth = Math.max(1, width - 4);
-  const border = "─".repeat(width - 2);
-  target.push({ text: `╭${border}╮`, dim: true });
-  for (const rawLine of diffText.split("\n")) {
-    const line = rawLine || " ";
-    const style = getDiffLineStyle(line);
-    for (let offset = 0; offset < line.length; offset += innerWidth) {
-      const segment = line.slice(offset, offset + innerWidth).padEnd(innerWidth, " ");
-      target.push({ text: `│ ${segment} │`, ...style });
-    }
+  for (const line of projectDiffForDisplay(diffText, columns)) {
+    const style = getDiffLineStyle(line.kind);
+    target.push({
+      text: line.text,
+      gutter: line.gutter,
+      marker: line.marker,
+      content: line.content,
+      continuation: line.continuation,
+      ...style,
+    });
   }
-  target.push({ text: `╰${border}╯`, dim: true });
 }
 
 /** Project one completed tool call into fixed visual rows for the detail viewport. */
@@ -96,8 +103,12 @@ export function buildToolTranscriptDetailLines(
     if (entry.tool.detail.caption) {
       allLines.push({ text: entry.tool.detail.caption, dim: true });
     }
-    allLines.push({ text: "Diff", color: "cyan" });
-    appendFramedDiffLines(allLines, entry.tool.detail.text, columns);
+    allLines.push({
+      text:
+        entry.tool.detail.phase === "proposed" ? "Proposed diff (not applied)" : "Applied changes",
+      color: "cyan",
+    });
+    appendDiffLines(allLines, entry.tool.detail.text, columns);
   } else if (entry.tool.args !== undefined && entry.tool.args.trim().length > 0) {
     allLines.push({ text: " ", dim: true });
     allLines.push({ text: "Arguments", color: "cyan" });

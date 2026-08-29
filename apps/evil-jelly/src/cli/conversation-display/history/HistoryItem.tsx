@@ -132,13 +132,19 @@ export function HistoryItem({ turn, columns }: { turn: Turn; columns: number }) 
           text={turn.diff.text}
           caption={turn.diff.caption}
           captionTitle={turn.diff.captionTitle}
+          columns={columns}
         />
       </Box>
     );
   }
   if (turn.type === "tool") {
-    const { summary, preview, fullResult, ok, ordinal } = turn.tool;
+    const { summary, preview, fullResult, ok, ordinal, detail } = turn.tool;
     const previewLines = compactToolPreview(preview, fullResult, ordinal);
+    const inlineDiff =
+      detail?.type === "diff" &&
+      detail.phase === "applied" &&
+      detail.presentation === "inline" &&
+      detail.text.trim().length > 0;
     return (
       // `<Static>` lays its children out at their content width, not the
       // terminal's, so a truncating child is measured against the full width and
@@ -166,6 +172,16 @@ export function HistoryItem({ turn, columns }: { turn: Turn; columns: number }) 
                 {line}
               </Text>
             ))}
+          </Box>
+        ) : null}
+        {inlineDiff ? (
+          <Box marginTop={1} marginBottom={1}>
+            <DiffBlock
+              text={detail.text}
+              caption={detail.caption}
+              captionTitle={detail.captionTitle}
+              columns={columns}
+            />
           </Box>
         ) : null}
       </Box>

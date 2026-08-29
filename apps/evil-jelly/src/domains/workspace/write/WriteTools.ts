@@ -28,6 +28,21 @@ const MAX_WRITE_BYTES = MAX_READ_BYTES_PER_CALL;
 const REFACTOR_WRITE_ACTIONS: WriteActionType[] = ["accept", "reject", "edit", "retry"];
 const BATCH_REFACTOR_WRITE_ACTIONS: WriteActionType[] = ["accept", "reject", "retry"];
 
+export type WriteToolObservationOptions = {
+  recordAppliedDiff?: (detail: { text: string; caption?: string }) => void;
+};
+
+function recordAppliedPatches(
+  options: WriteToolObservationOptions,
+  patches: string[],
+  caption?: string,
+): void {
+  const text = patches.filter((patch) => patch.trim().length > 0).join("\n");
+  if (text.length > 0) {
+    options.recordAppliedDiff?.({ text, ...(caption ? { caption } : {}) });
+  }
+}
+
 const editBlockSchema = z.object({
   searchBlock: z
     .string()
@@ -99,54 +114,61 @@ type ExistingDeleteTarget = {
   size: number;
 };
 
-async function buildDeleteUnifiedDiff(
+async function prepareDeleteTargets(
   policy: WorkspaceFsPolicy,
   targets: ExistingDeleteTarget[],
-): Promise<string> {
-  const chunks: string[] = [];
+): Promise<Array<{ target: ExistingDeleteTarget; patch: string }>> {
+  const prepared: Array<{ target: ExistingDeleteTarget; patch: string }> = [];
   for (const target of targets) {
     if (target.isDirectory) {
-      chunks.push(
-        `diff --git a/${target.filePath} b/${target.filePath}\n` +
+      prepared.push({
+        target,
+        patch:
+          `diff --git a/${target.filePath} b/${target.filePath}\n` +
           `deleted directory mode 040000\n` +
-          `--- a/${target.filePath}\n` +
+          `--- ${target.filePath}\n` +
           "+++ /dev/null\n",
-      );
+      });
       continue;
     }
 
     if (target.size > MAX_WRITE_BYTES) {
-      chunks.push(
-        `diff --git a/${target.filePath} b/${target.filePath}\n` +
+      prepared.push({
+        target,
+        patch:
+          `diff --git a/${target.filePath} b/${target.filePath}\n` +
           `deleted file mode 100644\n` +
-          `--- a/${target.filePath}\n` +
+          `--- ${target.filePath}\n` +
           "+++ /dev/null\n" +
           "@@\n" +
           `-<content omitted: ${target.size} bytes exceeds ${MAX_WRITE_BYTES} preview limit>\n`,
-      );
+      });
       continue;
     }
 
     try {
       const raw = await policy.readFile(target.rel);
-      chunks.push(makePatch(target.filePath, raw, ""));
+      prepared.push({ target, patch: makePatch(target.filePath, raw, "") });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      chunks.push(
-        `diff --git a/${target.filePath} b/${target.filePath}\n` +
+      prepared.push({
+        target,
+        patch:
+          `diff --git a/${target.filePath} b/${target.filePath}\n` +
           `deleted file mode 100644\n` +
-          `--- a/${target.filePath}\n` +
+          `--- ${target.filePath}\n` +
           "+++ /dev/null\n" +
           "@@\n" +
           `-<failed to read file for preview: ${msg}>\n`,
-      );
+      });
     }
   }
-  return chunks.join("\n");
+  return prepared;
 }
 
 export function createEditFileTool(
   confirmWrite: ToolConfirmationHandler,
+  observation: WriteToolObservationOptions = {},
 ): ToolDefinition<typeof editFileParameters> {
   return {
     name: "edit_file",
@@ -249,12 +271,21 @@ export function createEditFileTool(
         return "Host returned action=edit for batch mode, which is unsupported. Retry with accept/reject/retry.";
       }
 
+      const appliedPatches: string[] = [];
       for (let i = 0; i < preparedTargets.length; i += 1) {
         const target = preparedTargets[i]!;
         const contentToWrite =
           decision.action === "edit" && i === 0 ? decision.modifiedContent : target.newContent;
         try {
           await policy.writeResolved(target.resolved, contentToWrite);
+          appliedPatches.push(makePatch(target.filePath, target.raw, contentToWrite));
+          recordAppliedPatches(
+            observation,
+            appliedPatches,
+            isBatch
+              ? `Applied edit across ${appliedPatches.length} of ${preparedTargets.length} files`
+              : undefined,
+          );
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : String(e);
           return `Failed to write file ${target.filePath}: ${msg}`;
@@ -272,6 +303,7 @@ export function createEditFileTool(
 
 export function createCreateFileTool(
   confirmWrite: ToolConfirmationHandler,
+  observation: WriteToolObservationOptions = {},
 ): ToolDefinition<typeof createFileParameters> {
   return {
     name: "create_file",
@@ -359,6 +391,7 @@ export function createCreateFileTool(
         return "Host returned action=edit for batch mode, which is unsupported. Retry with accept/reject/retry.";
       }
 
+      const appliedPatches: string[] = [];
       for (let i = 0; i < preparedTargets.length; i += 1) {
         const target = preparedTargets[i]!;
         const contentToWrite =
@@ -376,6 +409,14 @@ export function createCreateFileTool(
             await policy.mkdirResolved(parentResolved, { recursive: true });
           }
           await policy.writeNewResolved(target.resolved, contentToWrite);
+          appliedPatches.push(makePatch(target.filePath, "", contentToWrite));
+          recordAppliedPatches(
+            observation,
+            appliedPatches,
+            isBatch
+              ? `Applied create across ${appliedPatches.length} of ${preparedTargets.length} files`
+              : undefined,
+          );
         } catch (e: unknown) {
           if (getErrnoCode(e) === "EEXIST") {
             return `Refused: ${target.filePath} already exists. Use edit_file or delete manually.`;
@@ -395,6 +436,7 @@ export function createCreateFileTool(
 
 export function createDeleteFileTool(
   confirmWrite: ToolConfirmationHandler,
+  observation: WriteToolObservationOptions = {},
 ): ToolDefinition<typeof deleteFileParameters> {
   return {
     name: "delete_file",
@@ -459,7 +501,8 @@ export function createDeleteFileTool(
 
       // Phase 2: show the user one reviewed diff for the full batch before touching
       // disk. Delete does not support host-side edit, only accept/reject/retry.
-      const unifiedDiff = await buildDeleteUnifiedDiff(policy, existingTargets);
+      const preparedTargets = await prepareDeleteTargets(policy, existingTargets);
+      const unifiedDiff = preparedTargets.map(({ patch }) => patch).join("\n");
       const isBatch = existingTargets.length > 1;
       const decision = await confirmWrite({
         type: "fs_write",
@@ -486,11 +529,20 @@ export function createDeleteFileTool(
       // directories without crossing the workspace root. Both operations stay inside
       // WorkspaceFsPolicy so delete cannot bypass path guards.
       const deleted: string[] = [];
+      const appliedPatches: string[] = [];
       const cleanupRemoved = new Set<string>();
-      for (const target of existingTargets) {
+      for (const { target, patch } of preparedTargets) {
         try {
           await policy.deleteEntry(target.rel);
           deleted.push(target.filePath);
+          appliedPatches.push(patch);
+          recordAppliedPatches(
+            observation,
+            appliedPatches,
+            isBatch
+              ? `Applied delete across ${appliedPatches.length} of ${preparedTargets.length} targets`
+              : undefined,
+          );
 
           const parentRel = path.dirname(target.rel);
           const removedParents = await policy.pruneEmptyParentsInside(parentRel);

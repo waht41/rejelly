@@ -374,6 +374,20 @@ describe("MarkdownViewer code blocks", () => {
     expect(omitted).toBe(code);
   });
 
+  it("uses the shared semantic palette for diff fences", () => {
+    const output = renderToString(
+      createElement(MarkdownViewer, {
+        text: "```diff\n@@ -1 +1 @@\n-old\n+new\n```",
+        columns: 80,
+      }),
+      { columns: 80 },
+    );
+
+    expect(output).toContain("\u001B[38;2;137;220;235m@@ -1 +1 @@\u001B[39m");
+    expect(output).toContain("\u001B[38;2;243;139;168m-old\u001B[39m");
+    expect(output).toContain("\u001B[38;2;166;227;161m+new\u001B[39m");
+  });
+
   it("hard-wraps long code lines without truncating their content", () => {
     const url = "https://example.com/a/very/long/path?first=alpha&second=omega";
     const output = renderToString(

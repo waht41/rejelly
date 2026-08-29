@@ -76,6 +76,47 @@ describe("HistoryItem tool headline", () => {
 
     expect(lines.at(-1)).toMatch(/^ {2}… \(\+4\.\dk chars, #3\)$/);
   });
+
+  it("shows applied auto-mode diffs inline without a frame", () => {
+    const turn = toolTurn("[Tools] edit_file → a.ts", "Updated a.ts.", "Updated a.ts.");
+    if (turn.type !== "tool") {
+      throw new Error("Expected tool turn");
+    }
+    turn.tool.detail = {
+      type: "diff",
+      text: "--- a.ts\n+++ a.ts\n@@ -1 +1 @@\n-old\n+new",
+      phase: "applied",
+      presentation: "inline",
+    };
+
+    const output = renderTurn(turn).join("\n");
+
+    expect(output).toContain("Changes · 1 file · +1 −1");
+    expect(output).toContain("a.ts");
+    expect(output).toContain("- old");
+    expect(output).toContain("+ new");
+    expect(output).not.toContain("╭");
+    expect(output).not.toContain("╰");
+  });
+
+  it("does not repeat confirmation diffs or inline uncommitted proposals", () => {
+    for (const detail of [
+      { phase: "applied" as const, presentation: "expanded" as const },
+      { phase: "proposed" as const, presentation: "inline" as const },
+    ]) {
+      const turn = toolTurn("[Tools] edit_file → a.ts", "Updated a.ts.", "Updated a.ts.");
+      if (turn.type !== "tool") {
+        throw new Error("Expected tool turn");
+      }
+      turn.tool.detail = {
+        type: "diff",
+        text: "--- a.ts\n+++ a.ts\n@@\n-old\n+new",
+        ...detail,
+      };
+
+      expect(renderTurn(turn).join("\n")).not.toContain("Changes");
+    }
+  });
 });
 
 describe("HistoryItem system turn", () => {
