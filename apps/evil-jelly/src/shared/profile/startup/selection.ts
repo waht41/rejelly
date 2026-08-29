@@ -1,6 +1,11 @@
 export const PROFILE_ENV = "EVIL_PROFILE";
 
-export const PROFILE_SELECTORS = ["startup", "startup:imports", "startup:ink"] as const;
+export const PROFILE_SELECTORS = [
+  "startup",
+  "startup:bootstrap",
+  "startup:imports",
+  "startup:ink",
+] as const;
 export type ProfileSelector = (typeof PROFILE_SELECTORS)[number];
 
 let selectorOverride: readonly ProfileSelector[] | undefined;

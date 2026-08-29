@@ -97,7 +97,7 @@ cli
   )
   .option(
     "--profile <selector>",
-    "Profile view(s), comma-separated; available: startup, startup:imports, startup:ink",
+    "Profile view(s), comma-separated; available: startup, startup:bootstrap, startup:imports, startup:ink",
   )
   .option("--review", "Enable review trace exporter");
 

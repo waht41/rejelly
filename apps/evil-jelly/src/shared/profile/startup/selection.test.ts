@@ -20,18 +20,17 @@ afterEach(() => {
 
 describe("startup profile selection", () => {
   it("parses comma-separated selectors in order and removes duplicates", () => {
-    expect(parseProfileSelectors("startup:imports, startup, startup:imports")).toEqual([
-      "startup:imports",
-      "startup",
-    ]);
+    expect(
+      parseProfileSelectors("startup:bootstrap, startup:imports, startup, startup:imports"),
+    ).toEqual(["startup:bootstrap", "startup:imports", "startup"]);
   });
 
   it("rejects empty and unavailable selectors with the available list", () => {
     expect(() => parseProfileSelectors("")).toThrow(
-      'Unknown profile selector "". Available: startup, startup:imports, startup:ink.',
+      'Unknown profile selector "". Available: startup, startup:bootstrap, startup:imports, startup:ink.',
     );
     expect(() => parseProfileSelectors("startup:runtime")).toThrow(
-      'Unknown profile selector "startup:runtime". Available: startup, startup:imports, startup:ink.',
+      'Unknown profile selector "startup:runtime". Available: startup, startup:bootstrap, startup:imports, startup:ink.',
     );
   });
 

@@ -254,6 +254,14 @@ function formatStartupGantt(report: StartupTimelineReport): string | undefined {
     `${indent}${axis.labels}`,
     `${indent}${axis.ruler}`,
     renderGanttRow(
+      "Bootstrap⁺",
+      report.totalMs,
+      0,
+      importsStartedAt,
+      [{ startMs: 0, endMs: importsStartedAt, fill: "█" }],
+      axis.guidePositions,
+    ),
+    renderGanttRow(
       "Imports⁺",
       report.totalMs,
       importsStartedAt,
@@ -288,9 +296,68 @@ function formatStartupGantt(report: StartupTimelineReport): string | undefined {
     renderGanttMilestone("Both ready", report.totalMs, joinedAt),
     renderGanttMilestone("Ready", report.totalMs, inputReadyAt),
     `${indent}█ critical path · ▒ overlap window · ▲ milestone`,
-    `${indent}⁺ drill-down: startup:imports · startup:ink`,
+    `${indent}⁺ drill-down: startup:bootstrap · startup:imports · startup:ink`,
     `${indent}1 cell ≈ ${Math.round(report.totalMs / GANTT_WIDTH)} ms · numeric times are exact`,
   ].join("\n");
+}
+
+function formatBootstrapDrilldownGantt(report: StartupTimelineReport): string | undefined {
+  const importsStartedAt = milestoneAt(report, "unified_imports_started");
+  const cliModuleReadyAt = milestoneAt(report, "cli_module_ready");
+  const argsParsedAt = milestoneAt(report, "cli_args_parsed");
+  const workspaceModulesReadyAt = milestoneAt(report, "workspace_modules_ready");
+  const workspaceReadyAt = milestoneAt(report, "workspace_ready");
+  const envModuleReadyAt = milestoneAt(report, "env_module_ready");
+  const envReadyAt = milestoneAt(report, "env_ready");
+  if (
+    importsStartedAt === undefined ||
+    cliModuleReadyAt === undefined ||
+    argsParsedAt === undefined ||
+    workspaceModulesReadyAt === undefined ||
+    workspaceReadyAt === undefined ||
+    envModuleReadyAt === undefined ||
+    envReadyAt === undefined ||
+    importsStartedAt <= 0
+  ) {
+    return undefined;
+  }
+
+  const phases = [
+    ["CLI modules", 0, cliModuleReadyAt],
+    ["Arguments", cliModuleReadyAt, argsParsedAt],
+    ["Workspace mod", argsParsedAt, workspaceModulesReadyAt],
+    ["Workspace cfg", workspaceModulesReadyAt, workspaceReadyAt],
+    ["Env module", workspaceReadyAt, envModuleReadyAt],
+    ["Env config", envModuleReadyAt, envReadyAt],
+    ["Dispatch", envReadyAt, importsStartedAt],
+  ] as const;
+  if (phases.some(([, startAt, endAt]) => endAt < startAt)) return undefined;
+
+  const axis = renderGanttAxis(importsStartedAt);
+  const indent = " ".repeat(GANTT_LABEL_WIDTH);
+  const rows = [
+    `Bootstrap drill-down: ${Math.round(importsStartedAt)} ms`,
+    `${indent}${axis.labels}`,
+    `${indent}${axis.ruler}`,
+  ];
+  for (const [label, startAt, endAt] of phases) {
+    rows.push(
+      renderGanttRow(
+        label,
+        importsStartedAt,
+        startAt,
+        endAt,
+        [{ startMs: startAt, endMs: endAt, fill: "█" }],
+        axis.guidePositions,
+      ),
+    );
+  }
+  rows.push(
+    renderGanttMilestone("Imports start", importsStartedAt, importsStartedAt),
+    `${indent}█ sequential bootstrap wall time · ▲ hand-off to unified imports`,
+    `${indent}CLI modules includes process startup and static ESM evaluation`,
+  );
+  return rows.join("\n");
 }
 
 function formatImportsDrilldownGantt(report: StartupTimelineReport): string | undefined {
@@ -491,6 +558,12 @@ export function formatStartupTimelineSummary(
   return selectors
     .map((selector) => {
       if (selector === "startup") return formatStartupOverview(report);
+      if (selector === "startup:bootstrap") {
+        return (
+          formatBootstrapDrilldownGantt(report) ??
+          "Profile startup:bootstrap: required milestones were not recorded."
+        );
+      }
       if (selector === "startup:imports") {
         return (
           formatImportsDrilldownGantt(report) ??

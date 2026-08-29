@@ -59,6 +59,8 @@ describe("startup profile summary", () => {
     );
 
     expect(summary).toContain("Startup: 300 ms");
+    expect(summary).toContain("Bootstrap⁺");
+    expect(summary).toContain("0 → 20  (20 ms)");
     expect(summary).toContain("Imports⁺");
     expect(summary).toContain("20 → 250  (230 ms)");
     expect(summary).toContain("Ink");
@@ -71,8 +73,42 @@ describe("startup profile summary", () => {
     expect(summary).toContain("Ready");
     expect(summary).toContain("Ink⁺");
     expect(summary).toContain("█ critical path · ▒ overlap window · ▲ milestone");
-    expect(summary).toContain("⁺ drill-down: startup:imports · startup:ink");
+    expect(summary).toContain("⁺ drill-down: startup:bootstrap · startup:imports · startup:ink");
     expect(summary).toContain("1 cell ≈ 8 ms · numeric times are exact");
+  });
+
+  it("breaks bootstrap into entry, configuration, and dispatch phases", () => {
+    const summary = formatStartupTimelineSummary(
+      report(300, [
+        milestone("cli_module_ready", 40),
+        milestone("cli_args_parsed", 42),
+        milestone("workspace_modules_ready", 90),
+        milestone("workspace_ready", 96),
+        milestone("env_module_ready", 112),
+        milestone("env_ready", 118),
+        milestone("unified_imports_started", 120),
+      ]),
+      { selectors: ["startup:bootstrap"] },
+    );
+
+    expect(summary).toContain("Bootstrap drill-down: 120 ms");
+    expect(summary).toContain("CLI modules");
+    expect(summary).toContain("0 → 40  (40 ms)");
+    expect(summary).toContain("Arguments");
+    expect(summary).toContain("40 → 42  (2 ms)");
+    expect(summary).toContain("Workspace mod");
+    expect(summary).toContain("42 → 90  (48 ms)");
+    expect(summary).toContain("Workspace cfg");
+    expect(summary).toContain("90 → 96  (6 ms)");
+    expect(summary).toContain("Env module");
+    expect(summary).toContain("96 → 112  (16 ms)");
+    expect(summary).toContain("Env config");
+    expect(summary).toContain("112 → 118  (6 ms)");
+    expect(summary).toContain("Dispatch");
+    expect(summary).toContain("118 → 120  (2 ms)");
+    expect(summary).toContain("Imports start");
+    expect(summary).toContain("@ 120 ms");
+    expect(summary).toContain("CLI modules includes process startup and static ESM evaluation");
   });
 
   it("ends imports at actual completion rather than after a blocking Ink mount", () => {

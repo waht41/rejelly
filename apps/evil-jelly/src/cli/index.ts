@@ -29,6 +29,7 @@ async function main() {
     import("./entry/bootstrap"),
     import("../shared/configuration/settings"),
   ]);
+  startupTimeline.mark("workspace_modules_ready");
   applyWorkspaceRootFromArgs(args.workspace);
   initSettings(args.settings);
   startupTimeline.mark("workspace_ready");
@@ -46,6 +47,7 @@ async function main() {
   const { env, exitIfMissingOpenAIKey, loadEvilJellyEnv } = await import(
     "../shared/configuration/env"
   );
+  startupTimeline.mark("env_module_ready");
   let startProxy: () => Promise<void>;
   try {
     startProxy = loadEvilJellyEnv({
