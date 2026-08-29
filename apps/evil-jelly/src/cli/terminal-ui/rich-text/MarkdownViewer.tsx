@@ -13,6 +13,7 @@ import {
   phrasingText,
   type TableAlignment,
 } from "./markdownParser";
+import { highlightCodeLines } from "./syntaxHighlight";
 
 const MAX_RENDER_BLOCKS = 500;
 const MIN_TABLE_COLUMN_WIDTH = 3;
@@ -272,7 +273,7 @@ function trimUrlBoundary(url: string): string {
  * wrap-ansi re-opens the hyperlink on each wrapped row, whereas linking
  * pre-wrapped fragments would point each row at a truncated URL.
  */
-function withTerminalLinks(text: string): string {
+function withTerminalLinksPlain(text: string): string {
   let rendered = "";
   let lastIndex = 0;
 
@@ -289,6 +290,29 @@ function withTerminalLinks(text: string): string {
   }
 
   return rendered + text.slice(lastIndex);
+}
+
+function withTerminalLinks(text: string): string {
+  if (!text.includes("\u001B")) {
+    return withTerminalLinksPlain(text);
+  }
+
+  let rendered = "";
+  let cursor = 0;
+  while (cursor < text.length) {
+    const escapeIndex = text.indexOf("\u001B[", cursor);
+    if (escapeIndex === -1) {
+      break;
+    }
+    const sequenceEnd = text.indexOf("m", escapeIndex + 2);
+    if (sequenceEnd === -1) {
+      break;
+    }
+    rendered += withTerminalLinksPlain(text.slice(cursor, escapeIndex));
+    rendered += text.slice(escapeIndex, sequenceEnd + 1);
+    cursor = sequenceEnd + 1;
+  }
+  return rendered + withTerminalLinksPlain(text.slice(cursor));
 }
 
 // Must measure with the same string-width used by wrap-ansi and ink, or the
@@ -736,19 +760,12 @@ export function MarkdownViewer({ text, columns }: { text: string; columns: numbe
           );
         }
         if (block.type === "code") {
+          const lines = highlightCodeLines(block.lines, block.language);
           return (
-            <Box
-              key={key}
-              flexDirection="column"
-              marginTop={index === 0 ? 0 : 1}
-              paddingX={1}
-              borderStyle="single"
-              borderColor="gray"
-            >
-              {block.language ? <Text dimColor>{block.language}</Text> : null}
-              {block.lines.length > 0 ? (
-                block.lines.map((line, lineIndex) => (
-                  <Text key={`${key}-${lineIndex}`} color="whiteBright" wrap="hard">
+            <Box key={key} flexDirection="column" marginTop={index === 0 ? 0 : 1}>
+              {lines.length > 0 ? (
+                lines.map((line, lineIndex) => (
+                  <Text key={`${key}-${lineIndex}`} wrap="hard">
                     {line.length > 0 ? withTerminalLinks(line) : " "}
                   </Text>
                 ))

@@ -11,7 +11,6 @@ import {
 import { parseMarkdownBlocks } from "./markdownParser";
 
 const MIN_COLUMNS = 1;
-const CODE_BLOCK_HORIZONTAL_CHROME = 4;
 const QUOTE_OUTER_PADDING_COLUMNS = 1;
 const QUOTE_LEVEL_CHROME_COLUMNS = 2;
 
@@ -127,18 +126,15 @@ function measureMarkdownStableRows(markdown: string, columns: number): number {
       continue;
     }
     if (block.type === "code") {
-      const contentColumns = Math.max(1, columns - CODE_BLOCK_HORIZONTAL_CHROME);
       const codeRows =
         block.lines.length > 0
           ? block.lines.reduce(
               (total, line) =>
-                total + Math.max(1, measureWrappedRows(line, contentColumns, { wordWrap: false })),
+                total + Math.max(1, measureWrappedRows(line, columns, { wordWrap: false })),
               0,
             )
           : 1;
-      const languageRows = block.language ? measureWrappedRows(block.language, contentColumns) : 0;
-      const contentRows = codeRows + languageRows;
-      rows += marginTop + contentRows + 2;
+      rows += marginTop + codeRows;
       continue;
     }
     rows += marginTop + 1;

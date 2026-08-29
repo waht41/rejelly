@@ -337,6 +337,43 @@ describe("inline emphasis from the block AST", () => {
 });
 
 describe("MarkdownViewer code blocks", () => {
+  it("syntax-highlights known languages without a border or language label", () => {
+    const code = ["interface User {", "  active: boolean;", '  name: "Alice";', "}"];
+    const output = renderToString(
+      createElement(MarkdownViewer, {
+        text: ["```typescript", ...code, "```"].join("\n"),
+        columns: 80,
+      }),
+      { columns: 80 },
+    );
+
+    expect(stripAnsi(output)).toBe(code.join("\n"));
+    expect(output).toContain("\u001B[38;2;203;166;247minterface\u001B[39m");
+    expect(output).toContain("\u001B[38;2;249;226;175mactive\u001B[39m");
+    expect(output).toContain("\u001B[38;2;243;139;168mboolean\u001B[39m");
+    expect(output).toContain('\u001B[38;2;166;227;161m"Alice"\u001B[39m');
+    expect(output).not.toContain("typescript");
+    expect(stripAnsi(output)).not.toContain("┌");
+  });
+
+  it("falls back to plain text for an unknown or omitted language", () => {
+    const code = "const value = 1;";
+    const unknown = renderToString(
+      createElement(MarkdownViewer, {
+        text: `\`\`\`unknown-language\n${code}\n\`\`\``,
+        columns: 80,
+      }),
+      { columns: 80 },
+    );
+    const omitted = renderToString(
+      createElement(MarkdownViewer, { text: `\`\`\`\n${code}\n\`\`\``, columns: 80 }),
+      { columns: 80 },
+    );
+
+    expect(unknown).toBe(code);
+    expect(omitted).toBe(code);
+  });
+
   it("hard-wraps long code lines without truncating their content", () => {
     const url = "https://example.com/a/very/long/path?first=alpha&second=omega";
     const output = renderToString(
@@ -348,11 +385,7 @@ describe("MarkdownViewer code blocks", () => {
     );
 
     const visibleOutput = stripAnsi(output);
-    const renderedContent = visibleOutput
-      .split("\n")
-      .slice(2, -1)
-      .map((line) => line.slice(2, -2).trimEnd())
-      .join("");
+    const renderedContent = visibleOutput.split("\n").join("");
     const hyperlinkOpen = `\u001B]8;;${url}\u0007`;
 
     expect(renderedContent).toBe(url);
