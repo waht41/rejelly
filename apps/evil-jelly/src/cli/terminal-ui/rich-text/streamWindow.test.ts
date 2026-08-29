@@ -63,6 +63,15 @@ describe("stream window measurement", () => {
     const hardBreak = "line one  \nline two";
     expect(measureStreamRows(hardBreak, columns)).toBe(renderedRows(hardBreak, columns));
 
+    // Every quote level adds a one-column rule plus one column of padding;
+    // blank quote lines still occupy a visible row inside the rule.
+    const nestedQuote = [
+      "> outer quote content that wraps",
+      ">",
+      "> > nested quote content that wraps across rows",
+    ].join("\n");
+    expect(measureStreamRows(nestedQuote, columns)).toBe(renderedRows(nestedQuote, columns));
+
     // Nesting indent and a two-digit marker both narrow the text column, so a
     // fixed marker budget would under-count the wrapped rows here.
     const list = [

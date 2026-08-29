@@ -145,6 +145,28 @@ function renderInlineNodes(nodes: MarkdownPhrasingContent[], keyPrefix: string):
   });
 }
 
+function QuoteLine({ depth, children }: { depth: number; children: ReactNode }) {
+  let content: ReactNode = <Text wrap="wrap">{children}</Text>;
+
+  for (let level = 0; level < depth; level++) {
+    content = (
+      <Box
+        flexDirection="column"
+        borderStyle="single"
+        borderColor="cyan"
+        borderTop={false}
+        borderBottom={false}
+        borderRight={false}
+        paddingLeft={1}
+      >
+        {content}
+      </Box>
+    );
+  }
+
+  return content;
+}
+
 function countOccurrences(text: string, character: string): number {
   let total = 0;
   for (const candidate of text) {
@@ -532,9 +554,11 @@ export function MarkdownViewer({ text, columns }: { text: string; columns: numbe
           return (
             <Box key={key} flexDirection="column" marginTop={index === 0 ? 0 : 1} paddingLeft={1}>
               {block.lines.map((line, lineIndex) => (
-                <Text key={`${key}-${lineIndex}`} dimColor wrap="wrap">
-                  &gt; {renderInlineNodes(line.nodes, `${key}-${lineIndex}`)}
-                </Text>
+                <QuoteLine key={`${key}-${lineIndex}`} depth={line.depth}>
+                  {line.nodes.length > 0
+                    ? renderInlineNodes(line.nodes, `${key}-${lineIndex}`)
+                    : " "}
+                </QuoteLine>
               ))}
             </Box>
           );

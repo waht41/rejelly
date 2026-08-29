@@ -314,7 +314,25 @@ describe("inline emphasis from the block AST", () => {
       { columns: 80 },
     );
 
-    expect(stripAnsi(output).split("\n")).toEqual([" > first", " > line", " >", " > > nested"]);
+    expect(stripAnsi(output).split("\n")).toEqual([" │ first", " │ line", " │", " │ │ nested"]);
+  });
+
+  it("accounts for nested quote gutters while wrapping", () => {
+    const columns = 18;
+    const output = renderToString(
+      createElement(MarkdownViewer, {
+        text: "> > nested quote content wraps across rows",
+        columns,
+      }),
+      { columns },
+    );
+    const visibleLines = stripAnsi(output).split("\n");
+
+    expect(visibleLines.length).toBeGreaterThan(1);
+    for (const line of visibleLines) {
+      expect(line).toMatch(/^ │ │ /);
+      expect(terminalCellWidth(line)).toBeLessThanOrEqual(columns);
+    }
   });
 });
 

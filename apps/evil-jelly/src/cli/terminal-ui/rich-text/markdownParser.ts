@@ -32,12 +32,16 @@ export type MarkdownListItem = MarkdownInline & {
   marker: number | null;
 };
 
+type MarkdownQuoteLine = MarkdownInline & {
+  depth: number;
+};
+
 export type MarkdownBlock =
   | (MarkdownInline & { type: "heading"; depth: number })
   | (MarkdownInline & { type: "paragraph" })
   | { type: "list"; ordered: boolean; items: MarkdownListItem[] }
   | { type: "table"; headers: string[]; alignments: TableAlignment[]; rows: string[][] }
-  | { type: "quote"; lines: MarkdownInline[] }
+  | { type: "quote"; lines: MarkdownQuoteLine[] }
   | { type: "code"; language?: string; lines: string[] }
   | { type: "rule" };
 
@@ -121,37 +125,41 @@ function splitPhrasingLines(nodes: MarkdownPhrasingContent[]): MarkdownPhrasingC
   return lines;
 }
 
-function blockquoteLines(quote: Blockquote): MarkdownPhrasingContent[][] {
-  const lines: MarkdownPhrasingContent[][] = [];
+function quoteLine(nodes: MarkdownPhrasingContent[], depth: number): MarkdownQuoteLine {
+  return { depth, text: phrasingText(nodes), nodes };
+}
+
+function blockquoteLines(quote: Blockquote, depth = 1): MarkdownQuoteLine[] {
+  const lines: MarkdownQuoteLine[] = [];
   let previousEndLine: number | undefined;
 
   for (const child of quote.children) {
     const startLine = child.position?.start.line;
     if (previousEndLine !== undefined && startLine !== undefined) {
       for (let line = previousEndLine + 1; line < startLine; line++) {
-        lines.push([]);
+        lines.push(quoteLine([], depth));
       }
     }
 
     if (child.type === "paragraph" || child.type === "heading") {
-      lines.push(...splitPhrasingLines(child.children));
+      lines.push(...splitPhrasingLines(child.children).map((nodes) => quoteLine(nodes, depth)));
     } else if (child.type === "list") {
       for (const item of flattenList(child)) {
         const indent = "  ".repeat(item.depth);
         const marker = item.marker === null ? "- " : `${item.marker}. `;
-        lines.push([textNode(`${indent}${marker}`), ...item.nodes]);
+        lines.push(quoteLine([textNode(`${indent}${marker}`), ...item.nodes], depth));
       }
     } else if (child.type === "code") {
       const fence = `\`\`\`${child.lang ?? ""}`;
-      lines.push([textNode(fence)]);
-      lines.push(...child.value.split("\n").map((line) => [textNode(line)]));
-      lines.push([textNode("```")]);
+      lines.push(quoteLine([textNode(fence)], depth));
+      lines.push(...child.value.split("\n").map((line) => quoteLine([textNode(line)], depth)));
+      lines.push(quoteLine([textNode("```")], depth));
     } else if (child.type === "blockquote") {
-      lines.push(...blockquoteLines(child).map((line) => [textNode("> "), ...line]));
+      lines.push(...blockquoteLines(child, depth + 1));
     } else if (child.type === "thematicBreak") {
-      lines.push([textNode("---")]);
+      lines.push(quoteLine([textNode("---")], depth));
     } else if (child.type === "html") {
-      lines.push([textNode(child.value)]);
+      lines.push(quoteLine([textNode(child.value)], depth));
     }
 
     previousEndLine = child.position?.end.line ?? previousEndLine;
@@ -195,7 +203,7 @@ function convertBlock(markdown: string, node: RootContent): MarkdownBlock | null
   if (node.type === "blockquote") {
     return {
       type: "quote",
-      lines: blockquoteLines(node).map((nodes) => ({ text: phrasingText(nodes), nodes })),
+      lines: blockquoteLines(node),
     };
   }
   if (node.type === "code") {
