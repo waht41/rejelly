@@ -32,6 +32,8 @@ export type MarkdownListItem = MarkdownInline & {
   marker: number | null;
 };
 
+export type MarkdownTableCell = MarkdownInline;
+
 type MarkdownQuoteLine = MarkdownInline & {
   depth: number;
 };
@@ -40,7 +42,14 @@ export type MarkdownBlock =
   | (MarkdownInline & { type: "heading"; depth: number })
   | (MarkdownInline & { type: "paragraph" })
   | { type: "list"; ordered: boolean; items: MarkdownListItem[] }
-  | { type: "table"; headers: string[]; alignments: TableAlignment[]; rows: string[][] }
+  | {
+      type: "table";
+      headers: string[];
+      headerCells: MarkdownTableCell[];
+      alignments: TableAlignment[];
+      rows: string[][];
+      rowCells: MarkdownTableCell[][];
+    }
   | { type: "quote"; lines: MarkdownQuoteLine[] }
   | { type: "code"; language?: string; lines: string[] }
   | { type: "rule" };
@@ -92,9 +101,12 @@ function flattenList(list: List, depth = 0): MarkdownListItem[] {
   return items;
 }
 
-function tableCells(table: Table): string[][] {
+function tableCells(table: Table): MarkdownTableCell[][] {
   return table.children.map((row) =>
-    row.children.map((cell) => phrasingText(cell.children).trim()),
+    row.children.map((cell) => ({
+      text: phrasingText(cell.children).trim(),
+      nodes: cell.children,
+    })),
   );
 }
 
@@ -192,12 +204,14 @@ function convertBlock(markdown: string, node: RootContent): MarkdownBlock | null
     return { type: "list", ordered: Boolean(node.ordered), items };
   }
   if (node.type === "table") {
-    const [headers = [], ...rows] = tableCells(node);
+    const [headerCells = [], ...rowCells] = tableCells(node);
     return {
       type: "table",
-      headers,
-      alignments: headers.map((_, index) => node.align?.[index] ?? "left") as TableAlignment[],
-      rows,
+      headers: headerCells.map((cell) => cell.text),
+      headerCells,
+      alignments: headerCells.map((_, index) => node.align?.[index] ?? "left") as TableAlignment[],
+      rows: rowCells.map((row) => row.map((cell) => cell.text)),
+      rowCells,
     };
   }
   if (node.type === "blockquote") {

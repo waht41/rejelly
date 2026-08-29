@@ -53,6 +53,7 @@ describe("stream window measurement", () => {
     // measured height must not grow either.
     const table = ["| Name | Count |", "| --- | --- |", "| alpha | 1 |"].join("\n");
     expect(measureStreamRows(table, 8)).toBe(renderedRows(table, 8));
+    expect(measureStreamRows(table, columns)).toBe(renderedRows(table, columns));
     // The level glyph shares the title's line while the h1 rule takes one of
     // its own, so both have to be in the budget.
     const headings = ["# a level one heading that wraps", "", "### a level three heading"].join(

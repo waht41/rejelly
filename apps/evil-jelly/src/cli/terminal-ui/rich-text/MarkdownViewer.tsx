@@ -8,6 +8,7 @@ import {
   type MarkdownBlock,
   type MarkdownListItem,
   type MarkdownPhrasingContent,
+  type MarkdownTableCell,
   parseMarkdownBlocks,
   phrasingText,
   type TableAlignment,
@@ -15,11 +16,20 @@ import {
 
 const MAX_RENDER_BLOCKS = 500;
 const MIN_TABLE_COLUMN_WIDTH = 3;
+const MAX_TABLE_GRID_ROW_HEIGHT = 4;
+const TABLE_CELL_PADDING = 1;
+const TABLE_COLUMN_GAP = 2;
+const TABLE_RECORD_RULE_MAX_WIDTH = 40;
 const HEADING_RULE_CHARACTER = "━";
 const LIST_INDENT_COLUMNS = 2;
 const URL_PATTERN = /https?:\/\/[^\s<>"'`]+/g;
 const URL_TRAILING_PUNCTUATION = ".,;:!?";
 const URL_CLOSING_PAIRS: Record<string, string> = { ")": "(", "]": "[", "}": "{" };
+const ANSI_BOLD = ["\u001B[1m", "\u001B[22m"] as const;
+const ANSI_CYAN = ["\u001B[36m", "\u001B[39m"] as const;
+const ANSI_ITALIC = ["\u001B[3m", "\u001B[23m"] as const;
+const ANSI_STRIKETHROUGH = ["\u001B[9m", "\u001B[29m"] as const;
+const ANSI_UNDERLINE = ["\u001B[4m", "\u001B[24m"] as const;
 
 export type MarkdownHeadingStyle = {
   prefix: string;
@@ -145,6 +155,56 @@ function renderInlineNodes(nodes: MarkdownPhrasingContent[], keyPrefix: string):
   });
 }
 
+function ansiStyled(text: string, [open, close]: readonly [string, string]): string {
+  return text.length > 0 ? `${open}${text}${close}` : text;
+}
+
+function renderTableInlineAnsi(nodes: MarkdownPhrasingContent[]): string {
+  return nodes
+    .map((node) => {
+      if (node.type === "text") {
+        return withTerminalLinks(node.value.replace(/\n/g, " "));
+      }
+      if (node.type === "inlineCode") {
+        return ansiStyled(withTerminalLinks(node.value), ANSI_CYAN);
+      }
+      if (node.type === "strong") {
+        return ansiStyled(renderTableInlineAnsi(node.children), ANSI_BOLD);
+      }
+      if (node.type === "emphasis") {
+        return ansiStyled(renderTableInlineAnsi(node.children), ANSI_ITALIC);
+      }
+      if (node.type === "delete") {
+        return ansiStyled(renderTableInlineAnsi(node.children), ANSI_STRIKETHROUGH);
+      }
+      if (node.type === "link") {
+        const label = ansiStyled(
+          ansiStyled(renderTableInlineAnsi(node.children), ANSI_CYAN),
+          ANSI_UNDERLINE,
+        );
+        try {
+          return terminalLink(label, new URL(node.url).href);
+        } catch {
+          return label;
+        }
+      }
+      if (node.type === "break") {
+        return "\n";
+      }
+      if (node.type === "image") {
+        return node.alt ?? "";
+      }
+      if (node.type === "footnoteReference") {
+        return `[^${node.label ?? node.identifier}]`;
+      }
+      if ("children" in node) {
+        return renderTableInlineAnsi(node.children);
+      }
+      return phrasingText([node]);
+    })
+    .join("");
+}
+
 function QuoteLine({ depth, children }: { depth: number; children: ReactNode }) {
   let content: ReactNode = <Text wrap="wrap">{children}</Text>;
 
@@ -246,12 +306,16 @@ function tableCellText(cells: string[], index: number): string {
 }
 
 export type MarkdownTableLayout = {
+  mode: "columns" | "records";
   widths: number[];
   renderedWidth: number;
 };
 
 function tableRenderedWidth(widths: number[]): number {
-  return widths.reduce((total, width) => total + width, 0) + widths.length * 3 + 1;
+  return (
+    widths.reduce((total, width) => total + width + TABLE_CELL_PADDING * 2, 0) +
+    Math.max(0, widths.length - 1) * TABLE_COLUMN_GAP
+  );
 }
 
 function naturalTableWidths(block: Extract<MarkdownBlock, { type: "table" }>): number[] {
@@ -275,25 +339,41 @@ export function markdownTableLayout(
 ): MarkdownTableLayout {
   const widths = naturalTableWidths(block);
   if (widths.length === 0) {
-    return { widths, renderedWidth: 0 };
+    return { mode: "columns", widths, renderedWidth: 0 };
   }
 
   const safeColumns = Math.max(1, Math.floor(columns) || 1);
-  const separatorWidth = widths.length * 3 + 1;
-  const widthBudget = safeColumns - separatorWidth;
+  const chromeWidth =
+    widths.length * TABLE_CELL_PADDING * 2 + Math.max(0, widths.length - 1) * TABLE_COLUMN_GAP;
+  const widthBudget = safeColumns - chromeWidth;
   if (widthBudget <= 0) {
     const minimumWidths = widths.map(() => 1);
-    return { widths: minimumWidths, renderedWidth: tableRenderedWidth(minimumWidths) };
+    return block.rows.length > 0
+      ? { mode: "records", widths: minimumWidths, renderedWidth: safeColumns }
+      : {
+          mode: "columns",
+          widths: minimumWidths,
+          renderedWidth: tableRenderedWidth(minimumWidths),
+        };
   }
 
-  const minimumWidth =
-    widthBudget >= widths.length * MIN_TABLE_COLUMN_WIDTH ? MIN_TABLE_COLUMN_WIDTH : 1;
+  if (widthBudget < widths.length * MIN_TABLE_COLUMN_WIDTH && block.rows.length > 0) {
+    const minimumWidths = widths.map(() => 1);
+    return { mode: "records", widths: minimumWidths, renderedWidth: safeColumns };
+  }
+
+  const minimumWidth = MIN_TABLE_COLUMN_WIDTH;
   const minimumWidths = widths.map(() => minimumWidth);
   const minimumTotal = minimumWidths.reduce((total, width) => total + width, 0);
   const targetContentWidth = Math.max(minimumTotal, widthBudget);
   let currentContentWidth = widths.reduce((total, width) => total + width, 0);
   if (currentContentWidth <= targetContentWidth) {
-    return { widths, renderedWidth: tableRenderedWidth(widths) };
+    const mode = shouldRenderTableRecords(block, widths) ? "records" : "columns";
+    return {
+      mode,
+      widths,
+      renderedWidth: mode === "records" ? safeColumns : tableRenderedWidth(widths),
+    };
   }
 
   const constrained = [...widths];
@@ -314,13 +394,34 @@ export function markdownTableLayout(
     currentContentWidth -= 1;
   }
 
-  return { widths: constrained, renderedWidth: tableRenderedWidth(constrained) };
+  const mode = shouldRenderTableRecords(block, constrained) ? "records" : "columns";
+  return {
+    mode,
+    widths: constrained,
+    renderedWidth: mode === "records" ? safeColumns : tableRenderedWidth(constrained),
+  };
 }
 
 function wrapTableCell(value: string, width: number): string[] {
   // Link before wrapping: wrap-ansi re-opens the hyperlink on every row, so a
   // URL split across cell lines keeps pointing at the whole target.
   const text = withTerminalLinks(value);
+  if (text.length === 0) {
+    return [""];
+  }
+  return wrapAnsi(text, Math.max(1, width), {
+    hard: true,
+    trim: false,
+    wordWrap: false,
+  }).split("\n");
+}
+
+function wrapStyledTableCell(
+  value: string,
+  cell: MarkdownTableCell | undefined,
+  width: number,
+): string[] {
+  const text = cell ? renderTableInlineAnsi(cell.nodes) : withTerminalLinks(value);
   if (text.length === 0) {
     return [""];
   }
@@ -358,30 +459,99 @@ export function markdownTableRowHeight(cells: string[], widths: number[]): numbe
   );
 }
 
+function shouldRenderTableRecords(
+  block: Extract<MarkdownBlock, { type: "table" }>,
+  widths: number[],
+): boolean {
+  return (
+    block.rows.length > 0 &&
+    [block.headers, ...block.rows].some(
+      (row) => markdownTableRowHeight(row, widths) > MAX_TABLE_GRID_ROW_HEIGHT,
+    )
+  );
+}
+
 function renderTableRowLines(
   cells: string[],
+  richCells: MarkdownTableCell[],
   widths: number[],
   alignments: TableAlignment[],
 ): ReactNode[][] {
-  const cellLines = widths.map((width, index) => wrapTableCell(tableCellText(cells, index), width));
+  const cellLines = widths.map((width, index) =>
+    wrapStyledTableCell(tableCellText(cells, index), richCells[index], width),
+  );
   const rowHeight = Math.max(1, ...cellLines.map((lines) => lines.length));
 
   return Array.from({ length: rowHeight }, (_, lineIndex) => {
-    const nodes: ReactNode[] = ["│ "];
+    const nodes: ReactNode[] = [];
     widths.forEach((width, columnIndex) => {
       const value = cellLines[columnIndex]?.[lineIndex] ?? "";
       const padding = tableCellPadding(value, width, alignments[columnIndex] ?? "left");
+      nodes.push(" ".repeat(TABLE_CELL_PADDING));
       nodes.push(padding.left);
       nodes.push(value);
-      nodes.push(padding.right);
-      nodes.push(columnIndex === widths.length - 1 ? " │" : " │ ");
+      if (columnIndex < widths.length - 1) {
+        nodes.push(padding.right);
+        nodes.push(" ".repeat(TABLE_CELL_PADDING + TABLE_COLUMN_GAP));
+      }
     });
     return nodes;
   });
 }
 
-function tableRule(left: string, join: string, right: string, widths: number[]): string {
-  return `${left}${widths.map((width) => "─".repeat(width + 2)).join(join)}${right}`;
+function tableRule(character: "━" | "─", widths: number[]): string {
+  return widths
+    .map((width) => character.repeat(width + TABLE_CELL_PADDING * 2))
+    .join(" ".repeat(TABLE_COLUMN_GAP));
+}
+
+function TableRecords({
+  block,
+  columns,
+  keyPrefix,
+}: {
+  block: Extract<MarkdownBlock, { type: "table" }>;
+  columns: number;
+  keyPrefix: string;
+}) {
+  const ruleWidth = Math.max(1, Math.min(TABLE_RECORD_RULE_MAX_WIDTH, columns));
+  const columnCount = Math.max(
+    block.headers.length,
+    block.alignments.length,
+    ...block.rows.map((row) => row.length),
+  );
+
+  return (
+    <Box flexDirection="column">
+      {block.rows.map((row, rowIndex) => (
+        <Box key={`${keyPrefix}-record-${rowIndex}`} flexDirection="column">
+          {rowIndex > 0 ? <Text dimColor>{"─".repeat(ruleWidth)}</Text> : null}
+          {Array.from({ length: columnCount }, (_, columnIndex) => {
+            const label = tableCellText(block.headers, columnIndex) || `Column ${columnIndex + 1}`;
+            const value = tableCellText(row, columnIndex);
+            const headerCell = block.headerCells[columnIndex];
+            const valueCell = block.rowCells[rowIndex]?.[columnIndex];
+            return (
+              <Box key={`${keyPrefix}-record-${rowIndex}-${columnIndex}`} flexDirection="column">
+                <Text bold color="cyan" wrap="wrap">
+                  {headerCell ? renderTableInlineAnsi(headerCell.nodes) : label}
+                </Text>
+                <Box paddingLeft={1}>
+                  <Text wrap="wrap">
+                    {value.length > 0
+                      ? valueCell
+                        ? renderTableInlineAnsi(valueCell.nodes)
+                        : withTerminalLinks(value)
+                      : " "}
+                  </Text>
+                </Box>
+              </Box>
+            );
+          })}
+        </Box>
+      ))}
+    </Box>
+  );
 }
 
 /**
@@ -509,44 +679,46 @@ export function MarkdownViewer({ text, columns }: { text: string; columns: numbe
           );
         }
         if (block.type === "table") {
-          const { widths } = markdownTableLayout(block, columns);
+          const { mode, widths } = markdownTableLayout(block, columns);
           const alignments = Array.from(
             { length: widths.length },
             (_, columnIndex) => block.alignments[columnIndex] ?? "left",
           );
+          if (mode === "records") {
+            return (
+              <Box key={key} flexDirection="column" marginTop={index === 0 ? 0 : 1}>
+                <TableRecords block={block} columns={columns} keyPrefix={key} />
+              </Box>
+            );
+          }
           return (
-            // A table is a fixed-width layout: every line must occupy exactly one
-            // row, or a terminal too narrow for the rendered width reflows the
-            // rules and headers while the body rows stay truncated, and the
-            // borders drift apart. Truncating all of them keeps the grid intact
-            // and keeps the height predictable for the stream window.
             <Box key={key} flexDirection="column" marginTop={index === 0 ? 0 : 1}>
-              <Text dimColor wrap="truncate-end">
-                {tableRule("┌", "┬", "┐", widths)}
-              </Text>
-              {renderTableRowLines(block.headers, widths, alignments).map((line, lineIndex) => (
-                <Text
-                  key={`${key}-header-${lineIndex}`}
-                  bold
-                  color="whiteBright"
-                  wrap="truncate-end"
-                >
-                  {line}
-                </Text>
-              ))}
-              <Text dimColor wrap="truncate-end">
-                {tableRule("├", "┼", "┤", widths)}
-              </Text>
-              {block.rows.flatMap((row, rowIndex) =>
-                renderTableRowLines(row, widths, alignments).map((line, lineIndex) => (
-                  <Text key={`${key}-${rowIndex}-${lineIndex}`} wrap="truncate-end">
+              {renderTableRowLines(block.headers, block.headerCells, widths, alignments).map(
+                (line, lineIndex) => (
+                  <Text key={`${key}-header-${lineIndex}`} bold color="cyan" wrap="truncate-end">
                     {line}
                   </Text>
-                )),
+                ),
               )}
               <Text dimColor wrap="truncate-end">
-                {tableRule("└", "┴", "┘", widths)}
+                {tableRule("━", widths)}
               </Text>
+              {block.rows.flatMap((row, rowIndex) => [
+                ...(rowIndex > 0
+                  ? [
+                      <Text key={`${key}-${rowIndex}-rule`} dimColor wrap="truncate-end">
+                        {tableRule("─", widths)}
+                      </Text>,
+                    ]
+                  : []),
+                ...renderTableRowLines(row, block.rowCells[rowIndex] ?? [], widths, alignments).map(
+                  (line, lineIndex) => (
+                    <Text key={`${key}-${rowIndex}-${lineIndex}`} wrap="truncate-end">
+                      {line}
+                    </Text>
+                  ),
+                ),
+              ])}
             </Box>
           );
         }

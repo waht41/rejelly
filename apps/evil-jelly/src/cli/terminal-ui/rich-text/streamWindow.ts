@@ -85,13 +85,31 @@ function measureMarkdownStableRows(markdown: string, columns: number): number {
       continue;
     }
     if (block.type === "table") {
-      const { widths } = markdownTableLayout(block, columns);
-      // Every table line is rendered with `wrap="truncate-end"`, so a table too
-      // wide for the terminal loses its right edge instead of reflowing: one
-      // rendered line is always one row.
+      const { mode, widths } = markdownTableLayout(block, columns);
+      if (mode === "records") {
+        const valueColumns = Math.max(1, columns - 1);
+        const recordRows = block.rows.reduce((total, row, rowIndex) => {
+          const cellRows = widths.reduce((cellTotal, _, columnIndex) => {
+            const label = block.headers[columnIndex] || `Column ${columnIndex + 1}`;
+            const value = row[columnIndex] ?? "";
+            return (
+              cellTotal +
+              Math.max(1, measureWrappedRows(label, columns)) +
+              Math.max(1, measureWrappedRows(value, valueColumns))
+            );
+          }, 0);
+          return total + (rowIndex > 0 ? 1 : 0) + cellRows;
+        }, 0);
+        rows += marginTop + recordRows;
+        continue;
+      }
+
+      // Column mode has one heavy header rule, plus a light separator between
+      // logical body rows. Cell content is already wrapped to its column width.
       const tableRows =
-        3 +
+        1 +
         markdownTableRowHeight(block.headers, widths) +
+        Math.max(0, block.rows.length - 1) +
         block.rows.reduce((total, row) => total + markdownTableRowHeight(row, widths), 0);
       rows += marginTop + tableRows;
       continue;
