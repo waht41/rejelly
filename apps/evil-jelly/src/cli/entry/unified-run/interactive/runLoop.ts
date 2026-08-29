@@ -9,6 +9,7 @@ import {
 import { qualifiedSkillName } from "../../../../domains/skills/definition/skillDefinition";
 import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
+import { startupTimeline } from "../../../../shared/profile/startup/timeline";
 import { createMcpChatRuntime } from "../../../mcp-runtime/mcpChatRuntime";
 import { buildConfiguredSkillRuntimeSnapshot } from "../../../skill-runtime/configuredRuntime";
 import { formatSkillRuntimeStartupSummary } from "../../../skill-runtime/startupSummary";
@@ -113,8 +114,10 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
     bindings,
     dynamicServers: params.dynamicMcpServers,
   });
+  startupTimeline.mark("mcp_ready");
   try {
     const skillRuntime = await buildConfiguredSkillRuntimeSnapshot();
+    startupTimeline.mark("skills_ready");
     bindings.setAvailableSkills?.(
       (skillRuntime.snapshot.catalog.entries ?? []).map((skill) => ({
         name: skill.name,
@@ -128,14 +131,20 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
     if (skillSummary) {
       bindings.logSystemEvent(`${skillSummary}\n`);
     }
+    let startupRuntimePending = true;
     // Outer loop: each iteration is one runWith segment (own traceId). A mid-session /resume ends
     // the current run, queues a loop intent, and we restart with the loaded history.
     while (true) {
       const memoryRuntime = await createSessionMemoryRuntime(
         createPersistentMemoryService({ workspaceRoot }),
       );
+      startupTimeline.mark("memory_ready");
       for (const diagnostic of memoryRuntime.diagnostics) {
         bindings.logSystemEvent(`Memory warning: ${diagnostic}\n`);
+      }
+      if (startupRuntimePending) {
+        startupTimeline.mark("runtime_ready");
+        startupRuntimePending = false;
       }
       await runEvilJellyHost(bindings, {
         runControl,

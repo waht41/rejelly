@@ -79,6 +79,18 @@ describe("submission dispatcher", () => {
     expect(aborts).toEqual(["Stopped by user (exit)"]);
   });
 
+  it("queues startup slash commands until the first main input request", async () => {
+    const { ports, exits, aborts, logs } = createPorts();
+    const dispatcher = createSubmissionDispatcher(ports, { initiallyAwaitingInput: true });
+
+    dispatcher.submit(textPromptInput("/status"));
+
+    expect(exits).toEqual([]);
+    expect(aborts).toEqual([]);
+    expect(logs).toEqual([]);
+    await expect(dispatcher.getInput()).resolves.toEqual(textPromptInput("/status"));
+  });
+
   it("does not route a rich document as a local command", async () => {
     const { ports, logs } = createPorts();
     const dispatcher = createSubmissionDispatcher(ports);

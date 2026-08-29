@@ -6,7 +6,6 @@ import fs from "node:fs";
 import path from "node:path";
 import type { ReviewOptions } from "@rejelly/core/debugger";
 import { parse as parseEnv } from "dotenv";
-import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
 import { getWorkspaceFsPolicy } from "../fs-policy/workspace-fs-policy";
 import { resolveGlobalJellyDir } from "../globalPath";
 import {
@@ -142,7 +141,7 @@ type EnvView = { readonly [K in keyof typeof ENV_VARS]: ReturnType<(typeof ENV_V
 
 /**
  * Lazy view over process.env — every access re-reads, never snapshots: loadEvilJellyEnv
- * and setupProxy mutate process.env after module load, so a snapshot taken at import
+ * and configureProxy mutate process.env after module load, so a snapshot taken at import
  * time would see pre-load values.
  */
 export const env: EnvView = Object.defineProperties(
@@ -161,15 +160,17 @@ type OnceFlags = typeof globalThis & Record<symbol, boolean | undefined>;
  * Keep this local copy in sync with @rejelly/env's setupProxy.
  * Evil Jelly has different .env loading semantics but wants the same LLM API proxy behavior.
  */
-function setupProxy(): void {
+type StartProxy = () => Promise<void>;
+
+function configureProxy(): StartProxy {
   const useProxy = process.env.USE_PROXY === "true" || process.env.USE_PROXY === "1";
   if (!useProxy) {
-    return;
+    return () => Promise.resolve();
   }
 
   const flags = globalThis as OnceFlags;
   if (flags[PROXY_ONCE]) {
-    return;
+    return () => Promise.resolve();
   }
   flags[PROXY_ONCE] = true;
 
@@ -183,9 +184,19 @@ function setupProxy(): void {
   process.env.HTTPS_PROXY = proxyUrl;
   process.env.NO_PROXY = "localhost,127.0.0.1,::1";
 
-  setGlobalDispatcher(new EnvHttpProxyAgent());
-
+  // Keep this line before the asynchronous import. Ink owns stdout after mounting, so logging
+  // from the eventual continuation would be rendered into the interactive frame.
   console.log(`[evil-jelly] Proxy configured: ${proxyUrl} (Bypassing local traffic)`);
+
+  let ready: Promise<void> | undefined;
+  return () => {
+    // Starting this alongside the Unified ESM graph only moves its loader cost into runUnified.
+    // The composition root starts it after that graph is ready so Ink can hide the work instead.
+    ready ??= import("undici").then(({ EnvHttpProxyAgent, setGlobalDispatcher }) => {
+      setGlobalDispatcher(new EnvHttpProxyAgent());
+    });
+    return ready;
+  };
 }
 
 /** Global config file: ~/.evil-jelly/.env */
@@ -337,10 +348,15 @@ function assertProfileHasApiKey(
  * development (tests/examples), not to evil the tool. Evil-specific values live in the tool's
  * own `.evil-jelly/.env` namespace; non-secret preferences use settings.jsonc files.
  */
+export interface EvilJellyEnvStartup {
+  /** Starts installing the optional LLM proxy dispatcher; idempotent for this startup. */
+  startProxy: StartProxy;
+}
+
 export function loadEvilJellyEnv(options?: {
   cliApiKey?: string | undefined;
   envFile?: string | undefined;
-}): void {
+}): EvilJellyEnvStartup {
   const sources = new Map<string, EnvLayer>();
   for (const varName of ["OPENAI_API_KEY", ...KEY_ROUTING_VARS]) {
     if (hasEnvValue(process.env[varName])) {
@@ -363,8 +379,7 @@ export function loadEvilJellyEnv(options?: {
     if (hasEnvValue(cliApiKey)) {
       process.env.OPENAI_API_KEY = cliApiKey;
     }
-    setupProxy();
-    return;
+    return { startProxy: configureProxy() };
   }
 
   const workspaceEnvPath = path.join(getWorkspaceFsPolicy().getRoot(), WORKSPACE_ENV_REL_PATH);
@@ -388,7 +403,7 @@ export function loadEvilJellyEnv(options?: {
   }
 
   warnOnWorkspaceRoutedForeignKey(sources);
-  setupProxy();
+  return { startProxy: configureProxy() };
 }
 
 export function exitIfMissingOpenAIKey(): void {

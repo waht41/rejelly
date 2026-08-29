@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { SettingsCliOverrides } from "../../shared/configuration/settings";
+import type { ProfileSelector } from "../../shared/profile/startup/selection";
 
 export interface CommonParsedArgs {
   /** OPENAI_API_KEY override from CLI; highest priority. */
@@ -11,6 +12,8 @@ export interface CommonParsedArgs {
   workspace: string | undefined;
   /** Per-invocation settings overrides (seeded into initSettings at the composition root). */
   settings: SettingsCliOverrides;
+  /** Explicit profile views selected for this invocation; undefined defers to the environment. */
+  profileSelectors: readonly ProfileSelector[] | undefined;
 }
 
 export function failArgs(message: string): never {

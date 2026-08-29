@@ -3,6 +3,10 @@
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import cac from "cac";
+import {
+  type ProfileSelector,
+  parseProfileSelectors,
+} from "../../shared/profile/startup/selection";
 import type { CommonParsedArgs } from "./argsSupport";
 import { failArgs, resolveOptionalPath, resolveOptionalString } from "./argsSupport";
 import {
@@ -91,6 +95,10 @@ cli
     "--workspace <dir>",
     "Workspace root for config and agent tools; defaults to the current directory",
   )
+  .option(
+    "--profile <selector>",
+    "Profile view(s), comma-separated; available: startup, startup:bootstrap, startup:imports, startup:ink",
+  )
   .option("--review", "Enable review trace exporter");
 
 registerUnifiedRunArgs(cli);
@@ -118,11 +126,22 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
     throw new Error("Unknown option `--cwd`; use `--workspace <dir>` instead");
   }
 
+  let profileSelectors: readonly ProfileSelector[] | undefined;
+  const profileSelector = resolveOptionalString(options.profile);
+  if (profileSelector !== undefined) {
+    try {
+      profileSelectors = parseProfileSelectors(profileSelector);
+    } catch (error) {
+      failArgs(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   const common: CommonParsedArgs = {
     cliApiKey: resolveOptionalString(options.apiKey),
     envFile: resolveOptionalString(options.env),
     review: Boolean(options.review),
     workspace: resolveOptionalPath(options.workspace),
+    profileSelectors,
     settings: {
       ...auditSettingsOverrides(options),
     },

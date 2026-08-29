@@ -8,6 +8,7 @@ import {
 } from "../../../shared/configuration/env";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import { textPromptInput } from "../../../shared/model/prompt/promptInput";
+import { startupTimeline } from "../../../shared/profile/startup/timeline";
 import { enqueueMainInput } from "../../submission-dispatch/mainInputQueue";
 import type { RunStartupArgs } from "./args";
 import { runHeadless } from "./headless/runHeadless";
@@ -34,9 +35,18 @@ export interface RunUnifiedOptions {
     bindings: EvilJellyBindings;
     dispose: () => void;
   };
+  /** Proxy dispatcher initialization started by the composition root after env resolution. */
+  proxyReady: Promise<void>;
+  /** Interactive shell mounted by the composition root while the remaining runtime imports. */
+  preparedInteractiveShell?: {
+    bindings: EvilJellyBindings;
+    dispose: () => void;
+    runControl: InteractiveRunControl;
+  };
 }
 
 export async function runUnified(options: RunUnifiedOptions): Promise<void> {
+  startupTimeline.mark("unified_run_entered");
   const { startup, appVersion } = options;
   const dynamicMcpServers = options.devtool
     ? [createDevtoolMcpDesiredServer(`${new URL(getReviewEndpointFromEnv()).origin}/mcp`)]
@@ -51,6 +61,7 @@ export async function runUnified(options: RunUnifiedOptions): Promise<void> {
       console.error("--headless direct UnifiedAgent mode requires --input <text>");
       process.exit(1);
     }
+    await options.proxyReady;
     await runHeadless(options.createBackgroundBindings({ autoAcceptWrite: options.autoAccept }), {
       model: options.createModel(),
       userInput: seedInput,
@@ -59,44 +70,54 @@ export async function runUnified(options: RunUnifiedOptions): Promise<void> {
     process.exit(process.exitCode ?? 0);
   }
 
-  const { sessionId, resumeSeed } = await resolveInitialSession({
-    resume: startup.kind === "resume",
-    resumeSessionId: startup.kind === "resume" ? startup.sessionId : undefined,
-    appVersion,
-  });
-
-  const runControl = createInteractiveRunControl();
-  const { bindings, dispose } = options.createInteractiveBindings({
-    version: appVersion,
-    seedInput: startup.seedInput,
-    reviewCliFlag: options.review,
-    runControl,
-  });
-  const mockTraceId = startup.kind === "mock" ? startup.traceId : undefined;
-  const mockReplay = mockTraceId ? await loadMockReplayFromTraceId(mockTraceId) : undefined;
-  if (mockReplay) {
-    bindings.logSystemEvent(
-      `Mock replay loaded from trace ${mockTraceId} (${mockReplay.sequenceLength} model turn(s)).\n`,
-    );
-    if (startup.kind === "mock" && startup.enqueueTraceInputs) {
-      for (const input of mockReplay.inputs) {
-        enqueueMainInput(textPromptInput(input));
-      }
-      bindings.logSystemEvent(
-        mockReplay.inputs.length > 0
-          ? `Queued ${mockReplay.inputs.length} user input(s) from trace.\n`
-          : "No user inputs found in trace; falling back to manual input.\n",
-      );
-    }
-  }
-  const snapshot =
-    mockReplay?.snapshot ??
-    (await loadStartupSnapshot(
-      startup.kind === "snapshot" ? startup.traceId : undefined,
-      bindings,
-    ));
-  const model = mockReplay?.model ?? options.createModel();
+  let interactiveShell = options.preparedInteractiveShell;
   try {
+    const { sessionId, resumeSeed } = await resolveInitialSession({
+      resume: startup.kind === "resume",
+      resumeSessionId: startup.kind === "resume" ? startup.sessionId : undefined,
+      appVersion,
+    });
+    startupTimeline.mark("session_resolved");
+
+    if (!interactiveShell) {
+      const runControl = createInteractiveRunControl();
+      interactiveShell = {
+        ...options.createInteractiveBindings({
+          version: appVersion,
+          seedInput: startup.seedInput,
+          reviewCliFlag: options.review,
+          runControl,
+        }),
+        runControl,
+      };
+      startupTimeline.mark("ink_mounted");
+    }
+    const { bindings, runControl } = interactiveShell;
+    const mockTraceId = startup.kind === "mock" ? startup.traceId : undefined;
+    const mockReplay = mockTraceId ? await loadMockReplayFromTraceId(mockTraceId) : undefined;
+    if (mockReplay) {
+      bindings.logSystemEvent(
+        `Mock replay loaded from trace ${mockTraceId} (${mockReplay.sequenceLength} model turn(s)).\n`,
+      );
+      if (startup.kind === "mock" && startup.enqueueTraceInputs) {
+        for (const input of mockReplay.inputs) {
+          enqueueMainInput(textPromptInput(input));
+        }
+        bindings.logSystemEvent(
+          mockReplay.inputs.length > 0
+            ? `Queued ${mockReplay.inputs.length} user input(s) from trace.\n`
+            : "No user inputs found in trace; falling back to manual input.\n",
+        );
+      }
+    }
+    const snapshot =
+      mockReplay?.snapshot ??
+      (await loadStartupSnapshot(
+        startup.kind === "snapshot" ? startup.traceId : undefined,
+        bindings,
+      ));
+    const model = mockReplay?.model ?? options.createModel();
+    await options.proxyReady;
     await runInteractiveLoop({
       bindings,
       runControl,
@@ -111,7 +132,7 @@ export async function runUnified(options: RunUnifiedOptions): Promise<void> {
       dynamicMcpServers,
     });
   } finally {
-    dispose();
+    interactiveShell?.dispose();
   }
 
   process.stdout.write("\n");

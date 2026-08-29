@@ -36,7 +36,7 @@ export function createInteractiveSubmission(
           ? useOutputStore.getState().setPhase("awaiting_user", "Waiting for input")
           : useOutputStore.getState().setPhase("working", "Running…"),
     },
-    options,
+    { ...options, initiallyAwaitingInput: true },
   );
   useComposerSession.getState().setBackgroundLineHandler(dispatcher.submit);
   return dispatcher;

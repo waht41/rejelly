@@ -38,6 +38,8 @@ describe("parseCliArgs", () => {
     expect(help).toContain("requires --input and cannot use --resume, --snapshot, or --mock");
     expect(help).toContain("--mock-inputs");
     expect(help).toContain("requires --mock and cannot be combined with --input");
+    expect(help).toContain("--profile <selector>");
+    expect(help).toContain("available: startup, startup:bootstrap, startup:imports, startup:ink");
   });
 
   it("describes required audit options without a misleading negated default", () => {
@@ -81,6 +83,29 @@ describe("parseCliArgs", () => {
   it("resolves relative workspace paths from the current directory", () => {
     const args = parseCliArgs(["node", "evil", "--workspace", "subdir"]);
     expect(args.workspace).toBe(path.resolve("subdir"));
+  });
+
+  it("parses multiple ordered profile selectors", () => {
+    const args = parseCliArgs([
+      "node",
+      "evil",
+      "--profile",
+      "startup:imports,startup,startup:imports",
+    ]);
+
+    expect(args.profileSelectors).toEqual(["startup:imports", "startup"]);
+  });
+
+  it("rejects an unavailable profile selector", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+
+    expect(() => parseCliArgs(["node", "evil", "--profile", "startup:runtime"])).toThrow("exit 1");
+    expect(error).toHaveBeenCalledWith(
+      'Unknown profile selector "startup:runtime". Available: startup, startup:bootstrap, startup:imports, startup:ink.',
+    );
   });
 
   it("rejects the removed --cwd option", () => {

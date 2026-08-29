@@ -28,11 +28,12 @@
  */
 
 import { Box, Text, useStdout } from "ink";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   MAX_EXPLICIT_MEMORY_REFERENCES,
   promptDocumentCommandText,
 } from "../../shared/model/prompt/promptDocument";
+import { startupTimeline } from "../../shared/profile/startup/timeline";
 import { BufferView } from "./editor/BufferView";
 import { useLineKeybindings } from "./editor/keyboard/useLineKeybindings";
 import { usePromptLayout } from "./editor/usePromptLayout";
@@ -92,6 +93,10 @@ export function MessageComposer({
   // Key-claim slot shared with whichever picker overlay is mounted: the picker
   // publishes its handler here and the line keybindings offer it each key first.
   const overlayKeysRef = useRef<ComposerPickerKeyHandler | null>(null);
+
+  useLayoutEffect(() => {
+    startupTimeline.mark("composer_mounted");
+  }, []);
 
   const isMultiline = buf.text.includes("\n");
   const promptLayout = usePromptLayout({

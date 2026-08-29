@@ -1,5 +1,6 @@
 import { type Instance, render } from "ink";
 import React from "react";
+import { startupTimeline } from "../../shared/profile/startup/timeline";
 import { pruneClearedStaticTurns } from "../conversation-display/useOutputStore";
 import { cleanupStaleClipboardImages } from "./clipboard/clipboardImage";
 import { Dashboard } from "./Dashboard";
@@ -49,7 +50,8 @@ function mountInkApp(control: InteractiveShellControl): Instance {
   // pad the previous instance's count) must go, or it would be re-emitted on mount.
   pruneClearedStaticTurns();
   // exitOnCtrlC:false: Dashboard owns Ctrl+C so it can abort the run and close traces cleanly.
-  return render(
+  startupTimeline.mark("ink_render_started");
+  const instance = render(
     React.createElement(Dashboard, {
       onCtrlCAbort: createCtrlCAbortHandler(control),
     }),
@@ -57,6 +59,8 @@ function mountInkApp(control: InteractiveShellControl): Instance {
       exitOnCtrlC: false,
     },
   );
+  startupTimeline.mark("ink_render_returned");
+  return instance;
 }
 
 export function createInteractiveShell(control: InteractiveShellControl): {
@@ -64,6 +68,7 @@ export function createInteractiveShell(control: InteractiveShellControl): {
   clearScreen: () => void;
   dispose: () => void;
 } {
+  startupTimeline.mark("ink_shell_started");
   void cleanupStaleClipboardImages().catch((error) => {
     console.warn(
       `[evil-jelly] Clipboard temp cleanup failed: ${error instanceof Error ? error.message : String(error)}`,

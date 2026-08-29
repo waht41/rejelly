@@ -35,6 +35,8 @@ export interface SubmissionDispatcher {
 export interface SubmissionDispatcherOptions {
   /** First line returned without opening the line prompt. */
   seedLine?: string;
+  /** Queue submissions as main input before the agent reaches its first getInput call. */
+  initiallyAwaitingInput?: boolean;
 }
 
 const USER_STOP_REASON = "Stopped by user (/stop or Esc)";
@@ -70,6 +72,9 @@ export function createSubmissionDispatcher(
   options?: SubmissionDispatcherOptions,
 ): SubmissionDispatcher {
   let pendingSeed = options?.seedLine !== undefined;
+  if (options?.initiallyAwaitingInput) {
+    setAwaitingMainInput(true);
+  }
 
   return {
     submit: (rawInput) => {
@@ -106,6 +111,7 @@ export function createSubmissionDispatcher(
     getInput: async () => {
       if (pendingSeed) {
         pendingSeed = false;
+        setAwaitingMainInput(false);
         ports.setInputPhase("working");
         return textPromptInput((options?.seedLine ?? "").trim());
       }
@@ -113,6 +119,7 @@ export function createSubmissionDispatcher(
       if (pendingSteers.length > 0) {
         const [next, ...rest] = pendingSteers;
         for (const input of rest) enqueueMainInput(input);
+        setAwaitingMainInput(false);
         ports.setInputPhase("working");
         return next!;
       }

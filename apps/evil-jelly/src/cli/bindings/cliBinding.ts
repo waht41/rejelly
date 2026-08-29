@@ -13,6 +13,8 @@ import type {
 import type { AgentModeBindings } from "../../shared/host/modeBindings";
 import type { ConversationPresentationBindings } from "../../shared/host/presentationBindings";
 import type { ToolConfirmationBindings } from "../../shared/host/toolConfirmationBindings";
+import { formatStartupTimelineSummary } from "../../shared/profile/startup/summary";
+import { startupTimeline } from "../../shared/profile/startup/timeline";
 import { resetInterruptibleTaskStack } from "../../shared/task-interruption/taskStack";
 import { resetToolTranscriptViewSession } from "../conversation-display/tool-transcript/viewStore";
 import {
@@ -241,7 +243,10 @@ export function createCliHostBindings(options: CreateCliHostBindingsOptions): {
   dispose: () => void;
 } {
   const { version, seedInput, reviewCliFlag, runControl } = options;
+  startupTimeline.mark("cli_bindings_started");
   resetCliBindingSession();
+  useOutputStore.getState().setPhase("awaiting_user", "Starting runtime…");
+  startupTimeline.mark("cli_session_reset");
 
   const submission = createInteractiveSubmission(
     {
@@ -250,18 +255,27 @@ export function createCliHostBindings(options: CreateCliHostBindingsOptions): {
     },
     seedInput !== undefined ? { seedLine: seedInput } : undefined,
   );
+  startupTimeline.mark("cli_submission_ready");
   const lifecycle = createInteractiveShell({
     requestRunAbort: runControl.segment.requestAbort,
     cancelSubmission: submission.cancel,
   });
+  startupTimeline.mark("cli_shell_ready");
   const outputBindings = createOutputBindings();
   const promptBindings = createPromptBindings({
-    getInput: submission.getInput,
+    getInput: async () => {
+      const startupReport = startupTimeline.finish("input_ready");
+      if (startupReport) {
+        outputBindings.logSystemEvent(formatStartupTimelineSummary(startupReport));
+      }
+      return submission.getInput();
+    },
     suspendInkForExternalProcess: lifecycle.suspendForExternalProcess,
   });
   const showBanner = () => showSessionBanner(version);
 
   logCliStartup(outputBindings.logSystemEvent, showBanner, reviewCliFlag);
+  startupTimeline.mark("cli_bindings_ready");
   return {
     bindings: {
       ...promptBindings,
