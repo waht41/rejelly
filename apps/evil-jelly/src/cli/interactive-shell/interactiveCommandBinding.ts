@@ -12,7 +12,7 @@ export const handleLocalCommand = createInteractiveCommandHandler({
   listTools: () =>
     useOutputStore
       .getState()
-      .history.filter((turn) => turn.type === "tool")
+      .toolHistory.filter((turn) => turn.type === "tool")
       .map((turn, index) => ({
         ordinal: turn.tool.ordinal ?? index + 1,
         toolName: turn.tool.toolName,

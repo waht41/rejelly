@@ -16,7 +16,11 @@ import {
   emptySessionMcpState,
   type SessionMcpState,
 } from "../../../../shared/model/mcp/sessionMcpState";
-import type { TranscriptItem } from "../../../../shared/session/transcript";
+import {
+  RESUME_VISIBLE_TURNS,
+  type TranscriptItem,
+  tailTranscriptByInitialTurns,
+} from "../../../../shared/session/transcript";
 
 export interface SessionResumeSeed {
   activeContext: Message[];
@@ -97,7 +101,7 @@ export function buildLegacyResumeSeed(
 ): SessionResumeSeed {
   return {
     activeContext: messages,
-    transcript: buildLegacyTranscript(messages, { tailTurns: 10 }),
+    transcript: buildLegacyTranscript(messages),
     totalTurns: options.totalTurns ?? countConversationTurns(messages),
     budget: options.budget,
     mcp: emptySessionMcpState(),
@@ -128,11 +132,12 @@ export function hydrateResumeSeed(
   seed: SessionResumeSeed,
 ): void {
   const { transcript } = seed;
+  const visibleTranscript = tailTranscriptByInitialTurns(transcript, RESUME_VISIBLE_TURNS);
 
   if (bindings.hydrateHistory) {
     bindings.hydrateHistory(transcript);
   } else {
-    for (const item of transcript) {
+    for (const item of visibleTranscript) {
       if (item.type === "user") {
         const actions = item.attachments?.map(
           (attachment) => `  -> ${attachment.action} ${attachment.label}`,
@@ -149,7 +154,9 @@ export function hydrateResumeSeed(
         const toolName = item.toolName;
         bindings.logToolBlock({
           toolName,
-          summary: toolSummary(toolName, item.arguments),
+          summary: item.summary ?? toolSummary(toolName, item.arguments),
+          args: item.arguments,
+          detail: item.detail,
           preview: previewOf(text),
           fullResult: text,
           ok: item.ok,
@@ -158,7 +165,7 @@ export function hydrateResumeSeed(
     }
   }
   const visibleTurns = new Set(
-    transcript
+    visibleTranscript
       .filter((item) => item.type === "user" && item.inputKind !== "steer")
       .map((item) => item.turnId),
   ).size;

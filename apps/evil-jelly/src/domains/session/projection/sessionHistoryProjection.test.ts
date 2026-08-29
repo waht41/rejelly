@@ -255,6 +255,61 @@ describe("session history projections", () => {
     );
   });
 
+  it("merges durable observation metadata into its canonical tool call", () => {
+    const events: SessionEvent[] = [
+      userEvent(1, "turn-1", "edit it"),
+      event(
+        {
+          type: "message_recorded",
+          turnId: "turn-1",
+          source: { kind: "model" },
+          message: {
+            role: "assistant",
+            content: null,
+            tool_calls: [{ id: "call-1", name: "edit_file", arguments: '{"path":"a.ts"}' }],
+          },
+        },
+        2,
+      ),
+      {
+        type: "tool_observation_recorded",
+        seq: 3,
+        timestamp: 103,
+        turnId: "turn-1",
+        toolCallId: "call-1",
+        toolName: "edit_file",
+        summary: "[Tools] edit_file → a.ts",
+        detail: {
+          type: "diff",
+          text: "@@ -1 +1 @@\n-old\n+new",
+          phase: "applied",
+          presentation: "inline",
+        },
+        ok: false,
+      },
+      event(
+        {
+          type: "message_recorded",
+          turnId: "turn-1",
+          source: { kind: "tool" },
+          message: { role: "tool", tool_call_id: "call-1", content: "updated" },
+        },
+        4,
+      ),
+    ];
+
+    expect(buildTranscript(replay(events))).toContainEqual(
+      expect.objectContaining({
+        type: "tool",
+        toolCallId: "call-1",
+        summary: "[Tools] edit_file → a.ts",
+        detail: expect.objectContaining({ type: "diff", phase: "applied" }),
+        result: "updated",
+        ok: false,
+      }),
+    );
+  });
+
   it("leaves a single tool call unheaded, since one block is its own batch", () => {
     const events: SessionEvent[] = [
       userEvent(1, "turn-1", "check one"),

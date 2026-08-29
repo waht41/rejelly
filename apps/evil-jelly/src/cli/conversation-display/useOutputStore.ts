@@ -2,7 +2,11 @@
 
 import { create } from "zustand";
 import type { RuntimePhase } from "../../shared/host/presentationBindings";
-import type { TranscriptItem } from "../../shared/session/transcript";
+import {
+  RESUME_VISIBLE_TURNS,
+  type TranscriptItem,
+  tailTranscriptByInitialTurns,
+} from "../../shared/session/transcript";
 import type { ToolCallHandle, ToolObservationStart } from "../../shared/tool-observation/model";
 import { AssistantStreamBuffer } from "./assistant-stream/buffer";
 import {
@@ -53,6 +57,8 @@ const assistantStream = new AssistantStreamBuffer(({ stableText, tailText }) => 
 interface OutputState extends RunningToolsState, RuntimeStatusState {
   streamBuffer: string;
   history: Turn[];
+  /** Complete current-session tool archive; unlike visible history it is not resume-tail limited. */
+  toolHistory: Turn[];
   /**
    * Turns wiped by `/clear`, kept as a frozen prefix for the Dashboard `<Static>` items.
    * Ink's `<Static>` counts already-flushed items in instance state, so its items array must
@@ -100,6 +106,7 @@ export const useOutputStore = create<OutputState>((set) => ({
   runningTools: [],
   runtime: idleRuntime(),
   history: [],
+  toolHistory: [],
   clearedStaticTurns: [],
 
   appendStream: (text) => {
@@ -213,17 +220,16 @@ export const useOutputStore = create<OutputState>((set) => ({
       // with it — a stale tail under a number that already scrolled past reads
       // as if the tool were still running.
       const runningTools = finishRunningTool(state.runningTools, block.id);
+      const completedTool = toolTurn(
+        historySequence,
+        block,
+        // Without a handle the host never numbered this call, so fall back to
+        // the order blocks land in.
+        state.toolHistory.length + 1,
+      );
       const patch: Partial<OutputState> = {
-        history: [
-          ...state.history,
-          toolTurn(
-            historySequence,
-            block,
-            // Without a handle the host never numbered this call, so fall back to
-            // the order blocks land in.
-            state.history.filter((turn) => turn.type === "tool").length + 1,
-          ),
-        ],
+        history: [...state.history, completedTool],
+        toolHistory: [...state.toolHistory, completedTool],
         runningTools,
       };
       const runtime = finishRuntimeToolBatch(state.runtime, runningTools.length > 0);
@@ -278,12 +284,13 @@ export const useOutputStore = create<OutputState>((set) => ({
   },
   clearHistory: () => {
     // Turn ids keep counting: they must stay unique across clearedStaticTurns + history.
-    // Ordinals do restart: `/expand-tool #N` only searches the live history, which is now empty.
+    // Ordinals restart because `/expand-tool #N` searches the tool archive, which is now empty.
     historySequence.resetToolOrdinals();
     clearStreamState();
     set((state) => ({
       clearedStaticTurns: [...state.clearedStaticTurns, ...state.history],
       history: [],
+      toolHistory: [],
       streamBuffer: "",
       runningTools: [],
       runtime: idleRuntime(),
@@ -291,8 +298,12 @@ export const useOutputStore = create<OutputState>((set) => ({
   },
   hydrateHistory: (items) => {
     clearStreamState();
+    const projected = projectTranscriptHistory(items, historySequence);
+    const visibleItems = tailTranscriptByInitialTurns(items, RESUME_VISIBLE_TURNS);
+    const visibleProjected = projected.slice(projected.length - visibleItems.length);
     set((state) => ({
-      history: [...state.history, ...projectTranscriptHistory(items, historySequence)],
+      history: [...state.history, ...visibleProjected],
+      toolHistory: [...state.toolHistory, ...projected.filter((turn) => turn.type === "tool")],
       streamBuffer: "",
       runningTools: [],
       runtime: idleRuntime(),
@@ -309,6 +320,7 @@ export function resetOutputSession(): void {
     runningTools: [],
     runtime: idleRuntime(),
     history: [],
+    toolHistory: [],
     clearedStaticTurns: [],
   });
 }

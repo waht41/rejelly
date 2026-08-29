@@ -132,6 +132,24 @@ describe("sessionEvents", () => {
     ).toThrow(SessionSchemaError);
   });
 
+  it("records durable tool presentation metadata only in V3", () => {
+    const observation = {
+      type: "tool_observation_recorded" as const,
+      turnId: "turn-1",
+      toolCallId: "call-1",
+      toolName: "edit_file",
+      summary: "[Tools] edit_file → a.ts",
+      args: '{"path":"a.ts"}',
+      detail: { type: "diff" as const, text: "-old\n+new", phase: "applied" as const },
+      ok: true,
+    };
+
+    expect(parseNewSessionEvent(observation)).toMatchObject(observation);
+    expect(() => parseSessionEvent({ ...observation, seq: 1, timestamp: 2 }, 2)).toThrow(
+      SessionSchemaError,
+    );
+  });
+
   it("records a complete session MCP selection set only in V3", () => {
     expect(
       parseNewSessionEvent({

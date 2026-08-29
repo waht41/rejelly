@@ -39,13 +39,13 @@ function TranscriptLine({ line }: { line: ToolTranscriptRenderLine }) {
 }
 
 export function ToolTranscriptOverlay() {
-  const history = useOutputStore((s) => s.history);
+  const toolHistory = useOutputStore((s) => s.toolHistory);
   const closeTranscript = useToolTranscriptViewStore((s) => s.closeTranscript);
   const { stdout } = useStdout();
   const rows = stdout?.rows ?? 24;
   const columns = stdout?.columns ?? 80;
 
-  const toolEntries = useMemo(() => buildToolTranscriptEntries(history), [history]);
+  const toolEntries = useMemo(() => buildToolTranscriptEntries(toolHistory), [toolHistory]);
   const listViewportRows = Math.max(4, rows - 3); // reserve 1 for header + 1 gap + 1 status
   const detailViewportLines = Math.max(4, rows - 3);
   const pageStep = Math.max(1, Math.floor(listViewportRows * PAGE_SCROLL_FRACTION));

@@ -10,7 +10,16 @@
  */
 
 import type { Message } from "@rejelly/core";
+import type { ToolObservationDetail } from "../tool-observation/model";
 import type { NonUserMessageSource } from "./messageSource";
+
+export interface SessionToolObservation {
+  toolName: string;
+  summary: string;
+  args?: string;
+  detail?: ToolObservationDetail;
+  ok: boolean;
+}
 
 export interface SessionCompactionRecord {
   trigger: "auto" | "manual";
@@ -28,6 +37,12 @@ export interface SessionMessageSink {
   recordMessages(
     turnId: string,
     entries: readonly { source: NonUserMessageSource; message: Message }[],
+  ): Promise<void>;
+  /** Durable presentation metadata keyed to the canonical model tool call. */
+  recordToolObservation?(
+    turnId: string,
+    toolCallId: string,
+    observation: SessionToolObservation,
   ): Promise<void>;
   /** Mid-loop auto-compaction records itself here; manual `/compress` goes through the shell. */
   recordCompaction(record: SessionCompactionRecord): Promise<void>;

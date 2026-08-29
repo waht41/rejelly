@@ -12,6 +12,7 @@ import {
   type RunSegmentStartedEvent,
   type SessionEvent,
   type SessionStateEvent,
+  type ToolObservationRecordedEvent,
   type TurnCompletedEvent,
   type UserInputRecordedEvent,
 } from "../model/sessionEvents";
@@ -47,6 +48,7 @@ export type PreparedSessionEvent =
   | RunSegmentEndedEvent
   | PreparedMessageRecordedEvent
   | PreparedUserInputRecordedEvent
+  | ToolObservationRecordedEvent
   | McpSelectionChangedEvent
   | McpToolGrantsChangedEvent
   | TurnCompletedEvent

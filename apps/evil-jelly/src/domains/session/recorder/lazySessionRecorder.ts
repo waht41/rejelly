@@ -83,6 +83,12 @@ export class LazySessionRecorder implements SessionRecorder {
     await (await this.#ensureOpen()).recordMessages(...args);
   }
 
+  async recordToolObservation(
+    ...args: Parameters<SessionRecorder["recordToolObservation"]>
+  ): Promise<void> {
+    await (await this.#ensureOpen()).recordToolObservation(...args);
+  }
+
   async recordCompaction(...args: Parameters<SessionRecorder["recordCompaction"]>): Promise<void> {
     await (await this.#ensureOpen()).recordCompaction(...args);
   }
