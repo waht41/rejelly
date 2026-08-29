@@ -225,7 +225,15 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
               <TextDecisionPrompt label={decision.label} />
             ) : canShowLinePrompt ? (
               <Box flexDirection="column">
-                <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
+                <Box
+                  flexDirection="column"
+                  borderStyle="single"
+                  borderColor="gray"
+                  borderTop={false}
+                  borderLeft={false}
+                  borderRight={false}
+                  paddingX={1}
+                >
                   <SteerQueueList items={queuedSteers} columns={columns} />
                   {isAgentWorking ? <Text dimColor> · /stop or Esc to interrupt</Text> : null}
                   <MessageComposer
