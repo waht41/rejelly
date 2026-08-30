@@ -3,7 +3,7 @@
  */
 
 import type { DOMElement } from "ink";
-import { Box, measureElement, Static, Text, useInput, useWindowSize } from "ink";
+import { Box, measureElement, Text, useInput, useWindowSize } from "ink";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   type PromptInput,
@@ -12,7 +12,7 @@ import {
 } from "../../shared/model/prompt/promptInput";
 import { hasActiveInterruptibleTask } from "../../shared/task-interruption/taskStack";
 import { AssistantStreamView } from "../conversation-display/assistant-stream/AssistantStreamView";
-import { HistoryItem } from "../conversation-display/history/HistoryItem";
+import { StaticHistory } from "../conversation-display/history/StaticHistory";
 import { RunningToolList } from "../conversation-display/running-tools/RunningToolList";
 import { RuntimeStatusLine } from "../conversation-display/runtime-status/RuntimeStatusLine";
 import { isRuntimeActive } from "../conversation-display/runtime-status/state";
@@ -128,7 +128,6 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
     () => (clearedStaticTurns.length === 0 ? history : [...clearedStaticTurns, ...history]),
     [clearedStaticTurns, history],
   );
-
   // The tail window lives inside the measured transient region, so the assistant
   // stream's budget already shrinks around it. Keep it a modest slice of the
   // terminal so a short window still leaves room for everything else.
@@ -178,9 +177,7 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
   // a sibling keeps the same <Static> instance mounted, so nothing gets re-flushed.
   return (
     <>
-      <Static items={staticTurns}>
-        {(turn) => <HistoryItem key={turn.id} turn={turn} columns={columns} />}
-      </Static>
+      <StaticHistory turns={staticTurns} columns={columns} hideTransient={transcriptOpen} />
 
       {transcriptOpen ? (
         <ToolTranscriptOverlay />

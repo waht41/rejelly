@@ -1,6 +1,6 @@
 import { link as terminalLink } from "ansi-escapes";
 import { Box, Text } from "ink";
-import { type ReactNode, useSyncExternalStore } from "react";
+import { type ReactNode, useEffect, useSyncExternalStore } from "react";
 import stringWidth from "string-width";
 import wrapAnsi from "wrap-ansi";
 import { normalizeNewlines } from "../../../shared/foundation/string";
@@ -15,6 +15,7 @@ import {
 } from "./markdownParser";
 import {
   highlightCodeLines,
+  requestSyntaxHighlighter,
   subscribeSyntaxHighlighter,
   syntaxHighlighterSnapshot,
 } from "./syntaxHighlight";
@@ -674,6 +675,9 @@ function MarkdownCodeBlock({
     syntaxHighlighterSnapshot,
     syntaxHighlighterSnapshot,
   );
+  useEffect(() => {
+    requestSyntaxHighlighter(lines, language);
+  }, [language, lines]);
   const highlightedLines = highlightCodeLines(lines, language);
   return (
     <Box flexDirection="column" marginTop={marginTop}>

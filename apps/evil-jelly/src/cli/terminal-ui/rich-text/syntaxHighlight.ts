@@ -1,19 +1,18 @@
-import { registerStartupReadyTask } from "../../../shared/profile/startup/readyTasks";
 import { DIFF_COLORS } from "./diffTheme";
 
 const MAX_HIGHLIGHT_BYTES = 512 * 1024;
 const MAX_HIGHLIGHT_LINES = 10_000;
 const MAX_HIGHLIGHT_LINE_BYTES = 4 * 1024;
-const HIGHLIGHT_WARMUP_DELAY_MS = 250;
 const ANSI_FOREGROUND_RESET = "\u001B[39m";
 
 type ColorFormatter = (text: string) => string;
 type SyntaxHighlighter = (lines: string[], language: string) => string[];
 type SyntaxHighlightListener = () => void;
+export type SyntaxHighlighterState = "idle" | "loading" | "ready" | "unavailable";
 
 let highlighter: SyntaxHighlighter | undefined;
 let highlighterLoad: Promise<void> | undefined;
-let snapshotVersion = 0;
+let highlighterState: SyntaxHighlighterState = "idle";
 const listeners = new Set<SyntaxHighlightListener>();
 
 function rgb(red: number, green: number, blue: number): ColorFormatter {
@@ -68,8 +67,7 @@ function highlightDiffLines(lines: string[]): string[] {
   });
 }
 
-function notifyHighlighterReady(): void {
-  snapshotVersion += 1;
+function notifyHighlighterState(): void {
   for (const listener of listeners) listener();
 }
 
@@ -78,12 +76,20 @@ function notifyHighlighterReady(): void {
  * code blocks as plain text rather than affecting the CLI or retrying forever.
  */
 export function warmSyntaxHighlighter(): Promise<void> {
-  highlighterLoad ??= import("./syntaxHighlightRuntime")
-    .then((runtime) => {
-      highlighter = runtime.highlightCodeLines;
-      notifyHighlighterReady();
-    })
-    .catch(() => undefined);
+  highlighterLoad ??= (() => {
+    highlighterState = "loading";
+    notifyHighlighterState();
+    return import("./syntaxHighlightRuntime")
+      .then((runtime) => {
+        highlighter = runtime.highlightCodeLines;
+        highlighterState = "ready";
+        notifyHighlighterState();
+      })
+      .catch(() => {
+        highlighterState = "unavailable";
+        notifyHighlighterState();
+      });
+  })();
   return highlighterLoad;
 }
 
@@ -92,8 +98,24 @@ export function subscribeSyntaxHighlighter(listener: SyntaxHighlightListener): (
   return () => listeners.delete(listener);
 }
 
-export function syntaxHighlighterSnapshot(): number {
-  return snapshotVersion;
+export function syntaxHighlighterSnapshot(): SyntaxHighlighterState {
+  return highlighterState;
+}
+
+/** Whether a code fence is eligible for the optional syntax engine. */
+export function needsSyntaxHighlighter(lines: string[], language?: string): boolean {
+  if (!language || lines.length === 0) return false;
+
+  const code = lines.join("\n");
+  const normalized = normalizedLanguage(language);
+  return Boolean(normalized && normalized !== "diff" && !exceedsHighlightLimits(code, lines));
+}
+
+/** Loads the syntax engine only after a renderable non-diff code fence needs it. */
+export function requestSyntaxHighlighter(lines: string[], language?: string): void {
+  if (!needsSyntaxHighlighter(lines, language)) return;
+
+  void warmSyntaxHighlighter();
 }
 
 /**
@@ -112,10 +134,3 @@ export function highlightCodeLines(lines: string[], language?: string): string[]
 
   return highlighter(lines, normalized);
 }
-
-registerStartupReadyTask(() => {
-  const timer = setTimeout(() => {
-    void warmSyntaxHighlighter();
-  }, HIGHLIGHT_WARMUP_DELAY_MS);
-  timer.unref();
-});
