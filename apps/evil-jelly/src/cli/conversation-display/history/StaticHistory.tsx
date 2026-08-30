@@ -1,4 +1,4 @@
-import { Box, Static } from "ink";
+import { Static } from "ink";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { parseMarkdownBlocks } from "../../terminal-ui/rich-text/markdownParser";
 import {
@@ -35,17 +35,10 @@ function turnSyntaxHighlightRequest(turn: Turn): SyntaxHighlightRequest | undefi
 /**
  * Commits immutable history to Ink's scrollback only after optional syntax
  * highlighting has settled. Once a `<Static>` item is flushed it cannot be
- * revised, so the pending suffix temporarily remains in the live region.
+ * revised, so the pending suffix stays withheld instead of flashing as plain
+ * text and becoming visually inconsistent with the highlighted replay.
  */
-export function StaticHistory({
-  turns,
-  columns,
-  hideTransient,
-}: {
-  turns: Turn[];
-  columns: number;
-  hideTransient: boolean;
-}) {
+export function StaticHistory({ turns, columns }: { turns: Turn[]; columns: number }) {
   const syntaxHighlighterState = useSyncExternalStore(
     subscribeSyntaxHighlighter,
     syntaxHighlighterSnapshot,
@@ -62,7 +55,6 @@ export function StaticHistory({
     return undefined;
   }, [turns, syntaxHighlighterState]);
   const readyTurns = pendingSyntax ? turns.slice(0, pendingSyntax.index) : turns;
-  const deferredTurns = pendingSyntax ? turns.slice(pendingSyntax.index) : [];
 
   useEffect(() => {
     if (pendingSyntax) {
@@ -71,17 +63,8 @@ export function StaticHistory({
   }, [pendingSyntax]);
 
   return (
-    <>
-      <Static items={readyTurns}>
-        {(turn) => <HistoryItem key={turn.id} turn={turn} columns={columns} />}
-      </Static>
-      {!hideTransient && deferredTurns.length > 0 ? (
-        <Box flexDirection="column">
-          {deferredTurns.map((turn) => (
-            <HistoryItem key={turn.id} turn={turn} columns={columns} />
-          ))}
-        </Box>
-      ) : null}
-    </>
+    <Static items={readyTurns}>
+      {(turn) => <HistoryItem key={turn.id} turn={turn} columns={columns} />}
+    </Static>
   );
 }

@@ -177,7 +177,7 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
   // a sibling keeps the same <Static> instance mounted, so nothing gets re-flushed.
   return (
     <>
-      <StaticHistory turns={staticTurns} columns={columns} hideTransient={transcriptOpen} />
+      <StaticHistory turns={staticTurns} columns={columns} />
 
       {transcriptOpen ? (
         <ToolTranscriptOverlay />
