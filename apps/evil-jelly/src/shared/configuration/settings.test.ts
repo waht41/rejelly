@@ -88,6 +88,24 @@ describe("settings resolution", () => {
     expect(resolveUserSettingsPath()).toBe(join(homeDir, ".evil-jelly", "settings.jsonc"));
   });
 
+  it("loads a shared home path only as user settings and preserves MCP provenance", () => {
+    setWorkspaceRoot(homeDir);
+    writeUserSettingsFile(`{
+      "audit": { "concurrency": 4 },
+      "mcp": { "servers": {
+        "docs": { "transport": { "type": "stdio", "command": "user-command" } }
+      } }
+    }`);
+    initSettings({});
+
+    const settings = getSettings();
+    expect(settings.audit.concurrency).toBe(4);
+    expect(settings.mcp.workspace.value).toBeUndefined();
+    expect(resolveMcpSettingsLayers(settings.mcp).servers).toEqual([
+      expect.objectContaining({ id: "docs", source: { kind: "user" } }),
+    ]);
+  });
+
   it("resolves each workspace field over its user default", () => {
     writeUserSettingsFile(`{
       "audit": { "concurrency": 4, "maxSeeds": 48, "ledgerGcDays": 21 }

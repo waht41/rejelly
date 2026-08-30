@@ -161,6 +161,24 @@ describe("loadEvilJellyEnv", () => {
     expect(process.env.OPENAI_MODEL_ID).toBe("ws-model");
   });
 
+  it("treats a home workspace env path only as the global layer", () => {
+    const homeDir = useHomeDir();
+    writeGlobalEnv(
+      homeDir,
+      "OPENAI_API_KEY=global-key\nOPENAI_BASE_URL=https://global.example/v1\n",
+    );
+    setWorkspaceRoot(homeDir);
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_BASE_URL;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    loadEvilJellyEnv();
+
+    expect(process.env.OPENAI_API_KEY).toBe("global-key");
+    expect(process.env.OPENAI_BASE_URL).toBe("https://global.example/v1");
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
   it("keeps process env value over file values", () => {
     createWorkspaceWithEnv("OPENAI_API_KEY=workspace-key\n");
     process.env.OPENAI_API_KEY = "env-key";

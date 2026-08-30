@@ -15,13 +15,19 @@ import {
 } from "../../../shared/configuration/settings";
 import { getErrnoCode } from "../../../shared/foundation/errno";
 import { parseJsonc } from "../../../shared/foundation/jsonc";
+import { resolveWorkspaceScopePaths } from "../../../shared/workspaceScope";
 
 export type McpPersistentScope = "user" | "project";
 
 export function resolveMcpSettingsPath(scope: McpPersistentScope, workspaceRoot: string): string {
-  return scope === "user"
-    ? resolveUserSettingsPath()
-    : path.join(workspaceRoot, SETTINGS_FILE_REL_PATH);
+  if (scope === "user") return resolveUserSettingsPath();
+  const scopePaths = resolveWorkspaceScopePaths(workspaceRoot);
+  if (!scopePaths.hasDistinctProjectState) {
+    throw new Error(
+      "Project MCP settings are unavailable because the workspace .evil-jelly directory is the user-global directory. Use user scope or start Evil in a project workspace.",
+    );
+  }
+  return path.join(workspaceRoot, SETTINGS_FILE_REL_PATH);
 }
 
 interface SettingsDocument {

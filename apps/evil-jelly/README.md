@@ -203,6 +203,8 @@ Memory is stored outside the workspace at:
 
 Project identity is a local UUID registered on this machine. Git helps discover an initial project root and dynamically associate linked worktrees, but Git remotes, branches, `.git` presence, and worktree paths do not directly become the memory identity. Existing registered project boundaries win over later Git topology changes, and worktree aliases are not persisted.
 
+The user home directory is registered as a special `home` project when Evil starts there. It uses the normal project-memory file, never user memory, but matches only the exact home directory. It cannot become an ancestor boundary for repositories below `~`. Legacy registries are migrated in place without moving or rewriting their memory files.
+
 Memory is lower-priority context, not a rule or permission grant. Application safety rules and workspace `AGENTS.override.md` / `AGENTS.md` instructions override it, as does the current explicit user request; project memory is more specific than user memory. Memory files are local machine data and are not included in ordinary workspace file-tool paths. Deleting an entry (or the memory files) does not retroactively remove user messages, tool arguments, or other already-recorded content from session logs or Review traces.
 
 ### One-shot audits
@@ -398,6 +400,8 @@ All Evil Jelly configuration lives under an `.evil-jelly/` directory:
 ### User and workspace settings
 
 `~/.evil-jelly/settings.jsonc` supplies user defaults; the ignored `.evil-jelly/settings.jsonc` at the Agent workspace root overrides individual fields for that local checkout. Both files use the same strict schema. Every field is optional, so either file may be absent; a malformed file fails loudly. Copy `.evil-jelly/settings.example.jsonc` when a workspace-local override is needed. `getSettings()` in `src/shared/configuration/settings.ts` resolves each field explicitly, and `initSettings` injects CLI overrides at the composition root.
+
+When the workspace is the user home directory (or its `.evil-jelly` path aliases the global directory), that physical directory is loaded only as user configuration. Project settings, project Skills, project env, and project MCP mutations are unavailable for that run; select another workspace to create project-scoped configuration. Home project memory remains available through its separate UUID-backed memory store.
 
 ```jsonc
 {

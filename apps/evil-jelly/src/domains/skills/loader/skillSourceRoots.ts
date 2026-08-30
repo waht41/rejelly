@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getErrnoCode } from "../../../shared/foundation/errno";
+import { resolveWorkspaceScopePaths } from "../../../shared/workspaceScope";
 import type { SkillScope } from "../definition/skillDefinition";
 import { type SkillLoadDiagnostic, skillDiagnostic } from "./diagnostics";
 
@@ -25,17 +26,22 @@ export interface SkillSourceDiscovery {
   readonly diagnostics: readonly SkillLoadDiagnostic[];
 }
 
-/** Resolve the two fixed roots without touching the filesystem. */
+/** Resolve fixed user/project roots without assigning one physical directory to both scopes. */
 export function resolveSkillRoots(
   workspaceRoot: string,
   globalJellyDir: string,
 ): ResolvedSkillRoots {
+  const scopePaths = resolveWorkspaceScopePaths(workspaceRoot, globalJellyDir);
   const roots: readonly SkillSourceRoot[] = Object.freeze([
-    Object.freeze({ scope: "user", path: path.join(path.resolve(globalJellyDir), "skills") }),
-    Object.freeze({
-      scope: "project",
-      path: path.join(path.resolve(workspaceRoot), ".evil-jelly", "skills"),
-    }),
+    Object.freeze({ scope: "user", path: path.join(scopePaths.globalJellyDir, "skills") }),
+    ...(scopePaths.hasDistinctProjectState
+      ? [
+          Object.freeze({
+            scope: "project" as const,
+            path: path.join(scopePaths.workspaceJellyDir, "skills"),
+          }),
+        ]
+      : []),
   ]);
   return Object.freeze({ roots });
 }

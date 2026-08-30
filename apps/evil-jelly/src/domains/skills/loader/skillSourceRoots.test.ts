@@ -40,6 +40,14 @@ describe("loose Skill source roots", () => {
     expect(Object.isFrozen(resolved.roots)).toBe(true);
   });
 
+  it("does not reinterpret the user Skill root as project scope in a home workspace", () => {
+    const homeWorkspace = path.dirname(globalJellyDir);
+
+    expect(resolveSkillRoots(homeWorkspace, globalJellyDir).roots).toEqual([
+      { scope: "user", path: path.join(globalJellyDir, "skills") },
+    ]);
+  });
+
   it("treats missing roots as an empty, diagnostic-free result", async () => {
     await expect(discoverSkillSources(roots())).resolves.toEqual({
       sources: [],

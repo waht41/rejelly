@@ -18,6 +18,7 @@ import { getErrnoCode } from "../foundation/errno";
 import { parseAndValidateJsonc } from "../foundation/jsonc";
 import { getWorkspaceFsPolicy } from "../fs-policy/workspace-fs-policy";
 import { resolveGlobalJellyDir } from "../globalPath";
+import { resolveWorkspaceScopePaths } from "../workspaceScope";
 
 export const SETTINGS_FILE_REL_PATH = ".evil-jelly/settings.jsonc";
 export const DOC_MAP_DEFAULT_PATH = ".evil-jelly/doc-map.jsonc";
@@ -142,9 +143,10 @@ export function getSettings(): ResolvedSettings {
     return cache.resolved;
   }
   const userPath = resolveUserSettingsPath();
-  const workspacePath = path.join(root, SETTINGS_FILE_REL_PATH);
+  const scopePaths = resolveWorkspaceScopePaths(root);
+  const workspacePath = path.join(scopePaths.workspaceJellyDir, "settings.jsonc");
   const userFile = readSettingsFile(userPath);
-  const workspaceFile = readSettingsFile(workspacePath);
+  const workspaceFile = scopePaths.hasDistinctProjectState ? readSettingsFile(workspacePath) : {};
   const resolved: ResolvedSettings = {
     docMap: cliOverrides.docMap ?? DOC_MAP_DEFAULT_PATH,
     audit: {

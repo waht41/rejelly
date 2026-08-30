@@ -81,6 +81,15 @@ describe("MCP settings file repository", () => {
     expect(readMcpSettingsScope("user", workspace).servers?.docs).toBeDefined();
   });
 
+  it("rejects project mutations when the home workspace aliases user settings", () => {
+    expect(() => resolveMcpSettingsPath("project", home)).toThrow(
+      /Project MCP settings are unavailable/,
+    );
+    expect(resolveMcpSettingsPath("user", home)).toBe(
+      path.join(home, ".evil-jelly", "settings.jsonc"),
+    );
+  });
+
   it("rejects reserved ids and reports a malformed server path", () => {
     expect(() =>
       addMcpServerSettings("user", workspace, "evil.devtool", {

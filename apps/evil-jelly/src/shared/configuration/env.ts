@@ -8,6 +8,7 @@ import type { ReviewOptions } from "@rejelly/core/debugger";
 import { parse as parseEnv } from "dotenv";
 import { getWorkspaceFsPolicy } from "../fs-policy/workspace-fs-policy";
 import { resolveGlobalJellyDir } from "../globalPath";
+import { resolveWorkspaceScopePaths } from "../workspaceScope";
 import {
   DEFAULT_OPENAI_BASE_URL,
   DEFAULT_OPENAI_MODEL_ID,
@@ -382,9 +383,12 @@ export function loadEvilJellyEnv(options?: {
     return { startProxy: configureProxy() };
   }
 
-  const workspaceEnvPath = path.join(getWorkspaceFsPolicy().getRoot(), WORKSPACE_ENV_REL_PATH);
+  const scopePaths = resolveWorkspaceScopePaths(getWorkspaceFsPolicy().getRoot());
+  const workspaceEnvPath = path.join(scopePaths.workspaceJellyDir, ".env");
   const layers: ReadonlyArray<{ name: EnvLayer; values: Record<string, string> }> = [
-    { name: "workspace", values: readEnvFile(workspaceEnvPath) },
+    ...(scopePaths.hasDistinctProjectState
+      ? [{ name: "workspace" as const, values: readEnvFile(workspaceEnvPath) }]
+      : []),
     { name: "global", values: readEnvFile(resolveGlobalEnvPath()) },
   ];
   for (const layer of layers) {

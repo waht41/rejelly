@@ -1,12 +1,16 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { resolveGlobalJellyDir } from "../../../shared/globalPath";
+import { isHomeWorkspace } from "../../../shared/workspaceScope";
 import {
   canonicalProjectPath,
   findRegisteredProject,
   getOrCreateRegisteredProject,
   listRegisteredProjects,
+  type MemoryProjectKind,
   type MemoryProjectRecord,
+  migrateLegacyProjectRegistry,
 } from "./memoryProjectRegistry";
 
 export interface MemoryProjectIdentity {
@@ -14,6 +18,7 @@ export interface MemoryProjectIdentity {
   readonly root: string;
   readonly createdAt: string;
   readonly projectName: string;
+  readonly kind: MemoryProjectKind;
 }
 
 function sanitizedProjectName(name: string): string {
@@ -81,7 +86,8 @@ function identityFromRecord(record: MemoryProjectRecord): MemoryProjectIdentity 
     projectId: record.projectId,
     root: record.root,
     createdAt: record.createdAt,
-    projectName: sanitizedProjectName(path.basename(record.root)),
+    projectName: record.kind === "home" ? "home" : sanitizedProjectName(path.basename(record.root)),
+    kind: record.kind,
   };
 }
 
@@ -97,12 +103,15 @@ export function resolveMemoryProjectIdentity(
   memoryRoot = path.join(resolveGlobalJellyDir(), "memory"),
 ): MemoryProjectIdentity {
   const resolvedWorkspace = canonicalProjectPath(workspaceRoot);
-  const registered = findRegisteredProject(resolvedWorkspace, memoryRoot);
+  const homeRoot = canonicalProjectPath(os.homedir());
+  migrateLegacyProjectRegistry(memoryRoot, homeRoot);
+  const registered = findRegisteredProject(resolvedWorkspace, memoryRoot, homeRoot);
   if (registered) return identityFromRecord(registered);
 
   const currentCommonDirectory = findGitCommonDirectory(resolvedWorkspace);
   if (currentCommonDirectory) {
-    const associated = listRegisteredProjects(memoryRoot).find((project) => {
+    const associated = listRegisteredProjects(memoryRoot, homeRoot).find((project) => {
+      if (project.kind === "home") return false;
       const projectCommonDirectory = findGitCommonDirectory(project.root);
       return projectCommonDirectory === currentCommonDirectory;
     });
@@ -110,5 +119,6 @@ export function resolveMemoryProjectIdentity(
   }
 
   const projectRoot = findGitProjectRoot(resolvedWorkspace) ?? resolvedWorkspace;
-  return identityFromRecord(getOrCreateRegisteredProject(projectRoot, memoryRoot));
+  const kind: MemoryProjectKind = isHomeWorkspace(projectRoot, homeRoot) ? "home" : "standard";
+  return identityFromRecord(getOrCreateRegisteredProject(projectRoot, memoryRoot, kind, homeRoot));
 }
