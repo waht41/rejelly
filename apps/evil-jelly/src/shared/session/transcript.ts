@@ -7,7 +7,10 @@
  */
 
 import type { UserInputAttachmentDisplay } from "../model/prompt/frozenUserInput";
+import type { ToolObservationDetail } from "../tool-observation/model";
 import type { SessionBlobMetadata, SessionBlobRef } from "./blobContract";
+
+export const RESUME_VISIBLE_TURNS = 10;
 
 export interface TranscriptImage {
   blobRef: SessionBlobRef;
@@ -46,6 +49,8 @@ export type TranscriptItem =
       toolCallId: string;
       toolName: string;
       arguments?: string;
+      summary?: string;
+      detail?: ToolObservationDetail;
       result?: string;
       resultImages?: TranscriptImage[];
       ok: boolean;
@@ -58,3 +63,22 @@ export type TranscriptItem =
       kind: "compaction" | "interrupted" | "error";
       content: string;
     };
+
+/** Return the suffix belonging to the newest initial user turns without discarding its tools. */
+export function tailTranscriptByInitialTurns(
+  items: readonly TranscriptItem[],
+  tailTurns: number,
+): TranscriptItem[] {
+  if (!Number.isInteger(tailTurns) || tailTurns < 0) {
+    throw new Error("tailTurns must be a non-negative integer");
+  }
+  if (tailTurns === 0) return [];
+
+  const starts = items
+    .map((item, index) => ({ item, index }))
+    .filter(
+      ({ item }) =>
+        item.type === "user" && (item.inputKind === "initial" || item.turnId.startsWith("legacy:")),
+    );
+  return starts.length > tailTurns ? items.slice(starts.at(-tailTurns)!.index) : [...items];
+}

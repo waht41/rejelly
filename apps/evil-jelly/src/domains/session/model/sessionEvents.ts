@@ -137,6 +137,31 @@ export const userInputRecordedEventSchema = z
   })
   .passthrough();
 
+const toolObservationDetailSchema = z
+  .object({
+    type: z.literal("diff"),
+    text: z.string(),
+    caption: z.string().optional(),
+    captionTitle: z.string().optional(),
+    phase: z.enum(["proposed", "applied"]).optional(),
+    presentation: z.enum(["inline", "expanded"]).optional(),
+  })
+  .passthrough();
+
+export const toolObservationRecordedEventSchema = z
+  .object({
+    ...eventBaseFields,
+    type: z.literal("tool_observation_recorded"),
+    turnId: z.string(),
+    toolCallId: z.string().min(1),
+    toolName: z.string().min(1),
+    summary: z.string(),
+    args: z.string().optional(),
+    detail: toolObservationDetailSchema.optional(),
+    ok: z.boolean(),
+  })
+  .passthrough();
+
 export const mcpSelectionChangedEventSchema = z
   .object({
     ...eventBaseFields,
@@ -281,6 +306,7 @@ export const knownSessionEventSchema = z.discriminatedUnion("type", [
   runSegmentEndedEventSchema,
   messageRecordedEventSchema,
   userInputRecordedEventSchema,
+  toolObservationRecordedEventSchema,
   mcpSelectionChangedEventSchema,
   mcpToolGrantsChangedEventSchema,
   turnCompletedEventSchema,
@@ -305,6 +331,7 @@ export type RunSegmentStartedEvent = z.infer<typeof runSegmentStartedEventSchema
 export type RunSegmentEndedEvent = z.infer<typeof runSegmentEndedEventSchema>;
 export type MessageRecordedEvent = z.infer<typeof messageRecordedEventSchema>;
 export type UserInputRecordedEvent = z.infer<typeof userInputRecordedEventSchema>;
+export type ToolObservationRecordedEvent = z.infer<typeof toolObservationRecordedEventSchema>;
 export type McpSelectionChangedEvent = z.infer<typeof mcpSelectionChangedEventSchema>;
 export type McpToolGrantsChangedEvent = z.infer<typeof mcpToolGrantsChangedEventSchema>;
 export type TurnCompletedEvent = z.infer<typeof turnCompletedEventSchema>;
@@ -322,6 +349,7 @@ const newSessionEventSchema = z.discriminatedUnion("type", [
   runSegmentEndedEventSchema.omit({ seq: true, timestamp: true }),
   v3MessageRecordedEventSchema.omit({ seq: true, timestamp: true }),
   userInputRecordedEventSchema.omit({ seq: true, timestamp: true }),
+  toolObservationRecordedEventSchema.omit({ seq: true, timestamp: true }),
   mcpSelectionChangedEventSchema.omit({ seq: true, timestamp: true }),
   mcpToolGrantsChangedEventSchema.omit({ seq: true, timestamp: true }),
   turnCompletedEventSchema.omit({ seq: true, timestamp: true }),
@@ -376,7 +404,8 @@ export function parseSessionEvent(
     schemaVersion === LEGACY_JSONL_SESSION_SCHEMA_VERSION &&
     (parsed.data.type === "user_input_recorded" ||
       parsed.data.type === "mcp_selection_changed" ||
-      parsed.data.type === "mcp_tool_grants_changed")
+      parsed.data.type === "mcp_tool_grants_changed" ||
+      parsed.data.type === "tool_observation_recorded")
   ) {
     throw new SessionSchemaError(`Session V2 cannot contain ${parsed.data.type} events`);
   }

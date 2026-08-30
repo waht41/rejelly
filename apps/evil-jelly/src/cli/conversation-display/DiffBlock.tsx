@@ -11,22 +11,24 @@ export function DiffBlock({
   text,
   caption,
   captionTitle,
+  columns,
 }: {
   text: string;
   caption?: string;
   captionTitle?: string;
+  columns: number;
 }) {
   return (
     <Box flexDirection="column">
-      {caption ? (
+      {caption || captionTitle ? (
         <Box flexDirection="column" marginBottom={1} paddingX={1}>
           <Text bold color="cyan">
-            {captionTitle ?? "AI merge summary"}
+            {captionTitle ?? "Review"}
           </Text>
-          <Text wrap="wrap">{caption}</Text>
+          {caption ? <Text wrap="wrap">{caption}</Text> : null}
         </Box>
       ) : null}
-      <DiffViewer diffText={text} />
+      <DiffViewer diffText={text} columns={columns} />
     </Box>
   );
 }

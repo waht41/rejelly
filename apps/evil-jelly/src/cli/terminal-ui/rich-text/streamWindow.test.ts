@@ -11,10 +11,10 @@ describe("stream window measurement", () => {
     expect(measureWrappedRows("孤立abc", 3)).toBe(3);
   });
 
-  it("counts wrapped code lines using the bordered block's content width", () => {
+  it("counts wrapped code lines using the full borderless block width", () => {
     const text = ["```text", "abcdefghijkl", "```"].join("\n");
 
-    expect(measureStreamRows(text, 10)).toBe(5);
+    expect(measureStreamRows(text, 10)).toBe(2);
   });
 
   it("word-wraps prose the way ink does", () => {
@@ -53,6 +53,7 @@ describe("stream window measurement", () => {
     // measured height must not grow either.
     const table = ["| Name | Count |", "| --- | --- |", "| alpha | 1 |"].join("\n");
     expect(measureStreamRows(table, 8)).toBe(renderedRows(table, 8));
+    expect(measureStreamRows(table, columns)).toBe(renderedRows(table, columns));
     // The level glyph shares the title's line while the h1 rule takes one of
     // its own, so both have to be in the budget.
     const headings = ["# a level one heading that wraps", "", "### a level three heading"].join(
@@ -62,6 +63,15 @@ describe("stream window measurement", () => {
 
     const hardBreak = "line one  \nline two";
     expect(measureStreamRows(hardBreak, columns)).toBe(renderedRows(hardBreak, columns));
+
+    // Every quote level adds a one-column rule plus one column of padding;
+    // blank quote lines still occupy a visible row inside the rule.
+    const nestedQuote = [
+      "> outer quote content that wraps",
+      ">",
+      "> > nested quote content that wraps across rows",
+    ].join("\n");
+    expect(measureStreamRows(nestedQuote, columns)).toBe(renderedRows(nestedQuote, columns));
 
     // Nesting indent and a two-digit marker both narrow the text column, so a
     // fixed marker budget would under-count the wrapped rows here.

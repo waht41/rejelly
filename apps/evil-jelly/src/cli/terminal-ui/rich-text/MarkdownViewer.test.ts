@@ -11,6 +11,7 @@ import {
   terminalCellWidth,
 } from "./MarkdownViewer";
 import { parseMarkdownBlocks } from "./markdownParser";
+import { warmSyntaxHighlighter } from "./syntaxHighlight";
 
 function renderedInlineText(markdown: string): string {
   const [block] = parseMarkdownBlocks(markdown);
@@ -314,11 +315,87 @@ describe("inline emphasis from the block AST", () => {
       { columns: 80 },
     );
 
-    expect(stripAnsi(output).split("\n")).toEqual([" > first", " > line", " >", " > > nested"]);
+    expect(stripAnsi(output).split("\n")).toEqual([" │ first", " │ line", " │", " │ │ nested"]);
+  });
+
+  it("accounts for nested quote gutters while wrapping", () => {
+    const columns = 18;
+    const output = renderToString(
+      createElement(MarkdownViewer, {
+        text: "> > nested quote content wraps across rows",
+        columns,
+      }),
+      { columns },
+    );
+    const visibleLines = stripAnsi(output).split("\n");
+
+    expect(visibleLines.length).toBeGreaterThan(1);
+    for (const line of visibleLines) {
+      expect(line).toMatch(/^ │ │ /);
+      expect(terminalCellWidth(line)).toBeLessThanOrEqual(columns);
+    }
   });
 });
 
 describe("MarkdownViewer code blocks", () => {
+  it("renders plainly before warmup, then highlights known languages", async () => {
+    const code = ["interface User {", "  active: boolean;", '  name: "Alice";', "}"];
+    const text = ["```typescript", ...code, "```"].join("\n");
+    const plainOutput = renderToString(createElement(MarkdownViewer, { text, columns: 80 }), {
+      columns: 80,
+    });
+
+    expect(plainOutput).toBe(code.join("\n"));
+    await warmSyntaxHighlighter();
+    const output = renderToString(
+      createElement(MarkdownViewer, {
+        text,
+        columns: 80,
+      }),
+      { columns: 80 },
+    );
+
+    expect(stripAnsi(output)).toBe(code.join("\n"));
+    expect(output).toContain("\u001B[38;2;203;166;247minterface\u001B[39m");
+    expect(output).toContain("\u001B[38;2;249;226;175mactive\u001B[39m");
+    expect(output).toContain("\u001B[38;2;243;139;168mboolean\u001B[39m");
+    expect(output).toContain('\u001B[38;2;166;227;161m"Alice"\u001B[39m');
+    expect(output).not.toContain("typescript");
+    expect(stripAnsi(output)).not.toContain("┌");
+  });
+
+  it("falls back to plain text for an unknown or omitted language", () => {
+    const code = "const value = 1;";
+    const unknown = renderToString(
+      createElement(MarkdownViewer, {
+        text: `\`\`\`unknown-language\n${code}\n\`\`\``,
+        columns: 80,
+      }),
+      { columns: 80 },
+    );
+    const omitted = renderToString(
+      createElement(MarkdownViewer, { text: `\`\`\`\n${code}\n\`\`\``, columns: 80 }),
+      { columns: 80 },
+    );
+
+    expect(unknown).toBe(code);
+    expect(omitted).toBe(code);
+  });
+
+  it("uses the shared semantic palette for diff fences", () => {
+    const output = renderToString(
+      createElement(MarkdownViewer, {
+        text: "```diff\n@@ -1 +1 @@\n-old\n+new\n```",
+        columns: 80,
+      }),
+      { columns: 80 },
+    );
+
+    expect(output).toContain("\u001B[38;2;137;220;235m@@ -1 +1 @@\u001B[39m");
+    expect(output).toContain("\u001B[38;2;243;139;168m-old\u001B[39m");
+    expect(output).toContain("\u001B[38;2;166;227;161m+new\u001B[39m");
+  });
+
   it("hard-wraps long code lines without truncating their content", () => {
     const url = "https://example.com/a/very/long/path?first=alpha&second=omega";
     const output = renderToString(
@@ -330,11 +407,7 @@ describe("MarkdownViewer code blocks", () => {
     );
 
     const visibleOutput = stripAnsi(output);
-    const renderedContent = visibleOutput
-      .split("\n")
-      .slice(2, -1)
-      .map((line) => line.slice(2, -2).trimEnd())
-      .join("");
+    const renderedContent = visibleOutput.split("\n").join("");
     const hyperlinkOpen = `\u001B]8;;${url}\u0007`;
 
     expect(renderedContent).toBe(url);
@@ -374,6 +447,46 @@ describe("terminal hyperlinks", () => {
 });
 
 describe("MarkdownViewer tables", () => {
+  it("uses open columns with Codex-style row separators", () => {
+    const output = renderToString(
+      createElement(MarkdownViewer, {
+        text: ["| A | B |", "| --- | --- |", "| 1 | 2 |", "| 3 | 4 |"].join("\n"),
+        columns: 80,
+      }),
+      { columns: 80 },
+    );
+
+    expect(stripAnsi(output).split("\n")).toEqual([
+      " A      B",
+      "━━━━━  ━━━━━",
+      " 1      2",
+      "─────  ─────",
+      " 3      4",
+    ]);
+  });
+
+  it("preserves inline code and links inside table cells", () => {
+    const url = "https://example.com/";
+    const output = renderToString(
+      createElement(MarkdownViewer, {
+        text: [
+          "| Name | Value |",
+          "| --- | --- |",
+          `| link | [example](${url}) |`,
+          "| code | `pnpm verify` |",
+        ].join("\n"),
+        columns: 80,
+      }),
+      { columns: 80 },
+    );
+
+    expect(output).toContain(`\u001B]8;;${url}\u0007`);
+    expect(output).toContain("\u001B[4m\u001B[36mexample\u001B[39m\u001B[24m");
+    expect(output).toContain("\u001B[36mpnpm verify\u001B[39m");
+    expect(stripAnsi(output)).not.toContain("[example]");
+    expect(stripAnsi(output)).not.toContain("`pnpm verify`");
+  });
+
   it("wraps a long url inside its cell and relinks every wrapped row", () => {
     const url = "https://example.com/very/long/path?token=abcdef123456";
     const output = renderToString(
@@ -388,7 +501,7 @@ describe("MarkdownViewer tables", () => {
     const visibleLines = stripAnsi(output).split("\n");
 
     // The cell is narrower than the url, so it must wrap — and stay whole.
-    // Drop the grid so the wrapped fragments sit next to each other again.
+    // Drop whitespace so the wrapped URL fragments sit next to each other again.
     expect(output.split(open).length - 1).toBeGreaterThan(1);
     expect(visibleLines.join("").replace(/[│\s]/g, "")).toContain(url);
     expect(output).not.toContain("…");
@@ -398,7 +511,7 @@ describe("MarkdownViewer tables", () => {
     }
   });
 
-  it("truncates an over-wide table instead of reflowing it", () => {
+  it("falls back to key-value records when columns cannot remain readable", () => {
     const output = renderToString(
       createElement(MarkdownViewer, {
         text: ["| Name | Count |", "| --- | --- |", "| alpha | 1 |"].join("\n"),
@@ -409,8 +522,7 @@ describe("MarkdownViewer tables", () => {
 
     const visibleLines = stripAnsi(output).split("\n");
 
-    // Rules and header used to wrap while body rows truncated, which tore the
-    // grid apart; now no line escapes the terminal width.
+    expect(visibleLines).toEqual(["Name", " alpha", "Count", " 1"]);
     for (const line of visibleLines) {
       expect(terminalCellWidth(line)).toBeLessThanOrEqual(8);
     }

@@ -43,6 +43,26 @@ export function recordActiveToolDetail(detail: ToolObservationDetail): void {
   slot.detail = detail;
 }
 
+export function recordAppliedToolDiff(detail: {
+  text: string;
+  caption?: string;
+  captionTitle?: string;
+}): void {
+  const slot = callStorage.getStore();
+  if (!slot || detail.text.trim().length === 0) {
+    return;
+  }
+  const existing = slot.detail?.type === "diff" ? slot.detail : undefined;
+  slot.detail = {
+    type: "diff",
+    text: detail.text,
+    caption: detail.caption ?? existing?.caption,
+    captionTitle: detail.captionTitle ?? existing?.captionTitle,
+    phase: "applied",
+    presentation: existing?.presentation ?? "inline",
+  };
+}
+
 export function takeActiveToolDetail(): ToolObservationDetail | undefined {
   const slot = callStorage.getStore();
   if (!slot) {

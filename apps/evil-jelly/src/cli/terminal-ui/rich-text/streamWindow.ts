@@ -11,7 +11,8 @@ import {
 import { parseMarkdownBlocks } from "./markdownParser";
 
 const MIN_COLUMNS = 1;
-const CODE_BLOCK_HORIZONTAL_CHROME = 4;
+const QUOTE_OUTER_PADDING_COLUMNS = 1;
+const QUOTE_LEVEL_CHROME_COLUMNS = 2;
 
 export type StreamTailWindow = {
   text: string;
@@ -83,37 +84,57 @@ function measureMarkdownStableRows(markdown: string, columns: number): number {
       continue;
     }
     if (block.type === "table") {
-      const { widths } = markdownTableLayout(block, columns);
-      // Every table line is rendered with `wrap="truncate-end"`, so a table too
-      // wide for the terminal loses its right edge instead of reflowing: one
-      // rendered line is always one row.
+      const { mode, widths } = markdownTableLayout(block, columns);
+      if (mode === "records") {
+        const valueColumns = Math.max(1, columns - 1);
+        const recordRows = block.rows.reduce((total, row, rowIndex) => {
+          const cellRows = widths.reduce((cellTotal, _, columnIndex) => {
+            const label = block.headers[columnIndex] || `Column ${columnIndex + 1}`;
+            const value = row[columnIndex] ?? "";
+            return (
+              cellTotal +
+              Math.max(1, measureWrappedRows(label, columns)) +
+              Math.max(1, measureWrappedRows(value, valueColumns))
+            );
+          }, 0);
+          return total + (rowIndex > 0 ? 1 : 0) + cellRows;
+        }, 0);
+        rows += marginTop + recordRows;
+        continue;
+      }
+
+      // Column mode has one heavy header rule, plus a light separator between
+      // logical body rows. Cell content is already wrapped to its column width.
       const tableRows =
-        3 +
+        1 +
         markdownTableRowHeight(block.headers, widths) +
+        Math.max(0, block.rows.length - 1) +
         block.rows.reduce((total, row) => total + markdownTableRowHeight(row, widths), 0);
       rows += marginTop + tableRows;
       continue;
     }
     if (block.type === "quote") {
-      const quoteColumns = Math.max(1, columns - 3);
       rows +=
         marginTop +
-        block.lines.reduce((total, line) => total + measureWrappedRows(line.text, quoteColumns), 0);
+        block.lines.reduce((total, line) => {
+          const quoteColumns = Math.max(
+            1,
+            columns - QUOTE_OUTER_PADDING_COLUMNS - line.depth * QUOTE_LEVEL_CHROME_COLUMNS,
+          );
+          return total + Math.max(1, measureWrappedRows(line.text, quoteColumns));
+        }, 0);
       continue;
     }
     if (block.type === "code") {
-      const contentColumns = Math.max(1, columns - CODE_BLOCK_HORIZONTAL_CHROME);
       const codeRows =
         block.lines.length > 0
           ? block.lines.reduce(
               (total, line) =>
-                total + Math.max(1, measureWrappedRows(line, contentColumns, { wordWrap: false })),
+                total + Math.max(1, measureWrappedRows(line, columns, { wordWrap: false })),
               0,
             )
           : 1;
-      const languageRows = block.language ? measureWrappedRows(block.language, contentColumns) : 0;
-      const contentRows = codeRows + languageRows;
-      rows += marginTop + contentRows + 2;
+      rows += marginTop + codeRows;
       continue;
     }
     rows += marginTop + 1;

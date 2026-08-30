@@ -39,7 +39,14 @@ export function DecisionDetail({ view, columns }: { view: PromptChoiceView; colu
   );
 
   if (view.type === "diff") {
-    return <DiffBlock text={view.text} caption={view.caption} captionTitle={view.captionTitle} />;
+    return (
+      <DiffBlock
+        text={view.text}
+        caption={view.caption}
+        captionTitle={view.captionTitle}
+        columns={columns}
+      />
+    );
   }
   if (view.type === "markdown") {
     return (

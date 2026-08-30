@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  recordAppliedToolDiff,
   runWithToolDetailSlot,
   takeActiveToolDetail,
 } from "../../shared/tool-observation/invocationContext";
@@ -176,7 +177,10 @@ describe("createToolApproval", () => {
     expect(useOutputStore.getState().history).toContainEqual(
       expect.objectContaining({
         type: "diff",
-        diff: { text: "--- a.ts\n+++ a.ts\n@@\n-old\n+new\n" },
+        diff: {
+          text: "--- a.ts\n+++ a.ts\n@@\n-old\n+new\n",
+          captionTitle: "Proposed changes",
+        },
       }),
     );
     expect(useDecisionStore.getState().view).toEqual({ type: "none" });
@@ -205,10 +209,39 @@ describe("createToolApproval", () => {
         type: "diff",
         text: diff,
         caption: "Batch edit across 1 files",
+        phase: "proposed",
+        presentation: "expanded",
       });
 
       useDecisionStore.getState().submitChoice("accept");
       await expect(pending).resolves.toEqual({ action: "accept" });
+    });
+  });
+
+  it("marks auto-allowed diffs for inline display only after they are applied", async () => {
+    resetCliStores();
+    const confirmWrite = createToolApproval({ getMode: () => "auto" });
+    const proposed = "--- a.ts\n+++ a.ts\n@@\n-old\n+proposed\n";
+    const applied = "--- a.ts\n+++ a.ts\n@@\n-old\n+applied\n";
+
+    await runWithToolDetailSlot(async () => {
+      await expect(
+        confirmWrite({
+          type: "fs_write",
+          kind: "edit",
+          filePath: "a.ts",
+          unifiedDiff: proposed,
+          proposedContent: "proposed\n",
+        }),
+      ).resolves.toEqual({ action: "accept" });
+
+      recordAppliedToolDiff({ text: applied });
+      expect(takeActiveToolDetail()).toEqual({
+        type: "diff",
+        text: applied,
+        phase: "applied",
+        presentation: "inline",
+      });
     });
   });
 

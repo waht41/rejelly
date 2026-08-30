@@ -44,7 +44,9 @@ import {
   createEditFileTool,
 } from "../../domains/workspace/write/WriteTools";
 import { getBinding } from "../../shared/host/context";
+import { recordAppliedToolDiff } from "../../shared/tool-observation/invocationContext";
 import { evilJellyToolLoggerMiddleware } from "../../shared/tool-observation/middleware";
+import { equipToolObservationRecorder } from "../../shared/tool-observation/persistence";
 import { buildAutoCompactionConfig } from "./contextControl";
 import type { ConversationAgentProps, ConversationAgentResult } from "./conversationRun";
 import { shouldUseTerminalUserReplyRule } from "./outputSurface";
@@ -70,11 +72,14 @@ async function useUnifiedTools(props: ConversationAgentProps): Promise<void> {
   const memoryRuntime = expectResource<SessionMemoryRuntime>(MEMORY_RUNTIME_PROVIDER_KEY, {
     optional: true,
   });
-  const editTool = augmentTool(createEditFileTool(confirmTool), [evilJellyToolLoggerMiddleware]);
-  const createTool = augmentTool(createCreateFileTool(confirmTool), [
+  const writeObservation = { recordAppliedDiff: recordAppliedToolDiff };
+  const editTool = augmentTool(createEditFileTool(confirmTool, writeObservation), [
     evilJellyToolLoggerMiddleware,
   ]);
-  const deleteTool = augmentTool(createDeleteFileTool(confirmTool), [
+  const createTool = augmentTool(createCreateFileTool(confirmTool, writeObservation), [
+    evilJellyToolLoggerMiddleware,
+  ]);
+  const deleteTool = augmentTool(createDeleteFileTool(confirmTool, writeObservation), [
     evilJellyToolLoggerMiddleware,
   ]);
 
@@ -178,6 +183,24 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
     const memoryRuntime = expectResource<SessionMemoryRuntime>(MEMORY_RUNTIME_PROVIDER_KEY, {
       optional: true,
     });
+    const recordToolObservation = props.sessionRecorder?.recordToolObservation?.bind(
+      props.sessionRecorder,
+    );
+    const turnId = props.turnId;
+    await equipToolObservationRecorder(
+      recordToolObservation && turnId
+        ? {
+            record: (toolCallId, block) =>
+              recordToolObservation(turnId, toolCallId, {
+                toolName: block.toolName,
+                summary: block.summary,
+                args: block.args,
+                detail: block.detail,
+                ok: block.ok,
+              }),
+          }
+        : undefined,
+    );
     await useUnifiedTools(props);
     await useUnifiedPrompts(props);
     equipMcpCatalog();

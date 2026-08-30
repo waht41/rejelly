@@ -5,7 +5,7 @@ export interface InteractiveToolEntry {
   toolName: string;
   summary: string;
   args?: string;
-  detail?: { type: string; text: string };
+  detail?: { type: string; text: string; phase?: "proposed" | "applied" };
   fullResult: string;
 }
 
@@ -40,9 +40,11 @@ function handleExpandTool(text: string, ports: InteractiveCommandPorts): boolean
   }
 
   const border = "".padEnd(40, "─");
+  const diffTitle =
+    tool.detail?.phase === "proposed" ? "Proposed diff (not applied)" : "Applied changes";
   const detailBlock =
     tool.detail?.type === "diff" && tool.detail.text.trim().length > 0
-      ? `\nDiff\n${tool.detail.text}\n`
+      ? `\n${diffTitle}\n${tool.detail.text}\n`
       : tool.args !== undefined && tool.args.trim().length > 0
         ? `\nArguments\n${tool.args}\n`
         : "\n";

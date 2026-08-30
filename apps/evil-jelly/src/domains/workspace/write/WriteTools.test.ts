@@ -205,6 +205,30 @@ describe("createEditFileTool", () => {
     }
   });
 
+  it("records the content actually written after host-side editing", async () => {
+    const dir = createTempWorkspace();
+    try {
+      writeFileSync(join(dir, "a.ts"), "const value = 1\n", "utf8");
+      setWorkspaceRoot(dir);
+      const recordAppliedDiff = vi.fn();
+      const tool = createEditFileTool(
+        async () => ({ action: "edit", modifiedContent: "const value = 3\n" }),
+        { recordAppliedDiff },
+      );
+
+      await tool.handler({
+        targets: [{ filePath: "a.ts", edits: [{ searchBlock: "1", replaceBlock: "2" }] }],
+      });
+
+      expect(await readFile(join(dir, "a.ts"), "utf8")).toBe("const value = 3\n");
+      expect(recordAppliedDiff).toHaveBeenCalledOnce();
+      expect(recordAppliedDiff.mock.calls[0]?.[0].text).toContain("+const value = 3");
+      expect(recordAppliedDiff.mock.calls[0]?.[0].text).not.toContain("+const value = 2");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("returns retry feedback for batch and keeps files unchanged", async () => {
     const dir = createTempWorkspace();
     try {
@@ -243,13 +267,17 @@ describe("createDeleteFileTool", () => {
       setWorkspaceRoot(dir);
 
       const seen: FsWritePayload[] = [];
-      const tool = createDeleteFileTool(async (params) => {
-        if (params.type !== "fs_write") {
-          throw new Error(`Unexpected payload type: ${params.type}`);
-        }
-        seen.push(params);
-        return { action: "accept" };
-      });
+      const recordAppliedDiff = vi.fn();
+      const tool = createDeleteFileTool(
+        async (params) => {
+          if (params.type !== "fs_write") {
+            throw new Error(`Unexpected payload type: ${params.type}`);
+          }
+          seen.push(params);
+          return { action: "accept" };
+        },
+        { recordAppliedDiff },
+      );
 
       const result = await tool.handler({
         targetPaths: ["a.ts", "already-gone.ts"],
@@ -261,6 +289,7 @@ describe("createDeleteFileTool", () => {
       expect(seen[0]?.kind).toBe("delete");
       expect(seen[0]?.supportedActions).toEqual(["accept", "reject", "retry"]);
       expect(existsSync(join(dir, "a.ts"))).toBe(false);
+      expect(recordAppliedDiff.mock.calls[0]?.[0].text).toContain("-const a = 1");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -298,13 +327,17 @@ describe("createCreateFileTool", () => {
       setWorkspaceRoot(dir);
 
       const seen: FsWritePayload[] = [];
-      const tool = createCreateFileTool(async (params) => {
-        if (params.type !== "fs_write") {
-          throw new Error(`Unexpected payload type: ${params.type}`);
-        }
-        seen.push(params);
-        return { action: "accept" };
-      });
+      const recordAppliedDiff = vi.fn();
+      const tool = createCreateFileTool(
+        async (params) => {
+          if (params.type !== "fs_write") {
+            throw new Error(`Unexpected payload type: ${params.type}`);
+          }
+          seen.push(params);
+          return { action: "accept" };
+        },
+        { recordAppliedDiff },
+      );
 
       const result = await tool.handler({
         targets: [
@@ -321,6 +354,8 @@ describe("createCreateFileTool", () => {
 
       expect(await readFile(join(dir, "c.ts"), "utf8")).toBe("const c = 3");
       expect(await readFile(join(dir, "d.ts"), "utf8")).toBe("const d = 4");
+      expect(recordAppliedDiff).toHaveBeenCalledTimes(2);
+      expect(recordAppliedDiff.mock.calls.at(-1)?.[0].text).toContain("+const d = 4");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

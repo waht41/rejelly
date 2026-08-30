@@ -750,6 +750,52 @@ describe("logToolRound", () => {
     expect(resumedOrdinals).toEqual([1, 2]);
     expect(live.ordinal).toBe(3);
   });
+
+  it("keeps all resumed tools expandable while limiting the main history to ten turns", () => {
+    const transcript = Array.from({ length: 11 }, (_, index) => {
+      const turn = index + 1;
+      return [
+        {
+          id: `${turn}:user`,
+          type: "user" as const,
+          turnId: `turn-${turn}`,
+          seq: turn * 3,
+          content: `request ${turn}`,
+          inputKind: "initial" as const,
+        },
+        {
+          id: `${turn}:tool`,
+          type: "tool" as const,
+          turnId: `turn-${turn}`,
+          seq: turn * 3 + 1,
+          toolCallId: `call-${turn}`,
+          toolName: "edit_file",
+          summary: `[Tools] edit_file → file-${turn}.ts`,
+          detail: {
+            type: "diff" as const,
+            text: `@@ -1 +1 @@\n-old ${turn}\n+new ${turn}`,
+            phase: "applied" as const,
+          },
+          result: `updated ${turn}`,
+          ok: true,
+        },
+      ];
+    }).flat();
+
+    useOutputStore.getState().hydrateHistory(transcript);
+
+    const state = useOutputStore.getState();
+    expect(state.history).toHaveLength(20);
+    expect(state.history[0]).toMatchObject({ type: "user", content: "request 2" });
+    expect(state.toolHistory).toHaveLength(11);
+    expect(state.toolHistory[0]).toMatchObject({
+      type: "tool",
+      tool: {
+        summary: "[Tools] edit_file → file-1.ts",
+        detail: expect.objectContaining({ type: "diff", text: expect.stringContaining("old 1") }),
+      },
+    });
+  });
 });
 
 describe("clearHistory", () => {

@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ListViewport } from "../../terminal-ui/picker/ListViewport";
 import { getVisibleWindow, moveListSelection } from "../../terminal-ui/picker/listNavigation";
 import { useOutputStore } from "../useOutputStore";
+import type { ToolTranscriptRenderLine } from "./projection";
 import { buildToolTranscriptDetailLines, buildToolTranscriptEntries } from "./projection";
 import { useToolTranscriptViewStore } from "./viewStore";
 
@@ -16,14 +17,35 @@ type OverlayMode = "list" | "detail";
 
 const PAGE_SCROLL_FRACTION = 0.8;
 
+function TranscriptLine({ line }: { line: ToolTranscriptRenderLine }) {
+  if (line.content === undefined) {
+    return (
+      <Text wrap="truncate-end" color={line.color} dimColor={line.dim}>
+        {line.text || " "}
+      </Text>
+    );
+  }
+  return (
+    <Text wrap="truncate-end">
+      <Text dimColor>{line.gutter}</Text>
+      <Text color={line.color} dimColor={line.continuation}>
+        {line.marker}
+      </Text>
+      <Text color={line.color} dimColor={line.dim}>
+        {line.content || " "}
+      </Text>
+    </Text>
+  );
+}
+
 export function ToolTranscriptOverlay() {
-  const history = useOutputStore((s) => s.history);
+  const toolHistory = useOutputStore((s) => s.toolHistory);
   const closeTranscript = useToolTranscriptViewStore((s) => s.closeTranscript);
   const { stdout } = useStdout();
   const rows = stdout?.rows ?? 24;
   const columns = stdout?.columns ?? 80;
 
-  const toolEntries = useMemo(() => buildToolTranscriptEntries(history), [history]);
+  const toolEntries = useMemo(() => buildToolTranscriptEntries(toolHistory), [toolHistory]);
   const listViewportRows = Math.max(4, rows - 3); // reserve 1 for header + 1 gap + 1 status
   const detailViewportLines = Math.max(4, rows - 3);
   const pageStep = Math.max(1, Math.floor(listViewportRows * PAGE_SCROLL_FRACTION));
@@ -143,14 +165,7 @@ export function ToolTranscriptOverlay() {
         </Box>
         <Box flexDirection="column" marginTop={1}>
           {visibleDetailLines.map((line, i) => (
-            <Text
-              key={safeDetailOffset + i}
-              wrap="truncate-end"
-              color={line.color}
-              dimColor={line.dim}
-            >
-              {line.text || " "}
-            </Text>
+            <TranscriptLine key={safeDetailOffset + i} line={line} />
           ))}
         </Box>
         <Box marginTop={1}>

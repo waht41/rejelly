@@ -9,9 +9,13 @@ import {
   projectFrozenUserInputPlainText,
 } from "../../../shared/model/prompt/frozenUserInput";
 import { SESSION_BLOB_SCHEME, sessionBlobRefSchema } from "../../../shared/session/blobContract";
-import type { TranscriptImage, TranscriptItem } from "../../../shared/session/transcript";
+import {
+  type TranscriptImage,
+  type TranscriptItem,
+  tailTranscriptByInitialTurns,
+} from "../../../shared/session/transcript";
 import { getLegacyUserInputDisplay } from "../model/frozenUserInput";
-import type { SessionBudgetData } from "../model/sessionEvents";
+import type { SessionBudgetData, ToolObservationRecordedEvent } from "../model/sessionEvents";
 import {
   getSessionImageBlobMetadata,
   type StoredSessionMessage,
@@ -157,6 +161,7 @@ function transcriptImages(message: Message): TranscriptImage[] | undefined {
 function appendTranscriptMessage(
   items: TranscriptItem[],
   pendingTools: Map<string, Extract<TranscriptItem, { type: "tool" }>>,
+  toolItems: Map<string, Extract<TranscriptItem, { type: "tool" }>>,
   message: Message,
   identity: { seq: number; turnId: string; suffix: string; legacy: boolean },
   inputKind?: "initial" | "steer",
@@ -216,6 +221,7 @@ function appendTranscriptMessage(
       };
       items.push(item);
       pendingTools.set(call.id, item);
+      toolItems.set(call.id, item);
     }
     return;
   }
@@ -230,7 +236,7 @@ function appendTranscriptMessage(
       pendingTools.delete(existing.toolCallId);
       return;
     }
-    items.push({
+    const item: Extract<TranscriptItem, { type: "tool" }> = {
       id: `${identity.seq}:${identity.suffix}:tool-result`,
       type: "tool",
       turnId: identity.turnId,
@@ -240,7 +246,9 @@ function appendTranscriptMessage(
       result,
       ...(resultImages ? { resultImages } : {}),
       ok: true,
-    });
+    };
+    items.push(item);
+    toolItems.set(item.toolCallId, item);
   }
 }
 
@@ -248,21 +256,7 @@ function tailTranscript(items: TranscriptItem[], tailTurns: number | undefined):
   if (tailTurns === undefined) {
     return items;
   }
-  if (!Number.isInteger(tailTurns) || tailTurns < 0) {
-    throw new Error("tailTurns must be a non-negative integer");
-  }
-  if (tailTurns === 0) {
-    return [];
-  }
-  // Steers belong to their existing turn. Only initial inputs (or the conservative V1 synthetic
-  // boundaries) consume one slot in the terminal hydration limit.
-  const starts = items
-    .map((item, index) => ({ item, index }))
-    .filter(
-      ({ item }) =>
-        item.type === "user" && (item.inputKind === "initial" || item.turnId.startsWith("legacy:")),
-    );
-  return starts.length > tailTurns ? items.slice(starts.at(-tailTurns)!.index) : items;
+  return tailTranscriptByInitialTurns(items, tailTurns);
 }
 
 export function buildTranscript(
@@ -274,6 +268,8 @@ export function buildTranscript(
   // user-visible conversation history.
   const items: TranscriptItem[] = [];
   const pendingTools = new Map<string, Extract<TranscriptItem, { type: "tool" }>>();
+  const toolItems = new Map<string, Extract<TranscriptItem, { type: "tool" }>>();
+  const observations = new Map<string, ToolObservationRecordedEvent>();
 
   for (const event of replay.events) {
     if (event.type === "legacy_snapshot") {
@@ -282,7 +278,7 @@ export function buildTranscript(
         if (message.role === "user" && !isCompactionBridgeMessage(message)) {
           legacyTurn += 1;
         }
-        appendTranscriptMessage(items, pendingTools, message, {
+        appendTranscriptMessage(items, pendingTools, toolItems, message, {
           seq: event.seq,
           turnId: `legacy:${event.seq}:${legacyTurn}`,
           suffix: `legacy:${index}`,
@@ -298,10 +294,15 @@ export function buildTranscript(
       appendTranscriptMessage(
         items,
         pendingTools,
+        toolItems,
         event.message,
         { seq: event.seq, turnId: event.turnId, suffix: "event", legacy: false },
         event.source.kind === "user_input" ? event.source.inputKind : undefined,
       );
+      continue;
+    }
+    if (event.type === "tool_observation_recorded") {
+      observations.set(event.toolCallId, event);
       continue;
     }
     if (event.type === "user_input_recorded") {
@@ -355,6 +356,18 @@ export function buildTranscript(
     }
   }
 
+  // Observation events are written before canonical tool results. Merge them last so a failed
+  // execution stays failed instead of being mistaken for success merely because an error result
+  // message exists, and so forward-reordered records still recover their presentation metadata.
+  for (const [toolCallId, observation] of observations) {
+    const tool = toolItems.get(toolCallId);
+    if (!tool) continue;
+    tool.summary = observation.summary;
+    tool.arguments ??= observation.args;
+    tool.detail = observation.detail;
+    tool.ok = observation.ok;
+  }
+
   return tailTranscript(items, options.tailTurns);
 }
 
@@ -365,6 +378,7 @@ export function buildLegacyTranscript(
 ): TranscriptItem[] {
   const items: TranscriptItem[] = [];
   const pendingTools = new Map<string, Extract<TranscriptItem, { type: "tool" }>>();
+  const toolItems = new Map<string, Extract<TranscriptItem, { type: "tool" }>>();
   let legacyTurn = 0;
   messages.forEach((message, index) => {
     if (isCompactionBridgeMessage(message)) {
@@ -380,7 +394,7 @@ export function buildLegacyTranscript(
     if (message.role === "user") {
       legacyTurn += 1;
     }
-    appendTranscriptMessage(items, pendingTools, message, {
+    appendTranscriptMessage(items, pendingTools, toolItems, message, {
       seq: index + 1,
       turnId: `legacy:0:${legacyTurn}`,
       suffix: `legacy:${index}`,

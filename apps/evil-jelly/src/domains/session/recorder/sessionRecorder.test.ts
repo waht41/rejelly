@@ -306,4 +306,38 @@ describe("sessionRecorder", () => {
       { content: "steer", inputKind: "steer" },
     ]);
   });
+
+  it("durably records tool observation metadata", async () => {
+    const recorder = await openSessionRecorder({
+      workspaceRoot,
+      sessionId: "session-tool-observation",
+      traceId: "trace-1",
+      originator: "evil-jelly-cli",
+      appVersion: "0.1.0",
+      modelId: "model-a",
+      cwd: workspaceRoot,
+      sessionsRoot,
+    });
+    await recorder.recordToolObservation("turn-1", "call-1", {
+      toolName: "edit_file",
+      summary: "[Tools] edit_file → a.ts",
+      args: '{"path":"a.ts"}',
+      detail: { type: "diff", text: "-old\n+new", phase: "applied" },
+      ok: true,
+    });
+    await recorder.close();
+
+    const stored = await readSessionEvents(workspaceRoot, "session-tool-observation", {
+      sessionsRoot,
+    });
+    expect(stored.events).toContainEqual(
+      expect.objectContaining({
+        type: "tool_observation_recorded",
+        turnId: "turn-1",
+        toolCallId: "call-1",
+        summary: "[Tools] edit_file → a.ts",
+        detail: expect.objectContaining({ type: "diff", phase: "applied" }),
+      }),
+    );
+  });
 });

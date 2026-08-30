@@ -110,7 +110,7 @@ export async function readV3Session(
       value: {
         meta: sessionMetaFromSummary(summary),
         messages: buildStoredActiveContext(replay),
-        transcript: buildTranscript(replay, { tailTurns: 10 }),
+        transcript: buildTranscript(replay),
         mcp: projectSessionMcpState(replay),
         ...(warnings ? { warnings } : {}),
       },

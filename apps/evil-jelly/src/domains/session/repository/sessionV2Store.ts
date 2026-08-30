@@ -121,7 +121,7 @@ export async function readV2Session(
       value: {
         meta: sessionMetaFromSummary(summary),
         messages: buildStoredActiveContext(replay),
-        transcript: buildTranscript(replay, { tailTurns: 10 }),
+        transcript: buildTranscript(replay),
         mcp: emptySessionMcpState(),
         ...(warnings ? { warnings } : {}),
       },

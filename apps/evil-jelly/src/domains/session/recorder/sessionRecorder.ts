@@ -9,6 +9,7 @@ import type { NonUserMessageSource } from "../../../shared/session/messageSource
 import type {
   SessionCompactionRecord,
   SessionMessageSink,
+  SessionToolObservation,
 } from "../../../shared/session/recorderPort";
 import {
   createSessionMetaLine,
@@ -63,6 +64,11 @@ export interface SessionRecorder extends SessionMessageSink {
     reason: "startup" | "command" | "tool",
   ): Promise<void>;
   recordMcpToolGrants(grants: readonly McpToolGrant[], reason: "command" | "tool"): Promise<void>;
+  recordToolObservation(
+    turnId: string,
+    toolCallId: string,
+    observation: SessionToolObservation,
+  ): Promise<void>;
   completeTurn(
     turnId: string,
     status: "completed" | "interrupted" | "error",
@@ -275,6 +281,20 @@ class JsonlSessionRecorder implements SessionRecorder {
     if (entries.length > 0) {
       await this.writer.flush();
     }
+  }
+
+  async recordToolObservation(
+    turnId: string,
+    toolCallId: string,
+    observation: SessionToolObservation,
+  ): Promise<void> {
+    await this.#append({
+      type: "tool_observation_recorded",
+      turnId,
+      toolCallId,
+      ...observation,
+    });
+    await this.writer.flush();
   }
 
   async recordCompaction(record: SessionCompactionRecord): Promise<void> {

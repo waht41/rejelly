@@ -15,6 +15,10 @@ export type ToolObservationDetail = {
   text: string;
   caption?: string;
   captionTitle?: string;
+  /** Proposed changes are review material; applied changes reflect successful filesystem writes. */
+  phase?: "proposed" | "applied";
+  /** Inline is reserved for writes that did not already show a confirmation diff. */
+  presentation?: "inline" | "expanded";
 };
 
 export interface ToolObservationBlock extends ToolObservationStart {

@@ -34,6 +34,7 @@
     "@rejelly/core": "workspace:*",
     "ansi-escapes": "^7.3.0",
     "cac": "catalog:",
+    "cli-highlight": "2.1.11",
     "diff": "^9.0.0",
     "dotenv": "catalog:",
     "fast-glob": "^3.3.3",

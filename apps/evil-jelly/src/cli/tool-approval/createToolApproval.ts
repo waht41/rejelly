@@ -327,6 +327,7 @@ async function confirmFsWrite(
   useOutputStore.getState().logDiff({
     text: unifiedDiff,
     ...(reviewCaption?.trim() ? { caption: reviewCaption.trim() } : {}),
+    captionTitle: "Proposed changes",
   });
   const selected = await decision.requestChoice({
     message: `Allow ${kind}${outsideLabel} ${filePath}?`,
@@ -419,15 +420,24 @@ export function createToolApproval(
       return decision.run((session) => confirmMcpCall(params, session));
     }
 
+    const autoAllow = tryAutoAllowFsWrite(params, policy, getMode);
+    if (autoAllow) {
+      recordActiveToolDetail({
+        type: "diff",
+        text: params.unifiedDiff,
+        ...(params.reviewCaption?.trim() ? { caption: params.reviewCaption.trim() } : {}),
+        phase: "proposed",
+        presentation: "inline",
+      });
+      return autoAllow;
+    }
     recordActiveToolDetail({
       type: "diff",
       text: params.unifiedDiff,
       ...(params.reviewCaption?.trim() ? { caption: params.reviewCaption.trim() } : {}),
+      phase: "proposed",
+      presentation: "expanded",
     });
-    const autoAllow = tryAutoAllowFsWrite(params, policy, getMode);
-    if (autoAllow) {
-      return autoAllow;
-    }
     return decision.run((session) =>
       confirmFsWrite(params, policy, options.suspendInkForExternalProcess, session),
     );

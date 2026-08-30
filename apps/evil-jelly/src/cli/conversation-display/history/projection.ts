@@ -29,7 +29,8 @@ export function projectTranscriptItem(item: TranscriptItem, sequence: HistorySeq
       const compactArgs = item.arguments?.trim().replace(/\s+/g, " ");
       const suffix =
         compactArgs && compactArgs.length > 120 ? `${compactArgs.slice(0, 117)}...` : compactArgs;
-      const summary = `[Tools] ${item.toolName}${suffix ? ` ${suffix}` : ""} (resumed)`;
+      const summary =
+        item.summary ?? `[Tools] ${item.toolName}${suffix ? ` ${suffix}` : ""} (resumed)`;
       const fullResult = item.result ?? "";
       return {
         id: `resume_${item.id}`,
@@ -39,6 +40,7 @@ export function projectTranscriptItem(item: TranscriptItem, sequence: HistorySeq
           toolName: item.toolName,
           summary,
           args: item.arguments,
+          detail: item.detail,
           preview: fullResult.split("\n").slice(0, 6).join("\n").slice(0, 600),
           fullResult,
           ok: item.ok,
