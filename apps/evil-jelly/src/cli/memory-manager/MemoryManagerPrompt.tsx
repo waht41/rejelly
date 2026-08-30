@@ -1,5 +1,6 @@
 import { Box, Text, useInput, useWindowSize } from "ink";
 import { useEffect, useMemo, useState } from "react";
+import wrapAnsi from "wrap-ansi";
 import type {
   MemoryManagerAction,
   MemoryManagerEntry,
@@ -9,6 +10,7 @@ import { ListViewport } from "../terminal-ui/picker/ListViewport";
 import { moveListSelection } from "../terminal-ui/picker/listNavigation";
 
 const VISIBLE_ROWS = 10;
+const DETAIL_HORIZONTAL_SAFETY_COLUMNS = 4;
 
 function statusLabel(entry: MemoryManagerEntry): string {
   return entry.injectedStatus === "current"
@@ -18,6 +20,30 @@ function statusLabel(entry: MemoryManagerEntry): string {
       : entry.injectedStatus === "removed_next_epoch"
         ? "removed next epoch"
         : "not injected";
+}
+
+export function buildMemoryDetailLines(detail: MemoryManagerEntry, columns: number): string[] {
+  // Ink/Yoga may reserve a couple more cells than the terminal width reported to this leaf.
+  // Leave a small safety gutter so a pre-wrapped line is never truncated a second time.
+  const width = Math.max(1, columns - DETAIL_HORIZONTAL_SAFETY_COLUMNS);
+  return [
+    `ID: ${detail.id}`,
+    `Scope: ${detail.scope}`,
+    `Summary: ${detail.summary}`,
+    `Revision: ${detail.revision}`,
+    `Injected: ${statusLabel(detail)}`,
+    "Detail:",
+    detail.detail,
+    `Created: ${detail.createdAt}`,
+    `Updated: ${detail.updatedAt}`,
+    "Provenance:",
+    detail.provenance,
+  ].flatMap((value) =>
+    value.split("\n").flatMap((line) => {
+      if (line.length === 0) return [""];
+      return wrapAnsi(line, width, { hard: true, trim: false }).split("\n");
+    }),
+  );
 }
 
 export function MemoryManagerPrompt({
@@ -37,25 +63,12 @@ export function MemoryManagerPrompt({
   );
   const [selectedIndex, setSelectedIndex] = useState(initialIndex);
   const [detailLineIndex, setDetailLineIndex] = useState(0);
-  const { rows: terminalRows } = useWindowSize();
+  const { columns, rows: terminalRows } = useWindowSize();
   const detailViewportLines = Math.max(3, Math.min(12, terminalRows - 12));
   const detailLines = useMemo(() => {
     if (!request.detail) return [];
-    const detail = request.detail;
-    return [
-      `ID: ${detail.id}`,
-      `Scope: ${detail.scope}`,
-      `Summary: ${detail.summary}`,
-      `Revision: ${detail.revision}`,
-      `Injected: ${statusLabel(detail)}`,
-      "Detail:",
-      ...detail.detail.split("\n"),
-      `Created: ${detail.createdAt}`,
-      `Updated: ${detail.updatedAt}`,
-      "Provenance:",
-      ...detail.provenance.split("\n"),
-    ];
-  }, [request.detail]);
+    return buildMemoryDetailLines(request.detail, columns);
+  }, [columns, request.detail]);
   const detailMaxOffset = Math.max(0, detailLines.length - detailViewportLines);
   const safeDetailOffset = Math.min(detailLineIndex, detailMaxOffset);
 
