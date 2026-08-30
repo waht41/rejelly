@@ -1,19 +1,30 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { sameCanonicalPath } from "../../../shared/workspaceScope";
 
-const REGISTRY_VERSION = 1;
+const LEGACY_REGISTRY_VERSION = 1;
+const REGISTRY_VERSION = 2;
 const REGISTRY_LOCK_TIMEOUT_MS = 5_000;
+
+export type MemoryProjectKind = "standard" | "home";
 
 export interface MemoryProjectRecord {
   readonly projectId: string;
   readonly root: string;
   readonly createdAt: string;
+  /** Home projects match only their exact root; standard projects include descendants. */
+  readonly kind: MemoryProjectKind;
 }
 
 interface MemoryProjectRegistryFile {
   readonly version: typeof REGISTRY_VERSION;
   readonly projects: readonly MemoryProjectRecord[];
+}
+
+interface LoadedProjectRegistry {
+  readonly registry: MemoryProjectRegistryFile;
+  readonly migrated: boolean;
 }
 
 function normalizeAbsolutePath(filePath: string): string {
@@ -40,7 +51,7 @@ function registryPath(memoryRoot: string): string {
   return path.join(path.resolve(memoryRoot), "projects", "registry.json");
 }
 
-function isProjectRecord(value: unknown): value is MemoryProjectRecord {
+function hasBaseProjectRecordShape(value: unknown): value is Omit<MemoryProjectRecord, "kind"> {
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
   return (
@@ -52,13 +63,28 @@ function isProjectRecord(value: unknown): value is MemoryProjectRecord {
   );
 }
 
-function readRegistry(filePath: string): MemoryProjectRegistryFile {
+function isProjectRecord(value: unknown): value is MemoryProjectRecord {
+  return (
+    hasBaseProjectRecordShape(value) &&
+    ((value as Record<string, unknown>).kind === "standard" ||
+      (value as Record<string, unknown>).kind === "home")
+  );
+}
+
+function legacyProjectKind(root: string, homeRoot: string): MemoryProjectKind {
+  return sameCanonicalPath(root, homeRoot) ? "home" : "standard";
+}
+
+function readRegistry(filePath: string, homeRoot: string): LoadedProjectRegistry {
   let raw: string;
   try {
     raw = fs.readFileSync(filePath, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return { version: REGISTRY_VERSION, projects: [] };
+      return {
+        registry: { version: REGISTRY_VERSION, projects: [] },
+        migrated: false,
+      };
     }
     throw error;
   }
@@ -73,19 +99,37 @@ function readRegistry(filePath: string): MemoryProjectRegistryFile {
     throw new Error(`Project registry has an invalid shape: ${filePath}`);
   }
   const registry = parsed as Record<string, unknown>;
+  if (!Array.isArray(registry.projects)) {
+    throw new Error(`Project registry failed validation: ${filePath}`);
+  }
   if (
-    registry.version !== REGISTRY_VERSION ||
-    !Array.isArray(registry.projects) ||
-    !registry.projects.every(isProjectRecord)
+    registry.version === LEGACY_REGISTRY_VERSION &&
+    registry.projects.every(hasBaseProjectRecordShape)
   ) {
+    return {
+      registry: {
+        version: REGISTRY_VERSION,
+        projects: registry.projects.map((project) => ({
+          ...project,
+          root: canonicalProjectPath(project.root),
+          kind: legacyProjectKind(project.root, homeRoot),
+        })),
+      },
+      migrated: true,
+    };
+  }
+  if (registry.version !== REGISTRY_VERSION || !registry.projects.every(isProjectRecord)) {
     throw new Error(`Project registry failed validation: ${filePath}`);
   }
   return {
-    version: REGISTRY_VERSION,
-    projects: (registry.projects as MemoryProjectRecord[]).map((project) => ({
-      ...project,
-      root: canonicalProjectPath(project.root),
-    })),
+    registry: {
+      version: REGISTRY_VERSION,
+      projects: (registry.projects as MemoryProjectRecord[]).map((project) => ({
+        ...project,
+        root: canonicalProjectPath(project.root),
+      })),
+    },
+    migrated: false,
   };
 }
 
@@ -167,38 +211,65 @@ function isAncestorOrSame(ancestor: string, candidate: string): boolean {
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
+function projectContains(project: MemoryProjectRecord, workspace: string): boolean {
+  return project.kind === "home"
+    ? sameCanonicalPath(project.root, workspace)
+    : isAncestorOrSame(project.root, workspace);
+}
+
+/** Persist v1 registries as v2, classifying an existing home record as exact-match only. */
+export function migrateLegacyProjectRegistry(memoryRoot: string, homeRoot: string): void {
+  const filePath = registryPath(memoryRoot);
+  if (!fs.existsSync(filePath)) return;
+  withRegistryLock(filePath, () => {
+    const loaded = readRegistry(filePath, homeRoot);
+    if (loaded.migrated) writeRegistry(filePath, loaded.registry);
+  });
+}
+
 export function findRegisteredProject(
   workspaceRoot: string,
   memoryRoot: string,
+  homeRoot: string,
 ): MemoryProjectRecord | undefined {
   const workspace = canonicalProjectPath(workspaceRoot);
-  const registry = readRegistry(registryPath(memoryRoot));
+  const { registry } = readRegistry(registryPath(memoryRoot), homeRoot);
   return registry.projects
-    .filter((project) => isAncestorOrSame(project.root, workspace))
+    .filter((project) => projectContains(project, workspace))
     .sort((left, right) => right.root.length - left.root.length)[0];
 }
 
-export function listRegisteredProjects(memoryRoot: string): readonly MemoryProjectRecord[] {
-  return readRegistry(registryPath(memoryRoot)).projects;
+export function listRegisteredProjects(
+  memoryRoot: string,
+  homeRoot: string,
+): readonly MemoryProjectRecord[] {
+  return readRegistry(registryPath(memoryRoot), homeRoot).registry.projects;
 }
 
 export function getOrCreateRegisteredProject(
   projectRoot: string,
   memoryRoot: string,
+  kind: MemoryProjectKind,
+  homeRoot: string,
 ): MemoryProjectRecord {
   const root = canonicalProjectPath(projectRoot);
   const filePath = registryPath(memoryRoot);
   return withRegistryLock(filePath, () => {
-    const registry = readRegistry(filePath);
+    const loaded = readRegistry(filePath, homeRoot);
+    const registry = loaded.registry;
     const existing = registry.projects.find(
       (project) => comparisonPath(project.root) === comparisonPath(root),
     );
-    if (existing) return existing;
+    if (existing) {
+      if (loaded.migrated) writeRegistry(filePath, registry);
+      return existing;
+    }
 
     const project: MemoryProjectRecord = {
       projectId: crypto.randomUUID(),
       root,
       createdAt: new Date().toISOString(),
+      kind,
     };
     writeRegistry(filePath, {
       version: REGISTRY_VERSION,

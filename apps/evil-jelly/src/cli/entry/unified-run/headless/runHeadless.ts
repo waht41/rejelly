@@ -11,6 +11,7 @@ import {
 } from "../../../../domains/session/repository/userInputRepository";
 import { SKILL_RUNTIME_PROVIDER_KEY } from "../../../../domains/skills/agent/skillRuntime";
 import { UnifiedAgent } from "../../../../features/unified/UnifiedAgent";
+import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 import { setBinding } from "../../../../shared/host/context";
 import { textPromptInput } from "../../../../shared/model/prompt/promptInput";
@@ -40,7 +41,7 @@ export async function runHeadless(
     const skillRuntime = await buildConfiguredSkillRuntimeSnapshot();
     const skillSummary = formatSkillRuntimeStartupSummary(skillRuntime);
     const memoryRuntime = await createSessionMemoryRuntime(
-      createPersistentMemoryService({ workspaceRoot: process.cwd() }),
+      createPersistentMemoryService({ workspaceRoot: getWorkspaceFsPolicy().getRoot() }),
     );
     for (const diagnostic of memoryRuntime.diagnostics) {
       bindings.logSystemEvent(`Memory warning: ${diagnostic}\n`);

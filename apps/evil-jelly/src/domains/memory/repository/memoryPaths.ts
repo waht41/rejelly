@@ -44,6 +44,7 @@ export function resolveMemoryPaths(
       root: path.resolve(workspaceRoot),
       createdAt: new Date(0).toISOString(),
       projectName: "unavailable",
+      kind: "standard",
     };
   }
   const userFile = assertInsideRoot(root, path.join(root, "user.json"));
