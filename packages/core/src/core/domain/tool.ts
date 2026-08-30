@@ -58,8 +58,18 @@ export interface ToolContext {
   /** Metadata (read-only, for logging, tracing, auth, etc.) */
   metadata: {
     agentId: string;
+    /**
+     * @deprecated ToolContext does not own a durable application session identity. This field was
+     * historically populated with traceId and must not be used. Pass application session data
+     * through an application-owned resource instead.
+     */
     sessionId?: string;
     traceId?: string;
+    /** Provider tool-call id when execution belongs to a model tool loop. */
+    toolCallId?: string;
+    /** Whether the tool result was served by the core tool cache. */
+    fromCache: boolean;
+    /** @deprecated Metadata is a closed core contract; add an explicit field instead. */
     [key: string]: unknown;
   };
   /** Static tool definition (read-only reference for introspection) */

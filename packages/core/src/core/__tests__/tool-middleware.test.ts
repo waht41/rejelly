@@ -319,6 +319,8 @@ describe("Tool Middleware Chain", () => {
       expect(ctx.input).toEqual({ query: "test-query" });
       expect(ctx.description).toBe("Test tool");
       expect(ctx.metadata.agentId).toBe("test-agent");
+      expect(ctx.metadata.sessionId).toBeUndefined();
+      expect(ctx.metadata.toolCallId).toBe("call_1");
       expect(ctx.definition.name).toBe("test");
     });
   });
