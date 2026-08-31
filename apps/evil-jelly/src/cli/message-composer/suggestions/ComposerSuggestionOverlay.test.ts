@@ -22,6 +22,7 @@ const file = {
   query: "src",
   open: true,
   select: vi.fn(),
+  complete: vi.fn(),
   dismiss: vi.fn(),
 };
 const referenceSuggestion = {

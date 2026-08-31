@@ -5,6 +5,7 @@
  */
 
 import { execFileSync } from "node:child_process";
+import path from "node:path";
 import {
   getWorkspaceFiles,
   type ResolvedFsPath,
@@ -99,13 +100,20 @@ function hasIgnoredSegment(rootRelPosix: string): boolean {
 
 /** Normalise raw backend output to workspace-root-relative posix paths, dropping ignored segments. */
 function collectFiltered(entries: Iterable<string>): string[] {
+  const policy = getWorkspaceFiles();
   const out: string[] = [];
   for (const entry of entries) {
     const p = toGitignorePath(entry);
     if (p.length === 0 || hasIgnoredSegment(p)) {
       continue;
     }
-    out.push(p);
+    // Native backends differ on whether a root .gitignore is honored outside a Git repository.
+    // Re-apply the workspace discovery policy so candidate visibility is backend-independent.
+    const resolved = policy.tryResolveWorkspacePath(p);
+    if (!resolved.ok) {
+      continue;
+    }
+    out.push(toGitignorePath(resolved.rel));
     if (out.length >= MAX_COLLECT) {
       break;
     }
@@ -229,6 +237,14 @@ export interface FuzzyMatch {
 
 export interface FuzzyPathRefMatch extends FuzzyMatch {
   kind: "file" | "directory";
+  /** True when this candidate is visible only because the user explicitly named an ignored scope. */
+  ignored?: boolean;
+}
+
+export interface FuzzyPathRefSearchResult {
+  matches: FuzzyPathRefMatch[];
+  /** Exact ignored directory prefix that bounds the current search, when active. */
+  ignoredScope?: string;
 }
 
 type ResolvedSearchDirectory = ResolvedFsPath & {
@@ -321,26 +337,191 @@ function collectParentDirectories(rootRelPaths: Iterable<string>): string[] {
   return [...seen];
 }
 
-function normalizePathRefNeedle(keyword: string): string {
-  return toGitignorePath(keyword.trim()).replace(/\/+$/, "").toLowerCase();
+function normalizePathRefQuery(keyword: string): string {
+  return toGitignorePath(keyword.trim()).replace(/\/+$/, "");
 }
 
-async function exactDirectoryCandidate(keyword: string): Promise<string | null> {
+function normalizePathRefNeedle(keyword: string): string {
+  return normalizePathRefQuery(keyword).toLowerCase();
+}
+
+async function exactPathRefCandidate(keyword: string): Promise<FuzzyPathRefMatch | null> {
   const policy = getWorkspaceFiles();
-  const normalized = normalizeDirectoryRel(normalizePathRefNeedle(keyword));
+  const normalized = normalizeDirectoryRel(normalizePathRefQuery(keyword));
   if (normalized === ".") {
     return null;
   }
-  const resolved = policy.tryResolveWorkspacePath(normalized);
+  const resolved = policy.tryResolveWorkspacePath(normalized, { kind: "read" });
   if (!resolved.ok) {
     return null;
   }
   try {
-    const stat = await policy.stat(resolved.rel);
-    return stat.isDirectory() ? normalizeDirectoryRel(resolved.rel) : null;
+    const stat = await policy.statResolved(resolved);
+    const relPosix = toGitignorePath(resolved.rel);
+    if (stat.isFile()) {
+      return {
+        path: relPosix,
+        score: Number.MAX_SAFE_INTEGER,
+        kind: "file",
+        ...(policy.isIgnoredByGitignore(resolved.rel, false) ? { ignored: true } : {}),
+      };
+    }
+    if (!stat.isDirectory()) {
+      return null;
+    }
+
+    const ignored = policy.isIgnoredByGitignore(resolved.rel, true);
+    const discoverable = policy.tryResolveWorkspacePath(
+      resolved.rel,
+      ignored ? { kind: "scan", includeIgnored: true } : { kind: "scan" },
+    );
+    if (!discoverable.ok || (ignored && policy.validateScopedDiscoveryRoot(discoverable))) {
+      return null;
+    }
+    return {
+      path: normalizeDirectoryRel(discoverable.rel),
+      score: Number.MAX_SAFE_INTEGER,
+      kind: "directory",
+      ...(ignored ? { ignored: true } : {}),
+    };
   } catch {
     return null;
   }
+}
+
+type IgnoredPathRefScope = {
+  path: string;
+  remainder: string;
+};
+
+/**
+ * Find the deepest exact ignored directory followed by `/` in the user's query. Merely typing a
+ * fuzzy prefix never reveals ignored names; the complete directory boundary is the opt-in signal.
+ */
+async function findIgnoredPathRefScope(keyword: string): Promise<IgnoredPathRefScope | null> {
+  const policy = getWorkspaceFiles();
+  const normalized = toGitignorePath(keyword.trim());
+  const slashIndexes: number[] = [];
+  for (let index = 0; index < normalized.length; index += 1) {
+    if (normalized[index] === "/") {
+      slashIndexes.push(index);
+    }
+  }
+
+  for (let index = slashIndexes.length - 1; index >= 0; index -= 1) {
+    const slashIndex = slashIndexes[index]!;
+    const prefix = normalized.slice(0, slashIndex).replace(/\/+$/, "");
+    if (
+      !prefix ||
+      policy.classifyPath(prefix).outside ||
+      !policy.isIgnoredByGitignore(prefix, true)
+    ) {
+      continue;
+    }
+    const resolved = policy.tryResolveWorkspacePath(prefix, {
+      kind: "scan",
+      includeIgnored: true,
+    });
+    if (!resolved.ok || policy.validateScopedDiscoveryRoot(resolved)) {
+      continue;
+    }
+    try {
+      const stat = await policy.statResolved(resolved);
+      if (stat.isDirectory()) {
+        return {
+          path: normalizeDirectoryRel(resolved.rel),
+          remainder: normalized.slice(slashIndex + 1),
+        };
+      }
+    } catch {
+      // Try the next shallower exact directory prefix.
+    }
+  }
+  return null;
+}
+
+async function listDirectIgnoredScopeChildren(scope: string): Promise<FuzzyPathRefMatch[]> {
+  const policy = getWorkspaceFiles();
+  const resolved = policy.tryResolveWorkspacePath(scope, { kind: "scan", includeIgnored: true });
+  if (!resolved.ok) {
+    throw new Error(resolved.error);
+  }
+  const scopeError = policy.validateScopedDiscoveryRoot(resolved);
+  if (scopeError) {
+    throw new Error(scopeError);
+  }
+  const entries = await policy.readdirResolved(resolved, { withFileTypes: true });
+  return entries
+    .filter((entry) => !policy.shouldSkipScopedResolvedEntry(resolved, entry))
+    .map((entry) => ({
+      path: toGitignorePath(path.join(resolved.rel, entry.name)),
+      score: 0,
+      kind: entry.isDirectory() ? ("directory" as const) : ("file" as const),
+      ignored: true,
+    }))
+    .sort(
+      (a, b) =>
+        Number(b.kind === "directory") - Number(a.kind === "directory") ||
+        a.path.localeCompare(b.path),
+    );
+}
+
+function scorePathRefCandidates(
+  rootRelFiles: Iterable<string>,
+  needle: string,
+  scope?: string,
+): FuzzyPathRefMatch[] {
+  const directories = collectParentDirectories(rootRelFiles);
+  const scored: FuzzyPathRefMatch[] = [];
+  const scoreCandidate = (candidate: string): number | null => {
+    if (!scope) {
+      return scorePath(needle, candidate);
+    }
+    const prefix = `${scope}/`;
+    return candidate.startsWith(prefix) ? scorePath(needle, candidate.slice(prefix.length)) : null;
+  };
+
+  for (const rootRel of directories) {
+    if (scope && rootRel === scope) {
+      continue;
+    }
+    const score = scoreCandidate(rootRel);
+    if (score !== null) {
+      scored.push({
+        path: rootRel,
+        score: score + 1,
+        kind: "directory",
+        ...(scope ? { ignored: true } : {}),
+      });
+    }
+  }
+  for (const rootRel of rootRelFiles) {
+    const score = scoreCandidate(rootRel);
+    if (score !== null) {
+      scored.push({
+        path: rootRel,
+        score,
+        kind: "file",
+        ...(scope ? { ignored: true } : {}),
+      });
+    }
+  }
+  scored.sort((a, b) => b.score - a.score || a.path.localeCompare(b.path));
+  return scored;
+}
+
+function prependExactPathRef(
+  matches: FuzzyPathRefMatch[],
+  exact: FuzzyPathRefMatch | null,
+  limit: number,
+): FuzzyPathRefMatch[] {
+  if (!exact) {
+    return matches.slice(0, limit);
+  }
+  return [
+    exact,
+    ...matches.filter((match) => match.path !== exact.path || match.kind !== exact.kind),
+  ].slice(0, limit);
 }
 
 export function resetFuzzySearchCache(): void {
@@ -398,34 +579,56 @@ export async function fuzzySearchPathRefs(
   limit?: number,
   options?: FuzzySearchOptions,
 ): Promise<FuzzyPathRefMatch[]> {
+  return (await fuzzySearchPathRefsWithContext(keyword, directory, limit, options)).matches;
+}
+
+/** Fuzzy path-ref search plus the explicit ignored scope needed by the interactive picker UI. */
+export async function fuzzySearchPathRefsWithContext(
+  keyword: string,
+  directory: string = ".",
+  limit?: number,
+  options?: FuzzySearchOptions,
+): Promise<FuzzyPathRefSearchResult> {
   const maxResults = Math.min(Math.max(limit ?? 20, 1), 100);
   const needle = normalizePathRefNeedle(keyword);
   if (needle.length === 0) {
-    return [];
+    return { matches: [] };
   }
 
-  const rootRelFiles = await getCandidateFiles(directory, options?.cachePolicy);
-  const rootRelDirectories = collectParentDirectories(rootRelFiles);
-  const exactDirectory = await exactDirectoryCandidate(keyword);
-  if (exactDirectory && !rootRelDirectories.includes(exactDirectory)) {
-    rootRelDirectories.push(exactDirectory);
+  const [exact, ignoredScope] = await Promise.all([
+    exactPathRefCandidate(keyword),
+    directory === "." ? findIgnoredPathRefScope(keyword) : Promise.resolve(null),
+  ]);
+
+  if (ignoredScope) {
+    const matches =
+      ignoredScope.remainder.length === 0
+        ? await listDirectIgnoredScopeChildren(ignoredScope.path)
+        : scorePathRefCandidates(
+            await getCandidateFiles(ignoredScope.path, options?.cachePolicy, true),
+            ignoredScope.remainder.toLowerCase(),
+            ignoredScope.path,
+          );
+    return {
+      // A trailing slash means "show this directory's children"; repeating the scope itself as
+      // the first row would make Tab/Right browse back into the same directory forever.
+      matches: prependExactPathRef(
+        matches,
+        ignoredScope.remainder.length === 0 ? null : exact,
+        maxResults,
+      ),
+      ignoredScope: ignoredScope.path,
+    };
   }
 
-  const scored: FuzzyPathRefMatch[] = [];
-  for (const rootRel of rootRelDirectories) {
-    const score = scorePath(needle, rootRel);
-    if (score !== null) {
-      scored.push({ path: rootRel, score: score + 1, kind: "directory" });
-    }
-  }
-  for (const rootRel of rootRelFiles) {
-    const score = scorePath(needle, rootRel);
-    if (score !== null) {
-      scored.push({ path: rootRel, score, kind: "file" });
-    }
-  }
-  scored.sort((a, b) => b.score - a.score || a.path.localeCompare(b.path));
-  return scored.slice(0, maxResults);
+  const rootRelFiles = await getCandidateFiles(
+    directory,
+    options?.cachePolicy,
+    options?.includeIgnored,
+  );
+  return {
+    matches: prependExactPathRef(scorePathRefCandidates(rootRelFiles, needle), exact, maxResults),
+  };
 }
 
 /**

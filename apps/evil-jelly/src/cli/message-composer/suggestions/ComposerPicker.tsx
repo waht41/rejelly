@@ -13,11 +13,28 @@ export interface ComposerPickerKeySink {
   current: ComposerPickerKeyHandler | null;
 }
 
+export type ComposerPickerItemCommand = "select" | "complete" | "browse";
+
+export function composerPickerItemCommand(
+  key: Pick<Key, "return" | "tab" | "rightArrow">,
+  capabilities: { complete: boolean; browse: boolean },
+): ComposerPickerItemCommand | null {
+  if (key.return) return "select";
+  if (key.tab && capabilities.complete) return "complete";
+  if (key.rightArrow && capabilities.browse) return "browse";
+  return null;
+}
+
 interface ComposerPickerProps<T> {
   items: readonly T[];
   getKey: (item: T) => string;
   renderItem: (item: T, state: ListItemRenderState) => ReactNode;
   onSelect: (item: T) => void;
+  /** Optional completion action, conventionally bound to Tab. */
+  onComplete?: (item: T) => void;
+  /** Optional path-like navigation action, conventionally bound to Right Arrow. */
+  onBrowse?: (item: T) => void;
+  canBrowse?: (item: T) => boolean;
   onCancel: () => void;
   empty?: ReactNode;
   visibleRows?: number;
@@ -29,6 +46,9 @@ export function ComposerPicker<T>({
   getKey,
   renderItem,
   onSelect,
+  onComplete,
+  onBrowse,
+  canBrowse,
   onCancel,
   empty,
   visibleRows,
@@ -56,12 +76,28 @@ export function ComposerPicker<T>({
       );
       return true;
     }
-    if (key.return) {
-      const selected = items[selectedIndex];
-      if (selected) {
-        onSelect(selected);
-      }
+    const selected = items[selectedIndex];
+    if (key.return && !selected) {
       // Do not let Enter submit the line beneath an empty picker.
+      return true;
+    }
+    if (!selected) {
+      return false;
+    }
+    const itemCommand = composerPickerItemCommand(key, {
+      complete: Boolean(onComplete),
+      browse: Boolean(onBrowse && canBrowse?.(selected)),
+    });
+    if (itemCommand === "select") {
+      onSelect(selected);
+      return true;
+    }
+    if (itemCommand === "complete") {
+      onComplete?.(selected);
+      return true;
+    }
+    if (itemCommand === "browse") {
+      onBrowse?.(selected);
       return true;
     }
     return false;
