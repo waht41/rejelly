@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { setWorkspaceRoot } from "../../shared/fs-policy/workspace-fs-policy";
+import { setWorkspaceRoot } from "../../shared/fs-policy/workspace-context";
 
 function assertDirectory(label: string, dir: string): void {
   let stat: fs.Stats;

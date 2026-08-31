@@ -2,10 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  getWorkspaceFsPolicy,
-  setWorkspaceRoot,
-} from "../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceRoot, setWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import type { FsOutsideAccessPayload } from "../../../shared/host/toolConfirmationBindings";
 import { createTestHostBindings } from "../__tests__/testHostBindings";
@@ -35,7 +32,7 @@ describe("heuristic AST document symbol extensions", () => {
   const relFile = "packages/core/src/budget-system.ts";
 
   beforeEach(async () => {
-    prevRoot = getWorkspaceFsPolicy().getRoot();
+    prevRoot = getWorkspaceRoot();
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "evil-jelly-doc-symbol-"));
     await fs.mkdir(path.join(tmpDir, "packages", "core", "src"), { recursive: true });
     await fs.writeFile(
@@ -143,7 +140,7 @@ describe("heuristic AST document symbol extensions", () => {
       const parsed = JSON.parse(raw) as { matches: Array<{ file: string; name: string }> };
 
       expect(outsideAccessRequests).toHaveLength(1);
-      expect(outsideAccessRequests[0]?.mode).toBe("search");
+      expect(outsideAccessRequests[0]?.access).toBe("scan");
       expect(parsed.matches).toEqual([
         expect.objectContaining({
           file: path.join(outsideDir, "external.ts").replace(/\\/g, "/"),

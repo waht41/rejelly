@@ -15,7 +15,7 @@
  */
 
 import { z } from "zod";
-import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceFiles } from "../../../shared/fs-policy/workspace-files";
 import { PromptBuilder } from "../../../shared/model/prompt/builder";
 import { loadDocMap, resolveSyncPairs } from "../detectors/docDrift";
 import { sha256 } from "../runtime/ledger";
@@ -324,7 +324,7 @@ export const docSyncFamily: AuditSeedFamily = {
   kind: "doc-sync",
   label: "Bilingual doc sync",
   async collect() {
-    const policy = getWorkspaceFsPolicy();
+    const policy = getWorkspaceFiles();
     const loaded = await loadDocMap();
     const warnings: string[] = [];
     const pairs =

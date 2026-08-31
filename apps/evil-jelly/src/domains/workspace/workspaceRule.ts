@@ -2,10 +2,7 @@
  * Read optional Codex-style workspace instructions for the interactive agent.
  */
 
-import {
-  getWorkspaceFsPolicy,
-  type WorkspaceFsPolicy,
-} from "../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceFiles, type WorkspaceFiles } from "../../shared/fs-policy/workspace-files";
 import { renderPseudoXmlElement } from "../../shared/model/prompt/pseudoXml";
 
 const AGENTS_RULE_FILES = ["AGENTS.override.md", "AGENTS.md"] as const;
@@ -16,17 +13,17 @@ interface WorkspaceRule {
 }
 
 /** Resolve the first non-empty instruction file using Codex's same-directory precedence. */
-async function resolveWorkspaceRule(policy: WorkspaceFsPolicy): Promise<WorkspaceRule | undefined> {
+async function resolveWorkspaceRule(policy: WorkspaceFiles): Promise<WorkspaceRule | undefined> {
   for (const fileName of AGENTS_RULE_FILES) {
     try {
       // Rule files stay readable even when gitignored: ignoring AGENTS.override.md while
       // keeping it tracked is a Codex convention. Only the gitignore guard is relaxed;
       // sensitive-file and system-hidden checks still apply in the policy.
-      const stat = await policy.stat(fileName, { access: "direct-read" });
+      const stat = await policy.stat(fileName, { kind: "read" });
       if (!stat.isFile()) {
         continue;
       }
-      const markdown = (await policy.readFile(fileName, { access: "direct-read" })).trim();
+      const markdown = (await policy.readFile(fileName)).trim();
       if (markdown.length > 0) {
         return { fileName, markdown };
       }
@@ -42,7 +39,7 @@ async function resolveWorkspaceRule(policy: WorkspaceFsPolicy): Promise<Workspac
  * Returns empty string when neither candidate is readable and non-empty.
  */
 export async function readWorkspaceRuleMarkdown(
-  policy: WorkspaceFsPolicy = getWorkspaceFsPolicy(),
+  policy: WorkspaceFiles = getWorkspaceFiles(),
 ): Promise<string> {
   return (await resolveWorkspaceRule(policy))?.markdown ?? "";
 }
@@ -51,7 +48,7 @@ export async function readWorkspaceRuleMarkdown(
  * Builds an XML-delimited instruction block injected into the agent's system prompt.
  */
 export async function buildWorkspaceRuleInstructionBlock(
-  policy: WorkspaceFsPolicy = getWorkspaceFsPolicy(),
+  policy: WorkspaceFiles = getWorkspaceFiles(),
 ): Promise<string> {
   const rule = await resolveWorkspaceRule(policy);
   if (!rule) {

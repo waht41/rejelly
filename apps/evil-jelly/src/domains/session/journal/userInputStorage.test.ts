@@ -3,10 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { materializeUserInput } from "../../../cli/message-composer/message-materialization/userMessage";
-import {
-  getWorkspaceFsPolicy,
-  setWorkspaceRoot,
-} from "../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceRoot, setWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
 import { projectFrozenUserInputMessage } from "../../../shared/model/prompt/frozenUserInput";
 import type { PromptInput } from "../../../shared/model/prompt/promptInput";
 import { freezeResolvedUserInput } from "./userInputStorage";
@@ -16,7 +13,7 @@ describe("V3 user-input storage preparation", () => {
   let tmpDir: string;
 
   beforeEach(async () => {
-    previousRoot = getWorkspaceFsPolicy().getRoot();
+    previousRoot = getWorkspaceRoot();
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "evil-v3-user-input-"));
     setWorkspaceRoot(tmpDir);
   });

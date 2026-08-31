@@ -16,7 +16,7 @@ import path from "node:path";
 import { MAX_HEURISTIC_AST_BYTES } from "../../../../domains/workspace/source/heuristicAstLimits";
 import { listWorkspaceScriptRelPaths } from "../../../../domains/workspace/source/workspacePaths";
 import { fnv1a32Hex } from "../../../../shared/foundation/fnv1a";
-import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceFiles } from "../../../../shared/fs-policy/workspace-files";
 import { isTestOrGeneratedPath } from "../../sourcePath";
 import { buildImportGraph, type FragmentationSource, type ImportGraph } from "./importGraph";
 import {
@@ -232,7 +232,7 @@ function buildReport(
 export async function detectFragmentationCandidates(
   overrides?: Partial<FragmentationDetectionConfig>,
 ): Promise<FragmentationCandidateReport> {
-  const policy = getWorkspaceFsPolicy();
+  const policy = getWorkspaceFiles();
   const config: FragmentationDetectionConfig = { ...DEFAULT_FRAGMENTATION_CONFIG, ...overrides };
   const files = await listWorkspaceScriptRelPaths();
   const sources: FragmentationSource[] = [];

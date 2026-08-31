@@ -4,7 +4,7 @@
  * deterministic detectors; a persistent architecture-spec/drift baseline is intentionally out of scope.
  */
 
-import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceFiles } from "../../../shared/fs-policy/workspace-files";
 import type {
   AuditFinding,
   AuditFindingKind,
@@ -228,7 +228,7 @@ export async function persistAuditReport(
   markdown: string,
   generatedAt: string,
 ): Promise<string | null> {
-  const policy = getWorkspaceFsPolicy();
+  const policy = getWorkspaceFiles();
   const stamp = generatedAt.replace(/[:.]/g, "-");
   const relPath = `.evil-jelly/audit/audit-${stamp}.md`;
   try {

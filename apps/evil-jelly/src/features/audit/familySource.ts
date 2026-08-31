@@ -6,7 +6,7 @@
 
 import { parse, type SgNode } from "@ast-grep/napi";
 import { langFromRelPath } from "../../domains/workspace/source/sourceLanguage";
-import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceFiles } from "../../shared/fs-policy/workspace-files";
 import type { NormalizedToken } from "./detectors/clone";
 import { tokenizeNormalized } from "./detectors/clone/tokenize";
 
@@ -55,7 +55,7 @@ export function tokensInLineRange(tokens: NormalizedToken[], range: AuditSourceR
 }
 
 async function readSnapshot(file: string): Promise<AuditSourceSnapshot> {
-  const policy = getWorkspaceFsPolicy();
+  const policy = getWorkspaceFiles();
   const source = await policy.readFile(file);
   let root: SgNode | null = null;
   try {
@@ -89,7 +89,7 @@ export async function readCappedLineSlice(
   range: AuditSourceRange,
   maxLines: number,
 ): Promise<string | null> {
-  const policy = getWorkspaceFsPolicy();
+  const policy = getWorkspaceFiles();
   try {
     const text = await policy.readFile(file);
     const lines = text.split(/\r?\n/);

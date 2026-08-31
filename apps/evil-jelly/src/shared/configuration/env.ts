@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { ReviewOptions } from "@rejelly/core/debugger";
 import { parse as parseEnv } from "dotenv";
-import { getWorkspaceFsPolicy } from "../fs-policy/workspace-fs-policy";
+import { getWorkspaceRoot } from "../fs-policy/workspace-context";
 import { resolveGlobalJellyDir } from "../globalPath";
 import { resolveWorkspaceScopePaths } from "../workspaceScope";
 import {
@@ -383,7 +383,7 @@ export function loadEvilJellyEnv(options?: {
     return { startProxy: configureProxy() };
   }
 
-  const scopePaths = resolveWorkspaceScopePaths(getWorkspaceFsPolicy().getRoot());
+  const scopePaths = resolveWorkspaceScopePaths(getWorkspaceRoot());
   const workspaceEnvPath = path.join(scopePaths.workspaceJellyDir, ".env");
   const layers: ReadonlyArray<{ name: EnvLayer; values: Record<string, string> }> = [
     ...(scopePaths.hasDistinctProjectState

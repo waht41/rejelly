@@ -1,6 +1,8 @@
 /** Semantic actions the host may surface for a proposed filesystem write. */
 export type WriteActionType = "accept" | "reject" | "edit" | "retry";
 
+export type ExternalFileAccess = "read" | "scan" | "write";
+
 export interface FsWritePayload {
   type: "fs_write";
   kind: "create" | "edit" | "delete";
@@ -18,9 +20,9 @@ export interface FsWritePayload {
 
 export interface FsOutsideAccessPayload {
   type: "fs_outside_access";
-  mode: "read" | "search" | "write";
+  access: ExternalFileAccess;
   targetPath: string;
-  approveDir: string;
+  grantRoot: string;
 }
 
 export interface ShellCommandPayload {

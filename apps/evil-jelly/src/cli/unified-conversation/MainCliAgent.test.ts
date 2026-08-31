@@ -16,9 +16,9 @@ vi.mock("../../domains/session/repository/sessionStore", async (importOriginal) 
   loadSession: mocks.loadSession,
 }));
 
-vi.mock("../../shared/fs-policy/workspace-fs-policy", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../shared/fs-policy/workspace-fs-policy")>()),
-  getWorkspaceFsPolicy: () => ({ getRoot: () => "/workspace" }),
+vi.mock("../../shared/fs-policy/workspace-context", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../shared/fs-policy/workspace-context")>()),
+  getWorkspaceRoot: () => "/workspace",
 }));
 
 function session(id: string, updatedAt: number): SessionMeta {

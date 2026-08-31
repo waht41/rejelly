@@ -3,7 +3,7 @@
  */
 
 import { env, getReviewEndpointFromEnv } from "../../shared/configuration/env";
-import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceRoot } from "../../shared/fs-policy/workspace-context";
 import type { EvilJellyBindings } from "../../shared/host/bindings";
 import type {
   PromptChoiceRequest,
@@ -163,7 +163,7 @@ function createOutputBindings(): ConversationPresentationBindings {
 function showSessionBanner(version: string): void {
   useOutputStore.getState().logBanner({
     model: env.OPENAI_MODEL_ID,
-    dir: getWorkspaceFsPolicy().getRoot(),
+    dir: getWorkspaceRoot(),
     version,
   });
 }
@@ -201,7 +201,7 @@ function createPromptBindings(options: {
     requestSkillManager: createInkRequestSkillManager(),
     revealMemoryFile: async (scope) => {
       await suspendInkForExternalProcess(() =>
-        revealMemoryFileInExplorer({ scope, workspaceRoot: getWorkspaceFsPolicy().getRoot() }),
+        revealMemoryFileInExplorer({ scope, workspaceRoot: getWorkspaceRoot() }),
       );
     },
     openSkillFolder: async (rootPath) => {

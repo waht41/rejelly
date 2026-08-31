@@ -13,7 +13,7 @@ import { isKnownSessionEvent } from "../../../../domains/session/model/sessionEv
 import { openSessionRecorder } from "../../../../domains/session/recorder/sessionRecorder";
 import { resumeSession } from "../../../../domains/session/repository/sessionStore";
 import { isCompactionBridgeMessage } from "../../../../shared/conversation/compactionMessages";
-import { setWorkspaceRoot } from "../../../../shared/fs-policy/workspace-fs-policy";
+import { setWorkspaceRoot } from "../../../../shared/fs-policy/workspace-context";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 import { messageContentToText } from "../../../../shared/model/message/content";
 import { projectFrozenUserInputMessage } from "../../../../shared/model/prompt/frozenUserInput";

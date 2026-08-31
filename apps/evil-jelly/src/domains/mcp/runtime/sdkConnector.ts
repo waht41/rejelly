@@ -6,7 +6,7 @@ import {
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { callMcpTool, loadMcpToolCatalog, normalizeMcpToolCatalog } from "@rejelly/adapter-mcp";
 import stripAnsi from "strip-ansi";
-import { resolveWorkspaceCwd } from "../../../shared/fs-policy/workspace-fs-policy";
+import { resolveWorkspaceCwd } from "../../../shared/fs-policy/workspace-context";
 import {
   type McpEnvironmentResolver,
   resolveMcpValueSources,

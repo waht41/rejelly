@@ -13,7 +13,7 @@ import type { SelectableAuditFamilyKind } from "../../../features/audit/contract
 import { docMapPath, loadDocMap } from "../../../features/audit/detectors/docDrift";
 import { getEnvironmentValue } from "../../../shared/configuration/env";
 import { getSettings } from "../../../shared/configuration/settings";
-import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import { setBinding } from "../../../shared/host/context";
 import { readMcpTrustGrants } from "../../../shared/mcp/trustRepository";
@@ -94,7 +94,7 @@ async function createAuditMcpRuntime(workspaceRoot: string): Promise<AuditMcpRun
 export async function runAudit(options: RunAuditOptions): Promise<void> {
   const { model, bindings, auditOptions } = options;
   const traceId = generateTraceId();
-  const workspaceRoot = getWorkspaceFsPolicy().getRoot();
+  const workspaceRoot = getWorkspaceRoot();
   const mcpRuntime = await createAuditMcpRuntime(workspaceRoot);
   try {
     await runWithReview({

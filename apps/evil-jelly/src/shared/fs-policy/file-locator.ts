@@ -1,7 +1,7 @@
 import path from "node:path";
 import { toPosixPath } from "../foundation/path";
-import { isPathInside } from "./outside-access";
-import type { ResolvedFsPath } from "./workspace-fs-policy";
+import { isPathInside } from "./path-containment";
+import type { ResolvedFsPath } from "./workspace-files";
 
 export type FileLocator =
   | {

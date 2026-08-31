@@ -12,7 +12,7 @@ import micromatch from "micromatch";
 import { z } from "zod";
 import { getSettings } from "../../../../shared/configuration/settings";
 import { parseAndValidateJsonc } from "../../../../shared/foundation/jsonc";
-import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceFiles } from "../../../../shared/fs-policy/workspace-files";
 
 const DocMapEntrySchema = z
   .object({
@@ -89,7 +89,7 @@ export function docMapPath(): string {
  * not silently skipped).
  */
 export async function loadDocMap(): Promise<{ path: string; map: DocMap } | null> {
-  const policy = getWorkspaceFsPolicy();
+  const policy = getWorkspaceFiles();
   const relPath = docMapPath();
   let raw: string;
   try {
@@ -107,7 +107,7 @@ function hasGlobMagic(pattern: string): boolean {
 async function expandDocGlob(key: string): Promise<string[]> {
   const normalized = key.replace(/\\/g, "/");
   const entries = await fg([normalized], {
-    cwd: getWorkspaceFsPolicy().getRoot(),
+    cwd: getWorkspaceFiles().getRoot(),
     dot: false,
     absolute: false,
     onlyFiles: true,
@@ -159,7 +159,7 @@ function fillGlob(pattern: string, captures: string[]): string {
 
 async function expandSyncGlob(pattern: string): Promise<string[]> {
   const entries = await fg([normalizeRelPath(pattern)], {
-    cwd: getWorkspaceFsPolicy().getRoot(),
+    cwd: getWorkspaceFiles().getRoot(),
     dot: false,
     ignore: ["**/node_modules/**"],
     absolute: false,

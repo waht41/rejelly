@@ -7,7 +7,7 @@ import {
   resumeSession,
 } from "../../../../domains/session/repository/sessionStore";
 import { qualifiedSkillName } from "../../../../domains/skills/definition/skillDefinition";
-import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceRoot } from "../../../../shared/fs-policy/workspace-context";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 import { startupTimeline } from "../../../../shared/profile/startup/timeline";
 import { createMcpChatRuntime } from "../../../mcp-runtime/mcpChatRuntime";
@@ -66,7 +66,7 @@ async function loadResumedSession(
   if (!session) {
     throw new Error("Session configuration is required to resume a durable session");
   }
-  const record = await resumeSession(getWorkspaceFsPolicy().getRoot(), requestedSessionId, {
+  const record = await resumeSession(getWorkspaceRoot(), requestedSessionId, {
     originator: "evil-jelly-cli",
     appVersion: session.appVersion,
     ...(session.sessionsRoot ? { sessionsRoot: session.sessionsRoot } : {}),
@@ -108,7 +108,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
     hydrateResumeSeed(bindings, state.sessionId ?? "(ephemeral)", state.resumeSeed);
   }
 
-  const workspaceRoot = getWorkspaceFsPolicy().getRoot();
+  const workspaceRoot = getWorkspaceRoot();
   const mcp = await createMcpChatRuntime({
     workspaceRoot,
     bindings,

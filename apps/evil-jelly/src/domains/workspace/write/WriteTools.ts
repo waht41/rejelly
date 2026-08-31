@@ -7,18 +7,18 @@ import type { ToolDefinition } from "@rejelly/core";
 import { z } from "zod";
 import { getErrnoCode } from "../../../shared/foundation/errno";
 import { normalizeNewlines } from "../../../shared/foundation/string";
+import { AGENT_SCRATCH_DIR } from "../../../shared/fs-policy/workspace-context";
 import {
-  AGENT_SCRATCH_DIR,
-  getWorkspaceFsPolicy,
+  getWorkspaceFiles,
   type ResolvedFsPath,
-  type WorkspaceFsPolicy,
-} from "../../../shared/fs-policy/workspace-fs-policy";
+  type WorkspaceFiles,
+} from "../../../shared/fs-policy/workspace-files";
 import type {
   ToolConfirmationHandler,
   WriteActionType,
 } from "../../../shared/host/toolConfirmationBindings";
+import { resolveFileToolPath } from "../file-access/resolveFileToolPath";
 import { MAX_READ_BYTES_PER_CALL } from "../read/FileSystemTools";
-import { resolveToolFsPath } from "../read/outsideAccess";
 import { applyBlockEdits } from "./blockReplace";
 import { createTwoFilesPatch } from "./unifiedDiff";
 
@@ -113,7 +113,7 @@ type ExistingDeleteTarget = {
 };
 
 async function prepareDeleteTargets(
-  policy: WorkspaceFsPolicy,
+  policy: WorkspaceFiles,
   targets: ExistingDeleteTarget[],
 ): Promise<Array<{ target: ExistingDeleteTarget; patch: string }>> {
   const prepared: Array<{ target: ExistingDeleteTarget; patch: string }> = [];
@@ -177,7 +177,7 @@ export function createEditFileTool(
       "Input must be { targets: [{ filePath, edits }, ...] }. User approves one unified diff for the whole batch.",
     parameters: editFileParameters,
     handler: async (input) => {
-      const policy = getWorkspaceFsPolicy();
+      const policy = getWorkspaceFiles();
       const preparedTargets: {
         filePath: string;
         resolved: ResolvedFsPath;
@@ -209,7 +209,7 @@ export function createEditFileTool(
       }
 
       for (const { filePath: normalizedPath, edits } of mergedTargets) {
-        const resolved = await resolveToolFsPath(normalizedPath, "write", "direct-write");
+        const resolved = await resolveFileToolPath(normalizedPath, { kind: "write" });
         if (!resolved.ok) {
           return resolved.error;
         }
@@ -308,7 +308,7 @@ export function createCreateFileTool(
     description: `Create one or many new files with given UTF-8 content. Fails if any file already exists. Use ${AGENT_SCRATCH_DIR}/ for temporary scripts and intermediate files. User must approve the unified diff first.`,
     parameters: createFileParameters,
     handler: async (input) => {
-      const policy = getWorkspaceFsPolicy();
+      const policy = getWorkspaceFiles();
       const targets = input.targets;
       const seenPaths = new Set<string>();
 
@@ -330,7 +330,7 @@ export function createCreateFileTool(
         }
         seenPaths.add(normalizedPath);
 
-        const resolved = await resolveToolFsPath(normalizedPath, "write", "direct-write");
+        const resolved = await resolveFileToolPath(normalizedPath, { kind: "write" });
         if (!resolved.ok) {
           return resolved.error;
         }
@@ -442,14 +442,14 @@ export function createDeleteFileTool(
       "Batch-delete files or directories that are no longer needed. Warning: deleting paths still referenced elsewhere can break builds or runtime behavior.",
     parameters: deleteFileParameters,
     handler: async (input: DeleteTargetInput) => {
-      const policy = getWorkspaceFsPolicy();
+      const policy = getWorkspaceFiles();
       const targetPaths = input.targetPaths;
       const seenPaths = new Set<string>();
       const seenResolvedPaths = new Set<string>();
       const existingTargets: ExistingDeleteTarget[] = [];
       const warnings: string[] = [];
 
-      // Phase 1: validate inputs, resolve them through the workspace/outside-access policy, and
+      // Phase 1: validate inputs, resolve workspace paths or approved external paths, and
       // collect the targets that still exist. Missing targets are kept as non-fatal warnings
       // so repeated delete attempts stay idempotent.
       for (const targetPath of targetPaths) {
@@ -462,7 +462,7 @@ export function createDeleteFileTool(
         }
         seenPaths.add(normalizedPath);
 
-        const resolved = await resolveToolFsPath(normalizedPath, "write", "direct-write");
+        const resolved = await resolveFileToolPath(normalizedPath, { kind: "write" });
         if (!resolved.ok) {
           return resolved.error;
         }

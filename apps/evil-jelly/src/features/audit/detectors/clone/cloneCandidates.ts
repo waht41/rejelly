@@ -14,9 +14,9 @@ import { MAX_HEURISTIC_AST_BYTES } from "../../../../domains/workspace/source/he
 import { listWorkspaceScriptRelPaths } from "../../../../domains/workspace/source/workspacePaths";
 import { fnv1a32Hex } from "../../../../shared/foundation/fnv1a";
 import {
-  getWorkspaceFsPolicy,
-  type WorkspaceFsPolicy,
-} from "../../../../shared/fs-policy/workspace-fs-policy";
+  getWorkspaceFiles,
+  type WorkspaceFiles,
+} from "../../../../shared/fs-policy/workspace-files";
 import { isTestOrGeneratedPath } from "../../sourcePath";
 import { tryParseRoot } from "../astParse";
 import { fingerprintTokens } from "./fingerprint";
@@ -346,7 +346,7 @@ function fingerprintOne(
 
 /** Fingerprint every workspace script via a bounded read (skips files over the AST byte cap). */
 async function fingerprintWorkspace(
-  policy: WorkspaceFsPolicy,
+  policy: WorkspaceFiles,
   files: string[],
   config: CloneDetectionConfig,
 ): Promise<FileFingerprints[]> {
@@ -578,7 +578,7 @@ function buildReport(
 export async function detectCloneCandidates(
   overrides?: Partial<CloneDetectionConfig>,
 ): Promise<CloneCandidateReport> {
-  const policy = getWorkspaceFsPolicy();
+  const policy = getWorkspaceFiles();
   const config: CloneDetectionConfig = { ...DEFAULT_CLONE_CONFIG, ...overrides };
   const files = await listWorkspaceScriptRelPaths();
   const fingerprinted = await fingerprintWorkspace(policy, files, config);

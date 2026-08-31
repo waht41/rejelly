@@ -4,7 +4,7 @@ import {
   fileLocatorAttributes,
   fileLocatorFromResolved,
 } from "../../../shared/fs-policy/file-locator";
-import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceFiles } from "../../../shared/fs-policy/workspace-files";
 import { validateMcpServerId } from "../../../shared/model/mcp/serverIdentity";
 import type {
   ResolvedUserInputNodeV1,
@@ -38,8 +38,8 @@ async function materializeFile(
   attachment: PromptFileAttachment,
   budget: FileMaterializationBudget,
 ): Promise<MaterializedFile> {
-  const policy = getWorkspaceFsPolicy();
-  const resolved = policy.tryResolve(attachment.path);
+  const policy = getWorkspaceFiles();
+  const resolved = policy.tryResolveWorkspacePath(attachment.path);
   if (!resolved.ok) {
     return {
       context: renderPseudoXmlElement("attached_path", `Error: ${resolved.error}`, {
@@ -132,7 +132,7 @@ interface MaterializedImage {
 }
 
 async function materializeImage(attachment: PromptImageAttachment): Promise<MaterializedImage> {
-  const policy = getWorkspaceFsPolicy();
+  const policy = getWorkspaceFiles();
   const absPath = path.isAbsolute(attachment.path)
     ? attachment.path
     : path.resolve(policy.getRoot(), attachment.path);

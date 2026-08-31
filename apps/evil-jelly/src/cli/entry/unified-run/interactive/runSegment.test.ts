@@ -21,9 +21,9 @@ vi.mock("../../../../domains/session/recorder/sessionRecorder", () => ({
   openSessionRecorder: mocks.openSessionRecorder,
 }));
 
-vi.mock("../../../../shared/fs-policy/workspace-fs-policy", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../../shared/fs-policy/workspace-fs-policy")>()),
-  getWorkspaceFsPolicy: () => ({ getRoot: () => "/workspace" }),
+vi.mock("../../../../shared/fs-policy/workspace-context", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../../shared/fs-policy/workspace-context")>()),
+  getWorkspaceRoot: () => "/workspace",
 }));
 
 vi.mock("../../../runtime/traceId", () => ({

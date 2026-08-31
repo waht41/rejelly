@@ -2,10 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  getWorkspaceFsPolicy,
-  setWorkspaceRoot,
-} from "../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceRoot, setWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
 import {
   listScriptRelPathsUnder,
   listWorkspaceDocRelPaths,
@@ -17,7 +14,7 @@ describe("workspacePaths", () => {
   let root: string;
 
   beforeEach(async () => {
-    previousRoot = getWorkspaceFsPolicy().getRoot();
+    previousRoot = getWorkspaceRoot();
     root = await fs.mkdtemp(path.join(os.tmpdir(), "evil-workspace-paths-"));
     await Promise.all([
       fs.mkdir(path.join(root, "packages", "src"), { recursive: true }),

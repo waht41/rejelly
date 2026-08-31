@@ -19,7 +19,7 @@ import {
   type SkillRuntimeSnapshot,
 } from "../../../../domains/skills/agent/skillRuntime";
 import type { ConversationAgentProps } from "../../../../features/unified/conversationRun";
-import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceRoot } from "../../../../shared/fs-policy/workspace-context";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 import type { SessionMcpState } from "../../../../shared/model/mcp/sessionMcpState";
 import { runWithReview } from "../../../runtime/runWithReview";
@@ -111,7 +111,7 @@ async function openRunSessionRecorder(
     throw new Error("Session start mode is required for durable session execution");
   }
   const recorderOptions = {
-    workspaceRoot: getWorkspaceFsPolicy().getRoot(),
+    workspaceRoot: getWorkspaceRoot(),
     sessionId,
     traceId,
     originator: "evil-jelly-cli",

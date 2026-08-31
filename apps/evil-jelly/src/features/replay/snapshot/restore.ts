@@ -5,7 +5,7 @@
 import path from "node:path";
 import type { AgentSnapshot, TraceEvent } from "@rejelly/core";
 import { type RestoreOptions, restoreSnapshot } from "@rejelly/core/debugger";
-import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceFiles } from "../../../shared/fs-policy/workspace-files";
 import { fetchTraceEvents } from "../traceClient";
 import { parseJsonlTextToObjects } from "./jsonl";
 import { jsonlObjectsToTraceEvents } from "./traceEvent";
@@ -15,7 +15,7 @@ import { jsonlObjectsToTraceEvents } from "./traceEvent";
  * Throws if the path escapes the workspace or equals the root directory.
  */
 export function snapshotAbsolutePathToWorkspaceRelative(absolutePath: string): string {
-  const policy = getWorkspaceFsPolicy();
+  const policy = getWorkspaceFiles();
   const root = policy.getRoot();
   const resolved = path.resolve(absolutePath);
   const rel = path.relative(root, resolved);
@@ -32,7 +32,7 @@ export function snapshotAbsolutePathToWorkspaceRelative(absolutePath: string): s
 
 /** Read JSONL via workspace fs policy and produce TraceEvent[]. */
 export async function readTraceEventsFromJsonlFile(absolutePath: string): Promise<TraceEvent[]> {
-  const policy = getWorkspaceFsPolicy();
+  const policy = getWorkspaceFiles();
   const rel = snapshotAbsolutePathToWorkspaceRelative(absolutePath);
   const content = await policy.readFile(rel);
   const objects = parseJsonlTextToObjects(content);

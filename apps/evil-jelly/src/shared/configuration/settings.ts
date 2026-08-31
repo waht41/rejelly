@@ -16,7 +16,7 @@ import path from "node:path";
 import { z } from "zod";
 import { getErrnoCode } from "../foundation/errno";
 import { parseAndValidateJsonc } from "../foundation/jsonc";
-import { getWorkspaceFsPolicy } from "../fs-policy/workspace-fs-policy";
+import { getWorkspaceRoot } from "../fs-policy/workspace-context";
 import { resolveGlobalJellyDir } from "../globalPath";
 import { resolveWorkspaceScopePaths } from "../workspaceScope";
 
@@ -138,7 +138,7 @@ function readSettingsFile(filePath: string): EvilJellySettingsFile {
  * yield defaults, malformed files throw loudly — fix them, don't skip them).
  */
 export function getSettings(): ResolvedSettings {
-  const root = getWorkspaceFsPolicy().getRoot();
+  const root = getWorkspaceRoot();
   if (cache?.root === root) {
     return cache.resolved;
   }

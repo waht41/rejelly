@@ -6,7 +6,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceFiles } from "../../../shared/fs-policy/workspace-files";
 import type {
   AuditFinding,
   AuditLedgerEntry,
@@ -93,7 +93,7 @@ function sanitizeLedgerEntries(
 }
 
 export async function loadAuditLedger(nowIso: string): Promise<AuditLedgerFile> {
-  const policy = getWorkspaceFsPolicy();
+  const policy = getWorkspaceFiles();
   try {
     const raw = await policy.readFile(AUDIT_LEDGER_PATH);
     const parsed = JSON.parse(raw) as Partial<AuditLedgerFile>;
@@ -111,7 +111,7 @@ export async function loadAuditLedger(nowIso: string): Promise<AuditLedgerFile> 
 }
 
 export async function saveAuditLedger(ledger: AuditLedgerFile, nowIso: string): Promise<void> {
-  const policy = getWorkspaceFsPolicy();
+  const policy = getWorkspaceFiles();
   ledger.updatedAt = nowIso;
   await policy.mkdir(".evil-jelly/audit", { recursive: true });
   await policy.writeFile(AUDIT_LEDGER_PATH, `${JSON.stringify(ledger, null, 2)}\n`);

@@ -2,10 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  getWorkspaceFsPolicy,
-  setWorkspaceRoot,
-} from "../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceRoot, setWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import type { FsOutsideAccessPayload } from "../../../shared/host/toolConfirmationBindings";
 import { createTestHostBindings } from "../__tests__/testHostBindings";
@@ -37,7 +34,7 @@ describe("RunCommandTool cwd policy", () => {
   let outsideDir: string;
 
   beforeEach(async () => {
-    previousRoot = getWorkspaceFsPolicy().getRoot();
+    previousRoot = getWorkspaceRoot();
     workspace = await fs.mkdtemp(path.join(os.tmpdir(), "evil-jelly-run-workspace-"));
     outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), "evil-jelly-run-outside-"));
     setWorkspaceRoot(workspace);
@@ -52,7 +49,7 @@ describe("RunCommandTool cwd policy", () => {
     await fs.rm(outsideDir, { recursive: true, force: true });
   });
 
-  it("confirms an outside cwd and executes there", async () => {
+  it("leaves outside cwd authorization to the shell confirmation", async () => {
     const outsideAccessRequests: FsOutsideAccessPayload[] = [];
     hostBindingMock.current = createTestHostBindings({ mode: "normal", outsideAccessRequests });
 
@@ -63,7 +60,7 @@ describe("RunCommandTool cwd policy", () => {
       reason: "test outside cwd",
     });
 
-    expect(outsideAccessRequests).toHaveLength(1);
+    expect(outsideAccessRequests).toHaveLength(0);
     expect(executeShellCommandMock).toHaveBeenCalledWith(
       expect.objectContaining({ command: "example", cwd: outsideDir }),
       undefined,

@@ -12,7 +12,7 @@
 
 import { z } from "zod";
 import { listScriptRelPathsUnder } from "../../../domains/workspace/source/workspacePaths";
-import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceFiles } from "../../../shared/fs-policy/workspace-files";
 import { PromptBuilder } from "../../../shared/model/prompt/builder";
 import type { DocMapEntry, MarkdownSection, MatchableSymbol } from "../detectors/docDrift";
 import {
@@ -76,7 +76,7 @@ function isTrivialSection(section: MarkdownSection, matchedCount: number): boole
 
 /** Per-run caches so docs sharing map targets extract each surface/artifact once. */
 function createSurfaceCache() {
-  const policy = getWorkspaceFsPolicy();
+  const policy = getWorkspaceFiles();
   const surfaces = new Map<string, Promise<SurfaceExtraction>>();
   const artifacts = new Map<string, Promise<DocArtifact | null>>();
 
@@ -439,7 +439,7 @@ async function prepareDoc(
   | { ok: true; markdown: string; surface: SurfaceExtraction; artifacts: DocArtifact[] }
   | { ok: false; warning: string }
 > {
-  const policy = getWorkspaceFsPolicy();
+  const policy = getWorkspaceFiles();
   let markdown: string;
   try {
     markdown = await policy.readFile(docFile);

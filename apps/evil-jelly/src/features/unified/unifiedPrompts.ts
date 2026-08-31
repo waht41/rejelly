@@ -1,9 +1,6 @@
 import { arch, platform, release } from "node:os";
 import { getShellPath } from "../../domains/workspace/execute/executeShellCommand";
-import {
-  AGENT_SCRATCH_DIR,
-  getWorkspaceFsPolicy,
-} from "../../shared/fs-policy/workspace-fs-policy";
+import { AGENT_SCRATCH_DIR, getWorkspaceRoot } from "../../shared/fs-policy/workspace-context";
 import { PromptBuilder } from "../../shared/model/prompt/builder";
 import { TERMINAL_USER_REPLY_RULE, TERMINAL_USER_REPLY_RULE_TITLE } from "./outputSurface";
 
@@ -129,7 +126,7 @@ export function buildUnifiedInstruction(params: { artifactSummary: string }): st
       : getShellPath();
   const builder = new PromptBuilder();
   builder.addBlock(
-    `## Environment\nWorkspace Root: ${getWorkspaceFsPolicy().getRoot()}\nAgent Scratch Dir: ${AGENT_SCRATCH_DIR}\nCurrent OS: ${currentOs}\nShell: ${shellNote}`,
+    `## Environment\nWorkspace Root: ${getWorkspaceRoot()}\nAgent Scratch Dir: ${AGENT_SCRATCH_DIR}\nCurrent OS: ${currentOs}\nShell: ${shellNote}`,
   );
   builder.when(artifactSummary.length > 0, (b) =>
     b.addBlock(
