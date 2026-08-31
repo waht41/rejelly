@@ -102,6 +102,45 @@ describe("materializeUserInput", () => {
     expect(message.content).toContain("[file] attached.ts");
   });
 
+  it("reads an explicitly attached gitignored file", async () => {
+    await fs.mkdir(path.join(tmpDir, "ignored"), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, ".gitignore"), "ignored/\n");
+    await fs.writeFile(path.join(tmpDir, "ignored", "local.md"), "private notes\n");
+
+    const { message, display } = await materializeUserInput(
+      fileInput("inspect", "ignored/local.md"),
+    );
+
+    expect(message.content).toContain(
+      '<attached_file path="ignored/local.md" path-scope="workspace" action="read">',
+    );
+    expect(message.content).toContain("private notes");
+    expect(display.attachments).toEqual([
+      {
+        type: "file",
+        label: "ignored/local.md",
+        action: "read",
+        locator: { scope: "workspace", path: "ignored/local.md" },
+      },
+    ]);
+  });
+
+  it("lists an explicit ignored directory through scoped visibility filters", async () => {
+    await fs.mkdir(path.join(tmpDir, "ignored", "node_modules"), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, ".gitignore"), "ignored/\n");
+    await fs.writeFile(path.join(tmpDir, "ignored", "visible.md"), "visible\n");
+    await fs.writeFile(path.join(tmpDir, "ignored", ".env"), "SECRET=value\n");
+
+    const { message } = await materializeUserInput(fileInput("summarize", "ignored"));
+
+    expect(message.content).toContain(
+      '<attached_directory path="ignored" path-scope="workspace" action="list">',
+    );
+    expect(message.content).toContain("[file] visible.md");
+    expect(message.content).not.toContain(".env");
+    expect(message.content).not.toContain("node_modules");
+  });
+
   it("converts attached images into multimodal user content", async () => {
     const imagePath = path.join(tmpDir, "clipboard.png");
     const imageBytes = Buffer.alloc(24);

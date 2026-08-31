@@ -39,7 +39,10 @@ async function materializeFile(
   budget: FileMaterializationBudget,
 ): Promise<MaterializedFile> {
   const policy = getWorkspaceFiles();
-  const resolved = policy.tryResolveWorkspacePath(attachment.path);
+  // An @-attachment names one exact path, so files use direct-read semantics. Directories still
+  // require discovery access below; ignored directories are allowed only as an explicit bounded
+  // scope and their entries keep the scoped traversal filters.
+  const resolved = policy.tryResolveWorkspacePath(attachment.path, { kind: "read" });
   if (!resolved.ok) {
     return {
       context: renderPseudoXmlElement("attached_path", `Error: ${resolved.error}`, {
@@ -54,9 +57,26 @@ async function materializeFile(
   const locator = fileLocatorFromResolved(resolved);
   const locatorAttributes = fileLocatorAttributes(locator);
   try {
-    const stat = await policy.stat(resolved.rel);
+    const stat = await policy.statResolved(resolved);
     if (stat.isDirectory()) {
-      const entries = await policy.readdir(resolved.rel, { withFileTypes: true });
+      const ignored = policy.isIgnoredByGitignore(resolved.rel, true);
+      const discoverable = policy.tryResolveWorkspacePath(
+        resolved.rel,
+        ignored ? { kind: "scan", includeIgnored: true } : { kind: "scan" },
+      );
+      if (!discoverable.ok) {
+        throw new Error(discoverable.error);
+      }
+      const scopeError = ignored ? policy.validateScopedDiscoveryRoot(discoverable) : undefined;
+      if (scopeError) {
+        throw new Error(scopeError);
+      }
+      const entries = (await policy.readdirResolved(discoverable, { withFileTypes: true })).filter(
+        (entry) =>
+          !(ignored
+            ? policy.shouldSkipScopedResolvedEntry(discoverable, entry)
+            : policy.shouldSkipResolvedEntry(discoverable, entry)),
+      );
       const visible = entries.slice(0, MAX_ATTACHMENT_DIR_ENTRIES).map((entry) => {
         const kind = entry.isDirectory() ? "dir" : "file";
         return `[${kind}] ${entry.name}${entry.isDirectory() ? "/" : ""}`;
@@ -102,7 +122,7 @@ async function materializeFile(
     }
 
     budget.totalBytes += stat.size;
-    const content = await policy.readFile(resolved.rel);
+    const content = await policy.readResolved(resolved);
     return {
       context: renderPseudoXmlElement("attached_file", content, {
         ...locatorAttributes,

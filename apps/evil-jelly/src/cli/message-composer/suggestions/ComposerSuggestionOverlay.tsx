@@ -17,7 +17,10 @@ import {
 import type { ReferenceSuggestion } from "./semantic-reference/useReferenceSuggestion";
 
 type CommandSuggestionView = Pick<CommandSuggestion, "matches" | "open" | "select" | "dismiss">;
-type FileSuggestionView = Pick<FileReferenceSuggestion, "query" | "open" | "select" | "dismiss">;
+type FileSuggestionView = Pick<
+  FileReferenceSuggestion,
+  "query" | "open" | "select" | "browse" | "dismiss"
+>;
 type ReferenceSuggestionView = Pick<ReferenceSuggestion, "matches" | "open" | "select" | "dismiss">;
 
 interface ComposerSuggestionOverlayProps {
@@ -84,6 +87,7 @@ export function ComposerSuggestionOverlay({
         query={file.query ?? ""}
         maxVisibleRows={visibleRows}
         onSelect={file.select}
+        onBrowse={file.browse}
         onCancel={file.dismiss}
         keySink={keySink}
       />

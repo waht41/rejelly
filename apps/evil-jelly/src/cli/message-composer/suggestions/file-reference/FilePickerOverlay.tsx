@@ -4,10 +4,10 @@
  * (single-select: one @ inserts one path, like Claude Code / Codex).
  */
 
-import { Text } from "ink";
+import { Box, Text } from "ink";
 import { useEffect, useRef, useState } from "react";
 import type { FuzzyPathRefMatch } from "../../../../domains/workspace/read/FuzzySearchService";
-import { fuzzySearchPathRefs } from "../../../../domains/workspace/read/FuzzySearchService";
+import { fuzzySearchPathRefsWithContext } from "../../../../domains/workspace/read/FuzzySearchService";
 import type { ComposerPickerKeySink } from "../ComposerPicker";
 import { ComposerPicker } from "../ComposerPicker";
 
@@ -19,6 +19,8 @@ interface FilePickerOverlayProps {
   query: string;
   /** Called when the user picks the highlighted path. */
   onSelect: (path: string) => void;
+  /** Called when the user navigates into the highlighted directory. */
+  onBrowse: (path: string) => void;
   /** Called when the user cancels (Esc). */
   onCancel: () => void;
   /** Maximum result rows to render without moving the prompt too far up. */
@@ -30,11 +32,13 @@ interface FilePickerOverlayProps {
 export function FilePickerOverlay({
   query,
   onSelect,
+  onBrowse,
   onCancel,
   maxVisibleRows = DEFAULT_MAX_VISIBLE_ROWS,
   keySink,
 }: FilePickerOverlayProps) {
   const [matches, setMatches] = useState<FuzzyPathRefMatch[]>([]);
+  const [ignoredScope, setIgnoredScope] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestSeqRef = useRef(0);
   const needsRefreshRef = useRef(true);
@@ -47,6 +51,7 @@ export function FilePickerOverlay({
     if (!query.trim()) {
       requestSeqRef.current += 1;
       setMatches([]);
+      setIgnoredScope(null);
       return;
     }
     const requestSeq = ++requestSeqRef.current;
@@ -54,11 +59,12 @@ export function FilePickerOverlay({
       const cachePolicy = needsRefreshRef.current ? "refresh" : "reuse";
       needsRefreshRef.current = false;
       try {
-        const results = await fuzzySearchPathRefs(query, ".", 20, { cachePolicy });
+        const result = await fuzzySearchPathRefsWithContext(query, ".", 20, { cachePolicy });
         if (requestSeq !== requestSeqRef.current) {
           return;
         }
-        setMatches(results);
+        setMatches(result.matches);
+        setIgnoredScope(result.ignoredScope ?? null);
       } catch {
         if (cachePolicy === "refresh") {
           needsRefreshRef.current = true;
@@ -67,6 +73,7 @@ export function FilePickerOverlay({
           return;
         }
         setMatches([]);
+        setIgnoredScope(null);
       }
     }, DEBOUNCE_MS);
 
@@ -77,22 +84,35 @@ export function FilePickerOverlay({
     };
   }, [query]);
 
+  const canBrowse = matches.some((match) => match.kind === "directory");
+  const showFooter = ignoredScope !== null || canBrowse;
+
   return (
-    <ComposerPicker
-      items={matches}
-      getKey={(match) => match.path}
-      onSelect={(match) => onSelect(match.path)}
-      onCancel={onCancel}
-      keySink={keySink}
-      empty={<Text dimColor>No matching paths</Text>}
-      visibleRows={maxVisibleRows}
-      renderItem={(match, { selected }) => (
-        <Text color={selected ? "cyan" : undefined}>
-          {selected ? "▸ " : "  "}
-          {match.path}
-          {match.kind === "directory" ? "/" : ""}
+    <Box flexDirection="column">
+      <ComposerPicker
+        items={matches}
+        getKey={(match) => `${match.kind}:${match.path}`}
+        onSelect={(match) => onSelect(match.path)}
+        onBrowse={(match) => onBrowse(match.path)}
+        canBrowse={(match) => match.kind === "directory"}
+        onCancel={onCancel}
+        keySink={keySink}
+        empty={<Text dimColor>No matching paths (ignored paths need an exact directory)</Text>}
+        visibleRows={Math.max(1, maxVisibleRows - (showFooter ? 1 : 0))}
+        renderItem={(match, { selected }) => (
+          <Text color={selected ? "cyan" : undefined}>
+            {selected ? "▸ " : "  "}
+            {match.path}
+            {match.kind === "directory" ? "/" : ""}
+            {match.ignored ? <Text dimColor> (ignored)</Text> : null}
+          </Text>
+        )}
+      />
+      {showFooter ? (
+        <Text dimColor>
+          {ignoredScope ? `ignored scope: ${ignoredScope}/ · ` : ""}Tab/→ browse · Enter attach
         </Text>
-      )}
-    />
+      ) : null}
+    </Box>
   );
 }

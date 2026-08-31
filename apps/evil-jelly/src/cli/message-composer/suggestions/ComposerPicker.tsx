@@ -18,6 +18,9 @@ interface ComposerPickerProps<T> {
   getKey: (item: T) => string;
   renderItem: (item: T, state: ListItemRenderState) => ReactNode;
   onSelect: (item: T) => void;
+  /** Optional path-like navigation action, conventionally bound to Tab / Right Arrow. */
+  onBrowse?: (item: T) => void;
+  canBrowse?: (item: T) => boolean;
   onCancel: () => void;
   empty?: ReactNode;
   visibleRows?: number;
@@ -29,6 +32,8 @@ export function ComposerPicker<T>({
   getKey,
   renderItem,
   onSelect,
+  onBrowse,
+  canBrowse,
   onCancel,
   empty,
   visibleRows,
@@ -63,6 +68,13 @@ export function ComposerPicker<T>({
       }
       // Do not let Enter submit the line beneath an empty picker.
       return true;
+    }
+    if ((key.tab || key.rightArrow) && onBrowse && canBrowse) {
+      const selected = items[selectedIndex];
+      if (selected && canBrowse(selected)) {
+        onBrowse(selected);
+        return true;
+      }
     }
     return false;
   };

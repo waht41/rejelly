@@ -6,6 +6,7 @@ export interface FileReferenceSuggestion {
   query: string | null;
   open: boolean;
   select: (path: string) => void;
+  browse: (path: string) => void;
   dismiss: () => void;
 }
 
@@ -34,10 +35,22 @@ export function useFileReferenceSuggestion({
     },
     [attachFile, buffer.cursor, buffer.text],
   );
+  const browse = useCallback(
+    (path: string) => {
+      const trigger = activeAtTrigger(buffer.text, buffer.cursor);
+      if (!trigger) return;
+      const nextQuery = `${path.replace(/[\\/]+$/, "")}/`;
+      buffer.replaceDisplayRange(trigger.start, trigger.end, [
+        { type: "text", text: `@${nextQuery}` },
+      ]);
+      setQuery(nextQuery);
+    },
+    [buffer.cursor, buffer.replaceDisplayRange, buffer.text],
+  );
   const dismiss = useCallback(() => {
     buffer.apply(removeActiveAtTrigger);
     setQuery(null);
   }, [buffer.apply]);
 
-  return { query, open: query !== null, select, dismiss };
+  return { query, open: query !== null, select, browse, dismiss };
 }
