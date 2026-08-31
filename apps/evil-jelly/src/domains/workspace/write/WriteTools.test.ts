@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { setWorkspaceRoot } from "../../../shared/fs-policy/workspace-fs-policy";
+import { setWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import type {
   FsOutsideAccessPayload,

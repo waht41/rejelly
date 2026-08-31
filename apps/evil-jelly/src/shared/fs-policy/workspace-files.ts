@@ -1,28 +1,22 @@
 /**
- * Agent filesystem policy anchored to a workspace root: path classification, protected content,
- * traversal rules, and external-access grants.
+ * Controlled workspace filesystem access: strict path resolution, protected content, bounded
+ * traversal, and filesystem I/O.
  */
 
 import fs from "node:fs";
 import fsPromises from "node:fs/promises";
 import path from "node:path";
-import ignore from "ignore";
 import { getErrnoCode } from "../foundation/errno";
+import { isPathInside } from "./path-containment";
+import { getWorkspaceRoot } from "./workspace-context";
 import {
-  ExternalAccessRegistry,
-  type ExternalFileAccess,
-  isPathInside,
-  suggestOutsideApproveDir,
-} from "./outside-access";
-
-/**
- * Duck type for one directory entry from readdir (no dependency on node:fs.Dirent).
- */
-export type WorkspaceDirEntry = {
-  name: string;
-  isDirectory: () => boolean;
-  isSymbolicLink?: () => boolean;
-};
+  isSensitiveFileName,
+  sensitiveFsPathError,
+  toGitignorePath,
+  type WorkspaceAccessKind,
+  type WorkspaceDirEntry,
+  WorkspaceScan,
+} from "./workspace-scan";
 
 export interface WorkspaceWalkFilesOptions {
   /** Workspace-relative files or directories to traverse. Missing and denied roots are skipped. */
@@ -40,9 +34,6 @@ export type FileAccess =
   | { kind: "scan"; includeIgnored?: boolean }
   | { kind: "write" };
 
-type FsApprovalMode = "normal" | "auto";
-type FsAccessKind = "discovery" | "scoped-discovery" | "direct-read" | "direct-write";
-
 export type ResolvedFsPath = {
   abs: string;
   rel: string;
@@ -55,16 +46,11 @@ export type FsResolveResult =
   | {
       ok: false;
       error: string;
-      approval?: {
-        access: ExternalFileAccess;
-        targetPath: string;
-        grantRoot: string;
-      };
     };
 
 const DEFAULT_SCAN_ACCESS: FileAccess = { kind: "scan" };
 
-function toFsAccessKind(access: FileAccess): FsAccessKind {
+function toFsAccessKind(access: FileAccess): WorkspaceAccessKind {
   if (access.kind === "read") {
     return "direct-read";
   }
@@ -74,135 +60,20 @@ function toFsAccessKind(access: FileAccess): FsAccessKind {
   return access.includeIgnored ? "scoped-discovery" : "discovery";
 }
 
-function toExternalFileAccess(access: FileAccess): ExternalFileAccess {
-  return access.kind;
-}
-
-/**
- * Directory name segments hidden from discovery. Protected names remain unavailable to scoped or
- * direct access; generated directories permit scoped/direct access, while node_modules is
- * read-only.
- */
-export const AGENT_HIDDEN_NAMES = new Set([
-  ".agents",
-  ".cursor",
-  ".git",
-  "node_modules",
-  "dist",
-  "build",
-  "coverage",
-]);
-
-const AGENT_PROTECTED_NAMES = new Set([".agents", ".cursor", ".git"]);
 const DEPENDENCY_DIR_NAME = "node_modules";
-
-/**
- * Directory names skipped during traversal before applying root `.gitignore`.
- * This is traversal policy, not the full resolve guard: `.env` is sensitive as a file pattern,
- * while `coverage` is hidden from direct agent access but not hard-skipped by tool walks.
- */
-export const TOOL_ALWAYS_IGNORED_DIR_NAMES = new Set([
-  ".agents",
-  ".cursor",
-  ".git",
-  ".next",
-  ".env",
-  "node_modules",
-  "dist",
-  "build",
-]);
-
-export const SENSITIVE_FILE_PATTERNS = [/^\.env(\..+)?$/i, /\.pem$/i, /id_rsa/i, /\.npmrc$/i];
-const SAFE_ENV_TEMPLATE_SUFFIXES = new Set(["example", "sample", "template"]);
-
-/**
- * The app's own state dir (audit ledger/reports, session data). Being gitignored is its normal
- * state, so the gitignore jail must not apply to it — otherwise audit could never persist its
- * ledger in a properly-configured repo. Still subject to the root jail and sensitive-file blocks.
- */
-export const EVIL_JELLY_STATE_DIR = ".evil-jelly";
-export const AGENT_SCRATCH_DIR = `${EVIL_JELLY_STATE_DIR}/tmp`;
 const DEFAULT_MAX_WORKSPACE_WALK_ENTRIES = 100_000;
 
-export function toGitignorePath(relativeNormalized: string): string {
-  let p = relativeNormalized.replace(/\\/g, "/");
-  if (p.startsWith("./")) {
-    p = p.slice(2);
-  }
-  return p;
-}
-
-function isEnvTemplateFileName(fileName: string): boolean {
-  const lower = fileName.toLowerCase();
-  if (!lower.startsWith(".env.")) {
-    return false;
-  }
-  const suffix = lower.slice(lower.lastIndexOf(".") + 1);
-  return SAFE_ENV_TEMPLATE_SUFFIXES.has(suffix);
-}
-
-function isSensitiveFileName(fileName: string): boolean {
-  if (isEnvTemplateFileName(fileName)) {
-    return false;
-  }
-  return SENSITIVE_FILE_PATTERNS.some((pattern) => pattern.test(fileName));
-}
-
-function sensitiveFileError(displayPath: string): string {
-  return (
-    `Access denied: Path '${displayPath}' matches a sensitive file pattern. ` +
-    "If you explicitly need to inspect it, ask the user to run the command via run_command."
-  );
-}
-
-function isPathSystemHidden(relativeNormalized: string, access: FsAccessKind): boolean {
-  const parts = relativeNormalized.split(path.sep).filter((p) => p.length > 0);
-  const fileName = parts[parts.length - 1];
-  for (const segment of parts) {
-    if (
-      AGENT_PROTECTED_NAMES.has(segment) ||
-      (access === "discovery" && AGENT_HIDDEN_NAMES.has(segment)) ||
-      (access === "direct-write" && segment === DEPENDENCY_DIR_NAME)
-    ) {
-      return true;
-    }
-  }
-  if (fileName && isSensitiveFileName(fileName)) {
-    return true;
-  }
-  return false;
-}
-
-function isOutsideSensitive(absPath: string): boolean {
-  const fileName = path.basename(absPath);
-  return fileName.length > 0 && isSensitiveFileName(fileName);
-}
-
-export class WorkspaceFsPolicy {
+export class WorkspaceFiles {
   private readonly rootResolved: string;
-  private readonly rootGitignore: ReturnType<typeof ignore>;
-  private readonly externalAccess = new ExternalAccessRegistry();
+  private readonly scan: WorkspaceScan;
 
   constructor(root: string) {
     this.rootResolved = path.resolve(root);
-    this.rootGitignore = ignore();
-    const gitignorePath = path.join(this.rootResolved, ".gitignore");
-    if (fs.existsSync(gitignorePath)) {
-      try {
-        this.rootGitignore.add(fs.readFileSync(gitignorePath, "utf-8"));
-      } catch {
-        // Keep the policy operational even when .gitignore is unreadable.
-      }
-    }
+    this.scan = new WorkspaceScan(this.rootResolved);
   }
 
   getRoot(): string {
     return this.rootResolved;
-  }
-
-  /** Grant access to a directory subtree outside the workspace after user confirmation. */
-  approveExternalAccess(access: ExternalFileAccess, dirPath: string): void {
-    this.externalAccess.approve(access, dirPath);
   }
 
   /**
@@ -210,29 +81,15 @@ export class WorkspaceFsPolicy {
    * (collectFiles / directory trees); no state-dir exemption, unlike {@link isPathHidden}.
    */
   isIgnoredByGitignore(workspaceRelative: string, isDirectory: boolean): boolean {
-    const p = toGitignorePath(workspaceRelative);
-    if (p.length === 0 || p === ".") {
-      return false;
-    }
-    if (isDirectory) {
-      return this.rootGitignore.ignores(p) || this.rootGitignore.ignores(`${p}/`);
-    }
-    return this.rootGitignore.ignores(p);
+    return this.scan.isIgnoredByGitignore(workspaceRelative, isDirectory);
   }
 
   shouldSkipIgnoredWorkspaceEntry(parentRelativeDir: string, entry: WorkspaceDirEntry): boolean {
-    const isDirectory = entry.isDirectory();
-    if (isDirectory && TOOL_ALWAYS_IGNORED_DIR_NAMES.has(entry.name)) {
-      return true;
-    }
-    return this.isIgnoredByGitignore(path.join(parentRelativeDir, entry.name), isDirectory);
+    return this.scan.shouldSkipIgnoredWorkspaceEntry(parentRelativeDir, entry);
   }
 
   shouldSkipResolvedEntry(parent: ResolvedFsPath, entry: WorkspaceDirEntry): boolean {
-    if (parent.outside) {
-      return entry.isDirectory() && TOOL_ALWAYS_IGNORED_DIR_NAMES.has(entry.name);
-    }
-    return this.shouldSkipIgnoredWorkspaceEntry(parent.rel, entry);
+    return this.scan.shouldSkipResolvedEntry(parent, entry);
   }
 
   /**
@@ -241,42 +98,12 @@ export class WorkspaceFsPolicy {
    * and symlinks remain excluded.
    */
   shouldSkipScopedResolvedEntry(parent: ResolvedFsPath, entry: WorkspaceDirEntry): boolean {
-    if (entry.isSymbolicLink?.()) {
-      return true;
-    }
-    if (
-      entry.isDirectory() &&
-      (TOOL_ALWAYS_IGNORED_DIR_NAMES.has(entry.name) || AGENT_HIDDEN_NAMES.has(entry.name))
-    ) {
-      return true;
-    }
-    if (parent.outside) {
-      return false;
-    }
-    const child = this.childResolved(parent, entry.name);
-    return isPathSystemHidden(child.rel, "scoped-discovery");
+    return this.scan.shouldSkipScopedResolvedEntry(parent, entry);
   }
 
   /** Validate the root of an opt-in ignored traversal before any entries are inspected. */
   validateScopedDiscoveryRoot(resolved: ResolvedFsPath): string | undefined {
-    if (!resolved.outside && resolved.rel === ".") {
-      return "includeIgnored requires an explicit workspace subdirectory; scanning the workspace root is not allowed.";
-    }
-
-    const segments = resolved.rel.split(path.sep).filter(Boolean);
-    const dependencyIndex = segments.lastIndexOf(DEPENDENCY_DIR_NAME);
-    if (dependencyIndex < 0) {
-      return undefined;
-    }
-    const packageSegments = segments.slice(dependencyIndex + 1);
-    if (
-      packageSegments.length === 0 ||
-      packageSegments[0] === ".pnpm" ||
-      (packageSegments[0]?.startsWith("@") && packageSegments.length < 2)
-    ) {
-      return "includeIgnored under node_modules must be scoped to a concrete package (for example node_modules/zod or node_modules/@scope/pkg).";
-    }
-    return undefined;
+    return this.scan.validateScopedDiscoveryRoot(resolved);
   }
 
   childResolved(parent: ResolvedFsPath, childName: string): ResolvedFsPath {
@@ -286,30 +113,6 @@ export class WorkspaceFsPolicy {
       displayPath: path.join(parent.displayPath, childName),
       outside: parent.outside,
     };
-  }
-
-  private isPathHidden(relativeNormalized: string, access: FsAccessKind): boolean {
-    if (isPathSystemHidden(relativeNormalized, access)) {
-      return true;
-    }
-    const gitignorePath = toGitignorePath(relativeNormalized);
-    if (
-      gitignorePath === EVIL_JELLY_STATE_DIR ||
-      gitignorePath.startsWith(`${EVIL_JELLY_STATE_DIR}/`)
-    ) {
-      return false;
-    }
-    if (access !== "discovery") {
-      return false;
-    }
-    if (
-      gitignorePath.length > 0 &&
-      gitignorePath !== "." &&
-      this.rootGitignore.ignores(gitignorePath)
-    ) {
-      return true;
-    }
-    return false;
   }
 
   classifyPath(userPath: string): ResolvedFsPath {
@@ -323,6 +126,15 @@ export class WorkspaceFsPolicy {
       displayPath: outside ? abs : relNorm,
       outside,
     };
+  }
+
+  suggestContainingDirectory(targetPath: string): string {
+    const abs = path.resolve(targetPath);
+    try {
+      return fs.statSync(abs).isDirectory() ? abs : path.dirname(abs);
+    } catch {
+      return path.dirname(abs);
+    }
   }
 
   resolveWorkspacePath(userPath: string, access: FileAccess = DEFAULT_SCAN_ACCESS): string {
@@ -340,60 +152,24 @@ export class WorkspaceFsPolicy {
     return this.tryResolvePath(userPath, access);
   }
 
-  tryResolveFileToolPath(
-    userPath: string,
-    access: FileAccess,
-    approvalMode: FsApprovalMode,
-  ): FsResolveResult {
-    return this.tryResolvePath(userPath, access, toExternalFileAccess(access), approvalMode);
-  }
-
-  private tryResolvePath(
-    userPath: string,
-    fileAccess: FileAccess,
-    externalAccess?: ExternalFileAccess,
-    approvalMode: FsApprovalMode = "normal",
-  ): FsResolveResult {
+  private tryResolvePath(userPath: string, fileAccess: FileAccess): FsResolveResult {
     try {
       const resolved = this.classifyPath(userPath);
       const access = toFsAccessKind(fileAccess);
       if (resolved.outside) {
-        if (!externalAccess) {
-          return {
-            ok: false,
-            error: "Access denied: Path traversal outside workspace root is not allowed.",
-          };
-        }
-        if (isOutsideSensitive(resolved.abs)) {
-          return {
-            ok: false,
-            error: sensitiveFileError(resolved.abs),
-          };
-        }
-        if (externalAccess === "read" && approvalMode === "auto") {
-          return { ok: true, ...resolved };
-        }
-        if (this.externalAccess.has(externalAccess, resolved.abs)) {
-          return { ok: true, ...resolved };
-        }
         return {
           ok: false,
-          error: `Access outside workspace requires approval: ${resolved.abs}`,
-          approval: {
-            access: externalAccess,
-            targetPath: resolved.abs,
-            grantRoot: suggestOutsideApproveDir(resolved.abs),
-          },
+          error: "Access denied: Path traversal outside workspace root is not allowed.",
         };
       }
       const fileName = path.basename(resolved.rel);
       if (fileName.length > 0 && isSensitiveFileName(fileName)) {
         return {
           ok: false,
-          error: sensitiveFileError(resolved.rel),
+          error: sensitiveFsPathError(resolved.rel),
         };
       }
-      if (this.isPathHidden(resolved.rel, access)) {
+      if (this.scan.isPathHidden(resolved.rel, access)) {
         return {
           ok: false,
           error: `Access denied: Path '${resolved.rel}' is hidden or ignored.`,
@@ -530,7 +306,7 @@ export class WorkspaceFsPolicy {
       if (files.length >= maxFiles || path.basename(resolved.rel).startsWith(".")) {
         return;
       }
-      if (this.isPathHidden(resolved.rel, "discovery")) {
+      if (this.scan.isPathHidden(resolved.rel, "discovery")) {
         return;
       }
       const relPosix = toGitignorePath(resolved.rel);
@@ -572,7 +348,7 @@ export class WorkspaceFsPolicy {
           continue;
         }
         const child = this.childResolved(directory, entry.name);
-        if (this.isPathHidden(child.rel, "discovery")) {
+        if (this.scan.isPathHidden(child.rel, "discovery")) {
           continue;
         }
         if (entry.isDirectory()) {
@@ -681,32 +457,12 @@ export class WorkspaceFsPolicy {
   }
 }
 
-let workspaceImpl: WorkspaceFsPolicy | undefined;
+let workspaceFiles: WorkspaceFiles | undefined;
 
-export function getWorkspaceFsPolicy(): WorkspaceFsPolicy {
-  workspaceImpl ??= new WorkspaceFsPolicy(process.cwd());
-  return workspaceImpl;
-}
-
-/**
- * Resolve a workspace-relative cwd into an absolute path.
- * Defaults to workspace root when cwd is missing.
- */
-export function resolveWorkspaceCwd(workspaceRoot: string, cwd?: string): string {
-  if (!cwd || cwd.trim().length === 0) {
-    return workspaceRoot;
+export function getWorkspaceFiles(): WorkspaceFiles {
+  const root = getWorkspaceRoot();
+  if (!workspaceFiles || workspaceFiles.getRoot() !== root) {
+    workspaceFiles = new WorkspaceFiles(root);
   }
-  const resolvedCwd = path.resolve(workspaceRoot, cwd);
-  if (!isPathInside(workspaceRoot, resolvedCwd)) {
-    throw new Error(`cwd must stay inside workspace root: ${workspaceRoot}`);
-  }
-  return resolvedCwd;
-}
-
-/**
- * Replace workspace root (absolute path). All per-workspace state (gitignore rules,
- * outside-access approvals) lives on the instance, so the swap resets everything at once.
- */
-export function setWorkspaceRoot(root: string): void {
-  workspaceImpl = new WorkspaceFsPolicy(path.resolve(root));
+  return workspaceFiles;
 }

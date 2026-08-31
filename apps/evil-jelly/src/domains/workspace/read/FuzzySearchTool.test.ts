@@ -2,10 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  getWorkspaceFsPolicy,
-  setWorkspaceRoot,
-} from "../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceRoot, setWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import type { FsOutsideAccessPayload } from "../../../shared/host/toolConfirmationBindings";
 import { createTestHostBindings } from "../__tests__/testHostBindings";
@@ -30,7 +27,7 @@ describe("FuzzySearchTool", () => {
   let workspace: string;
 
   beforeEach(async () => {
-    previousRoot = getWorkspaceFsPolicy().getRoot();
+    previousRoot = getWorkspaceRoot();
     workspace = await fs.mkdtemp(path.join(os.tmpdir(), "evil-jelly-fuzzy-tool-"));
     await fs.mkdir(path.join(workspace, "nested"), { recursive: true });
     await fs.writeFile(path.join(workspace, "seed.txt"), "seed\n");

@@ -38,7 +38,7 @@ import type { ConversationAgentProps } from "../../features/unified/conversation
 import { UnifiedAgent } from "../../features/unified/UnifiedAgent";
 import { env } from "../../shared/configuration/env";
 import { countConversationTurns } from "../../shared/conversation/compactionMessages";
-import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceRoot } from "../../shared/fs-policy/workspace-context";
 import type { EvilJellyBindings } from "../../shared/host/bindings";
 import { getBinding, setBinding } from "../../shared/host/context";
 import { releasePromptResources } from "../../shared/host/promptResourceLifecycle";
@@ -100,7 +100,7 @@ export async function tryRequestResume(
   runLoopControl: ConversationLoopControl,
 ): Promise<boolean> {
   const arg = rawInput.slice("/resume".length).trim();
-  const workspaceRoot = getWorkspaceFsPolicy().getRoot();
+  const workspaceRoot = getWorkspaceRoot();
 
   if (arg) {
     if (arg === currentSessionId) {
@@ -272,7 +272,7 @@ function handleStatus(runtime: RouterRuntime): void {
   runtime.host.logSystemEvent(
     formatSessionStatus({
       sessionId: runtime.props.sessionId ?? "(ephemeral)",
-      workspace: getWorkspaceFsPolicy().getRoot(),
+      workspace: getWorkspaceRoot(),
       turns: countConversationTurns(runtime.history),
       budget: runtime.currentBudget(),
       modelId: env.OPENAI_MODEL_ID,

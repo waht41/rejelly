@@ -6,7 +6,7 @@ import {
 } from "../../../domains/mcp/configuration/configuration";
 import type { McpDesiredConfig, McpDesiredServer } from "../../../domains/mcp/contracts";
 import { getSettings, type ResolvedSettings } from "../../../shared/configuration/settings";
-import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
 import type { McpManagementCommand, McpReadScope } from "./args";
 import {
   addMcpServerSettings,
@@ -43,7 +43,7 @@ function printJson(value: unknown): void {
 }
 
 export async function runMcpCommand(command: McpManagementCommand): Promise<void> {
-  const workspaceRoot = getWorkspaceFsPolicy().getRoot();
+  const workspaceRoot = getWorkspaceRoot();
   // Validate both settings layers before any edit. Management never silently repairs or writes
   // around a malformed configuration file.
   effectiveMcpConfig(getSettings());

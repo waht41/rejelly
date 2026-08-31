@@ -10,7 +10,7 @@ const undiciMock = vi.hoisted(() => ({
 
 vi.mock("undici", () => undiciMock);
 
-import { getWorkspaceFsPolicy, setWorkspaceRoot } from "../fs-policy/workspace-fs-policy";
+import { getWorkspaceRoot, setWorkspaceRoot } from "../fs-policy/workspace-context";
 import { resolveGlobalJellyDir } from "../globalPath";
 import { env, loadEvilJellyEnv, resolveGlobalEnvPath, saveGlobalEnvValues } from "./env";
 
@@ -44,7 +44,7 @@ const trackedEnvKeys = [
   "GITHUB_TOKEN",
 ];
 const proxyOnce = Symbol.for("rejelly.env.proxyConfigured");
-const originalWorkspaceRoot = getWorkspaceFsPolicy().getRoot();
+const originalWorkspaceRoot = getWorkspaceRoot();
 const originalEnv: Record<string, string | undefined> = Object.fromEntries(
   trackedEnvKeys.map((key) => [key, process.env[key]]),
 );

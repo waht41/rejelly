@@ -2,10 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  getWorkspaceFsPolicy,
-  setWorkspaceRoot,
-} from "../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceRoot, setWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
 import {
   fuzzySearchFiles,
   fuzzySearchPathRefs,
@@ -18,7 +15,7 @@ describe("FuzzySearchService", () => {
   let tmpDir: string;
 
   beforeEach(async () => {
-    prevRoot = getWorkspaceFsPolicy().getRoot();
+    prevRoot = getWorkspaceRoot();
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "evil-jelly-fuzzy-service-"));
     await fs.mkdir(path.join(tmpDir, "src", "cli"), { recursive: true });
     await fs.writeFile(path.join(tmpDir, "src", "cli", "SmartLinePrompt.tsx"), "// prompt\n");

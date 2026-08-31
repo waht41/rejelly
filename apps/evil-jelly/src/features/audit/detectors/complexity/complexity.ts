@@ -14,7 +14,7 @@ import type { SgNode } from "@ast-grep/napi";
 import { MAX_HEURISTIC_AST_BYTES } from "../../../../domains/workspace/source/heuristicAstLimits";
 import { listWorkspaceScriptRelPaths } from "../../../../domains/workspace/source/workspacePaths";
 import { fnv1a32Hex } from "../../../../shared/foundation/fnv1a";
-import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceFiles } from "../../../../shared/fs-policy/workspace-files";
 import { isTestOrGeneratedPath } from "../../sourcePath";
 import { tryParseRoot } from "../astParse";
 import { FUNCTION_KINDS, hasFunctionBody, lineSpanOf, metricsOf } from "./metrics";
@@ -182,7 +182,7 @@ function buildReport(
 export async function detectComplexityCandidates(
   overrides?: Partial<ComplexityDetectionConfig>,
 ): Promise<ComplexityCandidateReport> {
-  const policy = getWorkspaceFsPolicy();
+  const policy = getWorkspaceFiles();
   const config: ComplexityDetectionConfig = { ...DEFAULT_COMPLEXITY_CONFIG, ...overrides };
   const files = await listWorkspaceScriptRelPaths();
   const findings: ComplexityFinding[] = [];

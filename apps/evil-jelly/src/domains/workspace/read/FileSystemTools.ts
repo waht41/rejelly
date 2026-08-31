@@ -8,18 +8,18 @@ import {
   fileLocatorAttributes,
   fileLocatorFromResolved,
 } from "../../../shared/fs-policy/file-locator";
+import { AGENT_SCRATCH_DIR } from "../../../shared/fs-policy/workspace-context";
 import {
-  AGENT_SCRATCH_DIR,
-  getWorkspaceFsPolicy,
+  getWorkspaceFiles,
   type ResolvedFsPath,
-  type WorkspaceDirEntry,
-  type WorkspaceFsPolicy,
-} from "../../../shared/fs-policy/workspace-fs-policy";
+  type WorkspaceFiles,
+} from "../../../shared/fs-policy/workspace-files";
+import type { WorkspaceDirEntry } from "../../../shared/fs-policy/workspace-scan";
 import {
   type PseudoXmlAttributes,
   renderPseudoXmlElement,
 } from "../../../shared/model/prompt/pseudoXml";
-import { resolveFileToolPath } from "./outsideAccess";
+import { resolveFileToolPath } from "../file-access/resolveFileToolPath";
 
 /** Hard guards to keep tool output compact and predictable. */
 export const MAX_READ_BYTES_PER_CALL = 100 * 1024;
@@ -33,7 +33,7 @@ export const MAX_DIR_DEPTH = 3;
 export const MAX_DIRECTORY_OUTPUT_CHARS = 15_000;
 
 async function getDirectoryTree(
-  policy: WorkspaceFsPolicy,
+  policy: WorkspaceFiles,
   dir: ResolvedFsPath,
   currentDepth: number,
   maxDepth: number,
@@ -107,7 +107,7 @@ export const ListDirTool: ToolDefinition<typeof listDirParameters> = {
     "Use depth > 1 to scan layout faster.",
   parameters: listDirParameters,
   handler: async ({ dirPath, depth, includeIgnored }) => {
-    const policy = getWorkspaceFsPolicy();
+    const policy = getWorkspaceFiles();
     const resolved = await resolveFileToolPath(dirPath, { kind: "scan", includeIgnored });
     if (!resolved.ok) {
       return resolved.error;
@@ -308,7 +308,7 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
     `Use ast_document_symbols first if you only need file structure or declarations. ${AGENT_SCRATCH_DIR}/ is the agent scratch directory for temporary files.`,
   parameters: readFileParameters,
   handler: async ({ filePaths }) => {
-    const policy = getWorkspaceFsPolicy();
+    const policy = getWorkspaceFiles();
     let totalBytes = 0;
     const results: string[] = [];
 

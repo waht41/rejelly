@@ -9,13 +9,15 @@ import type { ToolDefinition } from "@rejelly/core";
 import picomatch from "picomatch";
 import { z } from "zod";
 import {
-  getWorkspaceFsPolicy,
+  getWorkspaceFiles,
   type ResolvedFsPath,
+  type WorkspaceFiles,
+} from "../../../shared/fs-policy/workspace-files";
+import {
   TOOL_ALWAYS_IGNORED_DIR_NAMES,
   type WorkspaceDirEntry,
-  type WorkspaceFsPolicy,
-} from "../../../shared/fs-policy/workspace-fs-policy";
-import { resolveFileToolPath } from "./outsideAccess";
+} from "../../../shared/fs-policy/workspace-scan";
+import { resolveFileToolPath } from "../file-access/resolveFileToolPath";
 
 const MAX_FALLBACK_FILE_BYTES = 200 * 1024;
 const MAX_FALLBACK_FILES = 8000;
@@ -134,7 +136,7 @@ function execFileStdout(
   try {
     const stdout = execFileSync(cmd, args, {
       encoding: "utf8",
-      cwd: getWorkspaceFsPolicy().getRoot(),
+      cwd: getWorkspaceFiles().getRoot(),
       maxBuffer: 10 * 1024 * 1024,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -262,7 +264,7 @@ function runGitGrep(
 }
 
 async function collectFiles(
-  policy: WorkspaceFsPolicy,
+  policy: WorkspaceFiles,
   directory: ResolvedFsPath,
   includeIgnored: boolean,
   fileList: ResolvedFsPath[] = [],
@@ -332,7 +334,7 @@ async function fallbackNodeSearch(
   contextLines = DEFAULT_CONTEXT_LINES,
   options: GrepSearchOptions = {},
 ): Promise<string> {
-  const policy = getWorkspaceFsPolicy();
+  const policy = getWorkspaceFiles();
   let re: RegExp;
   try {
     re = new RegExp(query, "i");

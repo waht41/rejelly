@@ -5,7 +5,7 @@
 import type { ToolDefinition } from "@rejelly/core";
 import { getContextSignal } from "@rejelly/core";
 import { z } from "zod";
-import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceFiles } from "../../../shared/fs-policy/workspace-files";
 import { getBinding } from "../../../shared/host/context";
 import { registerInterruptibleTask } from "../../../shared/task-interruption/taskStack";
 import { getActiveToolCall } from "../../../shared/tool-observation/invocationContext";
@@ -70,7 +70,7 @@ export const RunCommandTool: ToolDefinition<typeof runCommandParameters> = {
     "Prefer this when you need a targeted check beyond the automatic post-edit verification.",
   parameters: runCommandParameters,
   handler: async ({ command, cwd, declaredSafety, reason }) => {
-    const policy = getWorkspaceFsPolicy();
+    const policy = getWorkspaceFiles();
     const resolvedCwdPath = policy.classifyPath(cwd ?? ".");
     try {
       const stat = await policy.statResolved(resolvedCwdPath);

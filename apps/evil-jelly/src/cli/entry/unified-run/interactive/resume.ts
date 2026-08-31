@@ -10,7 +10,7 @@ import {
   type SessionRecord,
 } from "../../../../domains/session/repository/sessionStore";
 import { countConversationTurns } from "../../../../shared/conversation/compactionMessages";
-import { getWorkspaceFsPolicy } from "../../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceRoot } from "../../../../shared/fs-policy/workspace-context";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 import {
   emptySessionMcpState,
@@ -196,7 +196,7 @@ export async function resolveInitialSession(options: {
   let resumeSeed: SessionResumeSeed | undefined;
 
   if (options.resume) {
-    const workspaceRoot = getWorkspaceFsPolicy().getRoot();
+    const workspaceRoot = getWorkspaceRoot();
     const record = await resolveResumeSession(workspaceRoot, options.resumeSessionId, {
       originator: "evil-jelly-cli",
       appVersion: options.appVersion,

@@ -3,12 +3,9 @@
  */
 
 import type { Lang, SgNode } from "@ast-grep/napi";
-import {
-  getWorkspaceFsPolicy,
-  type ResolvedFsPath,
-  type WorkspaceDirEntry,
-} from "../../../shared/fs-policy/workspace-fs-policy";
-import { resolveFileToolPath } from "../read/outsideAccess";
+import { getWorkspaceFiles, type ResolvedFsPath } from "../../../shared/fs-policy/workspace-files";
+import type { WorkspaceDirEntry } from "../../../shared/fs-policy/workspace-scan";
+import { resolveFileToolPath } from "../file-access/resolveFileToolPath";
 import { MAX_HEURISTIC_AST_FILES, MAX_HEURISTIC_RESULTS } from "../source/heuristicAstLimits";
 import { langFromRelPath, tryLangFromRelPath } from "../source/sourceLanguage";
 import { listWorkspaceScriptRelPaths, tryResolveRelativeImport } from "../source/workspacePaths";
@@ -69,7 +66,7 @@ async function listScriptPathsForRoots(roots?: readonly string[]): Promise<strin
     return listWorkspaceScriptRelPaths();
   }
 
-  const policy = getWorkspaceFsPolicy();
+  const policy = getWorkspaceFiles();
   const files: string[] = [];
   const seen = new Set<string>();
   let visitedEntries = 0;

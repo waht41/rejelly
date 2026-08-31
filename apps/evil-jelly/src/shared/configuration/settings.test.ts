@@ -3,7 +3,7 @@ import os, { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveMcpSettingsLayers } from "../../domains/mcp/configuration/configuration";
-import { getWorkspaceFsPolicy, setWorkspaceRoot } from "../fs-policy/workspace-fs-policy";
+import { getWorkspaceRoot, setWorkspaceRoot } from "../fs-policy/workspace-context";
 import {
   DOC_MAP_DEFAULT_PATH,
   getSettings,
@@ -17,7 +17,7 @@ describe("settings resolution", () => {
   let workspaceDir: string;
 
   beforeEach(() => {
-    previousWorkspaceRoot = getWorkspaceFsPolicy().getRoot();
+    previousWorkspaceRoot = getWorkspaceRoot();
     homeDir = mkdtempSync(join(tmpdir(), "evil-jelly-settings-home-"));
     workspaceDir = mkdtempSync(join(tmpdir(), "evil-jelly-settings-workspace-"));
     vi.spyOn(os, "homedir").mockReturnValue(homeDir);

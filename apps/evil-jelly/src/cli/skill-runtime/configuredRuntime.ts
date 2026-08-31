@@ -16,7 +16,7 @@ import {
   type SkillSource,
 } from "../../domains/skills/loader/skillSourceRoots";
 import { getSettings, type ResolvedSettings } from "../../shared/configuration/settings";
-import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceRoot } from "../../shared/fs-policy/workspace-context";
 import { resolveGlobalJellyDir } from "../../shared/globalPath";
 
 export interface SkillRuntimeSnapshotBuildResult {
@@ -60,7 +60,7 @@ export async function buildConfiguredSkillRuntimeSnapshot(): Promise<SkillRuntim
     return buildSkillRuntimeSnapshot([]);
   }
   const discovery = await discoverSkillSources(
-    resolveSkillRoots(getWorkspaceFsPolicy().getRoot(), resolveGlobalJellyDir()),
+    resolveSkillRoots(getWorkspaceRoot(), resolveGlobalJellyDir()),
   );
   const built = await buildSkillRuntimeSnapshot(discovery.sources, (skill) =>
     isSkillEnabled(skillSettings, skill),

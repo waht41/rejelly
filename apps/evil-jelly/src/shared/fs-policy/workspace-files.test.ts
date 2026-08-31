@@ -3,14 +3,15 @@ import fsPromises from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { AGENT_SCRATCH_DIR, resolveWorkspaceCwd, WorkspaceFsPolicy } from "./workspace-fs-policy";
+import { AGENT_SCRATCH_DIR } from "./workspace-context";
+import { WorkspaceFiles } from "./workspace-files";
 
-function createPolicy(): WorkspaceFsPolicy {
+function createPolicy(): WorkspaceFiles {
   const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
-  return new WorkspaceFsPolicy(root);
+  return new WorkspaceFiles(root);
 }
 
-describe("WorkspaceFsPolicy workspace root", () => {
+describe("WorkspaceFiles", () => {
   it("allows paths under the workspace root", () => {
     const policy = createPolicy();
     const resolved = policy.tryResolveWorkspacePath("src/index.ts");
@@ -26,110 +27,9 @@ describe("WorkspaceFsPolicy workspace root", () => {
   it("denies absolute outside-workspace path", () => {
     const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
     const outsideDir = path.resolve(root, "../shared-zone");
-    const policy = new WorkspaceFsPolicy(root);
+    const policy = new WorkspaceFiles(root);
     const hit = policy.tryResolveWorkspacePath(path.join(outsideDir, "README.md"));
     expect(hit.ok).toBe(false);
-  });
-
-  it("requires approval for outside reads in normal mode", () => {
-    const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
-    const outsideDir = path.resolve(root, "../shared-zone");
-    const policy = new WorkspaceFsPolicy(root);
-    const hit = policy.tryResolveFileToolPath(
-      path.join(outsideDir, "README.md"),
-      { kind: "read" },
-      "normal",
-    );
-
-    if (hit.ok) {
-      throw new Error("expected outside read to require approval");
-    }
-    expect(hit.approval).toEqual({
-      access: "read",
-      targetPath: path.join(outsideDir, "README.md"),
-      grantRoot: outsideDir,
-    });
-  });
-
-  it("allows outside non-sensitive reads in auto mode", () => {
-    const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
-    const outsideFile = path.resolve(root, "../shared-zone/README.md");
-    const policy = new WorkspaceFsPolicy(root);
-    const hit = policy.tryResolveFileToolPath(outsideFile, { kind: "read" }, "auto");
-
-    expect(hit.ok).toBe(true);
-    if (hit.ok) {
-      expect(hit.outside).toBe(true);
-      expect(hit.displayPath).toBe(outsideFile);
-      expect(path.isAbsolute(hit.rel)).toBe(false);
-      expect(hit.rel).not.toBe(outsideFile);
-    }
-  });
-
-  it("resolves cwd from an explicit workspace root", () => {
-    const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
-
-    expect(resolveWorkspaceCwd(root)).toBe(root);
-    expect(resolveWorkspaceCwd(root, "packages/core")).toBe(path.join(root, "packages/core"));
-    expect(() => resolveWorkspaceCwd(root, "../outside")).toThrow("cwd must stay inside");
-  });
-
-  it("denies outside sensitive files even in auto mode", () => {
-    const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
-    const outsideFile = path.resolve(root, "../shared-zone/.env");
-    const policy = new WorkspaceFsPolicy(root);
-    const hit = policy.tryResolveFileToolPath(outsideFile, { kind: "read" }, "auto");
-
-    if (hit.ok) {
-      throw new Error("expected sensitive outside read to be denied");
-    }
-    expect(hit.approval).toBeUndefined();
-    expect(hit.error).toContain("sensitive");
-  });
-
-  it("requires approval for outside writes even in auto mode", () => {
-    const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
-    const outsideFile = path.resolve(root, "../shared-zone/new.txt");
-    const policy = new WorkspaceFsPolicy(root);
-    const hit = policy.tryResolveFileToolPath(outsideFile, { kind: "write" }, "auto");
-
-    if (hit.ok) {
-      throw new Error("expected outside write to require approval");
-    }
-    expect(hit.approval?.access).toBe("write");
-  });
-
-  it("allows approved outside write subtrees", () => {
-    const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
-    const outsideDir = path.resolve(root, "../shared-zone");
-    const outsideFile = path.join(outsideDir, "new.txt");
-    const policy = new WorkspaceFsPolicy(root);
-
-    policy.approveExternalAccess("write", outsideDir);
-    const hit = policy.tryResolveFileToolPath(outsideFile, { kind: "write" }, "normal");
-
-    expect(hit.ok).toBe(true);
-    if (hit.ok) {
-      expect(hit.outside).toBe(true);
-      expect(hit.abs).toBe(outsideFile);
-    }
-  });
-
-  it("keeps outside read, scan, and write approvals least-privileged", () => {
-    const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
-    const outsideDir = path.resolve(root, "../shared-zone");
-    const outsideFile = path.join(outsideDir, "README.md");
-    const policy = new WorkspaceFsPolicy(root);
-
-    policy.approveExternalAccess("read", outsideDir);
-    expect(policy.tryResolveFileToolPath(outsideDir, { kind: "scan" }, "normal").ok).toBe(false);
-
-    policy.approveExternalAccess("write", outsideDir);
-    expect(policy.tryResolveFileToolPath(outsideDir, { kind: "scan" }, "normal").ok).toBe(false);
-    expect(policy.tryResolveFileToolPath(outsideFile, { kind: "read" }, "normal").ok).toBe(true);
-
-    policy.approveExternalAccess("scan", outsideDir);
-    expect(policy.tryResolveFileToolPath(outsideDir, { kind: "scan" }, "normal").ok).toBe(true);
   });
 
   it("keeps hidden directories out of discovery", () => {
@@ -191,7 +91,7 @@ describe("WorkspaceFsPolicy workspace root", () => {
     const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
     fs.mkdirSync(root, { recursive: true });
     fs.writeFileSync(path.join(root, ".gitignore"), ".evil-jelly/\n", "utf-8");
-    const policy = new WorkspaceFsPolicy(root);
+    const policy = new WorkspaceFiles(root);
 
     expect(
       policy.tryResolveWorkspacePath(`${AGENT_SCRATCH_DIR}/probe.txt`, { kind: "write" }).ok,
@@ -202,7 +102,7 @@ describe("WorkspaceFsPolicy workspace root", () => {
     const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
     fs.mkdirSync(root, { recursive: true });
     fs.writeFileSync(path.join(root, ".gitignore"), "secrets/\n*.local\n", "utf-8");
-    const policy = new WorkspaceFsPolicy(root);
+    const policy = new WorkspaceFiles(root);
 
     const ignoredDir = policy.tryResolveWorkspacePath("secrets/token.txt");
     const ignoredFile = policy.tryResolveWorkspacePath("config/app.local");
@@ -221,7 +121,7 @@ describe("WorkspaceFsPolicy workspace root", () => {
     fs.writeFileSync(path.join(root, "AGENTS.override.md"), "Override rule", "utf-8");
     fs.writeFileSync(path.join(root, ".env"), "TOKEN=secret", "utf-8");
     fs.writeFileSync(path.join(root, "node_modules", "pkg.js"), "export {}", "utf-8");
-    const policy = new WorkspaceFsPolicy(root);
+    const policy = new WorkspaceFiles(root);
 
     expect(policy.tryResolveWorkspacePath("AGENTS.override.md").ok).toBe(false);
     expect(policy.tryResolveWorkspacePath("AGENTS.override.md", { kind: "read" }).ok).toBe(true);
@@ -236,7 +136,7 @@ describe("WorkspaceFsPolicy workspace root", () => {
     fs.mkdirSync(path.join(root, "local"), { recursive: true });
     fs.writeFileSync(path.join(root, ".gitignore"), "local/\n", "utf-8");
     fs.writeFileSync(path.join(root, "local", "settings.json"), "{}", "utf-8");
-    const policy = new WorkspaceFsPolicy(root);
+    const policy = new WorkspaceFiles(root);
 
     expect(policy.tryResolveWorkspacePath("local/settings.json").ok).toBe(false);
     await expect(policy.readFile("local/settings.json")).resolves.toBe("{}");
@@ -253,7 +153,7 @@ describe("WorkspaceFsPolicy workspace root", () => {
     fs.mkdirSync(outside, { recursive: true });
     fs.writeFileSync(path.join(outside, "index.js"), "export {}", "utf-8");
     fs.symlinkSync(outside, path.join(root, "node_modules", "escaped"), "junction");
-    const policy = new WorkspaceFsPolicy(root);
+    const policy = new WorkspaceFiles(root);
 
     expect(
       policy.tryResolveWorkspacePath("node_modules/escaped/index.js", { kind: "read" }),
@@ -265,12 +165,11 @@ describe("WorkspaceFsPolicy workspace root", () => {
     const outsideDir = path.resolve(root, "../shared-zone");
     fs.mkdirSync(root, { recursive: true });
     fs.writeFileSync(path.join(root, ".gitignore"), "secrets/\n", "utf-8");
-    const policy = new WorkspaceFsPolicy(root);
+    const policy = new WorkspaceFiles(root);
     const inside = policy.tryResolveWorkspacePath(".");
-    policy.approveExternalAccess("read", outsideDir);
-    const outside = policy.tryResolveFileToolPath(outsideDir, { kind: "read" }, "normal");
+    const outside = policy.classifyPath(outsideDir);
 
-    if (!inside.ok || !outside.ok) {
+    if (!inside.ok) {
       throw new Error("expected paths to resolve");
     }
 
@@ -295,7 +194,7 @@ describe("WorkspaceFsPolicy workspace root", () => {
       fsPromises.writeFile(path.join(root, "dist", "bundle.ts"), "export {}\n", "utf-8"),
       fsPromises.writeFile(path.join(root, ".hidden", "private.ts"), "export {}\n", "utf-8"),
     ]);
-    const policy = new WorkspaceFsPolicy(root);
+    const policy = new WorkspaceFiles(root);
 
     await expect(
       policy.walkFiles({ maxFiles: 10, includeFile: (rel) => rel.endsWith(".ts") }),
@@ -310,7 +209,7 @@ describe("WorkspaceFsPolicy workspace root", () => {
         fsPromises.writeFile(path.join(root, name), "export {}\n", "utf-8"),
       ),
     );
-    const policy = new WorkspaceFsPolicy(root);
+    const policy = new WorkspaceFiles(root);
 
     await expect(policy.walkFiles({ maxFiles: 1 })).resolves.toEqual(["a.ts"]);
     await expect(policy.walkFiles({ maxFiles: 10, maxEntries: 2 })).resolves.toEqual([
@@ -338,7 +237,7 @@ describe("WorkspaceFsPolicy workspace root", () => {
     const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
     fs.mkdirSync(root, { recursive: true });
     fs.writeFileSync(path.join(root, ".gitignore"), ".evil-jelly/\nsecrets/\n", "utf-8");
-    const policy = new WorkspaceFsPolicy(root);
+    const policy = new WorkspaceFiles(root);
 
     expect(policy.tryResolveWorkspacePath(".evil-jelly/audit/ledger.json").ok).toBe(true);
     expect(policy.tryResolveWorkspacePath(".evil-jelly").ok).toBe(true);
@@ -352,7 +251,7 @@ describe("WorkspaceFsPolicy workspace root", () => {
     await fsPromises.mkdir(path.join(root, "packages"), { recursive: true });
     const relFile = path.join("packages", "core.ts");
     await fsPromises.writeFile(path.join(root, relFile), "export const core = 1\n", "utf-8");
-    const policy = new WorkspaceFsPolicy(root);
+    const policy = new WorkspaceFiles(root);
 
     await expect(policy.readAstFile(relFile)).resolves.toContain("export const core");
     await expect(policy.readFile(relFile)).resolves.toContain("export const core");
@@ -362,7 +261,7 @@ describe("WorkspaceFsPolicy workspace root", () => {
     const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
     await fsPromises.mkdir(path.join(root, "src"), { recursive: true });
     await fsPromises.writeFile(path.join(root, "src", "unused.ts"), "export {}\n", "utf-8");
-    const policy = new WorkspaceFsPolicy(root);
+    const policy = new WorkspaceFiles(root);
 
     await policy.deleteEntry("src/unused.ts");
 
@@ -374,7 +273,7 @@ describe("WorkspaceFsPolicy workspace root", () => {
   it("refuses to delete the workspace root", async () => {
     const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
     await fsPromises.mkdir(root, { recursive: true });
-    const policy = new WorkspaceFsPolicy(root);
+    const policy = new WorkspaceFiles(root);
 
     await expect(policy.deleteEntry(".")).rejects.toThrow("workspace root");
     await expect(fsPromises.stat(root)).resolves.toBeTruthy();
@@ -383,7 +282,7 @@ describe("WorkspaceFsPolicy workspace root", () => {
   it("prunes empty parents without crossing the workspace root", async () => {
     const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
     await fsPromises.mkdir(path.join(root, "a", "b"), { recursive: true });
-    const policy = new WorkspaceFsPolicy(root);
+    const policy = new WorkspaceFiles(root);
 
     const removed = await policy.pruneEmptyParentsInside(path.join("a", "b"));
 

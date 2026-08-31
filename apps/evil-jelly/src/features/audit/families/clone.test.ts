@@ -2,10 +2,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  getWorkspaceFsPolicy,
-  setWorkspaceRoot,
-} from "../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceRoot, setWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
 import type { CloneCluster } from "../detectors/clone";
 import { createCloneIdentityResolver } from "./clone";
 
@@ -44,7 +41,7 @@ const B = `export function totalSales(records) {
 
 describe("createCloneIdentityResolver", () => {
   beforeEach(async () => {
-    previousRoot = getWorkspaceFsPolicy().getRoot();
+    previousRoot = getWorkspaceRoot();
     const dir = await mkdtemp(path.join(os.tmpdir(), "evil-audit-ledger-"));
     await mkdir(path.join(dir, "src"), { recursive: true });
     setWorkspaceRoot(dir);
@@ -55,24 +52,16 @@ describe("createCloneIdentityResolver", () => {
   });
 
   it("keeps the clone fingerprint stable across line moves but changes contentHash on raw edits", async () => {
-    await writeFile(path.join(getWorkspaceFsPolicy().getRoot(), "src", "a.ts"), A, "utf-8");
-    await writeFile(path.join(getWorkspaceFsPolicy().getRoot(), "src", "b.ts"), B, "utf-8");
+    await writeFile(path.join(getWorkspaceRoot(), "src", "a.ts"), A, "utf-8");
+    await writeFile(path.join(getWorkspaceRoot(), "src", "b.ts"), B, "utf-8");
     const first = await createCloneIdentityResolver().identityFor(cluster(1, 7));
 
-    await writeFile(
-      path.join(getWorkspaceFsPolicy().getRoot(), "src", "a.ts"),
-      `\n\n${A}`,
-      "utf-8",
-    );
-    await writeFile(
-      path.join(getWorkspaceFsPolicy().getRoot(), "src", "b.ts"),
-      `\n\n${B}`,
-      "utf-8",
-    );
+    await writeFile(path.join(getWorkspaceRoot(), "src", "a.ts"), `\n\n${A}`, "utf-8");
+    await writeFile(path.join(getWorkspaceRoot(), "src", "b.ts"), `\n\n${B}`, "utf-8");
     const moved = await createCloneIdentityResolver().identityFor(cluster(3, 9));
 
     await writeFile(
-      path.join(getWorkspaceFsPolicy().getRoot(), "src", "b.ts"),
+      path.join(getWorkspaceRoot(), "src", "b.ts"),
       `\n\n${B.replace("record.value", "record.netValue")}`,
       "utf-8",
     );

@@ -6,14 +6,16 @@
 
 import { execFileSync } from "node:child_process";
 import {
-  getWorkspaceFsPolicy,
+  getWorkspaceFiles,
   type ResolvedFsPath,
+  type WorkspaceFiles,
+} from "../../../shared/fs-policy/workspace-files";
+import {
   TOOL_ALWAYS_IGNORED_DIR_NAMES,
   toGitignorePath,
   type WorkspaceDirEntry,
-  type WorkspaceFsPolicy,
-} from "../../../shared/fs-policy/workspace-fs-policy";
-import { resolveFileToolPath } from "./outsideAccess";
+} from "../../../shared/fs-policy/workspace-scan";
+import { resolveFileToolPath } from "../file-access/resolveFileToolPath";
 
 /** Hard cap on collected file paths to bound work on huge trees. */
 const MAX_COLLECT = 200_000;
@@ -120,7 +122,7 @@ function rgListFiles(dirRelPosix: string): string[] | null {
     dirRelPosix === "" || dirRelPosix === "." ? ["--files"] : ["--files", "--", dirRelPosix];
   try {
     const stdout = execFileSync("rg", args, {
-      cwd: getWorkspaceFsPolicy().getRoot(),
+      cwd: getWorkspaceFiles().getRoot(),
       encoding: "utf8",
       maxBuffer: 64 * 1024 * 1024,
       stdio: ["ignore", "pipe", "ignore"],
@@ -151,7 +153,7 @@ function gitListFiles(dirRelPosix: string): string[] | null {
       "git",
       ["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", pathspec],
       {
-        cwd: getWorkspaceFsPolicy().getRoot(),
+        cwd: getWorkspaceFiles().getRoot(),
         encoding: "utf8",
         maxBuffer: 64 * 1024 * 1024,
         stdio: ["ignore", "pipe", "ignore"],
@@ -165,7 +167,7 @@ function gitListFiles(dirRelPosix: string): string[] | null {
 
 /** Bounded Node directory walk honouring root .gitignore and always-ignored dir names. */
 async function nodeWalkFiles(
-  policy: WorkspaceFsPolicy,
+  policy: WorkspaceFiles,
   start: ResolvedSearchDirectory,
   includeIgnored: boolean,
 ): Promise<string[]> {
@@ -257,7 +259,7 @@ function normalizeDirectoryRel(rel: string): string {
 }
 
 async function resolveSearchDirectory(
-  policy: WorkspaceFsPolicy,
+  policy: WorkspaceFiles,
   directory: string,
   includeIgnored: boolean,
 ): Promise<ResolvedSearchDirectory> {
@@ -290,7 +292,7 @@ async function getCandidateFiles(
   cachePolicy: FuzzySearchOptions["cachePolicy"] = "reuse",
   includeIgnored = false,
 ): Promise<string[]> {
-  const policy = getWorkspaceFsPolicy();
+  const policy = getWorkspaceFiles();
   const resolved = await resolveSearchDirectory(policy, directory, includeIgnored);
   const cacheKey = `${policy.getRoot()}\0${includeIgnored ? "ignored" : "default"}\0${resolved.relPosix}`;
   const cached = candidateCache.get(cacheKey);
@@ -324,7 +326,7 @@ function normalizePathRefNeedle(keyword: string): string {
 }
 
 async function exactDirectoryCandidate(keyword: string): Promise<string | null> {
-  const policy = getWorkspaceFsPolicy();
+  const policy = getWorkspaceFiles();
   const normalized = normalizeDirectoryRel(normalizePathRefNeedle(keyword));
   if (normalized === ".") {
     return null;

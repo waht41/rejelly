@@ -3,10 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { initSettings } from "../../../../shared/configuration/settings";
-import {
-  getWorkspaceFsPolicy,
-  setWorkspaceRoot,
-} from "../../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceRoot, setWorkspaceRoot } from "../../../../shared/fs-policy/workspace-context";
 import { parseDocMap, resolveDocMapEntries, resolveSyncPairs } from "./docmap";
 
 describe("parseDocMap", () => {
@@ -94,7 +91,7 @@ describe("resolveDocMapEntries", () => {
   let dir: string;
 
   beforeEach(() => {
-    prevRoot = getWorkspaceFsPolicy().getRoot();
+    prevRoot = getWorkspaceRoot();
     dir = mkdtempSync(join(tmpdir(), "evil-jelly-docmap-"));
     setWorkspaceRoot(dir);
     initSettings({});
@@ -207,7 +204,7 @@ describe("resolveSyncPairs", () => {
   let dir: string;
 
   beforeEach(() => {
-    prevRoot = getWorkspaceFsPolicy().getRoot();
+    prevRoot = getWorkspaceRoot();
     dir = mkdtempSync(join(tmpdir(), "evil-jelly-syncpairs-"));
     setWorkspaceRoot(dir);
     initSettings({});

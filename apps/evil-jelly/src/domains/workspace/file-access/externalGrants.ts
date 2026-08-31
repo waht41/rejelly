@@ -1,40 +1,14 @@
-import fs from "node:fs";
 import path from "node:path";
+import { isPathInside } from "../../../shared/fs-policy/path-containment";
+import type { ExternalFileAccess } from "../../../shared/host/toolConfirmationBindings";
 
-export type ExternalFileAccess = "read" | "scan" | "write";
-
-function normalizeAccessPath(value: string): string {
+function normalizeGrantPath(value: string): string {
   const resolved = path.resolve(value);
   return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
-export function isPathInside(parentDir: string, targetPath: string): boolean {
-  const parent = normalizeAccessPath(parentDir);
-  const target = normalizeAccessPath(targetPath);
-  const relativePath = path.relative(parent, target);
-  return (
-    relativePath.length === 0 ||
-    (!relativePath.startsWith("..") &&
-      !relativePath.startsWith(`..${path.sep}`) &&
-      !path.isAbsolute(relativePath))
-  );
-}
-
-export function suggestOutsideApproveDir(targetPath: string): string {
-  const abs = path.resolve(targetPath);
-  try {
-    const stat = fs.statSync(abs);
-    return stat.isDirectory() ? abs : path.dirname(abs);
-  } catch {
-    return path.dirname(abs);
-  }
-}
-
-/**
- * Approved outside-workspace directories. Owned by a WorkspaceFsPolicy instance, so approvals
- * are scoped to one workspace root and vanish when the root is replaced.
- */
-export class ExternalAccessRegistry {
+/** Session-lived grants for paths outside one workspace root. */
+export class ExternalFileGrants {
   private readonly approvedReadDirs = new Set<string>();
   private readonly approvedScanDirs = new Set<string>();
   private readonly approvedWriteDirs = new Set<string>();
@@ -67,7 +41,7 @@ export class ExternalAccessRegistry {
   }
 
   approve(access: ExternalFileAccess, dirPath: string): void {
-    const normalized = normalizeAccessPath(dirPath);
+    const normalized = normalizeGrantPath(dirPath);
     if (access === "write") {
       this.approvedWriteDirs.add(normalized);
       this.approvedReadDirs.add(normalized);

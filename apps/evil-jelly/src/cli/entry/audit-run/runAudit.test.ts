@@ -43,8 +43,8 @@ vi.mock("../../../shared/host/context", () => ({ setBinding: mocks.setBinding })
 vi.mock("../../../shared/configuration/settings", () => ({
   getSettings: () => ({ mcp: {} }),
 }));
-vi.mock("../../../shared/fs-policy/workspace-fs-policy", () => ({
-  getWorkspaceFsPolicy: () => ({ getRoot: () => "/workspace" }),
+vi.mock("../../../shared/fs-policy/workspace-context", () => ({
+  getWorkspaceRoot: () => "/workspace",
 }));
 vi.mock("../../../shared/mcp/trustRepository", () => ({ readMcpTrustGrants: () => [] }));
 vi.mock("../../runtime/traceId", () => ({ generateTraceId: () => "audit-trace" }));

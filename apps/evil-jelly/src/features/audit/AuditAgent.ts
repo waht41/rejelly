@@ -18,7 +18,7 @@ import {
   type McpAuditProvenanceCollector,
 } from "../../domains/mcp/gateway/auditDispatch";
 import { getSettings } from "../../shared/configuration/settings";
-import { getWorkspaceFsPolicy } from "../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceRoot } from "../../shared/fs-policy/workspace-context";
 import { getBinding } from "../../shared/host/context";
 import { cloneFamily } from "./families/clone";
 import { complexityFamily } from "./families/complexity";
@@ -327,7 +327,7 @@ export const AuditAgent = createAgent<AuditAgentProps, string>({
     ).length;
     const data = {
       generatedAt,
-      workspaceRoot: getWorkspaceFsPolicy().getRoot(),
+      workspaceRoot: getWorkspaceRoot(),
       detectors,
       ledger: ledgerStats,
       evaluatedCount,

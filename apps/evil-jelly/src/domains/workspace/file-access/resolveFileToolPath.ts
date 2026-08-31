@@ -1,10 +1,7 @@
-import {
-  type FileAccess,
-  getWorkspaceFsPolicy,
-  type ResolvedFsPath,
-} from "../../../shared/fs-policy/workspace-fs-policy";
+import type { FileAccess, ResolvedFsPath } from "../../../shared/fs-policy/workspace-files";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import { getBinding } from "../../../shared/host/context";
+import { getAgentFileAccess } from "./agentFileAccess";
 
 export type ResolveFileToolPathResult =
   | ({ ok: true } & ResolvedFsPath)
@@ -22,17 +19,14 @@ export async function resolveFileToolPath(
   userPath: string,
   access: FileAccess,
 ): Promise<ResolveFileToolPathResult> {
-  const policy = getWorkspaceFsPolicy();
+  const agentFileAccess = getAgentFileAccess();
   const host = tryGetBinding();
   const mode = host?.getAgentMode?.() ?? "normal";
-  const first = policy.tryResolveFileToolPath(userPath, access, mode);
+  const first = agentFileAccess.tryResolve(userPath, access, mode);
   if (first.ok) {
     return first;
   }
-  if (!first.approval) {
-    return { ok: false, error: first.error };
-  }
-  if (!host) {
+  if (!first.approval || !host) {
     return { ok: false, error: first.error };
   }
 
@@ -46,10 +40,7 @@ export async function resolveFileToolPath(
     return { ok: false, error: `Access outside workspace denied: ${first.approval.targetPath}` };
   }
 
-  policy.approveExternalAccess(first.approval.access, first.approval.grantRoot);
-  const second = policy.tryResolveFileToolPath(userPath, access, mode);
-  if (second.ok) {
-    return second;
-  }
-  return { ok: false, error: second.error };
+  agentFileAccess.approveExternalAccess(first.approval.access, first.approval.grantRoot);
+  const second = agentFileAccess.tryResolve(userPath, access, mode);
+  return second.ok ? second : { ok: false, error: second.error };
 }

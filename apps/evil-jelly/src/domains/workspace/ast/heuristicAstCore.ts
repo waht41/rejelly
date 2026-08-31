@@ -4,7 +4,8 @@
  */
 
 import { type Lang, parse, type SgNode } from "@ast-grep/napi";
-import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceFiles } from "../../../shared/fs-policy/workspace-files";
+import { getAgentFileAccess } from "../file-access/agentFileAccess";
 import { MAX_HEURISTIC_AST_BYTES } from "../source/heuristicAstLimits";
 import { AST_SCRIPT_EXTENSIONS, tryLangFromRelPath } from "../source/sourceLanguage";
 
@@ -28,9 +29,9 @@ export type ParseWorkspaceAstOptions = {
 export async function readBoundedSource(
   filePath: string,
 ): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
-  const policy = getWorkspaceFsPolicy();
+  const policy = getWorkspaceFiles();
   try {
-    const resolved = policy.tryResolveFileToolPath(filePath, { kind: "read" }, "normal");
+    const resolved = getAgentFileAccess().tryResolve(filePath, { kind: "read" }, "normal");
     if (!resolved.ok) {
       return { ok: false, error: resolved.error };
     }
