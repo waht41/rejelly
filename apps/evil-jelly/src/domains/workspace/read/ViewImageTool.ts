@@ -13,7 +13,7 @@ import { type ToolDefinition, toolContent } from "@rejelly/core";
 import { z } from "zod";
 import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
 import { fuzzySearchFiles } from "./FuzzySearchService";
-import { resolveToolFsPath } from "./outsideAccess";
+import { resolveFileToolPath } from "./outsideAccess";
 
 /** Cap on decoded image bytes; base64 grows ~33%, so this stays well under typical vision limits. */
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -124,7 +124,7 @@ export const ViewImageTool: ToolDefinition<typeof viewImageParameters> = {
       return toolContent([{ type: "image", image: { url: image } }]);
     }
 
-    const resolved = await resolveToolFsPath(image, "read", "direct-read");
+    const resolved = await resolveFileToolPath(image, { kind: "read" });
     if (!resolved.ok) {
       return resolved.error;
     }

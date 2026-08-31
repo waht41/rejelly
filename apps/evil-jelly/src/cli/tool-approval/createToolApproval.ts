@@ -146,9 +146,9 @@ async function confirmOutsideAccess(
   ];
   useOutputStore
     .getState()
-    .setPhase("awaiting_user", `outside ${params.mode} → ${params.targetPath}`);
+    .setPhase("awaiting_user", `outside ${params.access} → ${params.targetPath}`);
   const selected = await decision.requestChoice({
-    message: `Allow ${params.mode} outside workspace?\n${params.targetPath}\n\nApprove directory for this session:\n${params.approveDir}`,
+    message: `Allow ${params.access} outside workspace?\n${params.targetPath}\n\nGrant root for this session:\n${params.grantRoot}`,
     options: menuOptions,
     cancelValue: "reject",
   });

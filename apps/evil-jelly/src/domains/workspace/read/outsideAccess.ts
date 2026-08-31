@@ -1,15 +1,12 @@
 import {
-  type FsAccessKind,
-  type FsIntent,
+  type FileAccess,
   getWorkspaceFsPolicy,
   type ResolvedFsPath,
 } from "../../../shared/fs-policy/workspace-fs-policy";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import { getBinding } from "../../../shared/host/context";
 
-type ToolFsIntent = Exclude<FsIntent, "inside">;
-
-export type ResolveToolFsPathResult =
+export type ResolveFileToolPathResult =
   | ({ ok: true } & ResolvedFsPath)
   | { ok: false; error: string };
 
@@ -21,23 +18,18 @@ function tryGetBinding(): EvilJellyBindings | null {
   }
 }
 
-export async function resolveToolFsPath(
+export async function resolveFileToolPath(
   userPath: string,
-  intent: ToolFsIntent,
-  access: FsAccessKind,
-): Promise<ResolveToolFsPathResult> {
+  access: FileAccess,
+): Promise<ResolveFileToolPathResult> {
   const policy = getWorkspaceFsPolicy();
   const host = tryGetBinding();
   const mode = host?.getAgentMode?.() ?? "normal";
-  const first = policy.tryResolve(userPath, {
-    intent,
-    approvalMode: mode,
-    access,
-  });
+  const first = policy.tryResolveFileToolPath(userPath, access, mode);
   if (first.ok) {
     return first;
   }
-  if (!first.needsApproval || !first.mode || !first.targetPath || !first.approveDir) {
+  if (!first.approval) {
     return { ok: false, error: first.error };
   }
   if (!host) {
@@ -46,20 +38,16 @@ export async function resolveToolFsPath(
 
   const decision = await host.confirmTool({
     type: "fs_outside_access",
-    mode: first.mode,
-    targetPath: first.targetPath,
-    approveDir: first.approveDir,
+    access: first.approval.access,
+    targetPath: first.approval.targetPath,
+    grantRoot: first.approval.grantRoot,
   });
   if (decision.action !== "accept") {
-    return { ok: false, error: `Access outside workspace denied: ${first.targetPath}` };
+    return { ok: false, error: `Access outside workspace denied: ${first.approval.targetPath}` };
   }
 
-  policy.approveOutsideAccess(first.mode, first.approveDir);
-  const second = policy.tryResolve(userPath, {
-    intent,
-    approvalMode: mode,
-    access,
-  });
+  policy.approveExternalAccess(first.approval.access, first.approval.grantRoot);
+  const second = policy.tryResolveFileToolPath(userPath, access, mode);
   if (second.ok) {
     return second;
   }

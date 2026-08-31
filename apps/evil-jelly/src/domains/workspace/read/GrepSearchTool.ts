@@ -15,7 +15,7 @@ import {
   type WorkspaceDirEntry,
   type WorkspaceFsPolicy,
 } from "../../../shared/fs-policy/workspace-fs-policy";
-import { resolveToolFsPath } from "./outsideAccess";
+import { resolveFileToolPath } from "./outsideAccess";
 
 const MAX_FALLBACK_FILE_BYTES = 200 * 1024;
 const MAX_FALLBACK_FILES = 8000;
@@ -343,8 +343,7 @@ async function fallbackNodeSearch(
 
   const directory = options.directory ?? ".";
   const includeIgnored = options.includeIgnored ?? false;
-  const access = includeIgnored ? "scoped-discovery" : "discovery";
-  const resolved = await resolveToolFsPath(directory, "search", access);
+  const resolved = await resolveFileToolPath(directory, { kind: "scan", includeIgnored });
   if (!resolved.ok) {
     return `grep failed: ${resolved.error}`;
   }

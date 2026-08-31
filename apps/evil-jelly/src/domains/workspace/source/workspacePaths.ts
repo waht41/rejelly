@@ -76,7 +76,7 @@ export async function tryResolveRelativeImport(
   ];
   for (const trial of trials) {
     try {
-      const resolved = policy.tryResolve(trial, { intent: "read", access: "direct-read" });
+      const resolved = policy.tryResolveFileToolPath(trial, { kind: "read" }, "normal");
       if (!resolved.ok) {
         continue;
       }

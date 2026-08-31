@@ -344,7 +344,7 @@ describe("createDeleteFileTool", () => {
 
       expect(result).toContain("Deleted 1 target(s).");
       expect(outsideAccessRequests).toHaveLength(1);
-      expect(outsideAccessRequests[0]?.mode).toBe("write");
+      expect(outsideAccessRequests[0]?.access).toBe("write");
       expect(seenWrites).toHaveLength(1);
       expect(seenWrites[0]?.kind).toBe("delete");
       expect(existsSync(outsideFile)).toBe(false);
@@ -421,7 +421,7 @@ describe("createCreateFileTool", () => {
 
       expect(result).toBe(`Created ${outsideFile}.`);
       expect(outsideAccessRequests).toHaveLength(1);
-      expect(outsideAccessRequests[0]?.mode).toBe("write");
+      expect(outsideAccessRequests[0]?.access).toBe("write");
       expect(seenWrites).toHaveLength(1);
       expect(seenWrites[0]?.outsideWorkspace).toBe(true);
       expect(await readFile(outsideFile, "utf8")).toBe("export const outside = true\n");

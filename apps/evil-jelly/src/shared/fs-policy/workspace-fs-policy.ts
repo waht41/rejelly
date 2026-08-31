@@ -1,5 +1,6 @@
 /**
- * Workspace filesystem policy for agent tools: path jailing and hidden agent-only dirs.
+ * Agent filesystem policy anchored to a workspace root: path classification, protected content,
+ * traversal rules, and external-access grants.
  */
 
 import fs from "node:fs";
@@ -7,7 +8,12 @@ import fsPromises from "node:fs/promises";
 import path from "node:path";
 import ignore from "ignore";
 import { getErrnoCode } from "../foundation/errno";
-import { isPathInside, OutsideAccessRegistry, suggestOutsideApproveDir } from "./outside-access";
+import {
+  ExternalAccessRegistry,
+  type ExternalFileAccess,
+  isPathInside,
+  suggestOutsideApproveDir,
+} from "./outside-access";
 
 /**
  * Duck type for one directory entry from readdir (no dependency on node:fs.Dirent).
@@ -29,9 +35,13 @@ export interface WorkspaceWalkFilesOptions {
   includeFile?: (workspaceRelativePosix: string) => boolean;
 }
 
-export type FsIntent = "inside" | "read" | "search" | "write";
-export type FsApprovalMode = "normal" | "auto";
-export type FsAccessKind = "discovery" | "scoped-discovery" | "direct-read" | "direct-write";
+export type FileAccess =
+  | { kind: "read" }
+  | { kind: "scan"; includeIgnored?: boolean }
+  | { kind: "write" };
+
+type FsApprovalMode = "normal" | "auto";
+type FsAccessKind = "discovery" | "scoped-discovery" | "direct-read" | "direct-write";
 
 export type ResolvedFsPath = {
   abs: string;
@@ -45,22 +55,28 @@ export type FsResolveResult =
   | {
       ok: false;
       error: string;
-      needsApproval?: boolean;
-      mode?: Exclude<FsIntent, "inside">;
-      targetPath?: string;
-      approveDir?: string;
+      approval?: {
+        access: ExternalFileAccess;
+        targetPath: string;
+        grantRoot: string;
+      };
     };
 
-export type FsResolveOptions = {
-  intent?: FsIntent;
-  approvalMode?: FsApprovalMode;
-  /**
-   * Discovery respects `.gitignore` and bulky/tool directory exclusions. Scoped discovery accepts
-   * one explicitly bounded ignored subtree. Direct access accepts exact gitignored paths;
-   * dependency directories are read-only.
-   */
-  access?: FsAccessKind;
-};
+const DEFAULT_SCAN_ACCESS: FileAccess = { kind: "scan" };
+
+function toFsAccessKind(access: FileAccess): FsAccessKind {
+  if (access.kind === "read") {
+    return "direct-read";
+  }
+  if (access.kind === "write") {
+    return "direct-write";
+  }
+  return access.includeIgnored ? "scoped-discovery" : "discovery";
+}
+
+function toExternalFileAccess(access: FileAccess): ExternalFileAccess {
+  return access.kind;
+}
 
 /**
  * Directory name segments hidden from discovery. Protected names remain unavailable to scoped or
@@ -165,7 +181,7 @@ function isOutsideSensitive(absPath: string): boolean {
 export class WorkspaceFsPolicy {
   private readonly rootResolved: string;
   private readonly rootGitignore: ReturnType<typeof ignore>;
-  private readonly outsideAccess = new OutsideAccessRegistry();
+  private readonly externalAccess = new ExternalAccessRegistry();
 
   constructor(root: string) {
     this.rootResolved = path.resolve(root);
@@ -184,9 +200,9 @@ export class WorkspaceFsPolicy {
     return this.rootResolved;
   }
 
-  /** Grant outside-workspace access for a directory subtree (after user confirmation). */
-  approveOutsideAccess(mode: Exclude<FsIntent, "inside">, dirPath: string): void {
-    this.outsideAccess.approve(mode, dirPath);
+  /** Grant access to a directory subtree outside the workspace after user confirmation. */
+  approveExternalAccess(access: ExternalFileAccess, dirPath: string): void {
+    this.externalAccess.approve(access, dirPath);
   }
 
   /**
@@ -296,98 +312,116 @@ export class WorkspaceFsPolicy {
     return false;
   }
 
-  /**
-   * Internal: resolve a path relative to root and enforce jail policy.
-   */
-  resolvePath(relativePath: string, options: FsResolveOptions = {}): string {
-    const resolved = this.tryResolve(relativePath, options);
+  classifyPath(userPath: string): ResolvedFsPath {
+    const abs = path.resolve(this.rootResolved, userPath);
+    const rel = path.relative(this.rootResolved, abs);
+    const outside = rel.startsWith("..") || path.isAbsolute(rel);
+    const relNorm = path.normalize(rel.length === 0 ? "." : rel);
+    return {
+      abs,
+      rel: relNorm,
+      displayPath: outside ? abs : relNorm,
+      outside,
+    };
+  }
+
+  resolveWorkspacePath(userPath: string, access: FileAccess = DEFAULT_SCAN_ACCESS): string {
+    const resolved = this.tryResolveWorkspacePath(userPath, access);
     if (!resolved.ok) {
       throw new Error(resolved.error);
     }
     return resolved.abs;
   }
 
-  /**
-   * Same as resolvePath but returns a result type for tool handlers.
-   */
-  tryResolve(userPath: string, options: FsResolveOptions = {}): FsResolveResult {
+  tryResolveWorkspacePath(
+    userPath: string,
+    access: FileAccess = DEFAULT_SCAN_ACCESS,
+  ): FsResolveResult {
+    return this.tryResolvePath(userPath, access);
+  }
+
+  tryResolveFileToolPath(
+    userPath: string,
+    access: FileAccess,
+    approvalMode: FsApprovalMode,
+  ): FsResolveResult {
+    return this.tryResolvePath(userPath, access, toExternalFileAccess(access), approvalMode);
+  }
+
+  private tryResolvePath(
+    userPath: string,
+    fileAccess: FileAccess,
+    externalAccess?: ExternalFileAccess,
+    approvalMode: FsApprovalMode = "normal",
+  ): FsResolveResult {
     try {
-      const intent = options.intent ?? "inside";
-      const approvalMode = options.approvalMode ?? "normal";
-      const access = options.access ?? "discovery";
-      const abs = path.resolve(this.rootResolved, userPath);
-      const rel = path.relative(this.rootResolved, abs);
-      // Block path traversal and any escape outside workspace root.
-      if (rel.startsWith("..") || path.isAbsolute(rel)) {
-        const outsideRel = path.normalize(rel.length === 0 ? "." : rel);
-        if (intent === "inside") {
+      const resolved = this.classifyPath(userPath);
+      const access = toFsAccessKind(fileAccess);
+      if (resolved.outside) {
+        if (!externalAccess) {
           return {
             ok: false,
             error: "Access denied: Path traversal outside workspace root is not allowed.",
           };
         }
-        if (isOutsideSensitive(abs)) {
+        if (isOutsideSensitive(resolved.abs)) {
           return {
             ok: false,
-            error: sensitiveFileError(abs),
+            error: sensitiveFileError(resolved.abs),
           };
         }
-        if (intent === "read" && approvalMode === "auto") {
-          return { ok: true, abs, rel: outsideRel, displayPath: abs, outside: true };
+        if (externalAccess === "read" && approvalMode === "auto") {
+          return { ok: true, ...resolved };
         }
-        if (this.outsideAccess.has(intent, abs)) {
-          return { ok: true, abs, rel: outsideRel, displayPath: abs, outside: true };
+        if (this.externalAccess.has(externalAccess, resolved.abs)) {
+          return { ok: true, ...resolved };
         }
-        const approveDir = suggestOutsideApproveDir(abs);
         return {
           ok: false,
-          error: `Access outside workspace requires approval: ${abs}`,
-          needsApproval: true,
-          mode: intent,
-          targetPath: abs,
-          approveDir,
+          error: `Access outside workspace requires approval: ${resolved.abs}`,
+          approval: {
+            access: externalAccess,
+            targetPath: resolved.abs,
+            grantRoot: suggestOutsideApproveDir(resolved.abs),
+          },
         };
       }
-      const relNorm = path.normalize(rel.length === 0 ? "." : rel);
-      const fileName = path.basename(relNorm);
+      const fileName = path.basename(resolved.rel);
       if (fileName.length > 0 && isSensitiveFileName(fileName)) {
         return {
           ok: false,
-          error: sensitiveFileError(relNorm),
+          error: sensitiveFileError(resolved.rel),
         };
       }
-      if (this.isPathHidden(relNorm, access)) {
+      if (this.isPathHidden(resolved.rel, access)) {
         return {
           ok: false,
-          error: `Access denied: Path '${relNorm}' is hidden or ignored.`,
+          error: `Access denied: Path '${resolved.rel}' is hidden or ignored.`,
         };
       }
       if (
         (access === "direct-read" || access === "scoped-discovery") &&
-        relNorm.split(path.sep).includes(DEPENDENCY_DIR_NAME) &&
-        fs.existsSync(abs)
+        resolved.rel.split(path.sep).includes(DEPENDENCY_DIR_NAME) &&
+        fs.existsSync(resolved.abs)
       ) {
         const rootRealPath = fs.realpathSync.native(this.rootResolved);
-        const realPath = fs.realpathSync.native(abs);
+        const realPath = fs.realpathSync.native(resolved.abs);
         if (!isPathInside(rootRealPath, realPath)) {
           return {
             ok: false,
-            error: `Access denied: Dependency path '${relNorm}' resolves outside the workspace.`,
+            error: `Access denied: Dependency path '${resolved.rel}' resolves outside the workspace.`,
           };
         }
       }
-      return { ok: true, abs, rel: relNorm, displayPath: relNorm, outside: false };
+      return { ok: true, ...resolved };
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       return { ok: false, error: msg };
     }
   }
 
-  async readFile(relativePath: string, options: FsResolveOptions = {}): Promise<string> {
-    return fsPromises.readFile(
-      this.resolvePath(relativePath, { access: "direct-read", ...options }),
-      "utf-8",
-    );
+  async readFile(relativePath: string): Promise<string> {
+    return fsPromises.readFile(this.resolveWorkspacePath(relativePath, { kind: "read" }), "utf-8");
   }
 
   async readResolved(resolved: ResolvedFsPath): Promise<string> {
@@ -395,12 +429,12 @@ export class WorkspaceFsPolicy {
   }
 
   async readAstFile(relativePath: string): Promise<string> {
-    return this.readFile(relativePath, { access: "direct-read" });
+    return this.readFile(relativePath);
   }
 
   /** Read a file as raw bytes (for binary assets such as images). */
   async readBinaryFile(relativePath: string): Promise<Buffer> {
-    return fsPromises.readFile(this.resolvePath(relativePath, { access: "direct-read" }));
+    return fsPromises.readFile(this.resolveWorkspacePath(relativePath, { kind: "read" }));
   }
 
   async readResolvedBinary(resolved: ResolvedFsPath): Promise<Buffer> {
@@ -409,7 +443,7 @@ export class WorkspaceFsPolicy {
 
   async writeFile(relativePath: string, content: string): Promise<void> {
     await fsPromises.writeFile(
-      this.resolvePath(relativePath, { access: "direct-write" }),
+      this.resolveWorkspacePath(relativePath, { kind: "write" }),
       content,
       "utf-8",
     );
@@ -421,7 +455,7 @@ export class WorkspaceFsPolicy {
 
   async writeNewFile(relativePath: string, content: string): Promise<void> {
     await fsPromises.writeFile(
-      this.resolvePath(relativePath, { access: "direct-write" }),
+      this.resolveWorkspacePath(relativePath, { kind: "write" }),
       content,
       {
         encoding: "utf-8",
@@ -437,8 +471,8 @@ export class WorkspaceFsPolicy {
     });
   }
 
-  async stat(relativePath: string, options: FsResolveOptions = {}) {
-    return fsPromises.stat(this.resolvePath(relativePath, options));
+  async stat(relativePath: string, access: FileAccess = DEFAULT_SCAN_ACCESS) {
+    return fsPromises.stat(this.resolveWorkspacePath(relativePath, access));
   }
 
   async statResolved(resolved: ResolvedFsPath) {
@@ -449,7 +483,7 @@ export class WorkspaceFsPolicy {
     relativeDir: string,
     options: { withFileTypes: true },
   ): Promise<WorkspaceDirEntry[]> {
-    const raw = await fsPromises.readdir(this.resolvePath(relativeDir), options);
+    const raw = await fsPromises.readdir(this.resolveWorkspacePath(relativeDir), options);
     return raw.map((e) => ({
       name: e.name,
       isDirectory: () => e.isDirectory(),
@@ -554,7 +588,7 @@ export class WorkspaceFsPolicy {
       if (files.length >= maxFiles || visitedEntries >= maxEntries) {
         break;
       }
-      const resolved = this.tryResolve(root);
+      const resolved = this.tryResolveWorkspacePath(root);
       if (
         !resolved.ok ||
         resolved.outside ||
@@ -581,7 +615,7 @@ export class WorkspaceFsPolicy {
   }
 
   async mkdir(relativeDir: string, options?: { recursive?: boolean }): Promise<string | undefined> {
-    return fsPromises.mkdir(this.resolvePath(relativeDir, { access: "direct-write" }), options);
+    return fsPromises.mkdir(this.resolveWorkspacePath(relativeDir, { kind: "write" }), options);
   }
 
   async mkdirResolved(
@@ -592,7 +626,7 @@ export class WorkspaceFsPolicy {
   }
 
   async deleteEntry(relativePath: string): Promise<void> {
-    const resolved = this.tryResolve(relativePath, { access: "direct-write" });
+    const resolved = this.tryResolveWorkspacePath(relativePath, { kind: "write" });
     if (!resolved.ok) {
       throw new Error(resolved.error);
     }
@@ -611,7 +645,7 @@ export class WorkspaceFsPolicy {
 
   async pruneEmptyParentsInside(startRelativeDir: string): Promise<string[]> {
     const removed: string[] = [];
-    let current = this.resolvePath(startRelativeDir, { access: "direct-write" });
+    let current = this.resolveWorkspacePath(startRelativeDir, { kind: "write" });
 
     while (current !== this.rootResolved) {
       const relToRoot = path.relative(this.rootResolved, current);
@@ -620,7 +654,7 @@ export class WorkspaceFsPolicy {
       }
 
       const relNorm = path.normalize(relToRoot);
-      const currentAbs = this.resolvePath(relNorm, { access: "direct-write" });
+      const currentAbs = this.resolveWorkspacePath(relNorm, { kind: "write" });
 
       try {
         const entries = await fsPromises.readdir(currentAbs);

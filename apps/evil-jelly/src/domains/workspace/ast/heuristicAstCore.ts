@@ -30,7 +30,7 @@ export async function readBoundedSource(
 ): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
   const policy = getWorkspaceFsPolicy();
   try {
-    const resolved = policy.tryResolve(filePath, { intent: "read", access: "direct-read" });
+    const resolved = policy.tryResolveFileToolPath(filePath, { kind: "read" }, "normal");
     if (!resolved.ok) {
       return { ok: false, error: resolved.error };
     }

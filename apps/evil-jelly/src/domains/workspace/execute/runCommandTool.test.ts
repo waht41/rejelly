@@ -52,7 +52,7 @@ describe("RunCommandTool cwd policy", () => {
     await fs.rm(outsideDir, { recursive: true, force: true });
   });
 
-  it("confirms an outside cwd and executes there", async () => {
+  it("leaves outside cwd authorization to the shell confirmation", async () => {
     const outsideAccessRequests: FsOutsideAccessPayload[] = [];
     hostBindingMock.current = createTestHostBindings({ mode: "normal", outsideAccessRequests });
 
@@ -63,7 +63,7 @@ describe("RunCommandTool cwd policy", () => {
       reason: "test outside cwd",
     });
 
-    expect(outsideAccessRequests).toHaveLength(1);
+    expect(outsideAccessRequests).toHaveLength(0);
     expect(executeShellCommandMock).toHaveBeenCalledWith(
       expect.objectContaining({ command: "example", cwd: outsideDir }),
       undefined,

@@ -90,7 +90,7 @@ describe("FuzzySearchTool", () => {
       const result = await FuzzySearchTool.handler(args);
 
       expect(outsideAccessRequests).toHaveLength(1);
-      expect(outsideAccessRequests[0]?.mode).toBe("search");
+      expect(outsideAccessRequests[0]?.access).toBe("scan");
       expect(result).toContain(outsideFile.replace(/\\/g, "/"));
     } finally {
       await fs.rm(outsideDir, { recursive: true, force: true });

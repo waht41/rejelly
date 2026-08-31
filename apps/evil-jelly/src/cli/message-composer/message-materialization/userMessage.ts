@@ -39,7 +39,7 @@ async function materializeFile(
   budget: FileMaterializationBudget,
 ): Promise<MaterializedFile> {
   const policy = getWorkspaceFsPolicy();
-  const resolved = policy.tryResolve(attachment.path);
+  const resolved = policy.tryResolveWorkspacePath(attachment.path);
   if (!resolved.ok) {
     return {
       context: renderPseudoXmlElement("attached_path", `Error: ${resolved.error}`, {

@@ -13,7 +13,7 @@ import {
   type WorkspaceDirEntry,
   type WorkspaceFsPolicy,
 } from "../../../shared/fs-policy/workspace-fs-policy";
-import { resolveToolFsPath } from "./outsideAccess";
+import { resolveFileToolPath } from "./outsideAccess";
 
 /** Hard cap on collected file paths to bound work on huge trees. */
 const MAX_COLLECT = 200_000;
@@ -261,8 +261,7 @@ async function resolveSearchDirectory(
   directory: string,
   includeIgnored: boolean,
 ): Promise<ResolvedSearchDirectory> {
-  const access = includeIgnored ? "scoped-discovery" : "discovery";
-  const resolved = await resolveToolFsPath(directory, "search", access);
+  const resolved = await resolveFileToolPath(directory, { kind: "scan", includeIgnored });
   if (!resolved.ok) {
     throw new Error(resolved.error);
   }
@@ -330,7 +329,7 @@ async function exactDirectoryCandidate(keyword: string): Promise<string | null> 
   if (normalized === ".") {
     return null;
   }
-  const resolved = policy.tryResolve(normalized);
+  const resolved = policy.tryResolveWorkspacePath(normalized);
   if (!resolved.ok) {
     return null;
   }

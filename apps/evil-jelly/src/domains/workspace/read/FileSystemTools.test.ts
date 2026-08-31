@@ -282,7 +282,7 @@ describe("ReadFileTool", () => {
       const output = await ReadFileTool.handler({ filePaths: [outsideFile] });
 
       expect(outsideAccessRequests).toHaveLength(1);
-      expect(outsideAccessRequests[0]?.mode).toBe("read");
+      expect(outsideAccessRequests[0]?.access).toBe("read");
       expect(output).toContain(
         `<file path="${outsideFile.replace(/\\/g, "/")}" path-scope="absolute">`,
       );

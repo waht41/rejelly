@@ -18,7 +18,7 @@ import type {
   WriteActionType,
 } from "../../../shared/host/toolConfirmationBindings";
 import { MAX_READ_BYTES_PER_CALL } from "../read/FileSystemTools";
-import { resolveToolFsPath } from "../read/outsideAccess";
+import { resolveFileToolPath } from "../read/outsideAccess";
 import { applyBlockEdits } from "./blockReplace";
 import { createTwoFilesPatch } from "./unifiedDiff";
 
@@ -209,7 +209,7 @@ export function createEditFileTool(
       }
 
       for (const { filePath: normalizedPath, edits } of mergedTargets) {
-        const resolved = await resolveToolFsPath(normalizedPath, "write", "direct-write");
+        const resolved = await resolveFileToolPath(normalizedPath, { kind: "write" });
         if (!resolved.ok) {
           return resolved.error;
         }
@@ -330,7 +330,7 @@ export function createCreateFileTool(
         }
         seenPaths.add(normalizedPath);
 
-        const resolved = await resolveToolFsPath(normalizedPath, "write", "direct-write");
+        const resolved = await resolveFileToolPath(normalizedPath, { kind: "write" });
         if (!resolved.ok) {
           return resolved.error;
         }
@@ -462,7 +462,7 @@ export function createDeleteFileTool(
         }
         seenPaths.add(normalizedPath);
 
-        const resolved = await resolveToolFsPath(normalizedPath, "write", "direct-write");
+        const resolved = await resolveFileToolPath(normalizedPath, { kind: "write" });
         if (!resolved.ok) {
           return resolved.error;
         }

@@ -289,7 +289,7 @@ describe("GrepSearchTool Node fallback context merge", () => {
       });
 
       expect(outsideAccessRequests).toHaveLength(1);
-      expect(outsideAccessRequests[0]?.mode).toBe("search");
+      expect(outsideAccessRequests[0]?.access).toBe("scan");
       expect(out).toContain(`${outsideFile}:1:export const externalNeedle = true;`);
     } finally {
       await fs.rm(outsideDir, { recursive: true, force: true });

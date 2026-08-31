@@ -1,3 +1,5 @@
+import type { ExternalFileAccess } from "../fs-policy/outside-access";
+
 /** Semantic actions the host may surface for a proposed filesystem write. */
 export type WriteActionType = "accept" | "reject" | "edit" | "retry";
 
@@ -18,9 +20,9 @@ export interface FsWritePayload {
 
 export interface FsOutsideAccessPayload {
   type: "fs_outside_access";
-  mode: "read" | "search" | "write";
+  access: ExternalFileAccess;
   targetPath: string;
-  approveDir: string;
+  grantRoot: string;
 }
 
 export interface ShellCommandPayload {

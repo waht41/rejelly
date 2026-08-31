@@ -143,7 +143,7 @@ describe("heuristic AST document symbol extensions", () => {
       const parsed = JSON.parse(raw) as { matches: Array<{ file: string; name: string }> };
 
       expect(outsideAccessRequests).toHaveLength(1);
-      expect(outsideAccessRequests[0]?.mode).toBe("search");
+      expect(outsideAccessRequests[0]?.access).toBe("scan");
       expect(parsed.matches).toEqual([
         expect.objectContaining({
           file: path.join(outsideDir, "external.ts").replace(/\\/g, "/"),

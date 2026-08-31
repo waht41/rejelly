@@ -19,7 +19,7 @@ import {
   type PseudoXmlAttributes,
   renderPseudoXmlElement,
 } from "../../../shared/model/prompt/pseudoXml";
-import { resolveToolFsPath } from "./outsideAccess";
+import { resolveFileToolPath } from "./outsideAccess";
 
 /** Hard guards to keep tool output compact and predictable. */
 export const MAX_READ_BYTES_PER_CALL = 100 * 1024;
@@ -108,11 +108,7 @@ export const ListDirTool: ToolDefinition<typeof listDirParameters> = {
   parameters: listDirParameters,
   handler: async ({ dirPath, depth, includeIgnored }) => {
     const policy = getWorkspaceFsPolicy();
-    const resolved = await resolveToolFsPath(
-      dirPath,
-      "search",
-      includeIgnored ? "scoped-discovery" : "discovery",
-    );
+    const resolved = await resolveFileToolPath(dirPath, { kind: "scan", includeIgnored });
     if (!resolved.ok) {
       return resolved.error;
     }
@@ -319,7 +315,7 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
     for (const entry of filePaths) {
       const { path: filePath, offset, limit } = typeof entry === "string" ? { path: entry } : entry;
       const hasRange = offset !== undefined || limit !== undefined;
-      const resolved = await resolveToolFsPath(filePath, "read", "direct-read");
+      const resolved = await resolveFileToolPath(filePath, { kind: "read" });
       if (!resolved.ok) {
         results.push(renderReadFileError(filePath, `Error: ${resolved.error}`));
         continue;

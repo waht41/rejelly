@@ -9,7 +9,6 @@ import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-pol
 import { getBinding } from "../../../shared/host/context";
 import { registerInterruptibleTask } from "../../../shared/task-interruption/taskStack";
 import { getActiveToolCall } from "../../../shared/tool-observation/invocationContext";
-import { resolveToolFsPath } from "../read/outsideAccess";
 import { executeShellCommand, getShellEnvironmentSummary } from "./executeShellCommand";
 
 const runCommandParameters = z.object({
@@ -72,10 +71,7 @@ export const RunCommandTool: ToolDefinition<typeof runCommandParameters> = {
   parameters: runCommandParameters,
   handler: async ({ command, cwd, declaredSafety, reason }) => {
     const policy = getWorkspaceFsPolicy();
-    const resolvedCwdPath = await resolveToolFsPath(cwd ?? ".", "read", "direct-read");
-    if (!resolvedCwdPath.ok) {
-      return resolvedCwdPath.error;
-    }
+    const resolvedCwdPath = policy.classifyPath(cwd ?? ".");
     try {
       const stat = await policy.statResolved(resolvedCwdPath);
       if (!stat.isDirectory()) {

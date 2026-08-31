@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export type OutsideAccessMode = "read" | "search" | "write";
+export type ExternalFileAccess = "read" | "scan" | "write";
 
 function normalizeAccessPath(value: string): string {
   const resolved = path.resolve(value);
@@ -34,25 +34,25 @@ export function suggestOutsideApproveDir(targetPath: string): string {
  * Approved outside-workspace directories. Owned by a WorkspaceFsPolicy instance, so approvals
  * are scoped to one workspace root and vanish when the root is replaced.
  */
-export class OutsideAccessRegistry {
+export class ExternalAccessRegistry {
   private readonly approvedReadDirs = new Set<string>();
-  private readonly approvedSearchDirs = new Set<string>();
+  private readonly approvedScanDirs = new Set<string>();
   private readonly approvedWriteDirs = new Set<string>();
 
-  has(mode: OutsideAccessMode, targetPath: string): boolean {
+  has(access: ExternalFileAccess, targetPath: string): boolean {
     const dirs =
-      mode === "write"
+      access === "write"
         ? this.approvedWriteDirs
-        : mode === "search"
-          ? this.approvedSearchDirs
+        : access === "scan"
+          ? this.approvedScanDirs
           : this.approvedReadDirs;
     for (const dir of dirs) {
       if (isPathInside(dir, targetPath)) {
         return true;
       }
     }
-    if (mode === "read") {
-      for (const dir of this.approvedSearchDirs) {
+    if (access === "read") {
+      for (const dir of this.approvedScanDirs) {
         if (isPathInside(dir, targetPath)) {
           return true;
         }
@@ -66,16 +66,15 @@ export class OutsideAccessRegistry {
     return false;
   }
 
-  approve(mode: OutsideAccessMode, dirPath: string): void {
+  approve(access: ExternalFileAccess, dirPath: string): void {
     const normalized = normalizeAccessPath(dirPath);
-    if (mode === "write") {
+    if (access === "write") {
       this.approvedWriteDirs.add(normalized);
-      this.approvedSearchDirs.add(normalized);
       this.approvedReadDirs.add(normalized);
       return;
     }
-    if (mode === "search") {
-      this.approvedSearchDirs.add(normalized);
+    if (access === "scan") {
+      this.approvedScanDirs.add(normalized);
       this.approvedReadDirs.add(normalized);
       return;
     }

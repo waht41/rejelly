@@ -64,7 +64,7 @@ function createStubHostBindings(
           );
         } else if (params.type === "fs_outside_access") {
           console.log(
-            `[${logPrefix}] tool approval auto-accept: outside ${params.mode} ${params.targetPath}`,
+            `[${logPrefix}] tool approval auto-accept: outside ${params.access} ${params.targetPath}`,
           );
         } else if (params.type === "shell_command") {
           console.log(`[${logPrefix}] tool approval auto-accept: shell ${params.command}`);
@@ -89,7 +89,7 @@ function createStubHostBindings(
         console.warn(`[${logPrefix}] tool approval auto-reject: ${params.kind} ${params.filePath}`);
       } else if (params.type === "fs_outside_access") {
         console.warn(
-          `[${logPrefix}] tool approval auto-reject: outside ${params.mode} ${params.targetPath}`,
+          `[${logPrefix}] tool approval auto-reject: outside ${params.access} ${params.targetPath}`,
         );
       } else if (params.type === "shell_command") {
         console.warn(`[${logPrefix}] tool approval auto-reject: shell ${params.command}`);
