@@ -25,13 +25,18 @@ const helperSourcePath = fileURLToPath(
 );
 const packageRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 const MESSAGE_TIMEOUT_MS = 10_000;
-const SUBPROCESS_TEST_TIMEOUT_MS = 20_000;
+// Starting a fresh Node process can be delayed when the full Windows test suite saturates the
+// machine. Keep that scheduling budget separate from ordinary IPC, which should remain fast once
+// the helper has announced readiness.
+const PROCESS_START_TIMEOUT_MS = 30_000;
+const SUBPROCESS_TEST_TIMEOUT_MS = 75_000;
 let helperBundleDir = "";
 let helperPath = "";
 
 interface TrackedChild {
   process: ChildProcess;
   output: () => string;
+  messages: ChildMessage[];
 }
 
 function spawnHelper(
@@ -50,35 +55,56 @@ function spawnHelper(
   );
   let stdout = "";
   let stderr = "";
+  const messages: ChildMessage[] = [];
   child.stdout?.on("data", (chunk) => {
     stdout += chunk.toString();
   });
   child.stderr?.on("data", (chunk) => {
     stderr += chunk.toString();
   });
+  // Register this immediately after spawn so a fast helper cannot publish readiness before the
+  // test installs its type-specific waiter.
+  child.on("message", (message: ChildMessage) => {
+    messages.push(message);
+  });
   return {
     process: child,
     output: () => `stdout:\n${stdout}\nstderr:\n${stderr}`,
+    messages,
   };
 }
 
 function waitForMessage<T extends ChildMessage["type"]>(
   child: TrackedChild,
   type: T,
+  timeoutMs = MESSAGE_TIMEOUT_MS,
 ): Promise<Extract<ChildMessage, { type: T }>> {
   return new Promise((resolve, reject) => {
+    function consumeMessage(): boolean {
+      const errorIndex = child.messages.findIndex((message) => message.type === "error");
+      if (errorIndex >= 0) {
+        const [message] = child.messages.splice(errorIndex, 1);
+        if (message?.type === "error") {
+          cleanup();
+          reject(new Error(`${message.message}\n${message.stack ?? ""}\n${child.output()}`));
+          return true;
+        }
+      }
+      const messageIndex = child.messages.findIndex((message) => message.type === type);
+      if (messageIndex < 0) {
+        return false;
+      }
+      const [message] = child.messages.splice(messageIndex, 1);
+      cleanup();
+      resolve(message as Extract<ChildMessage, { type: T }>);
+      return true;
+    }
     const timer = setTimeout(() => {
       cleanup();
       reject(new Error(`Timed out waiting for ${type}\n${child.output()}`));
-    }, MESSAGE_TIMEOUT_MS);
-    function onMessage(message: ChildMessage) {
-      if (message?.type === "error") {
-        cleanup();
-        reject(new Error(`${message.message}\n${message.stack ?? ""}\n${child.output()}`));
-      } else if (message?.type === type) {
-        cleanup();
-        resolve(message as Extract<ChildMessage, { type: T }>);
-      }
+    }, timeoutMs);
+    function onMessage() {
+      consumeMessage();
     }
     function onExit(code: number | null, signal: NodeJS.Signals | null) {
       cleanup();
@@ -88,13 +114,22 @@ function waitForMessage<T extends ChildMessage["type"]>(
         ),
       );
     }
+    function onError(error: Error) {
+      cleanup();
+      reject(
+        new Error(`Failed to start child before ${type}: ${error.message}\n${child.output()}`),
+      );
+    }
     function cleanup() {
       clearTimeout(timer);
       child.process.off("message", onMessage);
       child.process.off("exit", onExit);
+      child.process.off("error", onError);
     }
     child.process.on("message", onMessage);
     child.process.on("exit", onExit);
+    child.process.on("error", onError);
+    consumeMessage();
   });
 }
 
@@ -185,7 +220,7 @@ describe("session subprocess persistence", () => {
     async () => {
       const sessionId = "killed-writer";
       const child = start("hold-writer", sessionId);
-      await waitForMessage(child, "writer-ready");
+      await waitForMessage(child, "writer-ready", PROCESS_START_TIMEOUT_MS);
 
       const meta = createSessionMetaLine({
         sessionId,
@@ -252,13 +287,13 @@ describe("session subprocess persistence", () => {
       const legacyBytes = JSON.stringify(legacy);
       await fs.writeFile(legacyPath, legacyBytes);
 
-      // Serialize loader startup, not migration. Both children remain behind the explicit start
+      // Serialize helper startup, not migration. Both children remain behind the explicit start
       // gate, so sending both start messages below still exercises the real publish race without
-      // making simultaneous TSX compilation part of what this persistence test measures.
+      // making process scheduling contention part of what this persistence test measures.
       const first = start("migrate", sessionId);
-      await waitForMessage(first, "migration-ready");
+      await waitForMessage(first, "migration-ready", PROCESS_START_TIMEOUT_MS);
       const second = start("migrate", sessionId);
-      await waitForMessage(second, "migration-ready");
+      await waitForMessage(second, "migration-ready", PROCESS_START_TIMEOUT_MS);
       const firstResult = waitForMessage(first, "migration-result");
       const secondResult = waitForMessage(second, "migration-result");
       first.process.send?.({ type: "start" });

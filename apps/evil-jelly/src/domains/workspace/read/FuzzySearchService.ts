@@ -13,6 +13,7 @@ import {
   type WorkspaceDirEntry,
   type WorkspaceFsPolicy,
 } from "../../../shared/fs-policy/workspace-fs-policy";
+import { resolveToolFsPath } from "./outsideAccess";
 
 /** Hard cap on collected file paths to bound work on huge trees. */
 const MAX_COLLECT = 200_000;
@@ -205,7 +206,7 @@ async function nodeWalkFiles(
         await visit({ ...child, relPosix: toGitignorePath(child.rel), mtimeMs: 0 });
         continue;
       }
-      out.push(toGitignorePath(child.rel));
+      out.push(toGitignorePath(child.outside ? child.displayPath : child.rel));
     }
   }
 
@@ -218,7 +219,7 @@ async function nodeWalkFiles(
 // ---------------------------------------------------------------------------
 
 export interface FuzzyMatch {
-  /** Workspace-relative path (posix). */
+  /** Workspace-relative path for workspace hits; absolute path for approved outside hits. */
   path: string;
   /** Internal ranking score (higher = better match). */
   score: number;
@@ -260,9 +261,8 @@ async function resolveSearchDirectory(
   directory: string,
   includeIgnored: boolean,
 ): Promise<ResolvedSearchDirectory> {
-  const resolved = policy.tryResolve(directory, {
-    access: includeIgnored ? "scoped-discovery" : "discovery",
-  });
+  const access = includeIgnored ? "scoped-discovery" : "discovery";
+  const resolved = await resolveToolFsPath(directory, "search", access);
   if (!resolved.ok) {
     throw new Error(resolved.error);
   }
@@ -299,11 +299,12 @@ async function getCandidateFiles(
     return cached.candidates;
   }
 
-  const candidates = includeIgnored
-    ? await nodeWalkFiles(policy, resolved, true)
-    : (rgListFiles(resolved.relPosix) ??
-      gitListFiles(resolved.relPosix) ??
-      (await nodeWalkFiles(policy, resolved, false)));
+  const candidates =
+    includeIgnored || resolved.outside
+      ? await nodeWalkFiles(policy, resolved, includeIgnored)
+      : (rgListFiles(resolved.relPosix) ??
+        gitListFiles(resolved.relPosix) ??
+        (await nodeWalkFiles(policy, resolved, false)));
   candidateCache.set(cacheKey, { mtimeMs: resolved.mtimeMs, candidates });
   return candidates;
 }

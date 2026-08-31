@@ -18,7 +18,7 @@ export interface FsWritePayload {
 
 export interface FsOutsideAccessPayload {
   type: "fs_outside_access";
-  mode: "read" | "write";
+  mode: "read" | "search" | "write";
   targetPath: string;
   approveDir: string;
 }

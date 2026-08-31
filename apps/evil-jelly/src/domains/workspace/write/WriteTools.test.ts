@@ -318,6 +318,42 @@ describe("createDeleteFileTool", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("requires outside access and delete diff confirmation for an outside target", async () => {
+    const dir = createTempWorkspace();
+    const outsideDir = mkdtempSync(join(tmpdir(), "evil-jelly-outside-delete-"));
+    const outsideFile = join(outsideDir, "obsolete.ts");
+    try {
+      writeFileSync(outsideFile, "export const obsolete = true\n", "utf8");
+      setWorkspaceRoot(dir);
+      const outsideAccessRequests: FsOutsideAccessPayload[] = [];
+      hostBindingMock.current = createTestHostBindings({
+        mode: "normal",
+        outsideAccessRequests,
+      });
+      const seenWrites: FsWritePayload[] = [];
+      const tool = createDeleteFileTool(async (params) => {
+        if (params.type !== "fs_write") {
+          throw new Error(`Unexpected payload type: ${params.type}`);
+        }
+        seenWrites.push(params);
+        return { action: "accept" };
+      });
+
+      const result = await tool.handler({ targetPaths: [outsideFile] });
+
+      expect(result).toContain("Deleted 1 target(s).");
+      expect(outsideAccessRequests).toHaveLength(1);
+      expect(outsideAccessRequests[0]?.mode).toBe("write");
+      expect(seenWrites).toHaveLength(1);
+      expect(seenWrites[0]?.kind).toBe("delete");
+      expect(existsSync(outsideFile)).toBe(false);
+      expect(existsSync(outsideDir)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("createCreateFileTool", () => {

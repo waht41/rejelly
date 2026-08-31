@@ -15,6 +15,7 @@ import {
   type WorkspaceDirEntry,
   type WorkspaceFsPolicy,
 } from "../../../shared/fs-policy/workspace-fs-policy";
+import { resolveToolFsPath } from "./outsideAccess";
 
 const MAX_FALLBACK_FILE_BYTES = 200 * 1024;
 const MAX_FALLBACK_FILES = 8000;
@@ -44,7 +45,7 @@ const GrepSearchSchema = z.object({
   directory: z
     .string()
     .default(".")
-    .describe("Workspace-relative directory to search. Defaults to the workspace root."),
+    .describe("Directory to search. Relative paths resolve from the workspace."),
   includeIgnored: z
     .boolean()
     .default(false)
@@ -264,9 +265,9 @@ async function collectFiles(
   policy: WorkspaceFsPolicy,
   directory: ResolvedFsPath,
   includeIgnored: boolean,
-  fileList: string[] = [],
+  fileList: ResolvedFsPath[] = [],
   state: { visitedEntries: number } = { visitedEntries: 0 },
-): Promise<string[]> {
+): Promise<ResolvedFsPath[]> {
   if (
     fileList.length >= MAX_FALLBACK_FILES ||
     (includeIgnored && state.visitedEntries >= MAX_SCOPED_IGNORED_ENTRIES)
@@ -299,7 +300,7 @@ async function collectFiles(
       await collectFiles(policy, child, includeIgnored, fileList, state);
       continue;
     }
-    fileList.push(child.rel);
+    fileList.push(child);
   }
   return fileList;
 }
@@ -342,9 +343,8 @@ async function fallbackNodeSearch(
 
   const directory = options.directory ?? ".";
   const includeIgnored = options.includeIgnored ?? false;
-  const resolved = policy.tryResolve(directory, {
-    access: includeIgnored ? "scoped-discovery" : "discovery",
-  });
+  const access = includeIgnored ? "scoped-discovery" : "discovery";
+  const resolved = await resolveToolFsPath(directory, "search", access);
   if (!resolved.ok) {
     return `grep failed: ${resolved.error}`;
   }
@@ -368,18 +368,12 @@ async function fallbackNodeSearch(
   const linesOut: string[] = [];
   const normalizedContextLines = clampContextLines(contextLines);
 
-  for (const fileRel of allFiles) {
-    if (!matchGlob(fileRel, filePattern)) {
+  for (const file of allFiles) {
+    if (!matchGlob(file.rel, filePattern)) {
       continue;
     }
     let content: string;
     try {
-      const file = policy.tryResolve(fileRel, {
-        access: includeIgnored ? "scoped-discovery" : "discovery",
-      });
-      if (!file.ok) {
-        continue;
-      }
       const stat = await policy.statResolved(file);
       if (stat.size > MAX_FALLBACK_FILE_BYTES) {
         continue;
@@ -388,7 +382,7 @@ async function fallbackNodeSearch(
     } catch {
       continue;
     }
-    const rel = fileRel;
+    const displayPath = file.displayPath;
     const lines = content.split(/\r?\n/);
     const matchedLineIndexes = new Set<number>();
     const contextLineIndexes = new Set<number>();
@@ -415,9 +409,9 @@ async function fallbackNodeSearch(
         linesOut.push("--");
       }
       if (matchedLineIndexes.has(idx)) {
-        linesOut.push(`${rel}:${idx + 1}:${lines[idx]}`);
+        linesOut.push(`${displayPath}:${idx + 1}:${lines[idx]}`);
       } else {
-        linesOut.push(`${rel}-${idx + 1}-${lines[idx]}`);
+        linesOut.push(`${displayPath}-${idx + 1}-${lines[idx]}`);
       }
       prev = idx;
       if (linesOut.length >= TRUNCATE_MAX_LINES) {
@@ -465,7 +459,7 @@ export async function executeGrepSearch(
 export const GrepSearchTool: ToolDefinition<typeof GrepSearchSchema> = {
   name: "grep",
   description:
-    "Search the codebase for text or regex patterns (like grep/ripgrep) to find usages and definitions. " +
+    "Search files for text or regex patterns (like grep/ripgrep) to find usages and definitions. " +
     "Skips node_modules and .git. Uses ripgrep when available, then git grep if rg is missing, then a bounded Node scan only if both native tools are unavailable. " +
     "Native tools mostly respect .gitignore; git grep expands trailing `*.{ext,...}` style globs into multiple pathspecs. " +
     "Use directory plus includeIgnored for a bounded ignored-subtree search; node_modules requires a concrete package path. " +

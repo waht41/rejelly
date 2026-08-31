@@ -17,7 +17,7 @@ import {
 
 export const astGetFunctionDependenciesParameters = z.object({
   symbolName: z.string().min(1).describe("Target function or method name."),
-  filePath: z.string().min(1).describe("Workspace-relative path containing that callable."),
+  filePath: z.string().min(1).describe("Path containing that callable."),
   depth: z
     .number()
     .int()

@@ -113,6 +113,32 @@ describe("WorkspaceFsPolicy workspace root", () => {
     }
   });
 
+  it("keeps outside file-read and recursive-search approvals distinct", () => {
+    const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
+    const outsideDir = path.resolve(root, "../shared-zone");
+    const outsideFile = path.join(outsideDir, "README.md");
+    const policy = new WorkspaceFsPolicy(root);
+
+    policy.approveOutsideAccess("read", outsideDir);
+    const searchAfterRead = policy.tryResolve(outsideDir, {
+      intent: "search",
+      approvalMode: "normal",
+    });
+    expect(searchAfterRead.ok).toBe(false);
+
+    policy.approveOutsideAccess("search", outsideDir);
+    const search = policy.tryResolve(outsideDir, {
+      intent: "search",
+      approvalMode: "normal",
+    });
+    const readAfterSearch = policy.tryResolve(outsideFile, {
+      intent: "read",
+      approvalMode: "normal",
+    });
+    expect(search.ok).toBe(true);
+    expect(readAfterSearch.ok).toBe(true);
+  });
+
   it("keeps hidden directories out of discovery", () => {
     const policy = createPolicy();
     const hiddenGit = policy.tryResolve(".git/config");

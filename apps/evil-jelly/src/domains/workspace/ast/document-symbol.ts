@@ -17,13 +17,11 @@ import { collectMatchingDeclarations, getParsedAst, MAX_JSDOC_CHARS, truncateJso
 export const astDocumentSymbolsParameters = z.object({
   filePath: z
     .union([z.string().min(1), z.array(z.string().min(1)).min(1)])
-    .describe(
-      "Workspace-relative path to one JS/TS file, or a non-empty array of paths (batched outline).",
-    ),
+    .describe("Path to one JS/TS file, or a non-empty array of paths."),
 });
 
 export const astReadSymbolParameters = z.object({
-  filePath: z.string().min(1).describe("Workspace-relative path to a JS/TS file."),
+  filePath: z.string().min(1).describe("Path to a JS/TS file."),
   symbolName: z
     .union([z.string().min(1), z.array(z.string().min(1)).min(1)])
     .describe("Exact declaration name(s): function, class, const, method, type, etc."),
@@ -36,6 +34,11 @@ export const astReadSymbolParameters = z.object({
 
 export const astWorkspaceSymbolsParameters = z.object({
   queryName: z.string().min(1).describe("Exact symbol name to match against declarations."),
+  roots: z
+    .array(z.string().min(1))
+    .min(1)
+    .optional()
+    .describe("Optional files or directory roots to scan. Defaults to the workspace."),
   caseInsensitive: z
     .boolean()
     .optional()
@@ -44,7 +47,7 @@ export const astWorkspaceSymbolsParameters = z.object({
 });
 
 export const astReadSymbolCodeParameters = z.object({
-  filePath: z.string().min(1).describe("Workspace-relative path to a JS/TS file."),
+  filePath: z.string().min(1).describe("Path to a JS/TS file."),
   symbolName: z
     .union([z.string().min(1), z.array(z.string().min(1)).min(1)])
     .describe("Exact declaration name(s) to extract code blocks from."),
@@ -56,7 +59,7 @@ export const astReadSymbolCodeParameters = z.object({
 });
 
 export const astModuleExportsParameters = z.object({
-  filePath: z.string().min(1).describe("Workspace-relative path to a JS/TS module."),
+  filePath: z.string().min(1).describe("Path to a JS/TS module."),
 });
 
 type AstDocumentSymbolsArgs = z.infer<typeof astDocumentSymbolsParameters>;
@@ -294,10 +297,17 @@ export async function astReadSymbolService(args: AstReadSymbolArgs): Promise<str
 }
 
 export async function astWorkspaceSymbolsService(args: AstWorkspaceSymbolsArgs): Promise<string> {
-  const { queryName, caseInsensitive } = args;
-  const hits = await collectMatchingDeclarations(queryName, caseInsensitive);
+  const { queryName, caseInsensitive, roots } = args;
+  let hits: Awaited<ReturnType<typeof collectMatchingDeclarations>>;
+  try {
+    hits = await collectMatchingDeclarations(queryName, caseInsensitive, roots);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return `AST workspace scan failed: ${message}`;
+  }
   return truncateJson({
     queryName,
+    roots: roots ?? ["."],
     matches: hits,
     truncated: hits.length >= MAX_HEURISTIC_RESULTS,
   });
@@ -471,7 +481,8 @@ export const AstReadSymbolTool: ToolDefinition<typeof astReadSymbolParameters> =
 export const AstWorkspaceSymbolsTool: ToolDefinition<typeof astWorkspaceSymbolsParameters> = {
   name: "ast_workspace_symbols",
   description:
-    "Search the workspace for declarations (class, function, interface, type, enum, method, variable) whose name matches queryName. " +
+    "Search files for declarations (class, function, interface, type, enum, method, variable) whose name matches queryName. " +
+    "Pass roots to search selected files or directories. " +
     "Heuristic only — no type-aware binding; multiple hits are common.",
   parameters: astWorkspaceSymbolsParameters,
   handler: async (args) => astWorkspaceSymbolsService(args),

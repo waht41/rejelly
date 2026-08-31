@@ -1,13 +1,29 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getWorkspaceFsPolicy,
   setWorkspaceRoot,
 } from "../../../shared/fs-policy/workspace-fs-policy";
+import type { EvilJellyBindings } from "../../../shared/host/bindings";
+import type { FsOutsideAccessPayload } from "../../../shared/host/toolConfirmationBindings";
+import { createTestHostBindings } from "../__tests__/testHostBindings";
 import { resetFuzzySearchCache } from "./FuzzySearchService";
 import { FuzzySearchTool } from "./FuzzySearchTool";
+
+const hostBindingMock = vi.hoisted(() => ({
+  current: null as EvilJellyBindings | null,
+}));
+
+vi.mock("../../../shared/host/context", () => ({
+  getBinding: () => {
+    if (!hostBindingMock.current) {
+      throw new Error("No test host binding registered.");
+    }
+    return hostBindingMock.current;
+  },
+}));
 
 describe("FuzzySearchTool", () => {
   let previousRoot: string;
@@ -23,6 +39,7 @@ describe("FuzzySearchTool", () => {
   });
 
   afterEach(async () => {
+    hostBindingMock.current = null;
     setWorkspaceRoot(previousRoot);
     resetFuzzySearchCache();
     await fs.rm(workspace, { recursive: true, force: true });
@@ -57,15 +74,27 @@ describe("FuzzySearchTool", () => {
     expect(result).toContain("FuzzyMatchMe.ts");
   });
 
-  it("rejects paths outside workspace", async () => {
+  it("confirms and searches paths outside the workspace", async () => {
+    const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), "evil-jelly-outside-fuzzy-"));
+    const outsideFile = path.join(outsideDir, "ExternalReport.md");
+    await fs.writeFile(outsideFile, "# outside\n", "utf8");
+    const outsideAccessRequests: FsOutsideAccessPayload[] = [];
+    hostBindingMock.current = createTestHostBindings({ mode: "normal", outsideAccessRequests });
     const args = FuzzySearchTool.parameters.parse({
-      keyword: "x",
-      directory: "..",
+      keyword: "externalreport",
+      directory: outsideDir,
       limit: 5,
     });
-    const result = await FuzzySearchTool.handler(args);
 
-    expect(result).toMatch(/escape|working directory|not allowed/i);
+    try {
+      const result = await FuzzySearchTool.handler(args);
+
+      expect(outsideAccessRequests).toHaveLength(1);
+      expect(outsideAccessRequests[0]?.mode).toBe("search");
+      expect(result).toContain(outsideFile.replace(/\\/g, "/"));
+    } finally {
+      await fs.rm(outsideDir, { recursive: true, force: true });
+    }
   });
 
   it("searches one explicit ignored subtree", async () => {

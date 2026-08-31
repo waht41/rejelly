@@ -29,7 +29,7 @@ export interface WorkspaceWalkFilesOptions {
   includeFile?: (workspaceRelativePosix: string) => boolean;
 }
 
-export type FsIntent = "inside" | "read" | "write";
+export type FsIntent = "inside" | "read" | "search" | "write";
 export type FsApprovalMode = "normal" | "auto";
 export type FsAccessKind = "discovery" | "scoped-discovery" | "direct-read" | "direct-write";
 
@@ -243,10 +243,7 @@ export class WorkspaceFsPolicy {
 
   /** Validate the root of an opt-in ignored traversal before any entries are inspected. */
   validateScopedDiscoveryRoot(resolved: ResolvedFsPath): string | undefined {
-    if (resolved.outside) {
-      return "includeIgnored is only available for directories inside the workspace.";
-    }
-    if (resolved.rel === ".") {
+    if (!resolved.outside && resolved.rel === ".") {
       return "includeIgnored requires an explicit workspace subdirectory; scanning the workspace root is not allowed.";
     }
 
@@ -599,8 +596,15 @@ export class WorkspaceFsPolicy {
     if (!resolved.ok) {
       throw new Error(resolved.error);
     }
+    await this.deleteResolved(resolved);
+  }
+
+  async deleteResolved(resolved: ResolvedFsPath): Promise<void> {
     if (resolved.rel === ".") {
       throw new Error("Access denied: refusing to delete the workspace root.");
+    }
+    if (path.parse(resolved.abs).root === resolved.abs) {
+      throw new Error("Access denied: refusing to delete a filesystem root.");
     }
     await fsPromises.rm(resolved.abs, { recursive: true, force: false });
   }

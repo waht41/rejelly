@@ -17,7 +17,7 @@ const fuzzySearchPathsParameters = z.object({
     .string()
     .default(".")
     .describe(
-      'Directory under workspace to scan (relative to workspace root). Use "." for the whole repo.',
+      'Directory to scan. Relative paths resolve from the workspace; use "." for the workspace root.',
     ),
   limit: z
     .number()
@@ -57,7 +57,7 @@ export const FuzzySearchTool: ToolDefinition<typeof fuzzySearchPathsParameters> 
         );
       }
       const lines = matches.map((m, i) => `${i + 1}. ${m.path}`);
-      return `Fuzzy path matches under workspace-relative ${JSON.stringify(directory)}:\n${lines.join("\n")}`;
+      return `Fuzzy path matches under ${JSON.stringify(directory)}:\n${lines.join("\n")}`;
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       return `fuzzy_search_paths failed: ${msg}`;

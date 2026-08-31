@@ -5,13 +5,11 @@
 import type { ToolDefinition } from "@rejelly/core";
 import { getContextSignal } from "@rejelly/core";
 import { z } from "zod";
-import {
-  getWorkspaceFsPolicy,
-  resolveWorkspaceCwd,
-} from "../../../shared/fs-policy/workspace-fs-policy";
+import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
 import { getBinding } from "../../../shared/host/context";
 import { registerInterruptibleTask } from "../../../shared/task-interruption/taskStack";
 import { getActiveToolCall } from "../../../shared/tool-observation/invocationContext";
+import { resolveToolFsPath } from "../read/outsideAccess";
 import { executeShellCommand, getShellEnvironmentSummary } from "./executeShellCommand";
 
 const runCommandParameters = z.object({
@@ -25,9 +23,7 @@ const runCommandParameters = z.object({
     .min(1)
     .max(1000)
     .optional()
-    .describe(
-      "Optional workspace-relative subdirectory (e.g. apps/evil-jelly). Do not pass absolute paths.",
-    ),
+    .describe("Optional working directory. Defaults to the workspace root."),
   declaredSafety: z
     .enum(["read_only", "reversible", "needs_confirmation", "dangerous"])
     .describe(
@@ -70,13 +66,26 @@ export const RunCommandTool: ToolDefinition<typeof runCommandParameters> = {
   name: "run_command",
   description:
     "Run a shell command in workspace root by default (tests, tsc, lint). " +
-    "Use optional cwd to execute inside a workspace subdirectory. " +
+    "Use cwd to execute in another directory. " +
     "Commands run through the host platform shell; on Windows this is PowerShell syntax, not cmd.exe or Unix sh syntax. " +
     "Prefer this when you need a targeted check beyond the automatic post-edit verification.",
   parameters: runCommandParameters,
   handler: async ({ command, cwd, declaredSafety, reason }) => {
-    const workspaceRoot = getWorkspaceFsPolicy().getRoot();
-    const resolvedCwd = resolveWorkspaceCwd(workspaceRoot, cwd);
+    const policy = getWorkspaceFsPolicy();
+    const resolvedCwdPath = await resolveToolFsPath(cwd ?? ".", "read", "direct-read");
+    if (!resolvedCwdPath.ok) {
+      return resolvedCwdPath.error;
+    }
+    try {
+      const stat = await policy.statResolved(resolvedCwdPath);
+      if (!stat.isDirectory()) {
+        return `Command cwd is not a directory: ${resolvedCwdPath.displayPath}`;
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      return `Failed to inspect command cwd: ${message}`;
+    }
+    const resolvedCwd = resolvedCwdPath.abs;
     const host = getBinding();
 
     const decision = await host.confirmTool({

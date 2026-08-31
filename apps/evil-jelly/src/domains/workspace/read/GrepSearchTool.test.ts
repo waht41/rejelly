@@ -7,6 +7,9 @@ import {
   setWorkspaceRoot,
   TOOL_ALWAYS_IGNORED_DIR_NAMES,
 } from "../../../shared/fs-policy/workspace-fs-policy";
+import type { EvilJellyBindings } from "../../../shared/host/bindings";
+import type { FsOutsideAccessPayload } from "../../../shared/host/toolConfirmationBindings";
+import { createTestHostBindings } from "../__tests__/testHostBindings";
 
 const { execFileSyncMock } = vi.hoisted(() => ({
   execFileSyncMock: vi.fn(),
@@ -15,6 +18,23 @@ const { execFileSyncMock } = vi.hoisted(() => ({
 vi.mock("node:child_process", () => ({
   execFileSync: execFileSyncMock,
 }));
+
+const hostBindingMock = vi.hoisted(() => ({
+  current: null as EvilJellyBindings | null,
+}));
+
+vi.mock("../../../shared/host/context", () => ({
+  getBinding: () => {
+    if (!hostBindingMock.current) {
+      throw new Error("No test host binding registered.");
+    }
+    return hostBindingMock.current;
+  },
+}));
+
+afterEach(() => {
+  hostBindingMock.current = null;
+});
 
 import {
   executeGrepSearch,
@@ -254,6 +274,26 @@ describe("GrepSearchTool Node fallback context merge", () => {
     expect(out).toContain(
       `${path.join("local", "nested", "settings.ts")}:1:export const ignoredNeedle = true;`,
     );
+  });
+
+  it("confirms and searches an outside directory", async () => {
+    const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), "evil-jelly-outside-grep-"));
+    const outsideFile = path.join(outsideDir, "external.ts");
+    const outsideAccessRequests: FsOutsideAccessPayload[] = [];
+    hostBindingMock.current = createTestHostBindings({ mode: "normal", outsideAccessRequests });
+    await fs.writeFile(outsideFile, "export const externalNeedle = true;\n", "utf8");
+
+    try {
+      const out = await executeGrepSearch("externalNeedle", "*.ts", 0, {
+        directory: outsideDir,
+      });
+
+      expect(outsideAccessRequests).toHaveLength(1);
+      expect(outsideAccessRequests[0]?.mode).toBe("search");
+      expect(out).toContain(`${outsideFile}:1:export const externalNeedle = true;`);
+    } finally {
+      await fs.rm(outsideDir, { recursive: true, force: true });
+    }
   });
 
   it("requires a concrete package for ignored dependency searches", async () => {
