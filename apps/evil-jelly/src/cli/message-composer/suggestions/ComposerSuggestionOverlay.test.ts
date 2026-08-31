@@ -22,7 +22,7 @@ const file = {
   query: "src",
   open: true,
   select: vi.fn(),
-  browse: vi.fn(),
+  complete: vi.fn(),
   dismiss: vi.fn(),
 };
 const referenceSuggestion = {

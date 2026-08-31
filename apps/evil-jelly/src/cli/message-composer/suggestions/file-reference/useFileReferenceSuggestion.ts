@@ -6,7 +6,7 @@ export interface FileReferenceSuggestion {
   query: string | null;
   open: boolean;
   select: (path: string) => void;
-  browse: (path: string) => void;
+  complete: (path: string, directory: boolean) => void;
   dismiss: () => void;
 }
 
@@ -35,11 +35,12 @@ export function useFileReferenceSuggestion({
     },
     [attachFile, buffer.cursor, buffer.text],
   );
-  const browse = useCallback(
-    (path: string) => {
+  const complete = useCallback(
+    (path: string, directory: boolean) => {
       const trigger = activeAtTrigger(buffer.text, buffer.cursor);
       if (!trigger) return;
-      const nextQuery = `${path.replace(/[\\/]+$/, "")}/`;
+      const normalizedPath = path.replace(/[\\/]+$/, "");
+      const nextQuery = directory ? `${normalizedPath}/` : normalizedPath;
       buffer.replaceDisplayRange(trigger.start, trigger.end, [
         { type: "text", text: `@${nextQuery}` },
       ]);
@@ -52,5 +53,5 @@ export function useFileReferenceSuggestion({
     setQuery(null);
   }, [buffer.apply]);
 
-  return { query, open: query !== null, select, browse, dismiss };
+  return { query, open: query !== null, select, complete, dismiss };
 }

@@ -19,8 +19,8 @@ interface FilePickerOverlayProps {
   query: string;
   /** Called when the user picks the highlighted path. */
   onSelect: (path: string) => void;
-  /** Called when the user navigates into the highlighted directory. */
-  onBrowse: (path: string) => void;
+  /** Called when the user completes a file or directory without attaching it yet. */
+  onComplete: (path: string, directory: boolean) => void;
   /** Called when the user cancels (Esc). */
   onCancel: () => void;
   /** Maximum result rows to render without moving the prompt too far up. */
@@ -32,7 +32,7 @@ interface FilePickerOverlayProps {
 export function FilePickerOverlay({
   query,
   onSelect,
-  onBrowse,
+  onComplete,
   onCancel,
   maxVisibleRows = DEFAULT_MAX_VISIBLE_ROWS,
   keySink,
@@ -93,7 +93,8 @@ export function FilePickerOverlay({
         items={matches}
         getKey={(match) => `${match.kind}:${match.path}`}
         onSelect={(match) => onSelect(match.path)}
-        onBrowse={(match) => onBrowse(match.path)}
+        onComplete={(match) => onComplete(match.path, match.kind === "directory")}
+        onBrowse={(match) => onComplete(match.path, true)}
         canBrowse={(match) => match.kind === "directory"}
         onCancel={onCancel}
         keySink={keySink}
@@ -110,7 +111,7 @@ export function FilePickerOverlay({
       />
       {showFooter ? (
         <Text dimColor>
-          {ignoredScope ? `ignored scope: ${ignoredScope}/ · ` : ""}Tab/→ browse · Enter attach
+          {`${ignoredScope ? `ignored scope: ${ignoredScope}/ · ` : ""}Tab complete · → browse · Enter attach`}
         </Text>
       ) : null}
     </Box>
