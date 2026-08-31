@@ -3,9 +3,14 @@
  */
 
 import type { Lang, SgNode } from "@ast-grep/napi";
-import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-policy";
-import { MAX_HEURISTIC_RESULTS } from "../source/heuristicAstLimits";
-import { langFromRelPath } from "../source/sourceLanguage";
+import {
+  getWorkspaceFsPolicy,
+  type ResolvedFsPath,
+  type WorkspaceDirEntry,
+} from "../../../shared/fs-policy/workspace-fs-policy";
+import { resolveToolFsPath } from "../read/outsideAccess";
+import { MAX_HEURISTIC_AST_FILES, MAX_HEURISTIC_RESULTS } from "../source/heuristicAstLimits";
+import { langFromRelPath, tryLangFromRelPath } from "../source/sourceLanguage";
 import { listWorkspaceScriptRelPaths, tryResolveRelativeImport } from "../source/workspacePaths";
 import {
   type ParseWorkspaceAstOptions,
@@ -48,20 +53,88 @@ export async function getParsedAst(
 ): Promise<
   { ok: true; rel: string; text: string; root: SgNode; lang: Lang } | { ok: false; error: string }
 > {
-  const resolved = getWorkspaceFsPolicy().tryResolve(filePath, { access: "direct-read" });
+  const resolved = await resolveToolFsPath(filePath, "read", "direct-read");
   if (!resolved.ok) {
     return { ok: false, error: resolved.error };
   }
-  return parseWorkspaceRelToAst(resolved.rel, options);
+  return parseWorkspaceRelToAst(resolved.displayPath, options);
 }
 
 export type DeclHit = HeuristicSymbolRow & { file: string };
 
+const MAX_ROOT_SCAN_ENTRIES = 50_000;
+
+async function listScriptPathsForRoots(roots?: readonly string[]): Promise<string[]> {
+  if (!roots) {
+    return listWorkspaceScriptRelPaths();
+  }
+
+  const policy = getWorkspaceFsPolicy();
+  const files: string[] = [];
+  const seen = new Set<string>();
+  let visitedEntries = 0;
+
+  const considerFile = (file: ResolvedFsPath) => {
+    if (files.length >= MAX_HEURISTIC_AST_FILES || !tryLangFromRelPath(file.displayPath)) {
+      return;
+    }
+    const key = process.platform === "win32" ? file.abs.toLowerCase() : file.abs;
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    files.push(file.displayPath);
+  };
+
+  const visitDirectory = async (directory: ResolvedFsPath): Promise<void> => {
+    if (files.length >= MAX_HEURISTIC_AST_FILES || visitedEntries >= MAX_ROOT_SCAN_ENTRIES) {
+      return;
+    }
+    let entries: WorkspaceDirEntry[];
+    try {
+      entries = await policy.readdirResolved(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      if (files.length >= MAX_HEURISTIC_AST_FILES || visitedEntries >= MAX_ROOT_SCAN_ENTRIES) {
+        return;
+      }
+      visitedEntries += 1;
+      if (entry.isSymbolicLink?.() || policy.shouldSkipResolvedEntry(directory, entry)) {
+        continue;
+      }
+      const child = policy.childResolved(directory, entry.name);
+      if (entry.isDirectory()) {
+        await visitDirectory(child);
+      } else {
+        considerFile(child);
+      }
+    }
+  };
+
+  for (const root of roots) {
+    const resolved = await resolveToolFsPath(root, "search", "discovery");
+    if (!resolved.ok) {
+      throw new Error(resolved.error);
+    }
+    const stat = await policy.statResolved(resolved);
+    if (stat.isDirectory()) {
+      await visitDirectory(resolved);
+    } else if (stat.isFile()) {
+      considerFile(resolved);
+    }
+  }
+  return files;
+}
+
 export async function collectMatchingDeclarations(
   symbolName: string,
   caseInsensitive: boolean,
+  roots?: readonly string[],
 ): Promise<DeclHit[]> {
-  const files = await listWorkspaceScriptRelPaths();
+  const files = await listScriptPathsForRoots(roots);
   const hits: DeclHit[] = [];
   outer: for (const rel of files) {
     const parsed = await tryParseWorkspaceRel(rel);
@@ -75,7 +148,7 @@ export async function collectMatchingDeclarations(
       caseInsensitive,
     );
     for (const row of rows) {
-      hits.push({ ...row, file: rel });
+      hits.push({ ...row, file: rel.replace(/\\/g, "/") });
       if (hits.length >= MAX_HEURISTIC_RESULTS) {
         break outer;
       }

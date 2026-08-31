@@ -8,7 +8,7 @@ import { getWorkspaceFsPolicy } from "../../../shared/fs-policy/workspace-fs-pol
 import { MAX_HEURISTIC_AST_BYTES } from "../source/heuristicAstLimits";
 import { AST_SCRIPT_EXTENSIONS, tryLangFromRelPath } from "../source/sourceLanguage";
 
-/** Bounded read + ast-grep parse for one workspace-relative script path. */
+/** Bounded read + ast-grep parse for one workspace or already-approved outside script path. */
 export type ParsedWorkspaceAst = {
   rel: string;
   text: string;
@@ -26,18 +26,22 @@ export type ParseWorkspaceAstOptions = {
 };
 
 export async function readBoundedSource(
-  rel: string,
+  filePath: string,
 ): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
   const policy = getWorkspaceFsPolicy();
   try {
-    const stat = await policy.stat(rel, { access: "direct-read" });
+    const resolved = policy.tryResolve(filePath, { intent: "read", access: "direct-read" });
+    if (!resolved.ok) {
+      return { ok: false, error: resolved.error };
+    }
+    const stat = await policy.statResolved(resolved);
     if (stat.size > MAX_HEURISTIC_AST_BYTES) {
       return {
         ok: false,
         error: `File too large for AST scan (${stat.size} bytes; max ${MAX_HEURISTIC_AST_BYTES}).`,
       };
     }
-    const text = await policy.readAstFile(rel);
+    const text = await policy.readResolved(resolved);
     return { ok: true, text };
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);

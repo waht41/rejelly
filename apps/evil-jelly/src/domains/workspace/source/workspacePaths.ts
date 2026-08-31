@@ -74,11 +74,15 @@ export async function tryResolveRelativeImport(
     `${normalized}/index.tsx`,
     `${normalized}/index.js`,
   ];
-  for (const rel of trials) {
+  for (const trial of trials) {
     try {
-      const st = await policy.stat(rel);
+      const resolved = policy.tryResolve(trial, { intent: "read", access: "direct-read" });
+      if (!resolved.ok) {
+        continue;
+      }
+      const st = await policy.statResolved(resolved);
       if (st.isFile()) {
-        return rel;
+        return resolved.displayPath;
       }
     } catch {}
   }

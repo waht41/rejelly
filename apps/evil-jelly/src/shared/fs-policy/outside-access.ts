@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export type OutsideAccessMode = "read" | "write";
+export type OutsideAccessMode = "read" | "search" | "write";
 
 function normalizeAccessPath(value: string): string {
   const resolved = path.resolve(value);
@@ -36,16 +36,27 @@ export function suggestOutsideApproveDir(targetPath: string): string {
  */
 export class OutsideAccessRegistry {
   private readonly approvedReadDirs = new Set<string>();
+  private readonly approvedSearchDirs = new Set<string>();
   private readonly approvedWriteDirs = new Set<string>();
 
   has(mode: OutsideAccessMode, targetPath: string): boolean {
-    const dirs = mode === "write" ? this.approvedWriteDirs : this.approvedReadDirs;
+    const dirs =
+      mode === "write"
+        ? this.approvedWriteDirs
+        : mode === "search"
+          ? this.approvedSearchDirs
+          : this.approvedReadDirs;
     for (const dir of dirs) {
       if (isPathInside(dir, targetPath)) {
         return true;
       }
     }
     if (mode === "read") {
+      for (const dir of this.approvedSearchDirs) {
+        if (isPathInside(dir, targetPath)) {
+          return true;
+        }
+      }
       for (const dir of this.approvedWriteDirs) {
         if (isPathInside(dir, targetPath)) {
           return true;
@@ -59,6 +70,12 @@ export class OutsideAccessRegistry {
     const normalized = normalizeAccessPath(dirPath);
     if (mode === "write") {
       this.approvedWriteDirs.add(normalized);
+      this.approvedSearchDirs.add(normalized);
+      this.approvedReadDirs.add(normalized);
+      return;
+    }
+    if (mode === "search") {
+      this.approvedSearchDirs.add(normalized);
       this.approvedReadDirs.add(normalized);
       return;
     }

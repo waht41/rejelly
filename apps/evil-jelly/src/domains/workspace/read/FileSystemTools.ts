@@ -81,12 +81,7 @@ async function getDirectoryTree(
 }
 
 const listDirParameters = z.object({
-  dirPath: z
-    .string()
-    .default(".")
-    .describe(
-      'Directory path, or "." for workspace root. Workspace-outside paths follow fs access policy.',
-    ),
+  dirPath: z.string().default(".").describe('Directory path, or "." for the workspace root.'),
   depth: z
     .number()
     .int()
@@ -115,7 +110,7 @@ export const ListDirTool: ToolDefinition<typeof listDirParameters> = {
     const policy = getWorkspaceFsPolicy();
     const resolved = await resolveToolFsPath(
       dirPath,
-      "read",
+      "search",
       includeIgnored ? "scoped-discovery" : "discovery",
     );
     if (!resolved.ok) {

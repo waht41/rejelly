@@ -1,0 +1,73 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  getWorkspaceFsPolicy,
+  setWorkspaceRoot,
+} from "../../../shared/fs-policy/workspace-fs-policy";
+import type { EvilJellyBindings } from "../../../shared/host/bindings";
+import type { FsOutsideAccessPayload } from "../../../shared/host/toolConfirmationBindings";
+import { createTestHostBindings } from "../__tests__/testHostBindings";
+
+const hostBindingMock = vi.hoisted(() => ({
+  current: null as EvilJellyBindings | null,
+}));
+const executeShellCommandMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../../../shared/host/context", () => ({
+  getBinding: () => {
+    if (!hostBindingMock.current) {
+      throw new Error("No test host binding registered.");
+    }
+    return hostBindingMock.current;
+  },
+}));
+
+vi.mock("./executeShellCommand", () => ({
+  executeShellCommand: executeShellCommandMock,
+  getShellEnvironmentSummary: () => "test shell",
+}));
+
+import { RunCommandTool } from "./runCommandTool";
+
+describe("RunCommandTool cwd policy", () => {
+  let previousRoot: string;
+  let workspace: string;
+  let outsideDir: string;
+
+  beforeEach(async () => {
+    previousRoot = getWorkspaceFsPolicy().getRoot();
+    workspace = await fs.mkdtemp(path.join(os.tmpdir(), "evil-jelly-run-workspace-"));
+    outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), "evil-jelly-run-outside-"));
+    setWorkspaceRoot(workspace);
+    executeShellCommandMock.mockReset();
+    executeShellCommandMock.mockResolvedValue({ exitCode: 0, output: "ok" });
+  });
+
+  afterEach(async () => {
+    hostBindingMock.current = null;
+    setWorkspaceRoot(previousRoot);
+    await fs.rm(workspace, { recursive: true, force: true });
+    await fs.rm(outsideDir, { recursive: true, force: true });
+  });
+
+  it("confirms an outside cwd and executes there", async () => {
+    const outsideAccessRequests: FsOutsideAccessPayload[] = [];
+    hostBindingMock.current = createTestHostBindings({ mode: "normal", outsideAccessRequests });
+
+    const result = await RunCommandTool.handler({
+      command: "example",
+      cwd: outsideDir,
+      declaredSafety: "read_only",
+      reason: "test outside cwd",
+    });
+
+    expect(outsideAccessRequests).toHaveLength(1);
+    expect(executeShellCommandMock).toHaveBeenCalledWith(
+      expect.objectContaining({ command: "example", cwd: outsideDir }),
+      undefined,
+    );
+    expect(result).toContain("status=ok");
+  });
+});

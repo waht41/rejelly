@@ -54,9 +54,7 @@ const editBlockSchema = z.object({
 });
 
 const singleFileEditSchema = z.object({
-  filePath: z
-    .string()
-    .describe("Path to edit. Workspace-outside paths require approval before the diff review."),
+  filePath: z.string().describe("Path to edit."),
   edits: z
     .array(editBlockSchema)
     .min(1)
@@ -96,7 +94,7 @@ const deleteFileParameters = z.object({
   targetPaths: z
     .array(z.string())
     .min(1)
-    .describe("Relative file or directory paths to delete in one batch."),
+    .describe("File or directory paths to delete in one batch."),
 });
 
 type DeleteTargetInput = z.infer<typeof deleteFileParameters>;
@@ -109,7 +107,7 @@ function makePatch(filePath: string, oldStr: string, newStr: string): string {
 
 type ExistingDeleteTarget = {
   filePath: string;
-  rel: string;
+  resolved: ResolvedFsPath;
   isDirectory: boolean;
   size: number;
 };
@@ -147,7 +145,7 @@ async function prepareDeleteTargets(
     }
 
     try {
-      const raw = await policy.readFile(target.rel);
+      const raw = await policy.readResolved(target.resolved);
       prepared.push({ target, patch: makePatch(target.filePath, raw, "") });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -451,8 +449,8 @@ export function createDeleteFileTool(
       const existingTargets: ExistingDeleteTarget[] = [];
       const warnings: string[] = [];
 
-      // Phase 1: validate inputs, resolve them inside the workspace jail, and collect
-      // the targets that still exist. Missing targets are kept as non-fatal warnings
+      // Phase 1: validate inputs, resolve them through the workspace/outside-access policy, and
+      // collect the targets that still exist. Missing targets are kept as non-fatal warnings
       // so repeated delete attempts stay idempotent.
       for (const targetPath of targetPaths) {
         const normalizedPath = targetPath.trim();
@@ -464,23 +462,25 @@ export function createDeleteFileTool(
         }
         seenPaths.add(normalizedPath);
 
-        const resolved = policy.tryResolve(normalizedPath, { access: "direct-write" });
+        const resolved = await resolveToolFsPath(normalizedPath, "write", "direct-write");
         if (!resolved.ok) {
           return resolved.error;
         }
         if (resolved.rel === ".") {
           return "Refused: delete_file cannot remove the workspace root.";
         }
-        if (seenResolvedPaths.has(resolved.rel)) {
+        const resolvedKey =
+          process.platform === "win32" ? resolved.abs.toLowerCase() : resolved.abs;
+        if (seenResolvedPaths.has(resolvedKey)) {
           return `Duplicate target path in batch: ${normalizedPath}`;
         }
-        seenResolvedPaths.add(resolved.rel);
+        seenResolvedPaths.add(resolvedKey);
 
         try {
           const stat = await policy.statResolved(resolved);
           existingTargets.push({
             filePath: normalizedPath,
-            rel: resolved.rel,
+            resolved,
             isDirectory: stat.isDirectory(),
             size: stat.size,
           });
@@ -525,15 +525,14 @@ export function createDeleteFileTool(
         return "Host returned action=edit for delete_file, which is unsupported. Retry with accept/reject/retry.";
       }
 
-      // Phase 3: perform the accepted deletes, then prune any now-empty parent
-      // directories without crossing the workspace root. Both operations stay inside
-      // WorkspaceFsPolicy so delete cannot bypass path guards.
+      // Phase 3: perform the accepted deletes. For workspace targets, prune now-empty parents
+      // without crossing the workspace root; outside targets deliberately keep their parents.
       const deleted: string[] = [];
       const appliedPatches: string[] = [];
       const cleanupRemoved = new Set<string>();
       for (const { target, patch } of preparedTargets) {
         try {
-          await policy.deleteEntry(target.rel);
+          await policy.deleteResolved(target.resolved);
           deleted.push(target.filePath);
           appliedPatches.push(patch);
           recordAppliedPatches(
@@ -544,10 +543,12 @@ export function createDeleteFileTool(
               : undefined,
           );
 
-          const parentRel = path.dirname(target.rel);
-          const removedParents = await policy.pruneEmptyParentsInside(parentRel);
-          for (const relPath of removedParents) {
-            cleanupRemoved.add(relPath);
+          if (!target.resolved.outside) {
+            const parentRel = path.dirname(target.resolved.rel);
+            const removedParents = await policy.pruneEmptyParentsInside(parentRel);
+            for (const relPath of removedParents) {
+              cleanupRemoved.add(relPath);
+            }
           }
         } catch (e: unknown) {
           const code = getErrnoCode(e);

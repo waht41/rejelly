@@ -1,17 +1,33 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getWorkspaceFsPolicy,
   setWorkspaceRoot,
 } from "../../../shared/fs-policy/workspace-fs-policy";
+import type { EvilJellyBindings } from "../../../shared/host/bindings";
+import type { FsOutsideAccessPayload } from "../../../shared/host/toolConfirmationBindings";
+import { createTestHostBindings } from "../__tests__/testHostBindings";
 import {
   astDocumentSymbolsService,
   astModuleExportsService,
   astReadSymbolCodeService,
   astWorkspaceSymbolsService,
 } from "./document-symbol";
+
+const hostBindingMock = vi.hoisted(() => ({
+  current: null as EvilJellyBindings | null,
+}));
+
+vi.mock("../../../shared/host/context", () => ({
+  getBinding: () => {
+    if (!hostBindingMock.current) {
+      throw new Error("No test host binding registered.");
+    }
+    return hostBindingMock.current;
+  },
+}));
 
 describe("heuristic AST document symbol extensions", () => {
   let prevRoot: string;
@@ -44,6 +60,7 @@ describe("heuristic AST document symbol extensions", () => {
   });
 
   afterEach(async () => {
+    hostBindingMock.current = null;
     setWorkspaceRoot(prevRoot);
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
@@ -86,6 +103,56 @@ describe("heuristic AST document symbol extensions", () => {
     expect(hit?.code).toContain("export function equipSystem");
     expect(hit?.signature).toContain("equipSystem(amount: number): string");
     expect(hit?.jsDoc).toContain("Equip the budget system");
+  });
+
+  it("confirms and parses one outside source file", async () => {
+    const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), "evil-jelly-outside-ast-"));
+    const outsideFile = path.join(outsideDir, "external.ts");
+    await fs.writeFile(outsideFile, "export function outsideSymbol() { return true }\n", "utf8");
+    const outsideAccessRequests: FsOutsideAccessPayload[] = [];
+    hostBindingMock.current = createTestHostBindings({ mode: "normal", outsideAccessRequests });
+
+    try {
+      const raw = await astDocumentSymbolsService({ filePath: outsideFile });
+      const parsed = JSON.parse(raw) as { file: string; symbols: Array<{ name: string }> };
+
+      expect(outsideAccessRequests).toHaveLength(1);
+      expect(parsed.file).toBe(outsideFile.replace(/\\/g, "/"));
+      expect(parsed.symbols.map((symbol) => symbol.name)).toContain("outsideSymbol");
+    } finally {
+      await fs.rm(outsideDir, { recursive: true, force: true });
+    }
+  });
+
+  it("scans an approved outside root for workspace symbols", async () => {
+    const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), "evil-jelly-outside-ast-root-"));
+    await fs.writeFile(
+      path.join(outsideDir, "external.ts"),
+      "export const outsideRootSymbol = true\n",
+      "utf8",
+    );
+    const outsideAccessRequests: FsOutsideAccessPayload[] = [];
+    hostBindingMock.current = createTestHostBindings({ mode: "normal", outsideAccessRequests });
+
+    try {
+      const raw = await astWorkspaceSymbolsService({
+        queryName: "outsideRootSymbol",
+        caseInsensitive: false,
+        roots: [outsideDir],
+      });
+      const parsed = JSON.parse(raw) as { matches: Array<{ file: string; name: string }> };
+
+      expect(outsideAccessRequests).toHaveLength(1);
+      expect(outsideAccessRequests[0]?.mode).toBe("search");
+      expect(parsed.matches).toEqual([
+        expect.objectContaining({
+          file: path.join(outsideDir, "external.ts").replace(/\\/g, "/"),
+          name: "outsideRootSymbol",
+        }),
+      ]);
+    } finally {
+      await fs.rm(outsideDir, { recursive: true, force: true });
+    }
   });
 
   it("ast_module_exports returns export-only topology", async () => {
