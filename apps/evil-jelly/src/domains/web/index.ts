@@ -47,7 +47,7 @@ export async function webSearch(query: string, limit = 6): Promise<WebSearchResu
     provider: response.provider,
     requestedHost: safeHost(response.requestedUrl),
     finalHost: safeHost(response.finalUrl),
-    webProxyEnabled: config.proxyUrl !== null,
+    webProxyEnabled: config.llmSearchProxyUrl !== null,
     rawResultCount: response.results.length,
     resultCount: results.length,
     topHosts: unique(results.slice(0, 5).map((result) => safeHost(result.url))).filter(Boolean),
