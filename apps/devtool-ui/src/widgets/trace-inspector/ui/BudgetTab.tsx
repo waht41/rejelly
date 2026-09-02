@@ -149,6 +149,28 @@ function TokenDetails({ details }: { details?: Record<string, number> }) {
   );
 }
 
+function ToolModelUsages({ item }: { item: BudgetItemSummary }) {
+  if (item.type !== "tool" || !item.modelUsages?.length) return null;
+
+  return (
+    <div className="mt-1 space-y-0.5 pl-5 text-[10px] text-muted-foreground">
+      {item.modelUsages.map((usage) => {
+        const attribution = usage.provider ? `${usage.provider} / ${usage.model}` : usage.model;
+        return (
+          <div key={usage.key} className="flex min-w-0 flex-wrap items-center gap-x-1.5">
+            <span className="truncate text-foreground/80" title={attribution}>
+              {attribution}
+            </span>
+            <span className="whitespace-nowrap">
+              {formatNumber(usage.promptTokens)} in / {formatNumber(usage.completionTokens)} out
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function BudgetItemRow({ item }: { item: BudgetItemSummary }) {
   const subtitle =
     item.type === "model"
@@ -169,7 +191,8 @@ function BudgetItemRow({ item }: { item: BudgetItemSummary }) {
           <span className="truncate text-xs font-medium text-foreground">{item.name}</span>
         </div>
         <div className="mt-0.5 truncate pl-5 text-[10px] text-muted-foreground">{subtitle}</div>
-        {item.type === "model" ? <TokenDetails details={item.details} /> : null}
+        <ToolModelUsages item={item} />
+        <TokenDetails details={item.details} />
       </div>
       <div className="text-right">
         <div className="text-xs font-semibold text-foreground">

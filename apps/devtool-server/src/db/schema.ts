@@ -66,7 +66,7 @@ export const traceSummaries = sqliteTable(
     llmCallCount: integer("llm_call_count").default(0),
     toolCallCount: integer("tool_call_count").default(0),
     toolExecutions: text("tool_executions"), // JSON: { "name": { callCount, successCount, failureCount, totalOutputChars, cacheCount } }
-    toolUsage: text("tool_usage"), // JSON: { "name": { "unit": { callCount, quantity, costs } }, ... }
+    toolUsage: text("tool_usage"), // JSON: { name: { unit: { callCount, quantity, costs, modelUsages? } } }
     llmUsage: text("llm_usage"), // JSON: {"model_name": {count, prompt_tokens, completion_tokens, details, costs}}
     isStarred: integer("is_starred", { mode: "boolean" }).default(false),
     tags: text("tags"), // JSON string
