@@ -79,6 +79,20 @@ export interface PromptChatCompactionConfig {
   warnHint?: string;
 }
 
+export interface PromptTokenAnchor {
+  promptTokens: number;
+  messages: Message[];
+}
+
+export interface PromptTokenUsageSnapshot {
+  revision: number;
+  promptTokens: number;
+}
+
+export interface PromptTokenUsageReader {
+  read: () => PromptTokenUsageSnapshot | undefined;
+}
+
 export interface CompactionRoundInfo {
   round: number;
   beforeTokens: number;

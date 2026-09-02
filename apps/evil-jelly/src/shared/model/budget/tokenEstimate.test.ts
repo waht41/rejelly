@@ -6,6 +6,7 @@ import {
 } from "../prompt/frozenUserInput";
 import {
   estimateMessagesTokens,
+  estimateMessagesTokensFromAnchor,
   IMAGE_CONTENT_TOKEN_ESTIMATE,
   LOW_DETAIL_IMAGE_TOKEN_ESTIMATE,
 } from "./tokenEstimate";
@@ -83,5 +84,19 @@ describe("image token estimation", () => {
     };
 
     expect(estimateMessagesTokens([message])).toBe(1024);
+  });
+});
+
+describe("provider token anchors", () => {
+  it("uses provider prompt tokens for the known prefix and estimates only appended messages", () => {
+    const prefix: Message[] = [{ role: "user", content: "x".repeat(4000) }];
+    const appended: Message = { role: "assistant", content: "done" };
+
+    expect(
+      estimateMessagesTokensFromAnchor([...prefix, appended], {
+        promptTokens: 100,
+        messages: prefix,
+      }),
+    ).toBe(100 + estimateMessagesTokens([appended]));
   });
 });

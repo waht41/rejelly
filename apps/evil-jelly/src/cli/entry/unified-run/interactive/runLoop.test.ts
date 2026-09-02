@@ -342,6 +342,12 @@ describe("runInteractiveLoop mock session isolation", () => {
           budget,
         },
         messages,
+        contextTokenAnchor: {
+          promptTokens: 10,
+          messageCount: 1,
+          modelId: "model-1",
+          provider: "openai",
+        },
         mcp: createSessionMcpState({ selectedServerIds: ["docs"] }),
       }),
     );
@@ -354,7 +360,7 @@ describe("runInteractiveLoop mock session isolation", () => {
     await runInteractiveLoop({
       bindings,
       runControl,
-      model: {} as ModelAdapter,
+      model: { id: "model-1", provider: "openai" } as ModelAdapter,
       enableReview: false,
       snapshot: {} as AgentSnapshot,
       sessionId: "session_current",
@@ -367,6 +373,12 @@ describe("runInteractiveLoop mock session isolation", () => {
       sessionStartMode: "resumed",
       seedContext: messages,
       seedBudget: budget,
+      seedContextTokenAnchor: {
+        promptTokens: 10,
+        messageCount: 1,
+        modelId: "model-1",
+        provider: "openai",
+      },
       seedMcpState: { selectedServerIds: ["docs"], toolGrants: [] },
       snapshot: undefined,
       session: { enabled: true, appVersion: "1.0.0" },

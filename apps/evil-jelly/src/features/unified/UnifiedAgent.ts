@@ -6,6 +6,7 @@
 import {
   augmentTool,
   createAgent,
+  equipBudget,
   equipInstruction,
   equipMemory,
   equipSystem,
@@ -31,6 +32,10 @@ import {
   MEMORY_RUNTIME_PROVIDER_KEY,
   type SessionMemoryRuntime,
 } from "../../domains/memory/runtime/sessionMemoryRuntime";
+import type {
+  PromptTokenUsageReader,
+  PromptTokenUsageSnapshot,
+} from "../../domains/policy/compaction";
 import { promptChatResilient } from "../../domains/policy/promptChatResilient";
 import { promptCompactHistory } from "../../domains/policy/promptCompactHistory";
 import { materializeMessageHistory } from "../../domains/session/repository/sessionMessageMaterializer";
@@ -66,6 +71,25 @@ import { useArtifact } from "./useArtifact";
  * running out of allowance.
  */
 const UNIFIED_MAX_TURN_STEPS = 500;
+
+function equipPromptTokenUsageReader(): PromptTokenUsageReader {
+  let latest: PromptTokenUsageSnapshot | undefined;
+  let revision = 0;
+  let previousOwnPromptTokens = 0;
+  equipBudget({
+    onUpdate: ({ delta, own }) => {
+      const ownPromptDelta = own.promptTokens - previousOwnPromptTokens;
+      previousOwnPromptTokens = own.promptTokens;
+      // Child-agent model usage propagates into aggregate but not own. Tool usage has no prompt
+      // increment, so neither can overwrite the direct model call that the policy is observing.
+      if (ownPromptDelta <= 0 || !delta.items.some((item) => item.type === "model")) {
+        return;
+      }
+      latest = { revision: ++revision, promptTokens: ownPromptDelta };
+    },
+  });
+  return { read: () => latest };
+}
 
 async function useUnifiedTools(props: ConversationAgentProps): Promise<void> {
   const { confirmTool, requestMemoryConfirmation } = getBinding();
@@ -211,6 +235,7 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
       return runManualCompression(props, memoryRuntime);
     }
 
+    const promptTokenUsage = equipPromptTokenUsageReader();
     try {
       const messages = await materializeMessageHistory(
         [...(props.history ?? []), props.message],
@@ -221,6 +246,8 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
         pendingUserMessages: props.pendingUserMessages,
         toolsForDispatch: (baseTools) => toolsForMcpDispatch(baseTools, props.mcpBindingFactory),
         compaction: buildAutoCompactionConfig(memoryRuntime),
+        initialTokenAnchor: props.initialTokenAnchor,
+        promptTokenUsage,
         sessionRecorder: props.sessionRecorder,
         turnId: props.turnId,
       });

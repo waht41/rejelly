@@ -139,3 +139,19 @@ export function estimateMessagesTokens(messages: readonly Message[]): number {
   }
   return total;
 }
+
+/**
+ * Estimate a growing context from the provider's exact token count for an earlier message prefix.
+ * Only messages added after that prefix remain heuristic; provider framing, tool schemas, and the
+ * model's tokenizer are already represented by `promptTokens`.
+ */
+export function estimateMessagesTokensFromAnchor(
+  messages: readonly Message[],
+  anchor: { promptTokens: number; messages: readonly Message[] },
+): number {
+  const addedEstimate = Math.max(
+    0,
+    estimateMessagesTokens(messages) - estimateMessagesTokens(anchor.messages),
+  );
+  return anchor.promptTokens + addedEstimate;
+}

@@ -16,6 +16,7 @@ import {
 } from "../../../shared/session/transcript";
 import { getLegacyUserInputDisplay } from "../model/frozenUserInput";
 import type { SessionBudgetData, ToolObservationRecordedEvent } from "../model/sessionEvents";
+import type { SessionContextTokenAnchor } from "../model/sessionTypes";
 import {
   getSessionImageBlobMetadata,
   type StoredSessionMessage,
@@ -416,4 +417,72 @@ export function buildLatestBudget(replay: PreparedSessionReplay): SessionBudgetD
     }
   }
   return budget;
+}
+
+/**
+ * Associate the latest persisted provider prompt count with the exact active-context prefix used
+ * by that model call. Compaction invalidates older associations, and a model message newer than the
+ * latest budget means the process stopped before its usage snapshot became durable.
+ */
+export function buildContextTokenAnchor(
+  replay: PreparedSessionReplay,
+): SessionContextTokenAnchor | undefined {
+  let activeMessageCount = 0;
+  let currentModel: { modelId: string; provider?: string } | undefined;
+  let latestModel:
+    | { seq: number; messageCount: number; modelId: string; provider?: string }
+    | undefined;
+  let latestBudget: { seq: number; budget: SessionBudgetData } | undefined;
+
+  for (const event of replay.events) {
+    switch (event.type) {
+      case "run_segment_started":
+        currentModel = {
+          modelId: event.modelId,
+          ...(event.provider ? { provider: event.provider } : {}),
+        };
+        break;
+      case "legacy_snapshot":
+        activeMessageCount = event.messages.length;
+        latestModel = undefined;
+        break;
+      case "user_input_recorded":
+        activeMessageCount += 1;
+        break;
+      case "message_recorded":
+        if (event.source.kind === "model" && currentModel) {
+          latestModel = {
+            seq: event.seq,
+            messageCount: activeMessageCount,
+            ...currentModel,
+          };
+        }
+        activeMessageCount += 1;
+        break;
+      case "context_compacted":
+        activeMessageCount = event.replacementHistory.length;
+        latestModel = undefined;
+        break;
+      case "budget_updated":
+        latestBudget = { seq: event.seq, budget: event.budget };
+        break;
+      default:
+        break;
+    }
+  }
+
+  if (
+    !latestModel ||
+    !latestBudget ||
+    latestBudget.seq <= latestModel.seq ||
+    latestBudget.budget.lastContextTokens <= 0
+  ) {
+    return undefined;
+  }
+  return {
+    promptTokens: latestBudget.budget.lastContextTokens,
+    messageCount: latestModel.messageCount,
+    modelId: latestModel.modelId,
+    ...(latestModel.provider ? { provider: latestModel.provider } : {}),
+  };
 }

@@ -7,6 +7,7 @@ import {
   listSessions,
   resumeSession,
   type SessionBudget,
+  type SessionContextTokenAnchor,
   type SessionRecord,
 } from "../../../../domains/session/repository/sessionStore";
 import { countConversationTurns } from "../../../../shared/conversation/compactionMessages";
@@ -27,6 +28,7 @@ export interface SessionResumeSeed {
   transcript: TranscriptItem[];
   totalTurns: number;
   budget: SessionBudget | undefined;
+  contextTokenAnchor?: SessionContextTokenAnchor;
   mcp: SessionMcpState;
   warnings?: string[];
 }
@@ -117,6 +119,7 @@ export function buildSessionResumeSeed(record: SessionRecord): SessionResumeSeed
   return {
     ...legacy,
     ...(record.transcript ? { transcript: record.transcript } : {}),
+    ...(record.contextTokenAnchor ? { contextTokenAnchor: record.contextTokenAnchor } : {}),
     ...(record.warnings ? { warnings: record.warnings } : {}),
     mcp: record.mcp,
   };

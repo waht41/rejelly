@@ -109,4 +109,82 @@ describe("runResilientToolCallLoopPolicy session recorder", () => {
     );
     expect(toolsForDispatch).toHaveBeenCalledTimes(2);
   });
+
+  it("uses a resumed provider anchor instead of re-estimating the whole context", async () => {
+    const hugeHistory: Message[] = [{ role: "user", content: "x".repeat(4000) }];
+    const final: Message = { role: "assistant", content: "done" };
+    policyMocks.executeValidatedLoopTurn.mockResolvedValueOnce({
+      kind: "content",
+      data: "done",
+      deltaMessages: [final],
+    });
+    const ctx = {
+      maxTurnSteps: 3,
+      maxRetries: 0,
+      messages: hugeHistory,
+      tools: [],
+      fork: vi.fn(function (this: PromptContext, overrides) {
+        return { ...this, ...overrides };
+      }),
+      span: { setAttribute: vi.fn() },
+    } as unknown as PromptContext;
+
+    await expect(
+      runResilientToolCallLoopPolicy(ctx, {
+        pendingUserMessages: () => [
+          { role: "user", content: "one" },
+          { role: "user", content: "two" },
+          { role: "user", content: "three" },
+        ],
+        compaction: { thresholdTokens: 100, summaryInstruction: "summarize" },
+        initialTokenAnchor: { promptTokens: 10, messages: hugeHistory },
+      }),
+    ).resolves.toMatchObject({ aborted: false, data: "done" });
+    expect(policyMocks.executeValidatedLoopTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-anchors later rounds from the Evil-owned provider usage reader", async () => {
+    const hugeHistory: Message[] = [{ role: "user", content: "x".repeat(4000) }];
+    const modelCall: Message = {
+      role: "assistant",
+      content: null,
+      tool_calls: [{ id: "call-1", name: "read_file", arguments: "{}" }],
+    };
+    const final: Message = { role: "assistant", content: "done" };
+    let usage = { revision: 0, promptTokens: 0 };
+    policyMocks.executeValidatedLoopTurn
+      .mockImplementationOnce(async () => {
+        usage = { revision: 1, promptTokens: 10 };
+        return {
+          kind: "tool_calls",
+          calls: modelCall.tool_calls,
+          deltaMessages: [modelCall],
+        };
+      })
+      .mockResolvedValueOnce({ kind: "content", data: "done", deltaMessages: [final] });
+    policyMocks.executeTools.mockResolvedValueOnce([
+      { role: "tool", tool_call_id: "call-1", content: "small" },
+    ]);
+    let pendingRound = 0;
+    const ctx = {
+      maxTurnSteps: 3,
+      maxRetries: 0,
+      messages: hugeHistory,
+      tools: [],
+      fork: vi.fn(function (this: PromptContext, overrides) {
+        return { ...this, ...overrides };
+      }),
+      span: { setAttribute: vi.fn() },
+    } as unknown as PromptContext;
+
+    await expect(
+      runResilientToolCallLoopPolicy(ctx, {
+        pendingUserMessages: () =>
+          pendingRound++ === 1 ? [{ role: "user", content: "also inspect tests" }] : [],
+        compaction: { thresholdTokens: 100, summaryInstruction: "summarize" },
+        promptTokenUsage: { read: () => usage },
+      }),
+    ).resolves.toMatchObject({ aborted: false, data: "done" });
+    expect(policyMocks.executeValidatedLoopTurn).toHaveBeenCalledTimes(2);
+  });
 });

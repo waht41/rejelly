@@ -7,7 +7,7 @@ import {
 } from "@rejelly/core/policy";
 import type { z } from "zod";
 import type { SessionMessageSink } from "../../shared/session/recorderPort";
-import type { PromptChatCompactionConfig } from "./compaction";
+import type { PromptChatCompactionConfig, PromptTokenUsageReader } from "./compaction";
 import {
   runResilientToolCallLoopPolicy,
   type ToolCallLoopPolicySnapshot,
@@ -49,6 +49,10 @@ export interface PromptChatResilientOptions<TSchema extends z.ZodTypeAny = z.Zod
     baseTools: readonly ToolDefinition[],
   ) => readonly ToolDefinition[] | Promise<readonly ToolDefinition[]>;
   compaction?: PromptChatCompactionConfig;
+  /** Provider prompt count associated with a prefix of `message`, recovered from session replay. */
+  initialTokenAnchor?: { promptTokens: number; messageCount: number };
+  /** Evil-owned per-model-call usage observer; avoids widening Core's policy result API. */
+  promptTokenUsage?: PromptTokenUsageReader;
   sessionRecorder?: SessionMessageSink;
   turnId?: string;
 }
@@ -81,12 +85,30 @@ export const promptChatResilient = createAgentPolicy({
     const runtime = ctx.fork({
       messages: normalizeMessages([...ctx.messages, ...customMessages]),
     });
+    const equippedMessageCount = runtime.messages.length - customMessages.length;
+    const initialTokenAnchor = options?.initialTokenAnchor;
     const snapshot: ToolCallLoopPolicySnapshot = {
       jsonSchema,
       parser: options?.schema ? createJsonOutputParser(options.schema) : undefined,
       pendingUserMessages: options?.pendingUserMessages,
       toolsForDispatch: options?.toolsForDispatch,
       compaction: options?.compaction,
+      ...(initialTokenAnchor &&
+      initialTokenAnchor.promptTokens > 0 &&
+      Number.isInteger(initialTokenAnchor.messageCount) &&
+      initialTokenAnchor.messageCount >= 0 &&
+      initialTokenAnchor.messageCount <= customMessages.length
+        ? {
+            initialTokenAnchor: {
+              promptTokens: initialTokenAnchor.promptTokens,
+              messages: runtime.messages.slice(
+                0,
+                equippedMessageCount + initialTokenAnchor.messageCount,
+              ),
+            },
+          }
+        : {}),
+      promptTokenUsage: options?.promptTokenUsage,
       sessionRecorder: options?.sessionRecorder,
       turnId: options?.turnId,
     };
