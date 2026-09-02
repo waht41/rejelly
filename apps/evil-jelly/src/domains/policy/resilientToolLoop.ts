@@ -7,13 +7,18 @@ import {
   type OutputParser,
   type PromptContext,
 } from "@rejelly/core/policy";
-import { estimateMessagesTokens } from "../../shared/model/budget/tokenEstimate";
+import {
+  estimateMessagesTokens,
+  estimateMessagesTokensFromAnchor,
+} from "../../shared/model/budget/tokenEstimate";
 import { appendMessageContentSuffix } from "../../shared/model/message/content";
 import type { SessionMessageSink } from "../../shared/session/recorderPort";
 import {
   DEFAULT_COMPACTION_MAX_ROUNDS,
   DEFAULT_WARN_RATIO,
   type PromptChatCompactionConfig,
+  type PromptTokenAnchor,
+  type PromptTokenUsageReader,
   runContextCompaction,
   withoutEquippedPrefix,
 } from "./compaction";
@@ -32,6 +37,8 @@ export interface ToolCallLoopPolicySnapshot {
     baseTools: readonly ToolDefinition[],
   ) => readonly ToolDefinition[] | Promise<readonly ToolDefinition[]>;
   compaction?: PromptChatCompactionConfig;
+  initialTokenAnchor?: PromptTokenAnchor;
+  promptTokenUsage?: PromptTokenUsageReader;
   sessionRecorder?: SessionMessageSink;
   turnId?: string;
 }
@@ -40,15 +47,18 @@ class CompactionController {
   #baseMessages: Message[];
   #compacted = false;
   #rounds = 0;
+  #tokenAnchor: PromptTokenAnchor | undefined;
 
   constructor(
     private readonly ctx: PromptContext,
     private readonly config: PromptChatCompactionConfig | undefined,
     baseMessages: Message[],
+    initialTokenAnchor?: PromptTokenAnchor,
     private readonly recorder?: SessionMessageSink,
     private readonly turnId?: string,
   ) {
     this.#baseMessages = baseMessages;
+    this.#tokenAnchor = initialTokenAnchor;
   }
 
   messages(deltaMessages: Message[]): Message[] {
@@ -62,6 +72,20 @@ class CompactionController {
     return withoutEquippedPrefix(this.messages(deltaMessages));
   }
 
+  occupancy(deltaMessages: Message[]): number {
+    const messages = this.messages(deltaMessages);
+    return this.#tokenAnchor
+      ? estimateMessagesTokensFromAnchor(messages, this.#tokenAnchor)
+      : estimateMessagesTokens(messages);
+  }
+
+  observePromptUsage(messages: Message[], promptTokens: number): void {
+    if (promptTokens <= 0) {
+      return;
+    }
+    this.#tokenAnchor = { promptTokens, messages };
+  }
+
   async maybeCompact(deltaMessages: Message[]): Promise<void> {
     const compaction = this.config;
     if (!compaction || this.#rounds >= (compaction.maxRounds ?? DEFAULT_COMPACTION_MAX_ROUNDS)) {
@@ -71,7 +95,7 @@ class CompactionController {
     // #baseMessages includes the system prompt (seeded by the policy pre-compaction, re-injected by
     // runContextCompaction after), so this is the full occupancy - no separate system term to add.
     const working = this.messages(deltaMessages);
-    const beforeTokens = estimateMessagesTokens(working);
+    const beforeTokens = this.occupancy(deltaMessages);
     if (beforeTokens < compaction.thresholdTokens || deltaMessages.length <= 2) {
       return;
     }
@@ -86,6 +110,9 @@ class CompactionController {
 
     this.#baseMessages = compactionResult.history;
     deltaMessages.length = 0;
+    // The provider count described the discarded pre-compaction request. The first normal request
+    // over the replacement history will establish a fresh anchor later in this same loop.
+    this.#tokenAnchor = undefined;
     this.#compacted = true;
     this.#rounds += 1;
     const info = {
@@ -115,7 +142,7 @@ class CompactionController {
       return;
     }
 
-    const occupancy = estimateMessagesTokens(this.messages(deltaMessages));
+    const occupancy = this.occupancy(deltaMessages);
     const warnAt = compaction.thresholdTokens * (compaction.warnRatio ?? DEFAULT_WARN_RATIO);
     if (occupancy < warnAt || occupancy >= compaction.thresholdTokens) {
       return;
@@ -165,6 +192,7 @@ export async function runResilientToolCallLoopPolicy<T = unknown>(
     ctx,
     snapshot.compaction,
     ctx.messages,
+    snapshot.initialTokenAnchor,
     snapshot.sessionRecorder,
     snapshot.turnId,
   );
@@ -187,12 +215,23 @@ export async function runResilientToolCallLoopPolicy<T = unknown>(
         messages: compaction.messages(deltaMessages),
         tools: [...dispatchTools],
       });
+      const usageRevisionBefore = snapshot.promptTokenUsage?.read()?.revision ?? 0;
       const result: LoopTurnResult = await executeValidatedLoopTurn({
         runtime: dispatchRuntime,
         jsonSchema: snapshot.jsonSchema,
         parser: snapshot.parser,
         maxRetries: ctx.maxRetries,
       });
+
+      const latestUsage = snapshot.promptTokenUsage?.read();
+      if (latestUsage && latestUsage.revision > usageRevisionBefore) {
+        // executeValidatedLoopTurn appends the final assistant message last. Any preceding retry
+        // messages were part of the final provider request and therefore belong in its anchor.
+        compaction.observePromptUsage(
+          [...dispatchRuntime.messages, ...result.deltaMessages.slice(0, -1)],
+          latestUsage.promptTokens,
+        );
+      }
 
       deltaMessages.push(...result.deltaMessages);
       if (snapshot.sessionRecorder && snapshot.turnId) {

@@ -16,6 +16,8 @@ interface ConversationAgentBaseProps {
   sessionId?: string;
   /** Stable id shared by the initial input, steers, model rounds, and tool results. */
   turnId?: string;
+  /** Resume-validated provider usage for a prefix of the supplied history. */
+  initialTokenAnchor?: { promptTokens: number; messageCount: number };
   /** Captures one immutable MCP route/catalog view at each model dispatch boundary. */
   mcpBindingFactory?: McpDispatchBindingFactory;
 }

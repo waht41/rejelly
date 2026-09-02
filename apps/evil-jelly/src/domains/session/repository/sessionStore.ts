@@ -9,7 +9,12 @@
 import fs from "node:fs";
 import type { SessionStoragePaths } from "../journal/sessionJsonlReader";
 import { generateSessionId, isValidSessionId, resolveWorkspaceDir } from "../journal/sessionPaths";
-import type { SessionBudget, SessionMeta, SessionRecord } from "../model/sessionTypes";
+import type {
+  SessionBudget,
+  SessionContextTokenAnchor,
+  SessionMeta,
+  SessionRecord,
+} from "../model/sessionTypes";
 import { readLegacySession } from "./legacySessionStore";
 import {
   type LegacyMigrationOptions,
@@ -21,7 +26,13 @@ import { readV2Session, readV2SessionMetaFast, readV2SessionMetaFull } from "./s
 import { readV3Session, readV3SessionMetaFast, readV3SessionMetaFull } from "./sessionV3Store";
 
 export { generateSessionId };
-export type { LegacyMigrationOptions, SessionBudget, SessionMeta, SessionRecord };
+export type {
+  LegacyMigrationOptions,
+  SessionBudget,
+  SessionContextTokenAnchor,
+  SessionMeta,
+  SessionRecord,
+};
 
 export type LoadSessionOptions = SessionStoragePaths;
 

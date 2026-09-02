@@ -13,7 +13,10 @@ import {
   type SessionRecorder,
 } from "../../../../domains/session/recorder/sessionRecorder";
 import { materializeMessageHistory } from "../../../../domains/session/repository/sessionMessageMaterializer";
-import type { SessionBudget } from "../../../../domains/session/repository/sessionStore";
+import type {
+  SessionBudget,
+  SessionContextTokenAnchor,
+} from "../../../../domains/session/repository/sessionStore";
 import {
   SKILL_RUNTIME_PROVIDER_KEY,
   type SkillRuntimeSnapshot,
@@ -52,6 +55,8 @@ export interface RunEvilJellyHostOptions {
   seedContext?: Message[];
   /** Cumulative usage carried back from a resumed session, used as the /status base. */
   seedBudget?: SessionBudget;
+  /** Provider-token anchor proven to describe a prefix of seedContext. */
+  seedContextTokenAnchor?: SessionContextTokenAnchor;
   /** Session MCP state recovered independently of compacted model history. */
   seedMcpState?: SessionMcpState;
   /** Resolve non-secret token metadata at submit time. */
@@ -215,6 +220,7 @@ export async function runEvilJellyHost(
           traceId,
           seedContext: preparedSeedContext,
           seedBudget,
+          seedContextTokenAnchor: options.seedContextTokenAnchor,
           seedMcpState: options.seedMcpState,
           resolveMcpUserInput: options.resolveMcpUserInput,
           sessionBlobRoot: options.session?.blobRoot,

@@ -155,6 +155,13 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
         sessionStartMode: state.sessionStartMode,
         seedContext: state.resumeSeed?.activeContext,
         seedBudget: state.resumeSeed?.budget,
+        seedContextTokenAnchor:
+          state.resumeSeed?.contextTokenAnchor &&
+          state.resumeSeed.contextTokenAnchor.modelId === model.id &&
+          (!state.resumeSeed.contextTokenAnchor.provider ||
+            state.resumeSeed.contextTokenAnchor.provider === model.provider)
+            ? state.resumeSeed.contextTokenAnchor
+            : undefined,
         seedMcpState: state.resumeSeed?.mcp,
         mcpProviders: mcp.providers,
         mcpBindingFactory: mcp.bindingFactory,

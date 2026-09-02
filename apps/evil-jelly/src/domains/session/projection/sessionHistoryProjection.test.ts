@@ -8,6 +8,7 @@ import type { MessageRecordedEvent, SessionEvent } from "../model/sessionEvents"
 import { parseStoredSessionMessage } from "../model/storedSessionMessage";
 import { materializeActiveContext } from "../repository/sessionMessageMaterializer";
 import {
+  buildContextTokenAnchor,
   buildLatestBudget,
   buildStoredActiveContext,
   buildTranscript,
@@ -493,5 +494,118 @@ describe("session history projections", () => {
     ];
 
     expect(buildLatestBudget(replay(events))).toEqual(second);
+  });
+
+  it("associates provider prompt usage with the active prefix before the latest model message", () => {
+    const budget = {
+      totalTokens: 120,
+      promptTokens: 100,
+      completionTokens: 20,
+      cacheReadTokens: 0,
+      callCount: 1,
+      costs: {},
+      lastContextTokens: 100,
+      lastCacheReadTokens: 0,
+    };
+    const events: SessionEvent[] = [
+      {
+        type: "run_segment_started",
+        seq: 1,
+        timestamp: 101,
+        kind: "created",
+        traceId: "trace-1",
+        provider: "openai",
+        modelId: "model-1",
+        cwd: "C:/workspace",
+      },
+      userEvent(2, "turn-1", "task"),
+      event(
+        {
+          type: "message_recorded",
+          turnId: "turn-1",
+          source: { kind: "model" },
+          message: { role: "assistant", content: "done" },
+        },
+        3,
+      ),
+      { type: "budget_updated", seq: 4, timestamp: 104, budget },
+    ];
+
+    expect(buildContextTokenAnchor(replay(events))).toEqual({
+      promptTokens: 100,
+      messageCount: 1,
+      modelId: "model-1",
+      provider: "openai",
+    });
+  });
+
+  it("invalidates a provider token anchor across compaction until a later model usage is durable", () => {
+    const budget = {
+      totalTokens: 120,
+      promptTokens: 100,
+      completionTokens: 20,
+      cacheReadTokens: 0,
+      callCount: 1,
+      costs: {},
+      lastContextTokens: 100,
+      lastCacheReadTokens: 0,
+    };
+    const beforeCompact: SessionEvent[] = [
+      {
+        type: "run_segment_started",
+        seq: 1,
+        timestamp: 101,
+        kind: "created",
+        traceId: "trace-1",
+        modelId: "model-1",
+        cwd: "C:/workspace",
+      },
+      userEvent(2, "turn-1", "task"),
+      event(
+        {
+          type: "message_recorded",
+          turnId: "turn-1",
+          source: { kind: "model" },
+          message: { role: "assistant", content: "working" },
+        },
+        3,
+      ),
+      { type: "budget_updated", seq: 4, timestamp: 104, budget },
+      {
+        type: "context_compacted",
+        seq: 5,
+        timestamp: 105,
+        trigger: "auto",
+        activeTurnId: "turn-1",
+        replacementHistory: [{ role: "user", content: "summary" }],
+        beforeMessageCount: 2,
+        afterMessageCount: 1,
+      },
+    ];
+
+    expect(buildContextTokenAnchor(replay(beforeCompact))).toBeUndefined();
+
+    const afterCompact: SessionEvent[] = [
+      ...beforeCompact,
+      event(
+        {
+          type: "message_recorded",
+          turnId: "turn-1",
+          source: { kind: "model" },
+          message: { role: "assistant", content: "done" },
+        },
+        6,
+      ),
+      {
+        type: "budget_updated",
+        seq: 7,
+        timestamp: 107,
+        budget: { ...budget, lastContextTokens: 30, callCount: 3 },
+      },
+    ];
+    expect(buildContextTokenAnchor(replay(afterCompact))).toMatchObject({
+      promptTokens: 30,
+      messageCount: 1,
+    });
   });
 });

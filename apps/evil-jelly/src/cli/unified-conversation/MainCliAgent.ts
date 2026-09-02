@@ -25,6 +25,7 @@ import {
   listSessions,
   loadSession,
   type SessionBudget,
+  type SessionContextTokenAnchor,
 } from "../../domains/session/repository/sessionStore";
 import {
   commitResolvedUserInput,
@@ -155,6 +156,8 @@ export interface MainCliAgentProps extends EvilJellyBindings {
   sessionBlobRoot?: string;
   /** Cumulative usage carried back from a resumed session, used as the /status base. */
   seedBudget?: SessionBudget;
+  /** Resume-validated association between seedContext and the latest provider prompt count. */
+  seedContextTokenAnchor?: SessionContextTokenAnchor;
   /** Session-level MCP authorization state recovered from its V3 projection. */
   seedMcpState?: SessionMcpState;
   resolveMcpUserInput?: (serverId: string) => {
@@ -198,6 +201,8 @@ interface RouterRuntime {
   setSessionMcpState: (state: SessionMcpState) => void;
   nextImageOrdinal: () => number;
   setNextImageOrdinal: (ordinal: number) => void;
+  contextTokenAnchor: () => SessionContextTokenAnchor | undefined;
+  clearContextTokenAnchor: () => void;
   mcpBindingFactory?: ConversationAgentProps["mcpBindingFactory"];
   memoryRuntime?: SessionMemoryRuntime;
 }
@@ -298,6 +303,7 @@ async function handleCompress(runtime: RouterRuntime): Promise<void> {
   }
 
   runtime.setHistory(result.compactHistory);
+  runtime.clearContextTokenAnchor();
   if (runtime.props.sessionRecorder) {
     await runtime.props.sessionRecorder.recordCompaction({
       trigger: "manual",
@@ -567,12 +573,14 @@ async function runConversationTurn(
       sessionId: runtime.props.sessionId,
       turnId: activeTurnId,
       mcpBindingFactory,
+      initialTokenAnchor: runtime.contextTokenAnchor(),
     });
 
     if (result.compactHistory) {
       // The auto-compact event already reset V2 active context. Keep the live memory aligned with
       // its replacement plus post-compact delta.
       runtime.setHistory(result.compactHistory);
+      runtime.clearContextTokenAnchor();
     } else {
       runtime.appendTurn(submittedUserMessage, result.reply, result.delta);
     }
@@ -650,12 +658,18 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
       "main_cli:next_image_ordinal",
       props.sessionRecorder?.nextImageOrdinal ?? 1,
     );
+    const [storedContextTokenAnchor, storeContextTokenAnchor] =
+      equipMemory<SessionContextTokenAnchor | null>(
+        "main_cli:context_token_anchor",
+        props.seedContextTokenAnchor ?? null,
+      );
     // Local mirrors initialized from the carried values and updated live during the turn (the
     // equipMemory getters are frozen at entry, so we mirror writes here for same-turn reads).
     let liveContextTokens = storedContextTokens;
     let liveCacheTokens = storedCacheTokens;
     let liveSessionMcpState = storedSessionMcpState;
     let liveNextImageOrdinal = storedNextImageOrdinal;
+    let liveContextTokenAnchor = storedContextTokenAnchor ?? undefined;
     const setSessionMcpState = (state: SessionMcpState) => {
       liveSessionMcpState = state;
       storeSessionMcpState(state);
@@ -712,6 +726,11 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
       setSessionMcpState,
       nextImageOrdinal: () => liveNextImageOrdinal,
       setNextImageOrdinal,
+      contextTokenAnchor: () => liveContextTokenAnchor,
+      clearContextTokenAnchor: () => {
+        liveContextTokenAnchor = undefined;
+        storeContextTokenAnchor(null);
+      },
       mcpBindingFactory: props.mcpBindingFactory,
       memoryRuntime,
     };
