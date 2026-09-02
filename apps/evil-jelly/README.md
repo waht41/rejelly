@@ -303,7 +303,7 @@ All variables except `OPENAI_API_KEY` are optional. Application-level LLM variab
 
 #### Web search
 
-Web search uses the configured LLM endpoint's server-side `web_search` tool. OpenAI-compatible Responses is the default protocol: the tool returns its grounded summary plus cited and consulted sources. The former Anthropic-compatible Messages path remains available with `WEB_SEARCH_LLM_PROTOCOL=anthropic`. `read_webpage` is always loaded for direct URLs, while `web_search` is loaded only when `WEB_SEARCH_PROVIDER=llm`. Web egress proxying is independent from the main LLM API proxy and defaults to a direct connection.
+Web search uses the configured LLM endpoint's server-side `web_search` tool. OpenAI-compatible Responses is the default protocol: the tool returns its grounded summary plus cited and consulted sources. If an endpoint rejects the optional complete-sources expansion, Evil Jelly retries without it and remembers that capability for the rest of the process; cited sources remain available. The former Anthropic-compatible Messages path remains available with `WEB_SEARCH_LLM_PROTOCOL=anthropic`. `read_webpage` is always loaded for direct URLs, while `web_search` is loaded only when `WEB_SEARCH_PROVIDER=llm`. Web egress proxying is independent from the main LLM API proxy and defaults to a direct connection.
 
 | Variable | Description |
 |----------|-------------|

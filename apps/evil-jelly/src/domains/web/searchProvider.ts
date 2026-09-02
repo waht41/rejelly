@@ -79,6 +79,8 @@ export function filterSearchResultsBySite(
  */
 export class LlmSearchProvider implements SearchProvider {
   readonly name = "llm";
+  /** Endpoints that rejected OpenAI's optional complete-sources response expansion. */
+  private readonly responsesSourcesUnsupported = new Set<string>();
 
   async search(query: string): Promise<SearchProviderResponse> {
     const config = getWebConfig();
@@ -115,7 +117,7 @@ export class LlmSearchProvider implements SearchProvider {
     if (parsedQuery.siteConstraint) {
       webSearchTool.filters = { allowed_domains: [parsedQuery.siteConstraint] };
     }
-    const { json } = await fetchJson(url, {
+    const requestOptions = {
       headers: { Authorization: `Bearer ${config.llmSearchApiKey}` },
       body: {
         model: config.llmSearchModel,
@@ -128,11 +130,26 @@ export class LlmSearchProvider implements SearchProvider {
           `\n\nQuery: ${parsedQuery.terms}`,
         tools: [webSearchTool],
         tool_choice: "required",
-        include: ["web_search_call.action.sources"],
         max_output_tokens: 1024,
       },
       timeoutMs: 60_000,
-    });
+    };
+    const shouldIncludeSources = !this.responsesSourcesUnsupported.has(url);
+    let json: unknown;
+    try {
+      ({ json } = await fetchJson(url, {
+        ...requestOptions,
+        body: shouldIncludeSources
+          ? { ...requestOptions.body, include: ["web_search_call.action.sources"] }
+          : requestOptions.body,
+      }));
+    } catch (error) {
+      if (!shouldIncludeSources || !isUnsupportedSourcesIncludeError(error)) {
+        throw error;
+      }
+      this.responsesSourcesUnsupported.add(url);
+      ({ json } = await fetchJson(url, requestOptions));
+    }
     const parsed = parseResponsesWebSearch(json);
     return {
       provider: `${this.name}:responses`,
@@ -176,6 +193,60 @@ export class LlmSearchProvider implements SearchProvider {
       results: parseAnthropicWebSearch(json),
     };
   }
+}
+
+/** Match only validation errors for the optional complete-sources expansion, never broad 400s. */
+function isUnsupportedSourcesIncludeError(error: unknown): boolean {
+  if (!(error instanceof HttpError) || error.status !== 400 || error.responseBody === undefined) {
+    return false;
+  }
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(error.responseBody);
+  } catch {
+    return false;
+  }
+  if (
+    /invalid_prompt|invalid_value/i.test(serialized) &&
+    /include/i.test(serialized) &&
+    serialized.includes("web_search_call.action.sources")
+  ) {
+    return true;
+  }
+
+  // OpenRouter reports the rejected array position and the allowed enum values, but omits the
+  // submitted value. Since this request sends exactly one known include value, that path is enough
+  // to identify this capability mismatch without treating unrelated 400 responses as retryable.
+  const body = asRecord(error.responseBody);
+  const responseError = asRecord(body?.error);
+  const metadata = asRecord(body?.metadata);
+  if (responseError?.code !== "invalid_prompt" || typeof metadata?.raw !== "string") {
+    return false;
+  }
+  try {
+    const issues = JSON.parse(metadata.raw) as unknown;
+    return (
+      Array.isArray(issues) &&
+      issues.some((issue) => {
+        const detail = asRecord(issue);
+        const path = detail?.path;
+        return (
+          detail?.code === "invalid_value" &&
+          Array.isArray(path) &&
+          path[0] === "include" &&
+          path[1] === 0
+        );
+      })
+    );
+  } catch {
+    return false;
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
 
 /** Harvest the grounded summary, cited URLs, and complete source list from a Responses result. */

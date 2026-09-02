@@ -51,6 +51,8 @@ export class HttpError extends Error {
   constructor(
     message: string,
     readonly status?: number,
+    /** Parsed JSON error response when the server returned one. Never includes request headers. */
+    readonly responseBody?: unknown,
   ) {
     super(message);
     this.name = "HttpError";
@@ -188,7 +190,17 @@ export async function fetchJson(
     });
     const text = await response.text();
     if (response.status >= 400) {
-      throw new HttpError(`HTTP ${response.status}: ${text.slice(0, 300)}`, response.status);
+      let responseBody: unknown;
+      try {
+        responseBody = JSON.parse(text);
+      } catch {
+        // Keep non-JSON error text only in the bounded message below.
+      }
+      throw new HttpError(
+        `HTTP ${response.status}: ${text.slice(0, 300)}`,
+        response.status,
+        responseBody,
+      );
     }
     try {
       return { status: response.status, json: JSON.parse(text) };

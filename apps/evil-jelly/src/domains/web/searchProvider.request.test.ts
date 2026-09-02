@@ -7,10 +7,19 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("./httpClient", () => ({
   fetchJson: mocks.fetchJson,
-  HttpError: class HttpError extends Error {},
+  HttpError: class HttpError extends Error {
+    constructor(
+      message: string,
+      readonly status?: number,
+      readonly responseBody?: unknown,
+    ) {
+      super(message);
+    }
+  },
 }));
 vi.mock("./webConfig", () => ({ getWebConfig: mocks.getWebConfig }));
 
+import { HttpError } from "./httpClient";
 import { LlmSearchProvider } from "./searchProvider";
 
 const baseConfig = {
@@ -111,6 +120,67 @@ describe("LlmSearchProvider requests", () => {
       summary: "",
       results: [],
     });
+  });
+
+  it("retries without complete sources and caches that endpoint capability", async () => {
+    mocks.getWebConfig.mockReturnValue({
+      ...baseConfig,
+      llmSearchProtocol: "responses",
+      llmSearchBaseUrl: "https://compatible.example.test/v1",
+    });
+    const unsupportedInclude = new HttpError("HTTP 400", 400, {
+      error: { code: "invalid_prompt", message: "Invalid Responses API request" },
+      metadata: {
+        raw: JSON.stringify([
+          {
+            code: "invalid_value",
+            values: ["file_search_call.results", "reasoning.encrypted_content"],
+            path: ["include", 0],
+            message: "Invalid option: expected one of the supported include values",
+          },
+        ]),
+      },
+    });
+    mocks.fetchJson
+      .mockRejectedValueOnce(unsupportedInclude)
+      .mockResolvedValue({ status: 200, json: { output: [] } });
+    const provider = new LlmSearchProvider();
+
+    await provider.search("first query");
+    await provider.search("second query");
+
+    expect(mocks.fetchJson).toHaveBeenCalledTimes(3);
+    expect(mocks.fetchJson).toHaveBeenNthCalledWith(
+      1,
+      "https://compatible.example.test/v1/responses",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          include: ["web_search_call.action.sources"],
+        }),
+      }),
+    );
+    for (const callIndex of [1, 2]) {
+      const options = mocks.fetchJson.mock.calls[callIndex]?.[1] as {
+        body?: Record<string, unknown>;
+      };
+      expect(options.body).not.toHaveProperty("include");
+    }
+  });
+
+  it("does not retry unrelated Responses validation errors", async () => {
+    mocks.getWebConfig.mockReturnValue({
+      ...baseConfig,
+      llmSearchProtocol: "responses",
+      llmSearchBaseUrl: "https://api.example.test/v1",
+    });
+    const unrelatedError = new HttpError("HTTP 400", 400, {
+      error: { code: "invalid_prompt" },
+      metadata: { raw: '[{"path":["max_output_tokens"],"code":"invalid_value"}]' },
+    });
+    mocks.fetchJson.mockRejectedValueOnce(unrelatedError);
+
+    await expect(new LlmSearchProvider().search("x")).rejects.toBe(unrelatedError);
+    expect(mocks.fetchJson).toHaveBeenCalledTimes(1);
   });
 
   it("rejects unknown protocols instead of guessing an endpoint", async () => {
