@@ -503,3 +503,106 @@ describe("trace summary model usage filters", () => {
     expect(tooExpensiveResult.items.some((item) => item.traceId === traceId)).toBe(false);
   });
 });
+
+describe("trace summary tool model usage", () => {
+  it("persists nested model tokens without adding them to the trace total twice", async () => {
+    const traceId = `tool-model-usage-${Date.now()}`;
+    const makeBudgetEvent = (
+      spanId: string,
+      timestamp: number,
+      prompt: number,
+      completion: number,
+      costs: number,
+      details: Record<string, number>,
+    ): TraceEvent => {
+      const total = prompt + completion;
+      const delta = {
+        costs: { micro_usd: costs },
+        promptTokens: prompt,
+        completionTokens: completion,
+        totalTokens: total,
+        callCount: 1,
+        details,
+        items: [
+          {
+            type: "tool" as const,
+            name: "web_search",
+            costs: { micro_usd: costs },
+            quantity: 1,
+            unit: "request",
+            modelUsages: [
+              {
+                provider: "openrouter.ai",
+                model: "openai/gpt-test",
+                tokens: { prompt, completion, total, details },
+              },
+            ],
+          },
+        ],
+      };
+      return {
+        type: "budget:update",
+        schemaVersion: 1,
+        timestamp,
+        agentId: "tool-model-usage-probe",
+        trace: { traceId, spanId },
+        identifiers: ["tool:web_search:request"],
+        delta,
+        aggregate: delta,
+        own: delta,
+      } as unknown as TraceEvent;
+    };
+
+    await traceService.ingestEvents([
+      makeBudgetEvent("search-1", 10_001, 10, 5, 10_000, { cacheReadTokens: 4 }),
+      makeBudgetEvent("search-2", 10_002, 6, 2, 2_000, {
+        cacheReadTokens: 3,
+        reasoningTokens: 1,
+      }),
+    ]);
+
+    const detail = await traceService.getTraceDetail(traceId);
+    expect(detail?.totalTokens).toBe(23);
+    expect(JSON.parse(detail?.costs ?? "{}")).toEqual({ micro_usd: 12_000 });
+
+    const usage = JSON.parse(detail?.toolUsage ?? "{}") as Record<
+      string,
+      Record<
+        string,
+        {
+          callCount: number;
+          quantity: number;
+          costs: Record<string, number>;
+          modelUsages: Record<
+            string,
+            {
+              provider?: string;
+              model: string;
+              count: number;
+              prompt_tokens: number;
+              completion_tokens: number;
+              total_tokens: number;
+              details?: Record<string, number>;
+            }
+          >;
+        }
+      >
+    >;
+    expect(usage.web_search.request).toEqual({
+      callCount: 2,
+      quantity: 2,
+      costs: { micro_usd: 12_000 },
+      modelUsages: {
+        "openrouter.ai/openai/gpt-test": {
+          provider: "openrouter.ai",
+          model: "openai/gpt-test",
+          count: 2,
+          prompt_tokens: 16,
+          completion_tokens: 7,
+          total_tokens: 23,
+          details: { cacheReadTokens: 7, reasoningTokens: 1 },
+        },
+      },
+    });
+  });
+});

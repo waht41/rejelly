@@ -389,7 +389,7 @@ export class SqliteTraceSummaryRepo {
 
   /**
    * Handle budget:update events for tokens, costs (JSON), llmCallCount, llmUsage, toolUsage.
-   * toolUsage is aggregated by (name, unit) with callCount, quantity, costs per bucket.
+   * toolUsage is aggregated by (name, unit), including model-token attribution for LLM-backed tools.
    */
   private async handleBudgetUpdate(event: BudgetUpdateEvent): Promise<void> {
     const traceId = event.trace.traceId;
@@ -407,11 +407,21 @@ export class SqliteTraceSummaryRepo {
       details?: Record<string, number>;
       costs: Record<string, number>;
     };
-    /** Per (name, unit): callCount, quantity, costs (billing units) */
+    type ToolModelUsageEntry = {
+      provider?: string;
+      model: string;
+      count: number;
+      prompt_tokens: number;
+      completion_tokens: number;
+      total_tokens: number;
+      details?: Record<string, number>;
+    };
+    /** Per (name, unit): tool billing plus model-token attribution. */
     type ToolUsageUnitEntry = {
       callCount: number;
       quantity: number;
       costs: Record<string, number>;
+      modelUsages?: Record<string, ToolModelUsageEntry>;
     };
     type ToolUsageUpdate = Record<string, Record<string, ToolUsageUnitEntry>>;
 
@@ -448,6 +458,32 @@ export class SqliteTraceSummaryRepo {
         toolUsageUpdate[name][unit].callCount += 1;
         toolUsageUpdate[name][unit].quantity += q;
         this.mergeCostRecord(toolUsageUpdate[name][unit].costs, item.costs ?? {});
+        for (const usage of item.modelUsages ?? []) {
+          const modelName = usage.provider ? `${usage.provider}/${usage.model}` : usage.model;
+          const bucket = toolUsageUpdate[name][unit];
+          bucket.modelUsages ??= {};
+          const existing = bucket.modelUsages[modelName];
+          if (existing) {
+            existing.count += 1;
+            existing.prompt_tokens += usage.tokens.prompt ?? 0;
+            existing.completion_tokens += usage.tokens.completion ?? 0;
+            existing.total_tokens += usage.tokens.total ?? 0;
+            if (usage.tokens.details) {
+              existing.details ??= {};
+              this.mergeCostRecord(existing.details, usage.tokens.details);
+            }
+          } else {
+            bucket.modelUsages[modelName] = {
+              ...(usage.provider ? { provider: usage.provider } : {}),
+              model: usage.model,
+              count: 1,
+              prompt_tokens: usage.tokens.prompt ?? 0,
+              completion_tokens: usage.tokens.completion ?? 0,
+              total_tokens: usage.tokens.total ?? 0,
+              ...(usage.tokens.details ? { details: { ...usage.tokens.details } } : {}),
+            };
+          }
+        }
       }
     }
 
@@ -545,9 +581,28 @@ export class SqliteTraceSummaryRepo {
           }
           const bucket = mergedTool[name][unit];
           if (!bucket.costs) bucket.costs = {};
-          bucket.callCount += entry.callCount;
-          bucket.quantity += entry.quantity;
+          bucket.callCount = (bucket.callCount ?? 0) + entry.callCount;
+          bucket.quantity = (bucket.quantity ?? 0) + entry.quantity;
           this.mergeCostRecord(bucket.costs, entry.costs);
+          if (entry.modelUsages) {
+            bucket.modelUsages ??= {};
+            for (const [modelName, usage] of Object.entries(entry.modelUsages)) {
+              const existing = bucket.modelUsages[modelName];
+              if (existing) {
+                existing.count = (existing.count ?? 0) + usage.count;
+                existing.prompt_tokens = (existing.prompt_tokens ?? 0) + usage.prompt_tokens;
+                existing.completion_tokens =
+                  (existing.completion_tokens ?? 0) + usage.completion_tokens;
+                existing.total_tokens = (existing.total_tokens ?? 0) + usage.total_tokens;
+                if (usage.details) {
+                  existing.details ??= {};
+                  this.mergeCostRecord(existing.details, usage.details);
+                }
+              } else {
+                bucket.modelUsages[modelName] = usage;
+              }
+            }
+          }
         }
       }
     }
@@ -566,7 +621,7 @@ export class SqliteTraceSummaryRepo {
 
   /**
    * Handle tool execution metrics: update toolCallCount and per-tool execution facts.
-   * toolUsage (name -> unit -> { callCount, quantity, costs }) is aggregated in handleBudgetUpdate.
+   * Tool budget usage is aggregated in handleBudgetUpdate; this path records execution facts only.
    */
   private async handleToolMetrics(event: TraceEvent): Promise<void> {
     if (event.type !== "tools:execute:end") {

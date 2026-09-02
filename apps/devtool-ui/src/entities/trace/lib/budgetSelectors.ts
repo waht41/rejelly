@@ -1,6 +1,17 @@
 import type { NormalizedTrace } from "@entities/trace/types";
-import type { BudgetRecord, BudgetUpdateEvent, UsageItem } from "@rejelly/core";
+import type { BudgetRecord, BudgetUpdateEvent, ToolModelUsage, UsageItem } from "@rejelly/core";
 import { compareTraceEventsByTimestampAndSeq } from "./traceEventOrdering.ts";
+
+export interface BudgetToolModelSummary {
+  key: string;
+  provider?: string;
+  model: string;
+  callCount: number;
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  details?: Record<string, number>;
+}
 
 export interface BudgetItemSummary {
   key: string;
@@ -14,6 +25,7 @@ export interface BudgetItemSummary {
   promptTokens: number;
   completionTokens: number;
   details?: Record<string, number>;
+  modelUsages?: BudgetToolModelSummary[];
   costs: BudgetRecord;
 }
 
@@ -55,7 +67,7 @@ function addRecord(target: BudgetRecord, source: BudgetRecord | undefined): void
 }
 
 function addDetails(
-  target: BudgetUsageSummary | BudgetItemSummary,
+  target: BudgetUsageSummary | BudgetItemSummary | BudgetToolModelSummary,
   source: Record<string, number> | undefined,
 ): void {
   if (!source) return;
@@ -74,6 +86,65 @@ function getUsageItemKey(item: UsageItem): string {
   return ["tool", item.name, item.unit].join(":");
 }
 
+function getToolModelUsageKey(usage: Pick<ToolModelUsage, "provider" | "model">): string {
+  return JSON.stringify([usage.provider ?? "", usage.model]);
+}
+
+function mergeToolModelUsage(target: BudgetToolModelSummary, usage: ToolModelUsage): void {
+  target.callCount += 1;
+  target.promptTokens += Number(usage.tokens.prompt) || 0;
+  target.completionTokens += Number(usage.tokens.completion) || 0;
+  target.totalTokens += Number(usage.tokens.total) || 0;
+  addDetails(target, usage.tokens.details);
+}
+
+function createToolModelSummary(usage: ToolModelUsage): BudgetToolModelSummary {
+  const summary: BudgetToolModelSummary = {
+    key: getToolModelUsageKey(usage),
+    provider: usage.provider,
+    model: usage.model,
+    callCount: 0,
+    totalTokens: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+  };
+  mergeToolModelUsage(summary, usage);
+  return summary;
+}
+
+function mergeToolModelSummary(
+  target: BudgetToolModelSummary,
+  source: BudgetToolModelSummary,
+): void {
+  target.callCount += source.callCount;
+  target.promptTokens += source.promptTokens;
+  target.completionTokens += source.completionTokens;
+  target.totalTokens += source.totalTokens;
+  addDetails(target, source.details);
+}
+
+function mergeToolModelSummaries(
+  target: BudgetItemSummary,
+  source: readonly BudgetToolModelSummary[],
+): void {
+  target.modelUsages ??= [];
+  const usageMap = new Map(target.modelUsages.map((usage) => [usage.key, usage]));
+
+  for (const usage of source) {
+    const existing = usageMap.get(usage.key);
+    if (existing) {
+      mergeToolModelSummary(existing, usage);
+    } else {
+      const cloned = {
+        ...usage,
+        ...(usage.details ? { details: { ...usage.details } } : {}),
+      };
+      target.modelUsages.push(cloned);
+      usageMap.set(cloned.key, cloned);
+    }
+  }
+}
+
 function mergeUsageItem(target: BudgetItemSummary, item: UsageItem): void {
   target.callCount += 1;
   addRecord(target.costs, item.costs);
@@ -85,6 +156,15 @@ function mergeUsageItem(target: BudgetItemSummary, item: UsageItem): void {
     addDetails(target, item.tokens.details);
   } else {
     target.quantity = (target.quantity ?? 0) + (Number(item.quantity) || 0);
+    for (const usage of item.modelUsages ?? []) {
+      target.promptTokens += Number(usage.tokens.prompt) || 0;
+      target.completionTokens += Number(usage.tokens.completion) || 0;
+      target.totalTokens += Number(usage.tokens.total) || 0;
+      addDetails(target, usage.tokens.details);
+
+      const usageSummary = createToolModelSummary(usage);
+      mergeToolModelSummaries(target, [usageSummary]);
+    }
   }
 }
 
@@ -123,6 +203,14 @@ function cloneBudgetUsageSummary(summary: BudgetUsageSummary): BudgetUsageSummar
       ...item,
       costs: { ...item.costs },
       ...(item.details ? { details: { ...item.details } } : {}),
+      ...(item.modelUsages
+        ? {
+            modelUsages: item.modelUsages.map((usage) => ({
+              ...usage,
+              ...(usage.details ? { details: { ...usage.details } } : {}),
+            })),
+          }
+        : {}),
     })),
   };
 }
@@ -230,11 +318,20 @@ function mergeUsageSummaries(
       existing.quantity = (existing.quantity ?? 0) + (item.quantity ?? 0);
       addRecord(existing.costs, item.costs);
       addDetails(existing, item.details);
+      mergeToolModelSummaries(existing, item.modelUsages ?? []);
     } else {
       const cloned = {
         ...item,
         costs: { ...item.costs },
         ...(item.details ? { details: { ...item.details } } : {}),
+        ...(item.modelUsages
+          ? {
+              modelUsages: item.modelUsages.map((usage) => ({
+                ...usage,
+                ...(usage.details ? { details: { ...usage.details } } : {}),
+              })),
+            }
+          : {}),
       };
       itemMap.set(cloned.key, cloned);
     }
