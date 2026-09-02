@@ -1,10 +1,10 @@
 /**
- * web_search tool: thin wrapper over the Anthropic-compatible server-side search (INV-0009 §3.1).
- * Returns a compact, model-friendly list of {title, url, snippet}; pair with read_webpage to pull
- * actual page text before drawing conclusions (snippets alone invite fabrication).
+ * web_search tool: thin wrapper over the configured server-side search protocol (INV-0009 §3.1).
+ * Responses providers can return a grounded summary plus sources; pair with read_webpage when the
+ * underlying page text is needed for verification or detail.
  */
 
-import { equipTraceAttr, type ToolDefinition } from "@rejelly/core";
+import { equipTraceAttr, recordToolUsage, type ToolDefinition } from "@rejelly/core";
 import { z } from "zod";
 import { HttpError, type WebSearchDiagnostics, webSearch } from "./index";
 
@@ -27,22 +27,43 @@ export const WebSearchTool: ToolDefinition<typeof webSearchParameters> = {
     "promising URLs to read the actual content before concluding. Never invent URLs.",
   parameters: webSearchParameters,
   handler: async ({ query, limit }) => {
+    let response: Awaited<ReturnType<typeof webSearch>>;
     try {
-      const { results, diagnostics } = await webSearch(query, limit ?? 6);
-      equipWebSearchTraceAttrs(diagnostics);
-      if (results.length === 0) {
-        return `No web results for ${JSON.stringify(query)}. Try different or broader keywords.`;
-      }
-      const lines = results.map((r, i) =>
-        [`${i + 1}. ${r.title}`, `   ${r.url}`, r.snippet ? `   ${r.snippet}` : ""]
-          .filter(Boolean)
-          .join("\n"),
-      );
-      return `Web results for ${JSON.stringify(query)}:\n${lines.join("\n")}`;
+      response = await webSearch(query, limit ?? 6);
     } catch (e: unknown) {
       const msg = e instanceof HttpError ? e.message : e instanceof Error ? e.message : String(e);
       return `web_search failed: ${msg}`;
     }
+
+    const { summary, results, diagnostics, usage } = response;
+    if (usage) {
+      // The provider's top-level cost is authoritative for the whole operation. modelUsages adds
+      // token attribution only, so recording this once cannot double-charge model/search costs.
+      recordToolUsage({
+        name: "web_search",
+        quantity: usage.searchRequests,
+        unit: "request",
+        costs: usage.costs,
+        modelUsages: usage.modelUsages,
+        details: { provider: diagnostics.provider },
+      });
+    }
+    equipWebSearchTraceAttrs(diagnostics);
+    if (!summary && results.length === 0) {
+      return `No web results for ${JSON.stringify(query)}. Try different or broader keywords.`;
+    }
+    const lines = results.map((r, i) =>
+      [`${i + 1}. ${r.title}`, `   ${r.url}`, r.snippet ? `   ${r.snippet}` : ""]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    return [
+      `Web results for ${JSON.stringify(query)}:`,
+      summary ? `Search summary:\n${summary}` : "",
+      lines.length > 0 ? `Sources:\n${lines.join("\n")}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
   },
 };
 

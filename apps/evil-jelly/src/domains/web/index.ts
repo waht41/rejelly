@@ -9,6 +9,7 @@ import {
   filterSearchResultsBySite,
   getSearchProvider,
   parseSearchQuery,
+  type SearchProviderUsage,
   type SearchResult,
 } from "./searchProvider";
 import { getWebConfig } from "./webConfig";
@@ -27,8 +28,10 @@ export interface WebSearchDiagnostics {
 }
 
 export interface WebSearchResult {
+  summary: string;
   results: SearchResult[];
   diagnostics: WebSearchDiagnostics;
+  usage?: SearchProviderUsage;
 }
 
 export async function webSearch(query: string, limit = 6): Promise<WebSearchResult> {
@@ -46,15 +49,17 @@ export async function webSearch(query: string, limit = 6): Promise<WebSearchResu
     provider: response.provider,
     requestedHost: safeHost(response.requestedUrl),
     finalHost: safeHost(response.finalUrl),
-    webProxyEnabled: config.proxyUrl !== null,
+    webProxyEnabled: config.llmSearchProxyUrl !== null,
     rawResultCount: response.results.length,
     resultCount: results.length,
     topHosts: unique(results.slice(0, 5).map((result) => safeHost(result.url))).filter(Boolean),
     siteConstraint,
   };
   return {
+    summary: response.summary,
     results,
     diagnostics,
+    ...(response.usage !== undefined && { usage: response.usage }),
   };
 }
 

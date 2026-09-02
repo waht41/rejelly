@@ -303,19 +303,21 @@ All variables except `OPENAI_API_KEY` are optional. Application-level LLM variab
 
 #### Web search
 
-Web search uses the configured Anthropic-compatible endpoint's server-side `web_search` tool. `read_webpage` is always loaded for direct URLs, while `web_search` is loaded only when `WEB_SEARCH_PROVIDER=llm`. Web egress proxying is independent from the main LLM API proxy and defaults to a direct connection.
+Web search uses the configured LLM endpoint's server-side `web_search` tool. OpenAI-compatible Responses is the default protocol: the tool returns its grounded summary plus cited and consulted sources. If an endpoint rejects the optional complete-sources expansion, Evil Jelly retries without it and remembers that capability for the rest of the process; cited sources remain available. Successful searches add provider-reported input, output, cache, and reasoning tokens to the session budget; a provider-reported total cost is recorded once for the whole tool operation and is never estimated locally. The former Anthropic-compatible Messages path remains available with `WEB_SEARCH_LLM_PROTOCOL=anthropic`. `read_webpage` is always loaded for direct URLs, while `web_search` is loaded only when `WEB_SEARCH_PROVIDER=llm`. Search and page fetching share `WEB_PROXY_URL`, then inherit the Chat proxy by default. Search- and page-specific proxy URLs are optional overrides for deployments that need different egress identities. Each web proxy variable is tri-state: unset inherits, `direct` forces a direct connection, and any other value selects that proxy URL.
 
 | Variable | Description |
 |----------|-------------|
-| `WEB_PROXY_URL` | Proxy used only for web fetching; the LLM proxy is not reused by default. |
-| `WEB_USE_PROXY` | Set to `true` to reuse `PROXY_URL` for web fetching. |
+| `WEB_PROXY_URL` | Common proxy override for both search API calls and page fetching; supports `direct`. |
+| `WEB_READ_PROXY_URL` | Page-fetching override; inherits `WEB_PROXY_URL` when unset and supports `direct`. |
 | `WEB_USER_AGENT` | Identifiable user agent for page fetching. Defaults to `rejelly-web-reader/0.1` with the project URL. |
 | `WEB_TIMEOUT_MS` | Per-request timeout in milliseconds (positive integer). Defaults to `15000`. |
 | `WEB_MAX_FETCH_BYTES` | Maximum bytes fetched per document (positive integer). Defaults to `2000000`. |
 | `WEB_SEARCH_PROVIDER` | Set to `llm` to enable `web_search`; `read_webpage` is always available. |
-| `WEB_SEARCH_LLM_BASE_URL` | Anthropic-compatible root; defaults to `origin(OPENAI_BASE_URL) + /anthropic`. |
+| `WEB_SEARCH_LLM_PROTOCOL` | `responses` (default) or `anthropic`. An explicit base containing `/anthropic` selects the legacy protocol when this is unset. |
+| `WEB_SEARCH_LLM_BASE_URL` | Search API root; defaults to `OPENAI_BASE_URL` for Responses, or `origin(OPENAI_BASE_URL) + /anthropic` for Anthropic Messages. |
 | `WEB_SEARCH_LLM_API_KEY` | Search endpoint key; falls back to `OPENAI_API_KEY`. |
 | `WEB_SEARCH_LLM_MODEL` | Search model; falls back to `OPENAI_MODEL_ID`. |
+| `WEB_SEARCH_LLM_PROXY_URL` | Search API override; inherits `WEB_PROXY_URL` when unset and supports `direct`. |
 
 Evil Jelly also follows OS shell conventions: `EDITOR` / `VISUAL` select the prompt editor (Windows `notepad`, POSIX `vi` by default), while `ComSpec` / `SHELL` select the command shell (`cmd.exe` / `/bin/sh` by default).
 

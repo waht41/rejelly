@@ -18,23 +18,28 @@ export interface WebConfig {
   timeoutMs: number;
   /** Hard cap on a single fetched document body, in bytes (pre-sanitize). */
   maxFetchBytes: number;
-  /** undici ProxyAgent target when proxying is enabled; null disables proxying. */
+  /** Proxy for page fetching; inherits the shared web/Chat proxy unless explicitly overridden. */
   proxyUrl: string | null;
-  /** Explicit opt-in for the Anthropic-compatible server-side search provider. */
+  /** Proxy for the LLM search API; inherits the main Chat proxy unless explicitly overridden. */
+  llmSearchProxyUrl: string | null;
+  /** Explicit opt-in for the LLM-backed server-side search provider. */
   searchProvider: string;
   /**
-   * LLM search provider (INV-0009 §3.1): a CC-compatible model's Anthropic-mirror endpoint that
-   * proxies Anthropic's server-side `web_search` tool. No vendor literals in source — any domestic
-   * mirror (DeepSeek, Qwen, Zhipu, ...) drops in by env alone. To keep config minimal, all three
-   * reuse the already-present OPENAI_* (single-vendor) values as the fallback, so the common
-   * setup needs no extra search-specific variables:
+   * LLM search provider (INV-0009 §3.1): use an OpenAI-compatible Responses endpoint by default,
+   * with the former Anthropic Messages mirror retained behind an explicit protocol switch. Search
+   * reuses the already-present OPENAI_* values as fallbacks, so the common setup needs no extra
+   * credentials or model variables:
+   *   - protocol: WEB_SEARCH_LLM_PROTOCOL → responses
    *   - key:   WEB_SEARCH_LLM_API_KEY → OPENAI_API_KEY
    *   - model: WEB_SEARCH_LLM_MODEL  → OPENAI_MODEL_ID
-   *   - base:  WEB_SEARCH_LLM_BASE_URL → origin(OPENAI_BASE_URL) + "/anthropic"
-   * base is the `/anthropic` root (we append `/v1/messages`). Derivation assumes the OpenAI-protocol
-   * host also exposes an Anthropic mirror at /anthropic (true for DeepSeek); set the explicit var to
-   * override when it doesn't.
+   *   - base:  WEB_SEARCH_LLM_BASE_URL → OPENAI_BASE_URL
+   *
+   * `responses` appends `/responses` to the configured OpenAI-compatible base. `anthropic` derives
+   * `origin(OPENAI_BASE_URL) + /anthropic` and appends `/v1/messages`. An explicit base containing
+   * an `/anthropic` path selects the legacy protocol when WEB_SEARCH_LLM_PROTOCOL is unset, keeping
+   * existing profiles working.
    */
+  llmSearchProtocol: string;
   llmSearchBaseUrl: string;
   llmSearchApiKey: string;
   llmSearchModel: string;
@@ -49,31 +54,65 @@ function intFromEnv(name: string, fallback: number): number {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-/**
- * Web egress proxy is a SEPARATE knob from the global USE_PROXY/PROXY_URL (which routes the LLM API).
- * Defaults to DIRECT. Opt in with WEB_PROXY_URL, or WEB_USE_PROXY=true to reuse PROXY_URL.
- */
-function resolveProxyUrl(): string | null {
-  const explicit = (process.env.WEB_PROXY_URL ?? "").trim();
-  if (explicit.length > 0) {
+type ProxyOverride = string | null | undefined;
+
+/** Unset inherits, `direct` forces direct access, and every other value is a proxy URL. */
+function readProxyOverride(name: string): ProxyOverride {
+  const value = (process.env[name] ?? "").trim();
+  if (!value) {
+    return undefined;
+  }
+  return value.toLowerCase() === "direct" ? null : value;
+}
+
+/** Shared web default: an explicit web setting, then the effective Chat proxy, then direct. */
+function resolveSharedWebProxyUrl(): string | null {
+  const explicit = readProxyOverride("WEB_PROXY_URL");
+  if (explicit !== undefined) {
     return explicit;
   }
-  const reuseGlobal = (process.env.WEB_USE_PROXY ?? "").trim().toLowerCase() === "true";
-  if (reuseGlobal) {
-    const url = (process.env.PROXY_URL ?? "").trim();
-    return url.length > 0 ? url : null;
+  return resolveChatProxyUrl();
+}
+
+/** A page-specific URL is the only difference from the shared web proxy policy. */
+function resolveReadProxyUrl(): string | null {
+  const explicit = readProxyOverride("WEB_READ_PROXY_URL");
+  return explicit === undefined ? resolveSharedWebProxyUrl() : explicit;
+}
+
+function resolveChatProxyUrl(): string | null {
+  const enabled = process.env.USE_PROXY === "true" || process.env.USE_PROXY === "1";
+  if (!enabled) {
+    return null;
   }
-  return null;
+  return (
+    (process.env.HTTPS_PROXY ?? "").trim() ||
+    (process.env.HTTP_PROXY ?? "").trim() ||
+    (process.env.PROXY_URL ?? "").trim() ||
+    "http://127.0.0.1:7890"
+  );
+}
+
+/**
+ * Server-side search follows the shared web proxy by default. Its own tri-state setting can select
+ * a different proxy or force direct access without affecting page fetching.
+ */
+function resolveLlmSearchProxyUrl(): string | null {
+  const explicit = readProxyOverride("WEB_SEARCH_LLM_PROXY_URL");
+  return explicit === undefined ? resolveSharedWebProxyUrl() : explicit;
 }
 
 export function getWebConfig(): WebConfig {
+  const llmSearchProtocol = resolveLlmSearchProtocol();
   return {
     userAgent: (process.env.WEB_USER_AGENT ?? "").trim() || DEFAULT_USER_AGENT,
     timeoutMs: intFromEnv("WEB_TIMEOUT_MS", 15_000),
     maxFetchBytes: intFromEnv("WEB_MAX_FETCH_BYTES", 2_000_000),
-    proxyUrl: resolveProxyUrl(),
+    proxyUrl: resolveReadProxyUrl(),
+    llmSearchProxyUrl: resolveLlmSearchProxyUrl(),
     searchProvider: (process.env.WEB_SEARCH_PROVIDER ?? "").trim().toLowerCase(),
-    llmSearchBaseUrl: resolveLlmSearchBaseUrl(),
+    llmSearchProtocol,
+    llmSearchBaseUrl: resolveLlmSearchBaseUrl(llmSearchProtocol),
     llmSearchApiKey:
       (process.env.WEB_SEARCH_LLM_API_KEY ?? "").trim() ||
       (process.env.OPENAI_API_KEY ?? "").trim(),
@@ -90,16 +129,36 @@ export function isWebSearchConfigured(): boolean {
 }
 
 /**
- * Resolve the Anthropic-mirror base for LLM search. Explicit WEB_SEARCH_LLM_BASE_URL wins; otherwise
- * derive it from the OpenAI-protocol base by keeping the host and swapping the path to /anthropic
- * (e.g. https://api.deepseek.com/v1 → https://api.deepseek.com/anthropic).
+ * Resolve the search protocol. Responses is the default; an explicit legacy `/anthropic` base is
+ * also recognized so existing profiles do not silently start sending Messages-shaped requests to
+ * the wrong endpoint.
  */
-function resolveLlmSearchBaseUrl(): string {
+function resolveLlmSearchProtocol(): string {
+  const explicit = (process.env.WEB_SEARCH_LLM_PROTOCOL ?? "").trim().toLowerCase();
+  if (explicit) {
+    return explicit;
+  }
+  const explicitBase = (process.env.WEB_SEARCH_LLM_BASE_URL ?? "").trim();
+  try {
+    if (new URL(explicitBase).pathname.split("/").includes("anthropic")) {
+      return "anthropic";
+    }
+  } catch {
+    // A malformed base is reported by the provider; it must not change the protocol default.
+  }
+  return "responses";
+}
+
+/** Resolve the protocol-specific root to which the provider appends its endpoint path. */
+function resolveLlmSearchBaseUrl(protocol: string): string {
   const explicit = (process.env.WEB_SEARCH_LLM_BASE_URL ?? "").trim();
   if (explicit) {
     return explicit;
   }
   const openaiBase = (process.env.OPENAI_BASE_URL ?? "").trim() || DEFAULT_OPENAI_BASE_URL;
+  if (protocol !== "anthropic") {
+    return openaiBase.replace(/\/+$/, "");
+  }
   try {
     return `${new URL(openaiBase).origin}/anthropic`;
   } catch {

@@ -1,5 +1,6 @@
-/** Server-side web search through an Anthropic-compatible Messages endpoint (INV-0009 §3.1). */
+/** Server-side web search through Responses or Anthropic-compatible APIs (INV-0009 §3.1). */
 
+import type { RecordToolModelUsageInput } from "@rejelly/core";
 import { fetchJson, HttpError } from "./httpClient";
 import { getWebConfig } from "./webConfig";
 
@@ -18,6 +19,20 @@ export interface SearchProviderResponse {
   provider: string;
   requestedUrl: string;
   finalUrl: string;
+  summary: string;
+  results: SearchResult[];
+  usage?: SearchProviderUsage;
+}
+
+/** Provider-reported metering for one successful search API response. */
+export interface SearchProviderUsage {
+  costs: Record<string, number>;
+  modelUsages: RecordToolModelUsageInput[];
+  searchRequests: number;
+}
+
+export interface ParsedResponsesWebSearch {
+  summary: string;
   results: SearchResult[];
 }
 
@@ -26,7 +41,7 @@ export interface ParsedSearchQuery {
   siteConstraint: string | null;
 }
 
-/** Separate a site: operator from terms because Anthropic-compatible mirrors may ignore it. */
+/** Separate a site: operator for native Responses filters and post-hoc compatibility filtering. */
 export function parseSearchQuery(query: string): ParsedSearchQuery {
   const match = query.match(/\bsite:([^\s)]+)/i);
   const rawSite = match?.[1]
@@ -67,13 +82,14 @@ export function filterSearchResultsBySite(
 }
 
 /**
- * LLM-API search provider: call a CC-compatible model's Anthropic-mirror endpoint with Anthropic's
- * server-side `web_search` tool and harvest the result blocks. The per-result body is opaque
- * `encrypted_content`, so snippet is left empty (read_webpage fetches the real text). `site:` may
- * not be honored by every mirror, so prefer plain keywords plus post-hoc host filtering.
+ * LLM-API search provider. Responses is the default because it returns a grounded text summary,
+ * URL citations, and (when supported) the complete source list. The former Anthropic Messages
+ * search remains available for compatible mirrors via WEB_SEARCH_LLM_PROTOCOL=anthropic.
  */
 export class LlmSearchProvider implements SearchProvider {
   readonly name = "llm";
+  /** Endpoints that rejected OpenAI's optional complete-sources response expansion. */
+  private readonly responsesSourcesUnsupported = new Set<string>();
 
   async search(query: string): Promise<SearchProviderResponse> {
     const config = getWebConfig();
@@ -87,7 +103,77 @@ export class LlmSearchProvider implements SearchProvider {
     if (!config.llmSearchModel) {
       throw new HttpError("WEB_SEARCH_LLM_MODEL (or OPENAI_MODEL_ID) is not set");
     }
-    const url = `${config.llmSearchBaseUrl.replace(/\/+$/, "")}/v1/messages`;
+
+    if (config.llmSearchProtocol === "responses") {
+      return this.searchResponses(parsedQuery);
+    }
+    if (config.llmSearchProtocol === "anthropic") {
+      return this.searchAnthropic(parsedQuery);
+    }
+    throw new HttpError(
+      `unsupported WEB_SEARCH_LLM_PROTOCOL ${JSON.stringify(config.llmSearchProtocol)} ` +
+        '(expected "responses" or "anthropic")',
+    );
+  }
+
+  private async searchResponses(parsedQuery: ParsedSearchQuery): Promise<SearchProviderResponse> {
+    const config = getWebConfig();
+    const url = appendEndpoint(config.llmSearchBaseUrl, "/responses");
+    const webSearchTool: Record<string, unknown> = {
+      type: "web_search",
+      search_context_size: "low",
+    };
+    if (parsedQuery.siteConstraint) {
+      webSearchTool.filters = { allowed_domains: [parsedQuery.siteConstraint] };
+    }
+    const requestOptions = {
+      headers: { Authorization: `Bearer ${config.llmSearchApiKey}` },
+      body: {
+        model: config.llmSearchModel,
+        input:
+          "Search the web for the query below. Return a concise evidence summary with citations. " +
+          "Do not answer from memory." +
+          (parsedQuery.siteConstraint
+            ? ` Only use sources hosted on ${parsedQuery.siteConstraint} or its subdomains.`
+            : "") +
+          `\n\nQuery: ${parsedQuery.terms}`,
+        tools: [webSearchTool],
+        tool_choice: "required",
+        max_output_tokens: 1024,
+      },
+      timeoutMs: 60_000,
+      proxyUrl: config.llmSearchProxyUrl,
+    };
+    const shouldIncludeSources = !this.responsesSourcesUnsupported.has(url);
+    let json: unknown;
+    try {
+      ({ json } = await fetchJson(url, {
+        ...requestOptions,
+        body: shouldIncludeSources
+          ? { ...requestOptions.body, include: ["web_search_call.action.sources"] }
+          : requestOptions.body,
+      }));
+    } catch (error) {
+      if (!shouldIncludeSources || !isUnsupportedSourcesIncludeError(error)) {
+        throw error;
+      }
+      this.responsesSourcesUnsupported.add(url);
+      ({ json } = await fetchJson(url, requestOptions));
+    }
+    const parsed = parseResponsesWebSearch(json);
+    return {
+      provider: `${this.name}:responses`,
+      requestedUrl: url,
+      finalUrl: url,
+      summary: parsed.summary,
+      results: parsed.results,
+      ...withUsage(parseSearchProviderUsage(json, url, config.llmSearchModel, "responses")),
+    };
+  }
+
+  private async searchAnthropic(parsedQuery: ParsedSearchQuery): Promise<SearchProviderResponse> {
+    const config = getWebConfig();
+    const url = appendEndpoint(config.llmSearchBaseUrl, "/v1/messages");
     const { json } = await fetchJson(url, {
       headers: { "x-api-key": config.llmSearchApiKey, "anthropic-version": "2023-06-01" },
       body: {
@@ -109,14 +195,263 @@ export class LlmSearchProvider implements SearchProvider {
       },
       // Model turn + server-side search: well past the 15s SERP/fetch default.
       timeoutMs: 60_000,
+      proxyUrl: config.llmSearchProxyUrl,
     });
     return {
-      provider: this.name,
+      provider: `${this.name}:anthropic`,
       requestedUrl: url,
       finalUrl: url,
+      summary: "",
       results: parseAnthropicWebSearch(json),
+      ...withUsage(parseSearchProviderUsage(json, url, config.llmSearchModel, "anthropic")),
     };
   }
+}
+
+function withUsage(
+  usage: SearchProviderUsage | undefined,
+): { usage: SearchProviderUsage } | Record<string, never> {
+  return usage ? { usage } : {};
+}
+
+function parseSearchProviderUsage(
+  json: unknown,
+  endpoint: string,
+  fallbackModel: string,
+  protocol: "responses" | "anthropic",
+): SearchProviderUsage | undefined {
+  const root = asRecord(json);
+  const usage = asRecord(root?.usage);
+  if (!root || !usage) {
+    return undefined;
+  }
+
+  const promptTokens = firstTokenCount(usage.input_tokens, usage.prompt_tokens) ?? 0;
+  const completionTokens = firstTokenCount(usage.output_tokens, usage.completion_tokens) ?? 0;
+  const reportedTotal = tokenCount(usage.total_tokens);
+  const hasTokenUsage =
+    reportedTotal !== undefined ||
+    firstTokenCount(usage.input_tokens, usage.prompt_tokens) !== undefined ||
+    firstTokenCount(usage.output_tokens, usage.completion_tokens) !== undefined;
+  const tokenDetails = parseTokenDetails(usage, protocol);
+  const model = cleanString(root.model) || fallbackModel;
+  const provider = cleanString(root.provider)?.toLowerCase() || endpointProvider(endpoint);
+  const cost = nonNegativeNumber(usage.cost);
+  const reportedRequests = tokenCount(asRecord(usage.server_tool_use)?.web_search_requests);
+  const observedRequests = countObservedSearchRequests(root, protocol);
+
+  if (!hasTokenUsage && cost === undefined && reportedRequests === undefined) {
+    return undefined;
+  }
+
+  return {
+    costs: cost === undefined ? {} : { micro_usd: Math.round(cost * 1_000_000) },
+    modelUsages: hasTokenUsage
+      ? [
+          {
+            provider,
+            model,
+            usage: {
+              promptTokens,
+              completionTokens,
+              totalTokens: reportedTotal ?? promptTokens + completionTokens,
+              ...(tokenDetails !== undefined && { details: tokenDetails }),
+            },
+          },
+        ]
+      : [],
+    searchRequests: reportedRequests ?? Math.max(1, observedRequests),
+  };
+}
+
+function parseTokenDetails(
+  usage: Record<string, unknown>,
+  protocol: "responses" | "anthropic",
+): Record<string, number> | undefined {
+  const inputDetails =
+    asRecord(usage.input_tokens_details) ?? asRecord(usage.prompt_tokens_details);
+  const outputDetails =
+    asRecord(usage.output_tokens_details) ?? asRecord(usage.completion_tokens_details);
+  const candidates =
+    protocol === "anthropic"
+      ? {
+          cacheReadTokens: tokenCount(usage.cache_read_input_tokens),
+          cacheWriteTokens: tokenCount(usage.cache_creation_input_tokens),
+        }
+      : {
+          cacheReadTokens: tokenCount(inputDetails?.cached_tokens),
+          cacheWriteTokens: tokenCount(inputDetails?.cache_write_tokens),
+          reasoningTokens: tokenCount(outputDetails?.reasoning_tokens),
+        };
+  const details = Object.fromEntries(
+    Object.entries(candidates).filter((entry): entry is [string, number] => entry[1] !== undefined),
+  );
+  return Object.keys(details).length > 0 ? details : undefined;
+}
+
+function countObservedSearchRequests(
+  root: Record<string, unknown>,
+  protocol: "responses" | "anthropic",
+): number {
+  const items = protocol === "responses" ? root.output : root.content;
+  if (!Array.isArray(items)) {
+    return 0;
+  }
+  return items.filter((item) => {
+    const record = asRecord(item);
+    return protocol === "responses"
+      ? record?.type === "web_search_call"
+      : record?.type === "server_tool_use" && record.name === "web_search";
+  }).length;
+}
+
+function endpointProvider(endpoint: string): string {
+  try {
+    return new URL(endpoint).hostname.toLowerCase();
+  } catch {
+    return "unknown";
+  }
+}
+
+function cleanString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function tokenCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+function firstTokenCount(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    const parsed = tokenCount(value);
+    if (parsed !== undefined) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+function nonNegativeNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+/** Match only validation errors for the optional complete-sources expansion, never broad 400s. */
+function isUnsupportedSourcesIncludeError(error: unknown): boolean {
+  if (!(error instanceof HttpError) || error.status !== 400 || error.responseBody === undefined) {
+    return false;
+  }
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(error.responseBody);
+  } catch {
+    return false;
+  }
+  if (
+    /invalid_prompt|invalid_value/i.test(serialized) &&
+    /include/i.test(serialized) &&
+    serialized.includes("web_search_call.action.sources")
+  ) {
+    return true;
+  }
+
+  // OpenRouter reports the rejected array position and the allowed enum values, but omits the
+  // submitted value. Since this request sends exactly one known include value, that path is enough
+  // to identify this capability mismatch without treating unrelated 400 responses as retryable.
+  const body = asRecord(error.responseBody);
+  const responseError = asRecord(body?.error);
+  const metadata = asRecord(body?.metadata);
+  if (responseError?.code !== "invalid_prompt" || typeof metadata?.raw !== "string") {
+    return false;
+  }
+  try {
+    const issues = JSON.parse(metadata.raw) as unknown;
+    return (
+      Array.isArray(issues) &&
+      issues.some((issue) => {
+        const detail = asRecord(issue);
+        const path = detail?.path;
+        return (
+          detail?.code === "invalid_value" &&
+          Array.isArray(path) &&
+          path[0] === "include" &&
+          path[1] === 0
+        );
+      })
+    );
+  } catch {
+    return false;
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/** Harvest the grounded summary, cited URLs, and complete source list from a Responses result. */
+export function parseResponsesWebSearch(
+  json: unknown,
+  limit = Number.POSITIVE_INFINITY,
+): ParsedResponsesWebSearch {
+  const output = (json as { output?: unknown })?.output;
+  if (!Array.isArray(output)) {
+    return { summary: "", results: [] };
+  }
+
+  const summaries: string[] = [];
+  const results: SearchResult[] = [];
+  const indexes = new Map<string, number>();
+
+  for (const item of output) {
+    const outputItem = item as { type?: unknown; content?: unknown; action?: unknown };
+    if (outputItem.type === "message" && Array.isArray(outputItem.content)) {
+      for (const part of outputItem.content) {
+        const textPart = part as { type?: unknown; text?: unknown; annotations?: unknown };
+        if (textPart.type !== "output_text") {
+          continue;
+        }
+        if (typeof textPart.text === "string" && textPart.text.trim()) {
+          summaries.push(textPart.text.trim());
+        }
+        if (!Array.isArray(textPart.annotations)) {
+          continue;
+        }
+        for (const annotation of textPart.annotations) {
+          const outer = annotation as { type?: unknown; url_citation?: unknown };
+          if (outer.type !== "url_citation") {
+            continue;
+          }
+          const citation = (outer.url_citation ?? outer) as {
+            url?: unknown;
+            title?: unknown;
+            content?: unknown;
+          };
+          addSearchResult(results, indexes, citation);
+        }
+      }
+      continue;
+    }
+
+    if (outputItem.type === "web_search_call") {
+      const sources = (outputItem.action as { sources?: unknown } | undefined)?.sources;
+      if (!Array.isArray(sources)) {
+        continue;
+      }
+      for (const source of sources) {
+        addSearchResult(
+          results,
+          indexes,
+          source as { url?: unknown; title?: unknown; content?: unknown },
+        );
+      }
+    }
+  }
+
+  return {
+    summary: summaries.join("\n\n"),
+    results: results.slice(0, limit),
+  };
 }
 
 /** Harvest `web_search_result` items from an Anthropic Messages response into SearchResult[]. */
@@ -169,6 +504,43 @@ function normalizeResultUrl(raw: string): string | null {
   } catch {
     return null;
   }
+}
+
+function addSearchResult(
+  results: SearchResult[],
+  indexes: Map<string, number>,
+  source: { url?: unknown; title?: unknown; content?: unknown },
+): void {
+  if (typeof source.url !== "string") {
+    return;
+  }
+  const dedupeKey = normalizeResultUrl(source.url);
+  if (!dedupeKey) {
+    return;
+  }
+  const title = typeof source.title === "string" && source.title.trim() ? source.title : source.url;
+  const snippet = typeof source.content === "string" ? source.content.trim() : "";
+  const existingIndex = indexes.get(dedupeKey);
+  if (existingIndex !== undefined) {
+    const existing = results[existingIndex];
+    if (!existing) {
+      return;
+    }
+    if (existing.title === existing.url && title !== source.url) {
+      existing.title = title;
+    }
+    if (!existing.snippet && snippet) {
+      existing.snippet = snippet;
+    }
+    return;
+  }
+  indexes.set(dedupeKey, results.length);
+  results.push({ title, url: source.url, snippet });
+}
+
+function appendEndpoint(baseUrl: string, endpoint: string): string {
+  const base = baseUrl.replace(/\/+$/, "");
+  return base.endsWith(endpoint) ? base : `${base}${endpoint}`;
 }
 
 const provider = new LlmSearchProvider();

@@ -51,6 +51,8 @@ export class HttpError extends Error {
   constructor(
     message: string,
     readonly status?: number,
+    /** Parsed JSON error response when the server returned one. Never includes request headers. */
+    readonly responseBody?: unknown,
   ) {
     super(message);
     this.name = "HttpError";
@@ -163,8 +165,8 @@ export async function fetchText(
 /**
  * POST (or other method) a JSON body and parse a JSON response, reusing the same proxy-aware
  * dispatcher + abort/timeout machinery as fetchText. Used by the LLM search provider to call a
- * model's Anthropic-mirror endpoint; that round trip runs the model + a server-side search, so it
- * needs its own (larger) timeout rather than the SERP/fetch default.
+ * model's server-side search endpoint; that round trip runs the model + search, so it needs its
+ * own (larger) timeout rather than the SERP/fetch default.
  */
 export async function fetchJson(
   url: string,
@@ -173,6 +175,8 @@ export async function fetchJson(
     headers?: Record<string, string>;
     body?: unknown;
     timeoutMs?: number;
+    /** Per-request proxy override. null forces direct; undefined uses the general web proxy. */
+    proxyUrl?: string | null;
   } = {},
 ): Promise<{ status: number; json: unknown }> {
   const config = getWebConfig();
@@ -182,13 +186,26 @@ export async function fetchJson(
     const response = await undici.fetch(url, {
       method: options.method ?? "POST",
       signal,
-      dispatcher: resolveDispatcher(undici, config.proxyUrl),
+      dispatcher: resolveDispatcher(
+        undici,
+        options.proxyUrl === undefined ? config.proxyUrl : options.proxyUrl,
+      ),
       headers: { "content-type": "application/json", ...options.headers },
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     });
     const text = await response.text();
     if (response.status >= 400) {
-      throw new HttpError(`HTTP ${response.status}: ${text.slice(0, 300)}`, response.status);
+      let responseBody: unknown;
+      try {
+        responseBody = JSON.parse(text);
+      } catch {
+        // Keep non-JSON error text only in the bounded message below.
+      }
+      throw new HttpError(
+        `HTTP ${response.status}: ${text.slice(0, 300)}`,
+        response.status,
+        responseBody,
+      );
     }
     try {
       return { status: response.status, json: JSON.parse(text) };

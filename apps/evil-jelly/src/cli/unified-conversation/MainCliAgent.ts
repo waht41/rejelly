@@ -681,10 +681,11 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
     };
     host.setNextImageOrdinal?.(liveNextImageOrdinal);
     // Root-context budget config fires for every model call in descendant agents (the update walks
-    // the parent chain), so delta.promptTokens of the latest call tracks current context occupancy.
+    // the parent chain). Token-metered tools also contribute prompt tokens, but they do not occupy
+    // the Chat context and must not replace the latest direct model-call snapshot.
     equipBudget({
       onUpdate: ({ delta }) => {
-        if (delta.promptTokens > 0) {
+        if (delta.promptTokens > 0 && delta.items.some((item) => item.type === "model")) {
           liveContextTokens = delta.promptTokens;
           setLastContextTokens(delta.promptTokens);
           // cacheRead is the cached subset of this same call's input; 0 when the provider omits it.
