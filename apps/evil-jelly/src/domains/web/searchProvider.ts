@@ -133,6 +133,7 @@ export class LlmSearchProvider implements SearchProvider {
         max_output_tokens: 1024,
       },
       timeoutMs: 60_000,
+      proxyUrl: config.llmSearchProxyUrl,
     };
     const shouldIncludeSources = !this.responsesSourcesUnsupported.has(url);
     let json: unknown;
@@ -184,6 +185,7 @@ export class LlmSearchProvider implements SearchProvider {
       },
       // Model turn + server-side search: well past the 15s SERP/fetch default.
       timeoutMs: 60_000,
+      proxyUrl: config.llmSearchProxyUrl,
     });
     return {
       provider: `${this.name}:anthropic`,

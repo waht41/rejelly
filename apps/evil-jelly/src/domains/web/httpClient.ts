@@ -175,6 +175,8 @@ export async function fetchJson(
     headers?: Record<string, string>;
     body?: unknown;
     timeoutMs?: number;
+    /** Per-request proxy override. null forces direct; undefined uses the general web proxy. */
+    proxyUrl?: string | null;
   } = {},
 ): Promise<{ status: number; json: unknown }> {
   const config = getWebConfig();
@@ -184,7 +186,10 @@ export async function fetchJson(
     const response = await undici.fetch(url, {
       method: options.method ?? "POST",
       signal,
-      dispatcher: resolveDispatcher(undici, config.proxyUrl),
+      dispatcher: resolveDispatcher(
+        undici,
+        options.proxyUrl === undefined ? config.proxyUrl : options.proxyUrl,
+      ),
       headers: { "content-type": "application/json", ...options.headers },
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     });

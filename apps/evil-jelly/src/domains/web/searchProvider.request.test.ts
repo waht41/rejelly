@@ -25,6 +25,7 @@ import { LlmSearchProvider } from "./searchProvider";
 const baseConfig = {
   llmSearchApiKey: "search-key",
   llmSearchModel: "search-model",
+  llmSearchProxyUrl: "http://search-proxy.test:9090",
 };
 
 beforeEach(() => {
@@ -84,6 +85,7 @@ describe("LlmSearchProvider requests", () => {
           ],
         }),
         timeoutMs: 60_000,
+        proxyUrl: "http://search-proxy.test:9090",
       }),
     );
     expect(response).toMatchObject({
@@ -113,6 +115,7 @@ describe("LlmSearchProvider requests", () => {
       "https://api.example.test/anthropic/v1/messages",
       expect.objectContaining({
         headers: { "x-api-key": "search-key", "anthropic-version": "2023-06-01" },
+        proxyUrl: "http://search-proxy.test:9090",
       }),
     );
     expect(response).toMatchObject({
