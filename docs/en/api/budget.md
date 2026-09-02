@@ -169,11 +169,32 @@ interface UsageStats {
 
 ### recordToolUsage(toolUsage)
 
-Records tool consumption in scenarios without LLM calls (e.g., external APIs, image generation). Participates in hierarchical updates and triggers `onUpdate` on all levels of the chain.
+Records tool consumption such as external API calls and image generation. Participates in hierarchical updates and triggers `onUpdate` on all levels of the chain. A tool that invokes one or more models can attach `modelUsages`; those tokens contribute to aggregate token statistics and token budgets while remaining attributed to the tool operation.
 
 ```typescript
 recordToolUsage({ name: 'dall-e', costs: { micro_usd: 40_000 }, quantity: 1, unit: 'image' })
 ```
+
+```typescript
+recordToolUsage({
+  name: 'web_search',
+  costs: { micro_usd: 12_044 }, // authoritative total cost for the whole tool operation
+  quantity: 1,
+  unit: 'request',
+  modelUsages: [{
+    provider: 'openrouter',
+    model: 'openai/search-model',
+    usage: {
+      promptTokens: 8_417,
+      completionTokens: 122,
+      totalTokens: 8_539,
+      details: { cacheReadTokens: 5_248 },
+    },
+  }],
+})
+```
+
+`modelUsages` is an attribution breakdown, not another cost ledger. Record the complete provider-reported charge once in the tool's top-level `costs` to avoid double counting.
 
 ## Notes
 

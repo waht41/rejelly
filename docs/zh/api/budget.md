@@ -169,11 +169,32 @@ interface UsageStats {
 
 ### recordToolUsage(toolUsage)
 
-在无 LLM 调用的场景下记录工具消费（如外部 API、画图等），会参与层级更新并触发链上各层的 `onUpdate`。
+记录外部 API、画图等工具消费，会参与层级更新并触发链上各层的 `onUpdate`。如果工具内部调用了一个或多个模型，可以附带 `modelUsages`；其中的 token 会进入聚合 token 统计和 token budget，同时仍归因于该工具操作。
 
 ```typescript
 recordToolUsage({ name: 'dall-e', costs: { micro_usd: 40_000 }, quantity: 1, unit: 'image' })
 ```
+
+```typescript
+recordToolUsage({
+  name: 'web_search',
+  costs: { micro_usd: 12_044 }, // 整个工具操作的权威总费用
+  quantity: 1,
+  unit: 'request',
+  modelUsages: [{
+    provider: 'openrouter',
+    model: 'openai/search-model',
+    usage: {
+      promptTokens: 8_417,
+      completionTokens: 122,
+      totalTokens: 8_539,
+      details: { cacheReadTokens: 5_248 },
+    },
+  }],
+})
+```
+
+`modelUsages` 是归因明细，不是另一份费用账本。应将服务端返回的完整费用只记录在工具顶层的 `costs` 中，以免重复计费。
 
 ## 注意事项
 

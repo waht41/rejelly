@@ -46,10 +46,13 @@ export type {
   BudgetState,
   BudgetUpdateArg,
   ModelUsageItem,
+  RecordToolModelUsageInput,
   RecordToolUsageInput,
+  ToolModelUsage,
   ToolUsageItem,
   UsageItem,
   UsageStats,
+  UsageTokens,
 } from "./core/domain/budget";
 export { recordToolUsage } from "./core/engine/budget-system";
 export { isRebornSignal, reborn } from "./core/engine/flow/reborn";
