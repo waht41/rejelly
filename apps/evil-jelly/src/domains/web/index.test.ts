@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   filterSearchResultsBySite,
   parseAnthropicWebSearch,
+  parseResponsesWebSearch,
   parseSearchQuery,
   type SearchResult,
 } from "./searchProvider";
@@ -29,6 +30,72 @@ describe("search query constraints", () => {
     expect(
       filterSearchResultsBySite(results, "example.test").map((result) => result.title),
     ).toEqual(["root", "docs"]);
+  });
+});
+
+describe("parseResponsesWebSearch", () => {
+  const response = {
+    output: [
+      {
+        type: "web_search_call",
+        action: {
+          type: "search",
+          sources: [
+            { type: "url", url: "https://docs.example.test/guide#overview" },
+            { type: "url", url: "https://example.test/later" },
+            { type: "url", url: "ftp://example.test/ignored" },
+          ],
+        },
+      },
+      {
+        type: "message",
+        content: [
+          {
+            type: "output_text",
+            text: "The current guide recommends the Responses API.",
+            annotations: [
+              {
+                type: "url_citation",
+                url: "https://docs.example.test/guide#citation",
+                title: "Web search guide",
+              },
+              {
+                type: "url_citation",
+                url_citation: {
+                  url: "https://example.test/later",
+                  title: "Compatibility notes",
+                  content: "A compact provider-supplied excerpt.",
+                },
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  it("returns the grounded summary and merges citations into the complete source list", () => {
+    expect(parseResponsesWebSearch(response)).toEqual({
+      summary: "The current guide recommends the Responses API.",
+      results: [
+        {
+          title: "Web search guide",
+          url: "https://docs.example.test/guide#overview",
+          snippet: "",
+        },
+        {
+          title: "Compatibility notes",
+          url: "https://example.test/later",
+          snippet: "A compact provider-supplied excerpt.",
+        },
+      ],
+    });
+  });
+
+  it("respects the result limit and rejects malformed output", () => {
+    expect(parseResponsesWebSearch(response, 1).results).toHaveLength(1);
+    expect(parseResponsesWebSearch({})).toEqual({ summary: "", results: [] });
+    expect(parseResponsesWebSearch(null)).toEqual({ summary: "", results: [] });
   });
 });
 

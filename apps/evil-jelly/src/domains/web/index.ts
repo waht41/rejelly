@@ -27,6 +27,7 @@ export interface WebSearchDiagnostics {
 }
 
 export interface WebSearchResult {
+  summary: string;
   results: SearchResult[];
   diagnostics: WebSearchDiagnostics;
 }
@@ -53,6 +54,7 @@ export async function webSearch(query: string, limit = 6): Promise<WebSearchResu
     siteConstraint,
   };
   return {
+    summary: response.summary,
     results,
     diagnostics,
   };

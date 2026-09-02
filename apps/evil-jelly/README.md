@@ -303,7 +303,7 @@ All variables except `OPENAI_API_KEY` are optional. Application-level LLM variab
 
 #### Web search
 
-Web search uses the configured Anthropic-compatible endpoint's server-side `web_search` tool. `read_webpage` is always loaded for direct URLs, while `web_search` is loaded only when `WEB_SEARCH_PROVIDER=llm`. Web egress proxying is independent from the main LLM API proxy and defaults to a direct connection.
+Web search uses the configured LLM endpoint's server-side `web_search` tool. OpenAI-compatible Responses is the default protocol: the tool returns its grounded summary plus cited and consulted sources. The former Anthropic-compatible Messages path remains available with `WEB_SEARCH_LLM_PROTOCOL=anthropic`. `read_webpage` is always loaded for direct URLs, while `web_search` is loaded only when `WEB_SEARCH_PROVIDER=llm`. Web egress proxying is independent from the main LLM API proxy and defaults to a direct connection.
 
 | Variable | Description |
 |----------|-------------|
@@ -313,7 +313,8 @@ Web search uses the configured Anthropic-compatible endpoint's server-side `web_
 | `WEB_TIMEOUT_MS` | Per-request timeout in milliseconds (positive integer). Defaults to `15000`. |
 | `WEB_MAX_FETCH_BYTES` | Maximum bytes fetched per document (positive integer). Defaults to `2000000`. |
 | `WEB_SEARCH_PROVIDER` | Set to `llm` to enable `web_search`; `read_webpage` is always available. |
-| `WEB_SEARCH_LLM_BASE_URL` | Anthropic-compatible root; defaults to `origin(OPENAI_BASE_URL) + /anthropic`. |
+| `WEB_SEARCH_LLM_PROTOCOL` | `responses` (default) or `anthropic`. An explicit base containing `/anthropic` selects the legacy protocol when this is unset. |
+| `WEB_SEARCH_LLM_BASE_URL` | Search API root; defaults to `OPENAI_BASE_URL` for Responses, or `origin(OPENAI_BASE_URL) + /anthropic` for Anthropic Messages. |
 | `WEB_SEARCH_LLM_API_KEY` | Search endpoint key; falls back to `OPENAI_API_KEY`. |
 | `WEB_SEARCH_LLM_MODEL` | Search model; falls back to `OPENAI_MODEL_ID`. |
 

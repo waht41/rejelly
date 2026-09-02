@@ -163,8 +163,8 @@ export async function fetchText(
 /**
  * POST (or other method) a JSON body and parse a JSON response, reusing the same proxy-aware
  * dispatcher + abort/timeout machinery as fetchText. Used by the LLM search provider to call a
- * model's Anthropic-mirror endpoint; that round trip runs the model + a server-side search, so it
- * needs its own (larger) timeout rather than the SERP/fetch default.
+ * model's server-side search endpoint; that round trip runs the model + search, so it needs its
+ * own (larger) timeout rather than the SERP/fetch default.
  */
 export async function fetchJson(
   url: string,

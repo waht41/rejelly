@@ -3,6 +3,7 @@ import { getWebConfig, isWebSearchConfigured } from "./webConfig";
 
 const SEARCH_ENV_NAMES = [
   "WEB_SEARCH_PROVIDER",
+  "WEB_SEARCH_LLM_PROTOCOL",
   "WEB_SEARCH_LLM_BASE_URL",
   "WEB_SEARCH_LLM_API_KEY",
   "WEB_SEARCH_LLM_MODEL",
@@ -54,7 +55,8 @@ describe("getWebConfig", () => {
 
     const config = getWebConfig();
 
-    expect(config.llmSearchBaseUrl).toBe("https://api.openai.com/anthropic");
+    expect(config.llmSearchProtocol).toBe("responses");
+    expect(config.llmSearchBaseUrl).toBe("https://api.openai.com/v1");
     expect(config.llmSearchModel).toBe("gpt-5.6-luna");
   });
 
@@ -66,7 +68,8 @@ describe("getWebConfig", () => {
 
     const config = getWebConfig();
 
-    expect(config.llmSearchBaseUrl).toBe("https://api.main.test/anthropic");
+    expect(config.llmSearchProtocol).toBe("responses");
+    expect(config.llmSearchBaseUrl).toBe("https://api.main.test/v1");
     expect(config.llmSearchApiKey).toBe("main-key");
     expect(config.llmSearchModel).toBe("main-model");
   });
@@ -75,13 +78,35 @@ describe("getWebConfig", () => {
     clearSearchEnv();
     vi.stubEnv("OPENAI_BASE_URL", "https://api.main.test/v1");
     vi.stubEnv("OPENAI_MODEL_ID", "main-model");
-    vi.stubEnv("WEB_SEARCH_LLM_BASE_URL", "https://api.search.test/anthropic");
+    vi.stubEnv("WEB_SEARCH_LLM_BASE_URL", "https://api.search.test/v1");
     vi.stubEnv("WEB_SEARCH_LLM_MODEL", "search-model");
 
     const config = getWebConfig();
 
-    expect(config.llmSearchBaseUrl).toBe("https://api.search.test/anthropic");
+    expect(config.llmSearchProtocol).toBe("responses");
+    expect(config.llmSearchBaseUrl).toBe("https://api.search.test/v1");
     expect(config.llmSearchModel).toBe("search-model");
+  });
+
+  it("recognizes an existing explicit Anthropic mirror base", () => {
+    clearSearchEnv();
+    vi.stubEnv("WEB_SEARCH_LLM_BASE_URL", "https://api.search.test/anthropic");
+
+    const config = getWebConfig();
+
+    expect(config.llmSearchProtocol).toBe("anthropic");
+    expect(config.llmSearchBaseUrl).toBe("https://api.search.test/anthropic");
+  });
+
+  it("derives the Anthropic mirror when that protocol is explicitly selected", () => {
+    clearSearchEnv();
+    vi.stubEnv("OPENAI_BASE_URL", "https://api.main.test/v1");
+    vi.stubEnv("WEB_SEARCH_LLM_PROTOCOL", "anthropic");
+
+    const config = getWebConfig();
+
+    expect(config.llmSearchProtocol).toBe("anthropic");
+    expect(config.llmSearchBaseUrl).toBe("https://api.main.test/anthropic");
   });
 
   it("falls back for malformed or non-integer numeric values", () => {

@@ -20,21 +20,24 @@ export interface WebConfig {
   maxFetchBytes: number;
   /** undici ProxyAgent target when proxying is enabled; null disables proxying. */
   proxyUrl: string | null;
-  /** Explicit opt-in for the Anthropic-compatible server-side search provider. */
+  /** Explicit opt-in for the LLM-backed server-side search provider. */
   searchProvider: string;
   /**
-   * LLM search provider (INV-0009 §3.1): a CC-compatible model's Anthropic-mirror endpoint that
-   * proxies Anthropic's server-side `web_search` tool. No vendor literals in source — any domestic
-   * mirror (DeepSeek, Qwen, Zhipu, ...) drops in by env alone. To keep config minimal, all three
-   * reuse the already-present OPENAI_* (single-vendor) values as the fallback, so the common
-   * setup needs no extra search-specific variables:
+   * LLM search provider (INV-0009 §3.1): use an OpenAI-compatible Responses endpoint by default,
+   * with the former Anthropic Messages mirror retained behind an explicit protocol switch. Search
+   * reuses the already-present OPENAI_* values as fallbacks, so the common setup needs no extra
+   * credentials or model variables:
+   *   - protocol: WEB_SEARCH_LLM_PROTOCOL → responses
    *   - key:   WEB_SEARCH_LLM_API_KEY → OPENAI_API_KEY
    *   - model: WEB_SEARCH_LLM_MODEL  → OPENAI_MODEL_ID
-   *   - base:  WEB_SEARCH_LLM_BASE_URL → origin(OPENAI_BASE_URL) + "/anthropic"
-   * base is the `/anthropic` root (we append `/v1/messages`). Derivation assumes the OpenAI-protocol
-   * host also exposes an Anthropic mirror at /anthropic (true for DeepSeek); set the explicit var to
-   * override when it doesn't.
+   *   - base:  WEB_SEARCH_LLM_BASE_URL → OPENAI_BASE_URL
+   *
+   * `responses` appends `/responses` to the configured OpenAI-compatible base. `anthropic` derives
+   * `origin(OPENAI_BASE_URL) + /anthropic` and appends `/v1/messages`. An explicit base containing
+   * an `/anthropic` path selects the legacy protocol when WEB_SEARCH_LLM_PROTOCOL is unset, keeping
+   * existing profiles working.
    */
+  llmSearchProtocol: string;
   llmSearchBaseUrl: string;
   llmSearchApiKey: string;
   llmSearchModel: string;
@@ -67,13 +70,15 @@ function resolveProxyUrl(): string | null {
 }
 
 export function getWebConfig(): WebConfig {
+  const llmSearchProtocol = resolveLlmSearchProtocol();
   return {
     userAgent: (process.env.WEB_USER_AGENT ?? "").trim() || DEFAULT_USER_AGENT,
     timeoutMs: intFromEnv("WEB_TIMEOUT_MS", 15_000),
     maxFetchBytes: intFromEnv("WEB_MAX_FETCH_BYTES", 2_000_000),
     proxyUrl: resolveProxyUrl(),
     searchProvider: (process.env.WEB_SEARCH_PROVIDER ?? "").trim().toLowerCase(),
-    llmSearchBaseUrl: resolveLlmSearchBaseUrl(),
+    llmSearchProtocol,
+    llmSearchBaseUrl: resolveLlmSearchBaseUrl(llmSearchProtocol),
     llmSearchApiKey:
       (process.env.WEB_SEARCH_LLM_API_KEY ?? "").trim() ||
       (process.env.OPENAI_API_KEY ?? "").trim(),
@@ -90,16 +95,36 @@ export function isWebSearchConfigured(): boolean {
 }
 
 /**
- * Resolve the Anthropic-mirror base for LLM search. Explicit WEB_SEARCH_LLM_BASE_URL wins; otherwise
- * derive it from the OpenAI-protocol base by keeping the host and swapping the path to /anthropic
- * (e.g. https://api.deepseek.com/v1 → https://api.deepseek.com/anthropic).
+ * Resolve the search protocol. Responses is the default; an explicit legacy `/anthropic` base is
+ * also recognized so existing profiles do not silently start sending Messages-shaped requests to
+ * the wrong endpoint.
  */
-function resolveLlmSearchBaseUrl(): string {
+function resolveLlmSearchProtocol(): string {
+  const explicit = (process.env.WEB_SEARCH_LLM_PROTOCOL ?? "").trim().toLowerCase();
+  if (explicit) {
+    return explicit;
+  }
+  const explicitBase = (process.env.WEB_SEARCH_LLM_BASE_URL ?? "").trim();
+  try {
+    if (new URL(explicitBase).pathname.split("/").includes("anthropic")) {
+      return "anthropic";
+    }
+  } catch {
+    // A malformed base is reported by the provider; it must not change the protocol default.
+  }
+  return "responses";
+}
+
+/** Resolve the protocol-specific root to which the provider appends its endpoint path. */
+function resolveLlmSearchBaseUrl(protocol: string): string {
   const explicit = (process.env.WEB_SEARCH_LLM_BASE_URL ?? "").trim();
   if (explicit) {
     return explicit;
   }
   const openaiBase = (process.env.OPENAI_BASE_URL ?? "").trim() || DEFAULT_OPENAI_BASE_URL;
+  if (protocol !== "anthropic") {
+    return openaiBase.replace(/\/+$/, "");
+  }
   try {
     return `${new URL(openaiBase).origin}/anthropic`;
   } catch {

@@ -1,7 +1,7 @@
 /**
- * web_search tool: thin wrapper over the Anthropic-compatible server-side search (INV-0009 §3.1).
- * Returns a compact, model-friendly list of {title, url, snippet}; pair with read_webpage to pull
- * actual page text before drawing conclusions (snippets alone invite fabrication).
+ * web_search tool: thin wrapper over the configured server-side search protocol (INV-0009 §3.1).
+ * Responses providers can return a grounded summary plus sources; pair with read_webpage when the
+ * underlying page text is needed for verification or detail.
  */
 
 import { equipTraceAttr, type ToolDefinition } from "@rejelly/core";
@@ -28,9 +28,9 @@ export const WebSearchTool: ToolDefinition<typeof webSearchParameters> = {
   parameters: webSearchParameters,
   handler: async ({ query, limit }) => {
     try {
-      const { results, diagnostics } = await webSearch(query, limit ?? 6);
+      const { summary, results, diagnostics } = await webSearch(query, limit ?? 6);
       equipWebSearchTraceAttrs(diagnostics);
-      if (results.length === 0) {
+      if (!summary && results.length === 0) {
         return `No web results for ${JSON.stringify(query)}. Try different or broader keywords.`;
       }
       const lines = results.map((r, i) =>
@@ -38,7 +38,13 @@ export const WebSearchTool: ToolDefinition<typeof webSearchParameters> = {
           .filter(Boolean)
           .join("\n"),
       );
-      return `Web results for ${JSON.stringify(query)}:\n${lines.join("\n")}`;
+      return [
+        `Web results for ${JSON.stringify(query)}:`,
+        summary ? `Search summary:\n${summary}` : "",
+        lines.length > 0 ? `Sources:\n${lines.join("\n")}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
     } catch (e: unknown) {
       const msg = e instanceof HttpError ? e.message : e instanceof Error ? e.message : String(e);
       return `web_search failed: ${msg}`;
