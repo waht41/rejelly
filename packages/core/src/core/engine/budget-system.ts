@@ -13,10 +13,13 @@ import type { AgentContext } from "../context/type";
 import type {
   BudgetState,
   ModelUsageItem,
+  RecordToolModelUsageInput,
   RecordToolUsageInput,
+  ToolModelUsage,
   ToolUsageItem,
   UsageItem,
   UsageStats,
+  UsageTokens,
 } from "../domain/budget";
 import { InvalidCostValueError } from "../domain/errors";
 import type { ModelAdapter, TokenUsage } from "../domain/model";
@@ -79,6 +82,31 @@ function mergeCosts(target: Record<string, number>, delta: Record<string, number
   }
 }
 
+function mergeUsageTokens(target: UsageTokens, delta: UsageTokens): void {
+  target.prompt += delta.prompt;
+  target.completion += delta.completion;
+  target.total += delta.total;
+  if (delta.details) {
+    target.details ??= {};
+    for (const [key, value] of Object.entries(delta.details)) {
+      target.details[key] = (target.details[key] ?? 0) + value;
+    }
+  }
+}
+
+function mergeToolModelUsages(target: ToolModelUsage[], delta: ToolModelUsage[]): void {
+  for (const incoming of delta) {
+    const existing = target.find(
+      (usage) => usage.provider === incoming.provider && usage.model === incoming.model,
+    );
+    if (existing) {
+      mergeUsageTokens(existing.tokens, incoming.tokens);
+    } else {
+      target.push(safeClone(incoming));
+    }
+  }
+}
+
 /**
  * Merge usage items
  *
@@ -98,18 +126,14 @@ function mergeItems(targetItems: UsageItem[], deltaItems: UsageItem[]): void {
 
       if (existing.type === "model" && newItem.type === "model") {
         // Merge model tokens
-        existing.tokens.prompt += newItem.tokens.prompt;
-        existing.tokens.completion += newItem.tokens.completion;
-        existing.tokens.total += newItem.tokens.total;
-        if (newItem.tokens.details) {
-          if (!existing.tokens.details) existing.tokens.details = {};
-          for (const [key, value] of Object.entries(newItem.tokens.details)) {
-            existing.tokens.details[key] = (existing.tokens.details[key] ?? 0) + value;
-          }
-        }
+        mergeUsageTokens(existing.tokens, newItem.tokens);
       } else if (existing.type === "tool" && newItem.type === "tool") {
         // Merge tool quantity
         existing.quantity += newItem.quantity;
+        if (newItem.modelUsages) {
+          existing.modelUsages ??= [];
+          mergeToolModelUsages(existing.modelUsages, newItem.modelUsages);
+        }
       }
     } else {
       // Add new item with copied refs so own/aggregate do not share same object refs
@@ -117,6 +141,44 @@ function mergeItems(targetItems: UsageItem[], deltaItems: UsageItem[]): void {
       targetItems.push(itemClone);
     }
   }
+}
+
+function normalizeUsageTokens(usage: TokenUsage, source: string): UsageTokens {
+  const prompt = usage.promptTokens ?? 0;
+  const completion = usage.completionTokens ?? 0;
+  const total = usage.totalTokens ?? prompt + completion;
+  let details: Record<string, number> | undefined;
+  if (usage.details) {
+    for (const [key, value] of Object.entries(usage.details)) {
+      if (value === undefined) continue;
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        throw new TypeError(
+          `${source}.details[${JSON.stringify(key)}] must be a finite number, got ${typeof value}: ${value}`,
+        );
+      }
+      details ??= {};
+      details[key] = value;
+    }
+  }
+  return { prompt, completion, total, ...(details !== undefined && { details }) };
+}
+
+function normalizeToolModelUsages(
+  inputs: readonly RecordToolModelUsageInput[] | undefined,
+): ToolModelUsage[] | undefined {
+  if (!inputs || inputs.length === 0) {
+    return undefined;
+  }
+  const normalized: ToolModelUsage[] = [];
+  for (const input of inputs) {
+    const incoming: ToolModelUsage = {
+      ...(input.provider !== undefined && { provider: input.provider }),
+      model: input.model,
+      tokens: normalizeUsageTokens(input.usage, `ToolModelUsage[${input.model}]`),
+    };
+    mergeToolModelUsages(normalized, [incoming]);
+  }
+  return normalized;
 }
 
 /**
@@ -241,6 +303,7 @@ export function recordToolUsage<T = JsonObjectLoose>(toolUsage: RecordToolUsageI
 
   const details = toolUsage.details;
   const cleanedDetails = sanitizeUndefined(details);
+  const modelUsages = normalizeToolModelUsages(toolUsage.modelUsages);
 
   const validatedCosts = validateAndCloneCosts(toolUsage.costs, `Tool[${toolUsage.name}]`);
 
@@ -251,14 +314,21 @@ export function recordToolUsage<T = JsonObjectLoose>(toolUsage: RecordToolUsageI
     quantity: toolUsage.quantity,
     unit: toolUsage.unit,
     ...(cleanedDetails !== undefined && { details: cleanedDetails }),
+    ...(modelUsages !== undefined && { modelUsages }),
   }) as ToolUsageItem;
+
+  const tokens: UsageTokens = { prompt: 0, completion: 0, total: 0 };
+  for (const modelUsage of modelUsages ?? []) {
+    mergeUsageTokens(tokens, modelUsage.tokens);
+  }
 
   const delta: UsageStats = {
     costs: safeClone(validatedCosts),
-    promptTokens: 0,
-    completionTokens: 0,
-    totalTokens: 0,
+    promptTokens: tokens.prompt,
+    completionTokens: tokens.completion,
+    totalTokens: tokens.total,
     callCount: 1,
+    ...(tokens.details !== undefined && { details: safeClone(tokens.details) }),
     items: [toolItem],
   };
 
@@ -283,26 +353,15 @@ export function recordLLMUsage(
 ): void {
   if (!usage) return;
 
-  const promptTokens = usage.promptTokens ?? 0;
-  const completionTokens = usage.completionTokens ?? 0;
-  const totalTokens = usage.totalTokens ?? promptTokens + completionTokens;
+  const tokens = normalizeUsageTokens(usage, "TokenUsage");
+  const promptTokens = tokens.prompt;
+  const completionTokens = tokens.completion;
+  const totalTokens = tokens.total;
 
   const rawCosts = model.calculateCost?.(usage) ?? {};
   const validatedCosts = validateAndCloneCosts(rawCosts, `Model[${model.id}]`);
 
-  let details: Record<string, number> | undefined;
-  if (usage.details) {
-    for (const [key, value] of Object.entries(usage.details)) {
-      if (value === undefined) continue;
-      if (typeof value !== "number" || !Number.isFinite(value)) {
-        throw new TypeError(
-          `TokenUsage.details["${key}"] must be a finite number, got ${typeof value}: ${value}`,
-        );
-      }
-      if (!details) details = {};
-      details[key] = value;
-    }
-  }
+  const details = tokens.details;
 
   const delta: UsageStats = {
     promptTokens,

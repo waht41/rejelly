@@ -5,6 +5,7 @@
  */
 
 import type { JsonObjectLoose, JsonValue, Loose } from "../../utils/type";
+import type { TokenUsage } from "./model";
 
 /**
  * Flat budget ledger: keys are billing units (prefer micro_* prefixes, e.g. micro_usd),
@@ -15,6 +16,14 @@ export type BudgetRecord = Record<string, number>;
 /**
  * Model usage item
  */
+export interface UsageTokens {
+  prompt: number;
+  completion: number;
+  total: number;
+  /** Extended token dimensions (e.g. reasoning, cacheRead). */
+  details?: Record<string, number>;
+}
+
 export interface ModelUsageItem {
   type: "model"; // Discriminator
   name: string; // e.g., "gpt-4-turbo"
@@ -24,13 +33,22 @@ export interface ModelUsageItem {
   costs: BudgetRecord;
 
   // Model-specific fields: Token structure
-  tokens: {
-    prompt: number;
-    completion: number;
-    total: number;
-    /** Extended token dimensions (e.g. reasoning, cacheRead). Accumulated via generic loop. */
-    details?: Record<string, number>;
-  };
+  tokens: UsageTokens;
+}
+
+/** Model-token attribution for an LLM call performed inside a tool operation. */
+export interface ToolModelUsage {
+  /** Billing/provider boundary, e.g. `openrouter` or `openai`. */
+  provider?: string;
+  model: string;
+  tokens: UsageTokens;
+}
+
+/** Caller-facing form of ToolModelUsage using the standard adapter TokenUsage shape. */
+export interface RecordToolModelUsageInput {
+  provider?: string;
+  model: string;
+  usage: TokenUsage;
 }
 
 /**
@@ -48,6 +66,9 @@ export interface ToolUsageItem {
 
   /** Optional tool-specific details (e.g. resolution, format) */
   details?: JsonValue;
+
+  /** Token-metered model calls performed as part of this tool operation. */
+  modelUsages?: ToolModelUsage[];
 }
 
 /**
@@ -61,6 +82,8 @@ export interface RecordToolUsageInput<T = JsonObjectLoose> {
   quantity: number;
   unit: string;
   details?: Loose<T>;
+  /** Optional model calls attributable to this tool; their tokens feed aggregate token budgets. */
+  modelUsages?: readonly RecordToolModelUsageInput[];
 }
 
 /**

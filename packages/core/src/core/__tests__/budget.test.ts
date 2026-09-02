@@ -317,6 +317,137 @@ describe("Budget", () => {
       });
       await expect(agent({})).rejects.toThrow(InvalidCostValueError);
     });
+
+    it("aggregates model token usage attributed to a tool", async () => {
+      const mock = createMockModel();
+      let stats: ReturnType<typeof getUsageStats> | null = null;
+      const agent = createAgent({
+        id: "test",
+        model: mock.adapter,
+        handler: async () => {
+          recordToolUsage({
+            name: "web_search",
+            unit: "request",
+            quantity: 1,
+            costs: { micro_usd: 12_000 },
+            modelUsages: [
+              {
+                provider: "openrouter",
+                model: "openai/search-model",
+                usage: {
+                  promptTokens: 100,
+                  completionTokens: 20,
+                  totalTokens: 120,
+                  details: { cacheReadTokens: 40 },
+                },
+              },
+              {
+                provider: "openrouter",
+                model: "rerank-model",
+                usage: {
+                  promptTokens: 10,
+                  completionTokens: 5,
+                  totalTokens: 15,
+                  details: { reasoningTokens: 2 },
+                },
+              },
+            ],
+          });
+          recordToolUsage({
+            name: "web_search",
+            unit: "request",
+            quantity: 1,
+            costs: { micro_usd: 8_000 },
+            modelUsages: [
+              {
+                provider: "openrouter",
+                model: "openai/search-model",
+                usage: {
+                  promptTokens: 50,
+                  completionTokens: 10,
+                  totalTokens: 60,
+                  details: { cacheReadTokens: 20 },
+                },
+              },
+            ],
+          });
+          stats = getUsageStats();
+          return { done: true };
+        },
+      });
+
+      await agent({});
+
+      expect(stats).not.toBeNull();
+      expect(stats!.aggregate).toMatchObject({
+        costs: { micro_usd: 20_000 },
+        promptTokens: 160,
+        completionTokens: 35,
+        totalTokens: 195,
+        callCount: 2,
+        details: { cacheReadTokens: 60, reasoningTokens: 2 },
+      });
+      const toolItem = stats!.aggregate.items.find(
+        (item) => item.type === "tool" && item.name === "web_search",
+      );
+      expect(toolItem).toMatchObject({
+        type: "tool",
+        quantity: 2,
+        costs: { micro_usd: 20_000 },
+        modelUsages: [
+          {
+            provider: "openrouter",
+            model: "openai/search-model",
+            tokens: {
+              prompt: 150,
+              completion: 30,
+              total: 180,
+              details: { cacheReadTokens: 60 },
+            },
+          },
+          {
+            provider: "openrouter",
+            model: "rerank-model",
+            tokens: {
+              prompt: 10,
+              completion: 5,
+              total: 15,
+              details: { reasoningTokens: 2 },
+            },
+          },
+        ],
+      });
+      const budgetUpdates = events.byType.get(EVENTS.BUDGET_UPDATE) ?? [];
+      expect((budgetUpdates[0] as BudgetUpdateEvent).delta.totalTokens).toBe(135);
+      expect((budgetUpdates[0] as BudgetUpdateEvent).delta.items).toHaveLength(1);
+    });
+
+    it("applies token budget guards to model usage inside tools", async () => {
+      const mock = createMockModel();
+      const agent = createAgent({
+        id: "test",
+        model: mock.adapter,
+        handler: async () => {
+          equipBudget(budgetGuard({ maxTotalTokens: 10 }));
+          recordToolUsage({
+            name: "web_search",
+            unit: "request",
+            quantity: 1,
+            costs: {},
+            modelUsages: [
+              {
+                provider: "openrouter",
+                model: "search-model",
+                usage: { promptTokens: 8, completionTokens: 4, totalTokens: 12 },
+              },
+            ],
+          });
+          return { done: true };
+        },
+      });
+
+      await expect(agent({})).rejects.toThrow(BudgetExceededError);
+    });
   });
 
   describe("agent:end and final budget", () => {
