@@ -1,5 +1,6 @@
 /** Server-side web search through Responses or Anthropic-compatible APIs (INV-0009 §3.1). */
 
+import type { RecordToolModelUsageInput } from "@rejelly/core";
 import { fetchJson, HttpError } from "./httpClient";
 import { getWebConfig } from "./webConfig";
 
@@ -20,6 +21,14 @@ export interface SearchProviderResponse {
   finalUrl: string;
   summary: string;
   results: SearchResult[];
+  usage?: SearchProviderUsage;
+}
+
+/** Provider-reported metering for one successful search API response. */
+export interface SearchProviderUsage {
+  costs: Record<string, number>;
+  modelUsages: RecordToolModelUsageInput[];
+  searchRequests: number;
 }
 
 export interface ParsedResponsesWebSearch {
@@ -158,6 +167,7 @@ export class LlmSearchProvider implements SearchProvider {
       finalUrl: url,
       summary: parsed.summary,
       results: parsed.results,
+      ...withUsage(parseSearchProviderUsage(json, url, config.llmSearchModel, "responses")),
     };
   }
 
@@ -193,8 +203,136 @@ export class LlmSearchProvider implements SearchProvider {
       finalUrl: url,
       summary: "",
       results: parseAnthropicWebSearch(json),
+      ...withUsage(parseSearchProviderUsage(json, url, config.llmSearchModel, "anthropic")),
     };
   }
+}
+
+function withUsage(
+  usage: SearchProviderUsage | undefined,
+): { usage: SearchProviderUsage } | Record<string, never> {
+  return usage ? { usage } : {};
+}
+
+function parseSearchProviderUsage(
+  json: unknown,
+  endpoint: string,
+  fallbackModel: string,
+  protocol: "responses" | "anthropic",
+): SearchProviderUsage | undefined {
+  const root = asRecord(json);
+  const usage = asRecord(root?.usage);
+  if (!root || !usage) {
+    return undefined;
+  }
+
+  const promptTokens = firstTokenCount(usage.input_tokens, usage.prompt_tokens) ?? 0;
+  const completionTokens = firstTokenCount(usage.output_tokens, usage.completion_tokens) ?? 0;
+  const reportedTotal = tokenCount(usage.total_tokens);
+  const hasTokenUsage =
+    reportedTotal !== undefined ||
+    firstTokenCount(usage.input_tokens, usage.prompt_tokens) !== undefined ||
+    firstTokenCount(usage.output_tokens, usage.completion_tokens) !== undefined;
+  const tokenDetails = parseTokenDetails(usage, protocol);
+  const model = cleanString(root.model) || fallbackModel;
+  const provider = cleanString(root.provider)?.toLowerCase() || endpointProvider(endpoint);
+  const cost = nonNegativeNumber(usage.cost);
+  const reportedRequests = tokenCount(asRecord(usage.server_tool_use)?.web_search_requests);
+  const observedRequests = countObservedSearchRequests(root, protocol);
+
+  if (!hasTokenUsage && cost === undefined && reportedRequests === undefined) {
+    return undefined;
+  }
+
+  return {
+    costs: cost === undefined ? {} : { micro_usd: Math.round(cost * 1_000_000) },
+    modelUsages: hasTokenUsage
+      ? [
+          {
+            provider,
+            model,
+            usage: {
+              promptTokens,
+              completionTokens,
+              totalTokens: reportedTotal ?? promptTokens + completionTokens,
+              ...(tokenDetails !== undefined && { details: tokenDetails }),
+            },
+          },
+        ]
+      : [],
+    searchRequests: reportedRequests ?? Math.max(1, observedRequests),
+  };
+}
+
+function parseTokenDetails(
+  usage: Record<string, unknown>,
+  protocol: "responses" | "anthropic",
+): Record<string, number> | undefined {
+  const inputDetails =
+    asRecord(usage.input_tokens_details) ?? asRecord(usage.prompt_tokens_details);
+  const outputDetails =
+    asRecord(usage.output_tokens_details) ?? asRecord(usage.completion_tokens_details);
+  const candidates =
+    protocol === "anthropic"
+      ? {
+          cacheReadTokens: tokenCount(usage.cache_read_input_tokens),
+          cacheWriteTokens: tokenCount(usage.cache_creation_input_tokens),
+        }
+      : {
+          cacheReadTokens: tokenCount(inputDetails?.cached_tokens),
+          cacheWriteTokens: tokenCount(inputDetails?.cache_write_tokens),
+          reasoningTokens: tokenCount(outputDetails?.reasoning_tokens),
+        };
+  const details = Object.fromEntries(
+    Object.entries(candidates).filter((entry): entry is [string, number] => entry[1] !== undefined),
+  );
+  return Object.keys(details).length > 0 ? details : undefined;
+}
+
+function countObservedSearchRequests(
+  root: Record<string, unknown>,
+  protocol: "responses" | "anthropic",
+): number {
+  const items = protocol === "responses" ? root.output : root.content;
+  if (!Array.isArray(items)) {
+    return 0;
+  }
+  return items.filter((item) => {
+    const record = asRecord(item);
+    return protocol === "responses"
+      ? record?.type === "web_search_call"
+      : record?.type === "server_tool_use" && record.name === "web_search";
+  }).length;
+}
+
+function endpointProvider(endpoint: string): string {
+  try {
+    return new URL(endpoint).hostname.toLowerCase();
+  } catch {
+    return "unknown";
+  }
+}
+
+function cleanString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function tokenCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+function firstTokenCount(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    const parsed = tokenCount(value);
+    if (parsed !== undefined) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+function nonNegativeNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 /** Match only validation errors for the optional complete-sources expansion, never broad 400s. */

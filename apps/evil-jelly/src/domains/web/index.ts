@@ -9,6 +9,7 @@ import {
   filterSearchResultsBySite,
   getSearchProvider,
   parseSearchQuery,
+  type SearchProviderUsage,
   type SearchResult,
 } from "./searchProvider";
 import { getWebConfig } from "./webConfig";
@@ -30,6 +31,7 @@ export interface WebSearchResult {
   summary: string;
   results: SearchResult[];
   diagnostics: WebSearchDiagnostics;
+  usage?: SearchProviderUsage;
 }
 
 export async function webSearch(query: string, limit = 6): Promise<WebSearchResult> {
@@ -57,6 +59,7 @@ export async function webSearch(query: string, limit = 6): Promise<WebSearchResu
     summary: response.summary,
     results,
     diagnostics,
+    ...(response.usage !== undefined && { usage: response.usage }),
   };
 }
 

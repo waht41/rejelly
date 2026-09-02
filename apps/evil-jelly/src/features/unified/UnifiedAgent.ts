@@ -80,8 +80,8 @@ function equipPromptTokenUsageReader(): PromptTokenUsageReader {
     onUpdate: ({ delta, own }) => {
       const ownPromptDelta = own.promptTokens - previousOwnPromptTokens;
       previousOwnPromptTokens = own.promptTokens;
-      // Child-agent model usage propagates into aggregate but not own. Tool usage has no prompt
-      // increment, so neither can overwrite the direct model call that the policy is observing.
+      // Child-agent model usage propagates into aggregate but not own. Token-metered tool usage can
+      // increment prompt totals, so the item discriminator keeps both from overwriting this value.
       if (ownPromptDelta <= 0 || !delta.items.some((item) => item.type === "model")) {
         return;
       }

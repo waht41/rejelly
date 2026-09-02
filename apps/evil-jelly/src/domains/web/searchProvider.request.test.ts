@@ -43,6 +43,17 @@ describe("LlmSearchProvider requests", () => {
     mocks.fetchJson.mockResolvedValue({
       status: 200,
       json: {
+        model: "resolved-search-model",
+        provider: "OpenRouter",
+        usage: {
+          input_tokens: 100,
+          output_tokens: 20,
+          total_tokens: 120,
+          input_tokens_details: { cached_tokens: 40, cache_write_tokens: 5 },
+          output_tokens_details: { reasoning_tokens: 8 },
+          server_tool_use: { web_search_requests: 2 },
+          cost: 0.0120438,
+        },
         output: [
           {
             type: "message",
@@ -98,6 +109,26 @@ describe("LlmSearchProvider requests", () => {
           snippet: "",
         },
       ],
+      usage: {
+        costs: { micro_usd: 12_044 },
+        searchRequests: 2,
+        modelUsages: [
+          {
+            provider: "openrouter",
+            model: "resolved-search-model",
+            usage: {
+              promptTokens: 100,
+              completionTokens: 20,
+              totalTokens: 120,
+              details: {
+                cacheReadTokens: 40,
+                cacheWriteTokens: 5,
+                reasoningTokens: 8,
+              },
+            },
+          },
+        ],
+      },
     });
   });
 
@@ -107,7 +138,20 @@ describe("LlmSearchProvider requests", () => {
       llmSearchProtocol: "anthropic",
       llmSearchBaseUrl: "https://api.example.test/anthropic",
     });
-    mocks.fetchJson.mockResolvedValue({ status: 200, json: { content: [] } });
+    mocks.fetchJson.mockResolvedValue({
+      status: 200,
+      json: {
+        model: "resolved-anthropic-model",
+        usage: {
+          input_tokens: 80,
+          output_tokens: 15,
+          cache_read_input_tokens: 30,
+          cache_creation_input_tokens: 4,
+          server_tool_use: { web_search_requests: 1 },
+        },
+        content: [],
+      },
+    });
 
     const response = await new LlmSearchProvider().search("legacy search");
 
@@ -122,6 +166,22 @@ describe("LlmSearchProvider requests", () => {
       provider: "llm:anthropic",
       summary: "",
       results: [],
+      usage: {
+        costs: {},
+        searchRequests: 1,
+        modelUsages: [
+          {
+            provider: "api.example.test",
+            model: "resolved-anthropic-model",
+            usage: {
+              promptTokens: 80,
+              completionTokens: 15,
+              totalTokens: 95,
+              details: { cacheReadTokens: 30, cacheWriteTokens: 4 },
+            },
+          },
+        ],
+      },
     });
   });
 
