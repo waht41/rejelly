@@ -23,6 +23,15 @@ const runCommandParameters = z.object({
     .max(1000)
     .optional()
     .describe("Optional working directory. Defaults to the workspace root."),
+  timeoutMs: z
+    .number()
+    .int()
+    .positive()
+    .max(1_800_000)
+    .optional()
+    .describe(
+      "Optional hard timeout in milliseconds. Defaults to 180000 (3 minutes); maximum 1800000 (30 minutes).",
+    ),
   declaredSafety: z
     .enum(["read_only", "reversible", "needs_confirmation", "dangerous"])
     .describe(
@@ -69,7 +78,7 @@ export const RunCommandTool: ToolDefinition<typeof runCommandParameters> = {
     "Commands run through the host platform shell; on Windows this is PowerShell syntax, not cmd.exe or Unix sh syntax. " +
     "Prefer this when you need a targeted check beyond the automatic post-edit verification.",
   parameters: runCommandParameters,
-  handler: async ({ command, cwd, declaredSafety, reason }) => {
+  handler: async ({ command, cwd, timeoutMs, declaredSafety, reason }) => {
     const policy = getWorkspaceFiles();
     const resolvedCwdPath = policy.classifyPath(cwd ?? ".");
     try {
@@ -121,6 +130,7 @@ export const RunCommandTool: ToolDefinition<typeof runCommandParameters> = {
       {
         command,
         cwd: resolvedCwd,
+        timeoutMs,
         signal,
       },
       onOutput,
@@ -130,6 +140,10 @@ export const RunCommandTool: ToolDefinition<typeof runCommandParameters> = {
     if (result.error?.code === "EABORTED") {
       const output = result.output?.trim().length ? result.output : "(no output)";
       return `exitCode=null status=aborted\n${output}\nCommand aborted by user (/stop or Esc).`;
+    }
+    if (result.error?.code === "ETIMEDOUT") {
+      const output = result.output?.trim().length ? result.output : "(no output)";
+      return `exitCode=null status=timed_out ${getShellEnvironmentSummary()}\n${output}\nCommand exceeded the hard timeout and its process tree was terminated.`;
     }
     const status = result.exitCode === 0 ? "ok" : "failed";
     const exitCode = result.exitCode === null ? "null" : String(result.exitCode);

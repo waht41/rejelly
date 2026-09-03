@@ -325,6 +325,8 @@ Web search uses the configured LLM endpoint's server-side `web_search` tool. Ope
 
 Evil Jelly also follows OS shell conventions: `EDITOR` / `VISUAL` select the prompt editor (Windows `notepad`, POSIX `vi` by default), while `ComSpec` / `SHELL` select the command shell (`cmd.exe` / `/bin/sh` by default).
 
+`run_command` is intentionally non-interactive: child stdin is closed, so commands that require a prompt receive EOF instead of silently waiting on an unwritable input pipe. Evil Jelly waits for ordinary commands to finish without model polling. The hard timeout defaults to three minutes and may be set per call with `timeoutMs`, up to 30 minutes. A timed-out command has its process tree terminated and returns `status=timed_out`; `/stop` and Esc terminate it as `status=aborted`. PTY and background-session execution are not supported yet.
+
 </details>
 
 <details>
