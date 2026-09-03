@@ -1,4 +1,4 @@
-<!-- AUTO-GENERATED from docs/skill.md by packages/create/script/generate-agents.mjs. Do not edit by hand; edit docs/skill.md and run `pnpm --filter create-rejelly generate:agents`. -->
+<!-- AUTO-GENERATED from docs/skill.md by packages/create/script/generate-agent-guidance.mjs. Do not edit by hand; edit docs/ and run `pnpm --filter create-rejelly generate:guidance`. -->
 
 # Role
 
@@ -58,44 +58,44 @@ Use this map to pick the right API; link to the referenced doc for details inste
 
 ## Define & Prompt
 
-- `createAgent(config)` (`https://docs.rejelly.dev/en/api/core`): Define a reusable Agent; returns an async function.
-- `promptAgent(schema)` (`https://docs.rejelly.dev/en/api/core`): One typed model call per generation, with schema validation retries and the default tool-call loop.
-- `promptChat(options?)` (`https://docs.rejelly.dev/en/api/core`): Chat-style call returning `{ data, delta }` — `data` is the assistant text, `delta` is the new messages from this turn. Pass persisted history in via `message`; persist `delta` outside the Agent.
-- `reborn(newProps?)` (`https://docs.rejelly.dev/en/api/flow`): End the current generation and re-run the handler with Agent memory preserved.
-- `runWith(fn, options?)` (`https://docs.rejelly.dev/en/api/core`): Root runtime context — providers, model registry, snapshots, tracing, cancellation.
+- `createAgent(config)` (`.agents/skills/rejelly/references/api/core.md`): Define a reusable Agent; returns an async function.
+- `promptAgent(schema)` (`.agents/skills/rejelly/references/api/core.md`): One typed model call per generation, with schema validation retries and the default tool-call loop.
+- `promptChat(options?)` (`.agents/skills/rejelly/references/api/core.md`): Chat-style call returning `{ data, delta }` — `data` is the assistant text, `delta` is the new messages from this turn. Pass persisted history in via `message`; persist `delta` outside the Agent.
+- `reborn(newProps?)` (`.agents/skills/rejelly/references/api/flow.md`): End the current generation and re-run the handler with Agent memory preserved.
+- `runWith(fn, options?)` (`.agents/skills/rejelly/references/api/core.md`): Root runtime context — providers, model registry, snapshots, tracing, cancellation.
 
 ## Equip (context for the current generation)
 
-- `equipSystem(text)` / `equipInstruction(text)` (`https://docs.rejelly.dev/en/api/equip`): System and user-facing instructions.
-- `equipTool(toolDef, options?)` (`https://docs.rejelly.dev/en/api/equip`): Register a callable tool (Zod `parameters` + async `handler`). Per-tool middleware via `options.middleware`.
-- `equipMemory(key, initialValue)` (`https://docs.rejelly.dev/en/api/equip`): `[value, setter]` for JSON-serializable state; lives for one Agent invocation, survives `reborn()`.
-- `equipResource(key, { create, destroy })` (`https://docs.rejelly.dev/en/api/equip`): Non-serializable runtime objects with lifecycle cleanup.
-- `equipScope(data)` (`https://docs.rejelly.dev/en/api/equip`): Pass JSON-serializable context down to child Agents.
-- `equipBudget(config)` (`https://docs.rejelly.dev/en/api/budget`): Token and cost budgets.
+- `equipSystem(text)` / `equipInstruction(text)` (`.agents/skills/rejelly/references/api/equip.md`): System and user-facing instructions.
+- `equipTool(toolDef, options?)` (`.agents/skills/rejelly/references/api/equip.md`): Register a callable tool (Zod `parameters` + async `handler`). Per-tool middleware via `options.middleware`.
+- `equipMemory(key, initialValue)` (`.agents/skills/rejelly/references/api/equip.md`): `[value, setter]` for JSON-serializable state; lives for one Agent invocation, survives `reborn()`.
+- `equipResource(key, { create, destroy })` (`.agents/skills/rejelly/references/api/equip.md`): Non-serializable runtime objects with lifecycle cleanup.
+- `equipScope(data)` (`.agents/skills/rejelly/references/api/equip.md`): Pass JSON-serializable context down to child Agents.
+- `equipBudget(config)` (`.agents/skills/rejelly/references/api/budget.md`): Token and cost budgets.
 
 ## Expect (validation & dependencies)
 
-- `expectValidator(fn)` (`https://docs.rejelly.dev/en/api/expect`): Semantic validation beyond schema shape; return an error string to make the model retry with feedback.
-- `expectScope(schema)` (`https://docs.rejelly.dev/en/api/expect`): Read typed data from a parent's `equipScope()`.
-- `expectResource<T>(key)` (`https://docs.rejelly.dev/en/api/expect`): Read a resource exposed by an ancestor or injected via `runWith({ providers })`.
+- `expectValidator(fn)` (`.agents/skills/rejelly/references/api/expect.md`): Semantic validation beyond schema shape; return an error string to make the model retry with feedback.
+- `expectScope(schema)` (`.agents/skills/rejelly/references/api/expect.md`): Read typed data from a parent's `equipScope()`.
+- `expectResource<T>(key)` (`.agents/skills/rejelly/references/api/expect.md`): Read a resource exposed by an ancestor or injected via `runWith({ providers })`.
 
 ## Effect & Middleware
 
-- `onStream(consumer, options?)` (`https://docs.rejelly.dev/en/api/effect`): Agent-level streaming events for UI and telemetry.
-- `augmentModel` / `augmentTool` / `augmentAgent` (`https://docs.rejelly.dev/en/api/core`): Reusable middleware around models, tools, and Agents.
+- `onStream(consumer, options?)` (`.agents/skills/rejelly/references/api/effect.md`): Agent-level streaming events for UI and telemetry.
+- `augmentModel` / `augmentTool` / `augmentAgent` (`.agents/skills/rejelly/references/api/core.md`): Reusable middleware around models, tools, and Agents.
 
 # Going Deeper
 
 Point users at these instead of inlining advanced material in first-contact examples:
 
-- Custom prompt policies and orchestration beyond the default loop: `https://docs.rejelly.dev/en/api/policy`
-- Tool-call loop interception (`equipToolCallLoopMiddleware`): `https://docs.rejelly.dev/en/api/core`
-- Memoized computed values (`equipMemo`): `https://docs.rejelly.dev/en/api/equip`
-- Testing (`createMockModel`, test contexts): `https://docs.rejelly.dev/en/api/testing`
-- Snapshots and time travel (`dumpSnapshot` / `restoreSnapshot`): `https://docs.rejelly.dev/en/api/time-travel`
-- Tracing, loggers, `withCustomSpan`, `equipTraceAttr`: `https://docs.rejelly.dev/en/api/debug`
-- Model rate limiting (`withLimit`): `https://docs.rejelly.dev/en/api/limit-model`
-- Adapters — OpenAI, MCP (`equipMCP`), LangChain: `https://docs.rejelly.dev/en/api/adapter/`. These are separate packages; do not assume they are installed unless the user's project already includes them.
+- Custom prompt policies and orchestration beyond the default loop: `.agents/skills/rejelly/references/api/policy.md`
+- Tool-call loop interception (`equipToolCallLoopMiddleware`): `.agents/skills/rejelly/references/api/core.md`
+- Memoized computed values (`equipMemo`): `.agents/skills/rejelly/references/api/equip.md`
+- Testing (`createMockModel`, test contexts): `.agents/skills/rejelly/references/api/testing.md`
+- Snapshots and time travel (`dumpSnapshot` / `restoreSnapshot`): `.agents/skills/rejelly/references/api/time-travel.md`
+- Tracing, loggers, `withCustomSpan`, `equipTraceAttr`: `.agents/skills/rejelly/references/api/debug.md`
+- Model rate limiting (`withLimit`): `.agents/skills/rejelly/references/api/limit-model.md`
+- Adapters — OpenAI, MCP (`equipMCP`), LangChain: `.agents/skills/rejelly/references/api/adapter/index.md`. These are separate packages; do not assume they are installed unless the user's project already includes them.
 
 # Style
 
@@ -106,4 +106,4 @@ Point users at these instead of inlining advanced material in first-contact exam
 
 # Version Note
 
-This file was generated from the Rejelly docs when this version of `create-rejelly` was published, so it matches the framework version this project was scaffolded with. The links above point to the latest published documentation. For the exact API surface of the version installed in this project, the type definitions and CHANGELOG in `node_modules/@rejelly/core` are authoritative. A machine-readable snapshot of the full docs is available at https://docs.rejelly.dev/llm.txt.
+This file and the referenced `.agents/skills/rejelly/references/` documentation were generated from the Rejelly docs when this version of `create-rejelly` was published. For the exact API surface of the version installed in this project, the type definitions and CHANGELOG in `node_modules/@rejelly/core` are authoritative. The latest documentation is available at https://docs.rejelly.dev/en/, with a machine-readable snapshot at https://docs.rejelly.dev/llm.txt.

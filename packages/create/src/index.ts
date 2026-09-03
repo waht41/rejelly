@@ -123,6 +123,7 @@ async function init() {
 
   const root = path.join(process.cwd(), projectName);
   const templateDir = path.resolve(__dirname, `../template-${template}`);
+  const sharedDir = path.resolve(__dirname, "../shared");
 
   if (fs.existsSync(root)) {
     console.log(
@@ -143,6 +144,7 @@ async function init() {
       return true;
     },
   });
+  fs.cpSync(sharedDir, root, { recursive: true });
 
   const pkgPath = path.join(root, "package.json");
   const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
