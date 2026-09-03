@@ -49,6 +49,41 @@ describe("RunCommandTool cwd policy", () => {
     await fs.rm(outsideDir, { recursive: true, force: true });
   });
 
+  it("reports hard timeouts distinctly from ordinary command failures", async () => {
+    hostBindingMock.current = createTestHostBindings({ mode: "normal" });
+    executeShellCommandMock.mockResolvedValue({
+      exitCode: null,
+      output: "partial output",
+      error: { code: "ETIMEDOUT", message: "Command timed out", killed: true },
+    });
+
+    const result = await RunCommandTool.handler({
+      command: "example",
+      declaredSafety: "read_only",
+      reason: "test timeout",
+    });
+
+    expect(result).toContain("exitCode=null status=timed_out test shell");
+    expect(result).toContain("partial output");
+    expect(result).toContain("process tree was terminated");
+  });
+
+  it("passes an explicit hard timeout to the shell executor", async () => {
+    hostBindingMock.current = createTestHostBindings({ mode: "normal" });
+
+    await RunCommandTool.handler({
+      command: "example",
+      timeoutMs: 900_000,
+      declaredSafety: "read_only",
+      reason: "test explicit timeout",
+    });
+
+    expect(executeShellCommandMock).toHaveBeenCalledWith(
+      expect.objectContaining({ timeoutMs: 900_000 }),
+      undefined,
+    );
+  });
+
   it("leaves outside cwd authorization to the shell confirmation", async () => {
     const outsideAccessRequests: FsOutsideAccessPayload[] = [];
     hostBindingMock.current = createTestHostBindings({ mode: "normal", outsideAccessRequests });

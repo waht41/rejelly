@@ -86,6 +86,32 @@ describe("executeShellCommand", () => {
     expect(decoder.end()).toBe("");
   });
 
+  it("closes stdin so interactive commands receive EOF instead of hanging", async () => {
+    const result = await executeShellCommand({
+      command: makeNodeCommand(
+        "process.stdin.resume(); process.stdin.once('end',()=>process.stdout.write('stdin-closed'));",
+      ),
+      cwd: process.cwd(),
+      timeoutMs: 2_000,
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toContain("stdin-closed");
+  });
+
+  it("terminates a command when its hard timeout expires", async () => {
+    const startedAt = Date.now();
+    const result = await executeShellCommand({
+      command: makeNodeCommand("setInterval(()=>{}, 1000);"),
+      cwd: process.cwd(),
+      timeoutMs: 100,
+    });
+
+    expect(result.error?.code).toBe("ETIMEDOUT");
+    expect(result.error?.killed).toBe(true);
+    expect(Date.now() - startedAt).toBeLessThan(2_500);
+  });
+
   it("keeps already streamed output when aborted", async () => {
     const abortController = new AbortController();
     const resultPromise = executeShellCommand({

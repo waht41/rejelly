@@ -80,6 +80,7 @@ async function killProcessTree(pid: number | undefined): Promise<void> {
     await new Promise<void>((resolve) => {
       const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
         windowsHide: true,
+        stdio: "ignore",
       });
       killer.once("error", () => resolve());
       killer.once("close", () => resolve());
@@ -137,6 +138,13 @@ export async function executeShellCommand(
       env: options.env,
       shell: invocation.useShell,
       windowsHide: true,
+      // Ordinary run_command calls are deliberately non-interactive. Closing
+      // stdin makes programs that try to prompt observe EOF instead of hanging
+      // on an unwritable pipe until the command timeout.
+      stdio: ["ignore", "pipe", "pipe"],
+      // On POSIX this gives the shell and its descendants a process group that
+      // killProcessTree can terminate without touching Evil Jelly itself.
+      detached: process.platform !== "win32",
     });
 
     const appendDecoded = (data: string) => {
