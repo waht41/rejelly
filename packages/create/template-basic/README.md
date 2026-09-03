@@ -40,4 +40,5 @@ The template includes these main files. Reading them in order is a good way to u
 
 - [Agent-as-function and core API](https://docs.rejelly.dev/en/api/core)
 - [Full docs](https://docs.rejelly.dev/en/)
-- `AGENTS.md` — Rejelly guidance for AI coding assistants (Claude Code, Cursor, etc.); they pick it up automatically when working in this project.
+- `AGENTS.md` — concise Rejelly guidance for AI coding assistants.
+- `.agents/skills/rejelly` — portable Rejelly Skill with a bundled documentation snapshot for progressive offline reference.

@@ -25,7 +25,7 @@
       "outputs": []
     },
     "create-rejelly#lint:doc": {
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docs/skill.md"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docs/**/*.md"],
       "outputs": []
     },
     "test": {
