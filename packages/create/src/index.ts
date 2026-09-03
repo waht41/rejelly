@@ -15,8 +15,18 @@ import {
   TEMPLATE_CHOICES,
 } from "./cli";
 
+declare const __REJELLY_CORE_VERSION__: string;
+declare const __REJELLY_OPENAI_VERSION__: string;
+declare const __REJELLY_GEMINI_VERSION__: string;
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const REJELLY_PACKAGE_VERSIONS: Record<string, string> = {
+  "@rejelly/core": __REJELLY_CORE_VERSION__,
+  "@rejelly/adapter-openai": __REJELLY_OPENAI_VERSION__,
+  "@rejelly/adapter-gemini": __REJELLY_GEMINI_VERSION__,
+};
 
 const MARKER_IMPORT = "__REJELLY_IMPORT__";
 const MARKER_MODEL = "__REJELLY_MODEL__";
@@ -52,7 +62,7 @@ function replacePlaceholdersInFile(filePath: string, replacement: PlaceholderRep
     content.includes(MARKER_DEFAULT_ADAPTER_END)
   ) {
     content = content.replace(
-      /^.*__REJELLY_DEFAULT_ADAPTER_START__.*[\r\n]+[\s\S]*?^.*__REJELLY_DEFAULT_ADAPTER_END__.*$/m,
+      /^.*__REJELLY_DEFAULT_ADAPTER_START__.*[\r\n]+[\s\S]*?^.*__REJELLY_DEFAULT_ADAPTER_END__.*(?:\r?\n)+/m,
       "",
     );
   }
@@ -156,14 +166,15 @@ function scaffoldProject({ projectName, template, adapter }: ScaffoldOptions): v
     if (!deps) continue;
     for (const [key, value] of Object.entries(deps)) {
       if (typeof value === "string" && value.startsWith("workspace:")) {
-        deps[key] = "latest";
+        const publishedVersion = REJELLY_PACKAGE_VERSIONS[key];
+        deps[key] = publishedVersion ? `^${publishedVersion}` : "latest";
       }
     }
   }
   // Add chosen adapter package (no registry source copy)
   const adapterPkg = getAdapterPackageName(adapter);
   if (!pkg.dependencies) pkg.dependencies = {};
-  pkg.dependencies[adapterPkg] = "latest";
+  pkg.dependencies[adapterPkg] = `^${REJELLY_PACKAGE_VERSIONS[adapterPkg]}`;
   if (pkg.devDependencies) {
     const keep = ["@types/node", "tsx", "typescript", "vitest"];
     pkg.devDependencies = Object.fromEntries(

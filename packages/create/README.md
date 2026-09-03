@@ -22,6 +22,8 @@ npm create rejelly@latest my-app -- --yes
 
 When stdin is non-interactive, incomplete arguments fail immediately instead of waiting for a prompt. Run `create-rejelly --help` for all options.
 
+Generated projects use compatible semver ranges pinned to the Rejelly core and adapter versions available when `create-rejelly` was built, rather than installing an unbounded `latest` release.
+
 ## AI guidance
 
 Generated projects include both a root `AGENTS.md` and a portable `.agents/skills/rejelly` Skill. The Skill bundles a release-matched snapshot of the Rejelly documentation for progressive, offline reference by compatible coding agents.

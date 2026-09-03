@@ -33,15 +33,20 @@ export function getAdapterReplacements(choice: AdapterChoice): AdapterReplacemen
   switch (choice) {
     case "openai":
       return {
-        importLine: "import { createOpenAIAdapter } from '@rejelly/adapter-openai';",
-        modelLine:
-          "const model = createOpenAIAdapter({ modelId: process.env.OPENAI_MODEL_ID || 'gpt-5.6-luna', apiKey: process.env.OPENAI_API_KEY, baseURL: process.env.OPENAI_BASE_URL });",
+        importLine: 'import { createOpenAIAdapter } from "@rejelly/adapter-openai";',
+        modelLine: `const model = createOpenAIAdapter({
+  modelId: process.env.OPENAI_MODEL_ID || "gpt-5.6-luna",
+  apiKey: process.env.OPENAI_API_KEY,
+  baseURL: process.env.OPENAI_BASE_URL,
+});`,
       };
     case "gemini":
       return {
-        importLine: "import { createGeminiAdapter } from '@rejelly/adapter-gemini';",
-        modelLine:
-          "const model = createGeminiAdapter({ modelId: process.env.GEMINI_MODEL_ID || 'gemini-3.0-flash', apiKey: process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY });",
+        importLine: 'import { createGeminiAdapter } from "@rejelly/adapter-gemini";',
+        modelLine: `const model = createGeminiAdapter({
+  modelId: process.env.GEMINI_MODEL_ID || "gemini-3.0-flash",
+  apiKey: process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY,
+});`,
       };
     default:
       throw new Error(`Unknown adapter: ${choice}`);
