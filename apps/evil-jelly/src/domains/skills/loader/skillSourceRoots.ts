@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getErrnoCode } from "../../../shared/foundation/errno";
-import { resolveWorkspaceScopePaths } from "../../../shared/workspaceScope";
+import { resolveWorkspaceScopePaths, sameCanonicalPath } from "../../../shared/workspaceScope";
 import type { SkillScope } from "../definition/skillDefinition";
 import { type SkillLoadDiagnostic, skillDiagnostic } from "./diagnostics";
 
@@ -26,14 +26,17 @@ export interface SkillSourceDiscovery {
   readonly diagnostics: readonly SkillLoadDiagnostic[];
 }
 
-/** Resolve fixed user/project roots without assigning one physical directory to both scopes. */
+/** Resolve Evil-specific and portable `.agents` roots without duplicating home scope. */
 export function resolveSkillRoots(
   workspaceRoot: string,
   globalJellyDir: string,
 ): ResolvedSkillRoots {
   const scopePaths = resolveWorkspaceScopePaths(workspaceRoot, globalJellyDir);
+  const userAgentsRoot = path.join(path.dirname(scopePaths.globalJellyDir), ".agents", "skills");
+  const projectAgentsRoot = path.join(scopePaths.workspaceRoot, ".agents", "skills");
   const roots: readonly SkillSourceRoot[] = Object.freeze([
     Object.freeze({ scope: "user", path: path.join(scopePaths.globalJellyDir, "skills") }),
+    Object.freeze({ scope: "user", path: userAgentsRoot }),
     ...(scopePaths.hasDistinctProjectState
       ? [
           Object.freeze({
@@ -41,6 +44,9 @@ export function resolveSkillRoots(
             path: path.join(scopePaths.workspaceJellyDir, "skills"),
           }),
         ]
+      : []),
+    ...(!sameCanonicalPath(projectAgentsRoot, userAgentsRoot)
+      ? [Object.freeze({ scope: "project" as const, path: projectAgentsRoot })]
       : []),
   ]);
   return Object.freeze({ roots });

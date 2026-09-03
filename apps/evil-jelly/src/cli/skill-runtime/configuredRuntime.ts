@@ -53,7 +53,7 @@ export async function buildSkillRuntimeSnapshot(
   });
 }
 
-/** Discover both configured loose roots and build one process-lifetime runtime snapshot. */
+/** Discover configured Evil-specific and portable roots and build one runtime snapshot. */
 export async function buildConfiguredSkillRuntimeSnapshot(): Promise<SkillRuntimeSnapshotBuildResult> {
   const skillSettings = getSettings().skills;
   if (!skillSettings.enabled) {

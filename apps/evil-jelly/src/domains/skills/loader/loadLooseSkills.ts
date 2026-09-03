@@ -38,7 +38,7 @@ interface SourceCandidatesResult {
   readonly diagnostics: readonly SkillLoadDiagnostic[];
 }
 
-/** Enumerate only direct child directories from one already-canonical fixed source. */
+/** Enumerate only direct child directories from one already-canonical Skill source. */
 async function collectSkillCandidates(source: SkillSource): Promise<SourceCandidatesResult> {
   let entries: Dirent[];
   try {
@@ -132,7 +132,7 @@ function rejectDuplicateSkills(
   return accepted;
 }
 
-/** Load the two fixed loose Skill sources into immutable records and a path-owning repository. */
+/** Load the discovered loose Skill sources into immutable records and a path-owning repository. */
 export async function loadLooseSkills(
   sources: readonly SkillSource[],
   includeSkill: SkillRecordPredicate = () => true,
