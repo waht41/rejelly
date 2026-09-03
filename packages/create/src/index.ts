@@ -3,12 +3,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pc from "picocolors";
 import prompts from "prompts";
+import { ADAPTER_CHOICES, getAdapterPackageName, getAdapterReplacements } from "./adapters";
 import {
-  ADAPTER_CHOICES,
-  type AdapterChoice,
-  getAdapterPackageName,
-  getAdapterReplacements,
-} from "./adapters";
+  applyDefaults,
+  assertCompleteOptions,
+  type CliOptions,
+  getHelpText,
+  getMissingOptions,
+  parseCliArgs,
+  type ScaffoldOptions,
+  TEMPLATE_CHOICES,
+} from "./cli";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,12 +30,6 @@ const AGENTS_BANNER_PATTERN = /^<!-- AUTO-GENERATED[\s\S]*?-->\s*/;
 const AGENTS_USER_BANNER =
   "<!-- Guidance for AI coding assistants, generated from the Rejelly docs by create-rejelly." +
   " This file is yours: feel free to extend it with project-specific instructions. -->";
-
-const TEMPLATE_CHOICES = [
-  { title: "Basic (chat)", value: "basic" as const },
-  { title: "Router", value: "router" as const },
-] as const;
-type TemplateChoice = (typeof TEMPLATE_CHOICES)[number]["value"];
 
 interface PlaceholderReplacement {
   importLine: string;
@@ -79,49 +78,52 @@ function replacePlaceholdersInTree(dir: string, replacement: PlaceholderReplacem
   }
 }
 
-async function init() {
-  console.log(pc.cyan("\n  Welcome to Create Rejelly!\n"));
-
-  const response = await prompts(
-    [
-      {
-        type: "text",
-        name: "projectName",
-        message: "Project name:",
-        initial: "rejelly-app",
-      },
-      {
-        type: "select",
-        name: "template",
-        message: "Which template would you like?",
-        choices: [...TEMPLATE_CHOICES],
-      },
-      {
-        type: "select",
-        name: "adapter",
-        message: "Which model adapter would you like to start with?",
-        choices: [...ADAPTER_CHOICES],
-      },
-    ],
-    {
-      onCancel: () => {
-        console.log(pc.red("\n  Operation cancelled.\n"));
-        process.exit(1);
-      },
-    },
-  );
-
-  const { projectName, template, adapter } = response as {
-    projectName: string;
-    template: TemplateChoice;
-    adapter: AdapterChoice;
-  };
-  if (!projectName) {
-    console.log(pc.red("  Operation cancelled."));
-    return;
+async function promptForMissingOptions(options: CliOptions): Promise<ScaffoldOptions> {
+  const questions: prompts.PromptObject[] = [];
+  if (!options.projectName) {
+    questions.push({
+      type: "text",
+      name: "projectName",
+      message: "Project name:",
+      initial: "rejelly-app",
+    });
+  }
+  if (!options.template) {
+    questions.push({
+      type: "select",
+      name: "template",
+      message: "Which template would you like?",
+      choices: [...TEMPLATE_CHOICES],
+    });
+  }
+  if (!options.adapter) {
+    questions.push({
+      type: "select",
+      name: "adapter",
+      message: "Which model adapter would you like to start with?",
+      choices: [...ADAPTER_CHOICES],
+    });
   }
 
-  const root = path.join(process.cwd(), projectName);
+  const response = await prompts(questions, {
+    onCancel: () => {
+      throw new Error("Operation cancelled.");
+    },
+  });
+  return assertCompleteOptions({ ...options, ...response });
+}
+
+async function resolveScaffoldOptions(options: CliOptions): Promise<ScaffoldOptions> {
+  if (options.yes) return applyDefaults(options);
+  if (getMissingOptions(options).length === 0) return assertCompleteOptions(options);
+
+  const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+  if (!interactive) return assertCompleteOptions(options);
+  return promptForMissingOptions(options);
+}
+
+function scaffoldProject({ projectName, template, adapter }: ScaffoldOptions): void {
+  const root = path.resolve(process.cwd(), projectName);
   const templateDir = path.resolve(__dirname, `../template-${template}`);
   const sharedDir = path.resolve(__dirname, "../shared");
 
@@ -195,7 +197,21 @@ async function init() {
   console.log(pc.cyan("  pnpm start\n"));
 }
 
-init().catch((e) => {
-  console.error(e);
-  process.exit(1);
+async function main(): Promise<void> {
+  const cliOptions = parseCliArgs(process.argv.slice(2));
+  if (cliOptions.help) {
+    console.log(getHelpText());
+    return;
+  }
+
+  console.log(pc.cyan("\n  Welcome to Create Rejelly!\n"));
+  const options = await resolveScaffoldOptions(cliOptions);
+  scaffoldProject(options);
+}
+
+main().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(pc.red(`\n  ${message}\n`));
+  console.error(getHelpText());
+  process.exitCode = 1;
 });
