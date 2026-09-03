@@ -34,18 +34,22 @@ Run `evil` to chat, inspect and search code, edit files with diff confirmation, 
 
 ### Local Skills
 
-Evil Jelly loads local, filesystem-backed instruction Skills from exactly two directories:
+Evil Jelly loads local, filesystem-backed instruction Skills from Evil-specific and portable
+`.agents` directories:
 
 ```text
 ~/.evil-jelly/skills/<skill-name>/SKILL.md
+~/.agents/skills/<skill-name>/SKILL.md
 <workspace>/.evil-jelly/skills/<skill-name>/SKILL.md
+<workspace>/.agents/skills/<skill-name>/SKILL.md
 ```
 
-The first location supplies personal Skills across workspaces; the second supplies Skills for the
-current workspace. Only direct child directories containing `SKILL.md` are discovered. Both roots
-are optional, and placing a valid Skill in either root enables it by default. Skills are loaded once
-when Evil Jelly starts, so restart the process after adding, removing, editing, enabling, or disabling
-one.
+The user locations supply personal Skills across workspaces; the workspace locations supply project
+Skills. `.agents/skills` is compatible with the portable layout used by Codex, while the existing
+`.evil-jelly/skills` locations remain supported. Only direct child directories containing `SKILL.md`
+are discovered. All roots are optional, and placing a valid Skill in any root enables it by default.
+Skills are loaded once when Evil Jelly starts, so restart the process after adding, removing, editing,
+enabling, or disabling one.
 
 Create a minimal project Skill at `.evil-jelly/skills/review/SKILL.md`:
 

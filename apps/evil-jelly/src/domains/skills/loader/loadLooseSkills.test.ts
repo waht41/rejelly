@@ -74,7 +74,21 @@ describe("loose Skill source loading", () => {
     expect(result.diagnostics.map((item) => item.code)).toContain("skill.frontmatter.invalid");
   });
 
-  it("lets the same plain name coexist in different fixed sources", async () => {
+  it("loads portable project Skills from .agents/skills", async () => {
+    const directory = path.join(workspaceRoot, ".agents", "skills", "portable");
+    await fs.mkdir(directory, { recursive: true });
+    await fs.writeFile(
+      path.join(directory, "SKILL.md"),
+      "---\nname: portable\ndescription: Portable project Skill\n---\nportable body",
+    );
+
+    const result = await build();
+
+    expect(result.records.map(qualifiedSkillName)).toEqual(["project:portable"]);
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("lets the same plain name coexist in different fixed scopes", async () => {
     await writeSkill("user", "review");
     await writeSkill("project", "review");
 

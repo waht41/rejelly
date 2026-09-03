@@ -28,23 +28,26 @@ describe("loose Skill source roots", () => {
     return resolveSkillRoots(workspaceRoot, globalJellyDir);
   }
 
-  it("resolves exactly two fixed roots without creating them", async () => {
+  it("resolves Evil-specific and portable .agents roots without creating them", async () => {
     const resolved = roots();
 
     expect(resolved.roots).toEqual([
       { scope: "user", path: path.join(globalJellyDir, "skills") },
+      { scope: "user", path: path.join(path.dirname(globalJellyDir), ".agents", "skills") },
       { scope: "project", path: path.join(workspaceRoot, ".evil-jelly", "skills") },
+      { scope: "project", path: path.join(workspaceRoot, ".agents", "skills") },
     ]);
     await expect(fs.access(globalJellyDir)).rejects.toMatchObject({ code: "ENOENT" });
     expect(Object.isFrozen(resolved)).toBe(true);
     expect(Object.isFrozen(resolved.roots)).toBe(true);
   });
 
-  it("does not reinterpret the user Skill root as project scope in a home workspace", () => {
+  it("does not reinterpret user Skill roots as project scope in a home workspace", () => {
     const homeWorkspace = path.dirname(globalJellyDir);
 
     expect(resolveSkillRoots(homeWorkspace, globalJellyDir).roots).toEqual([
       { scope: "user", path: path.join(globalJellyDir, "skills") },
+      { scope: "user", path: path.join(homeWorkspace, ".agents", "skills") },
     ]);
   });
 
@@ -57,15 +60,21 @@ describe("loose Skill source roots", () => {
 
   it("discovers existing roots in stable user/project order", async () => {
     const userRoot = path.join(globalJellyDir, "skills");
+    const userAgentsRoot = path.join(path.dirname(globalJellyDir), ".agents", "skills");
     const projectRoot = path.join(workspaceRoot, ".evil-jelly", "skills");
+    const projectAgentsRoot = path.join(workspaceRoot, ".agents", "skills");
     await fs.mkdir(userRoot, { recursive: true });
+    await fs.mkdir(userAgentsRoot, { recursive: true });
     await fs.mkdir(projectRoot, { recursive: true });
+    await fs.mkdir(projectAgentsRoot, { recursive: true });
 
     const result = await discoverSkillSources(roots());
 
     expect(result.sources).toEqual([
       { scope: "user", rootPath: await fs.realpath(userRoot) },
+      { scope: "user", rootPath: await fs.realpath(userAgentsRoot) },
       { scope: "project", rootPath: await fs.realpath(projectRoot) },
+      { scope: "project", rootPath: await fs.realpath(projectAgentsRoot) },
     ]);
     expect(result.diagnostics).toEqual([]);
   });
