@@ -4,6 +4,7 @@ import type { Turn } from "../history/model";
 import {
   buildToolTranscriptDetailLines,
   buildToolTranscriptEntries,
+  findToolTranscriptEntryIndex,
   type ToolTranscriptEntry,
 } from "./projection";
 
@@ -37,6 +38,23 @@ describe("tool transcript projection", () => {
         { id: "t1", ordinal: 1 },
       ],
     );
+  });
+
+  it("keeps selection on the same tool when a newer entry is prepended", () => {
+    const selectedEntryId = "t1";
+    const before = buildToolTranscriptEntries([toolTurn("t1"), toolTurn("t2")]);
+    const after = buildToolTranscriptEntries([toolTurn("t1"), toolTurn("t2"), toolTurn("t3")]);
+
+    expect(before[findToolTranscriptEntryIndex(before, selectedEntryId)]?.id).toBe("t1");
+    expect(after[findToolTranscriptEntryIndex(after, selectedEntryId)]?.id).toBe("t1");
+  });
+
+  it("falls back to the newest tool when no selected identity is available", () => {
+    const entries = buildToolTranscriptEntries([toolTurn("t1"), toolTurn("t2")]);
+
+    expect(findToolTranscriptEntryIndex(entries, null)).toBe(0);
+    expect(findToolTranscriptEntryIndex(entries, "missing")).toBe(0);
+    expect(entries[0]?.id).toBe("t2");
   });
 
   it("projects arguments and wraps result rows to the viewport width", () => {

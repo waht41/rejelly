@@ -10,7 +10,11 @@ import { ListViewport } from "../../terminal-ui/picker/ListViewport";
 import { getVisibleWindow, moveListSelection } from "../../terminal-ui/picker/listNavigation";
 import { useOutputStore } from "../useOutputStore";
 import type { ToolTranscriptRenderLine } from "./projection";
-import { buildToolTranscriptDetailLines, buildToolTranscriptEntries } from "./projection";
+import {
+  buildToolTranscriptDetailLines,
+  buildToolTranscriptEntries,
+  findToolTranscriptEntryIndex,
+} from "./projection";
 import { useToolTranscriptViewStore } from "./viewStore";
 
 type OverlayMode = "list" | "detail";
@@ -51,13 +55,26 @@ export function ToolTranscriptOverlay() {
   const pageStep = Math.max(1, Math.floor(listViewportRows * PAGE_SCROLL_FRACTION));
 
   const [mode, setMode] = useState<OverlayMode>("list");
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  // Bind the initial row synchronously. Waiting for an effect leaves one render where
+  // selection is only "index 0"; opening detail during that window lets a newly
+  // completed tool take over the detail pane before the identity is captured.
+  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(
+    () => toolEntries[0]?.id ?? null,
+  );
   const [scrollOffset, setScrollOffset] = useState(0);
 
   useEffect(() => {
-    setSelectedIndex((prev) => Math.min(prev, Math.max(0, toolEntries.length - 1)));
-  }, [toolEntries.length]);
+    setSelectedEntryId((current) => {
+      if (toolEntries.length === 0) {
+        return null;
+      }
+      return current && toolEntries.some((entry) => entry.id === current)
+        ? current
+        : toolEntries[0]!.id;
+    });
+  }, [toolEntries]);
 
+  const selectedIndex = findToolTranscriptEntryIndex(toolEntries, selectedEntryId);
   const selectedEntry = toolEntries[selectedIndex];
   const detailLines = useMemo(
     () => (selectedEntry ? buildToolTranscriptDetailLines(selectedEntry, columns) : []),
@@ -82,13 +99,12 @@ export function ToolTranscriptOverlay() {
         return;
       }
       if (key.upArrow || key.downArrow) {
-        setSelectedIndex((previous) =>
-          moveListSelection({
-            selectedIndex: previous,
-            itemCount: toolEntries.length,
-            command: key.upArrow ? "up" : "down",
-          }),
-        );
+        const nextIndex = moveListSelection({
+          selectedIndex,
+          itemCount: toolEntries.length,
+          command: key.upArrow ? "up" : "down",
+        });
+        setSelectedEntryId(toolEntries[nextIndex]?.id ?? null);
         return;
       }
       if (key.pageUp || (key.shift && key.tab) || key.pageDown || key.home || key.end) {
@@ -99,14 +115,13 @@ export function ToolTranscriptOverlay() {
             : key.pageDown
               ? "page-down"
               : "page-up";
-        setSelectedIndex((previous) =>
-          moveListSelection({
-            selectedIndex: previous,
-            itemCount: toolEntries.length,
-            command,
-            pageStep,
-          }),
-        );
+        const nextIndex = moveListSelection({
+          selectedIndex,
+          itemCount: toolEntries.length,
+          command,
+          pageStep,
+        });
+        setSelectedEntryId(toolEntries[nextIndex]?.id ?? null);
         return;
       }
       if (key.return && selectedEntry) {
