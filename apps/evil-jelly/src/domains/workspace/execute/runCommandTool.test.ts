@@ -1,3 +1,4 @@
+import { getEventListeners } from "node:events";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -11,6 +12,14 @@ const hostBindingMock = vi.hoisted(() => ({
   current: null as EvilJellyBindings | null,
 }));
 const executeShellCommandMock = vi.hoisted(() => vi.fn());
+const contextSignalMock = vi.hoisted(() => ({
+  current: undefined as AbortSignal | undefined,
+}));
+
+vi.mock("@rejelly/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@rejelly/core")>()),
+  getContextSignal: () => contextSignalMock.current,
+}));
 
 vi.mock("../../../shared/host/context", () => ({
   getBinding: () => {
@@ -38,6 +47,7 @@ describe("RunCommandTool cwd policy", () => {
     workspace = await fs.mkdtemp(path.join(os.tmpdir(), "evil-jelly-run-workspace-"));
     outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), "evil-jelly-run-outside-"));
     setWorkspaceRoot(workspace);
+    contextSignalMock.current = new AbortController().signal;
     executeShellCommandMock.mockReset();
     executeShellCommandMock.mockResolvedValue({ exitCode: 0, output: "ok" });
   });
@@ -82,6 +92,21 @@ describe("RunCommandTool cwd policy", () => {
       expect.objectContaining({ timeoutMs: 900_000 }),
       undefined,
     );
+  });
+
+  it("removes merged abort listeners after each command completes", async () => {
+    hostBindingMock.current = createTestHostBindings({ mode: "normal" });
+    const contextSignal = contextSignalMock.current!;
+    const initialListenerCount = getEventListeners(contextSignal, "abort").length;
+
+    for (let index = 0; index < 12; index += 1) {
+      await RunCommandTool.handler({
+        command: `example-${index}`,
+        declaredSafety: "read_only",
+        reason: "test abort listener cleanup",
+      });
+      expect(getEventListeners(contextSignal, "abort")).toHaveLength(initialListenerCount);
+    }
   });
 
   it("leaves outside cwd authorization to the shell confirmation", async () => {
