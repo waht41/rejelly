@@ -304,6 +304,7 @@ describe("phaseForStreamEvent", () => {
     // screen until the SDK finally gives up.
     expect(phaseForStreamEvent({ type: "turn_start" }, midTurn)).toBe("connecting");
     expect(phaseForStreamEvent({ type: "text", delta: "hi" }, midTurn)).toBe("streaming");
+    expect(phaseForStreamEvent({ type: "tool_call_stream" }, midTurn)).toBe("preparing_tool");
     expect(phaseForStreamEvent({ type: "turn_done" }, { modelSpoke: true, turnEnded: false })).toBe(
       "working",
     );
@@ -397,8 +398,8 @@ describe("phaseForStreamEvent", () => {
       [{ type: "structured_data", data: {} }, mid, null],
       [{ type: "structured_data", data: { reply: "hi" } }, mid, "streaming"],
       [{ type: "structured_data", data: { reply: "hi" } }, endedSpoke, null],
-      // tool_call_stream: the model is mid-turn producing a call.
-      [{ type: "tool_call_stream" }, mid, "streaming"],
+      // tool_call_stream: the model is mid-turn serializing a call, not replying to the user.
+      [{ type: "tool_call_stream" }, mid, "preparing_tool"],
       [{ type: "tool_call_stream" }, endedSpoke, null],
       // turn_done: whoever comes next (tools, another turn, the reply) owns the phase.
       [{ type: "turn_done" }, mid, "working"],

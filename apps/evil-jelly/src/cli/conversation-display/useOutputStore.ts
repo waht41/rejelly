@@ -1,7 +1,10 @@
 /** Conversation display projection: transient stream + `<Static>` history for the Ink CLI. */
 
 import { create } from "zustand";
-import type { RuntimePhase } from "../../shared/host/presentationBindings";
+import type {
+  RuntimePhase,
+  ToolCallGenerationProgress,
+} from "../../shared/host/presentationBindings";
 import {
   RESUME_VISIBLE_TURNS,
   type TranscriptItem,
@@ -67,11 +70,13 @@ interface OutputState extends RunningToolsState, RuntimeStatusState {
    * job; this prefix only keeps the flushed-count bookkeeping consistent.
    */
   clearedStaticTurns: Turn[];
+  toolCallGeneration: ToolCallGenerationProgress | null;
 
   appendStream: (text: string) => void;
   beginTool: (start: ToolObservationStart) => ToolCallHandle;
   appendToolOutput: (toolCallId: string, chunk: string) => void;
   setDetail: (detail: string) => void;
+  setToolCallGeneration: (progress: ToolCallGenerationProgress | null) => void;
   /** Move to `phase`, optionally updating the detail in the same commit. */
   setPhase: (phase: RuntimePhase, detail?: string) => void;
   /** Anchor the turn timer at an initial user input; steers and maintenance commands never call it. */
@@ -108,6 +113,7 @@ export const useOutputStore = create<OutputState>((set) => ({
   history: [],
   toolHistory: [],
   clearedStaticTurns: [],
+  toolCallGeneration: null,
 
   appendStream: (text) => {
     assistantStream.append(text);
@@ -140,6 +146,8 @@ export const useOutputStore = create<OutputState>((set) => ({
   },
 
   setDetail: (detail) => set((state) => ({ runtime: withRuntimeDetail(state.runtime, detail) })),
+
+  setToolCallGeneration: (progress) => set({ toolCallGeneration: progress }),
 
   /** Anchor the turn timer; idempotent until a turn boundary resets it. */
   beginTurn: () =>
@@ -191,6 +199,7 @@ export const useOutputStore = create<OutputState>((set) => ({
         history: [...state.history, ...turns],
         streamBuffer: "",
         runningTools: [],
+        toolCallGeneration: null,
         runtime: idleRuntime(),
       };
     });
@@ -280,7 +289,7 @@ export const useOutputStore = create<OutputState>((set) => ({
 
   clearStream: () => {
     clearStreamState();
-    set({ streamBuffer: "", runningTools: [], runtime: idleRuntime() });
+    set({ streamBuffer: "", runningTools: [], toolCallGeneration: null, runtime: idleRuntime() });
   },
   clearHistory: () => {
     // Turn ids keep counting: they must stay unique across clearedStaticTurns + history.
@@ -293,6 +302,7 @@ export const useOutputStore = create<OutputState>((set) => ({
       toolHistory: [],
       streamBuffer: "",
       runningTools: [],
+      toolCallGeneration: null,
       runtime: idleRuntime(),
     }));
   },
@@ -306,6 +316,7 @@ export const useOutputStore = create<OutputState>((set) => ({
       toolHistory: [...state.toolHistory, ...projected.filter((turn) => turn.type === "tool")],
       streamBuffer: "",
       runningTools: [],
+      toolCallGeneration: null,
       runtime: idleRuntime(),
     }));
   },
@@ -318,6 +329,7 @@ export function resetOutputSession(): void {
   useOutputStore.setState({
     streamBuffer: "",
     runningTools: [],
+    toolCallGeneration: null,
     runtime: idleRuntime(),
     history: [],
     toolHistory: [],

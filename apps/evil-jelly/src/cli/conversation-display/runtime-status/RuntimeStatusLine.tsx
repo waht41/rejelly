@@ -9,6 +9,7 @@ const WORKING_DETAIL: Partial<Record<RuntimePhase, string>> = {
   connecting: "connecting",
   thinking: "thinking",
   streaming: "responding",
+  preparing_tool: "preparing tool call",
   compacting: "compacting context",
   tool: "running tools",
 };
@@ -33,6 +34,26 @@ function elapsedSeconds(now: number, since: number): number {
   return Math.max(0, Math.floor((now - since) / 1_000));
 }
 
+export function formatElapsedTime(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (minutes < 60) {
+    return `${minutes}m ${remainingSeconds}s`;
+  }
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m ${remainingSeconds}s`;
+}
+
+function formatChars(chars: number): string {
+  if (chars < 1_000) return String(chars);
+  if (chars < 1_000_000) return `${(chars / 1_000).toFixed(chars < 10_000 ? 1 : 0)}k`;
+  return `${(chars / 1_000_000).toFixed(1)}m`;
+}
+
 /** Persistent status bar: runtime activity, whole-turn duration, and stall indication. */
 export function RuntimeStatusLine() {
   const phase = useOutputStore((state) => state.runtime.phase);
@@ -42,6 +63,7 @@ export function RuntimeStatusLine() {
     Math.floor(state.runtime.lastOutputAt / 1_000),
   );
   const detail = useOutputStore((state) => state.runtime.detail);
+  const toolCallGeneration = useOutputStore((state) => state.toolCallGeneration);
 
   const showsTimer = phase !== "idle" && phase !== "awaiting_user";
   const now = useNowTick(showsTimer);
@@ -79,14 +101,28 @@ export function RuntimeStatusLine() {
     );
   }
 
-  const detailSuffix =
+  let detailSuffix =
     phase === "tool" && detail.startsWith("Starting MCP ") ? detail : WORKING_DETAIL[phase];
-  const color = stalled ? "yellow" : undefined;
+  if (phase === "preparing_tool" && toolCallGeneration) {
+    const names = [...new Set(toolCallGeneration.calls.map((call) => call.name).filter(Boolean))];
+    const subject =
+      toolCallGeneration.calls.length === 1 && names.length === 1
+        ? names[0]
+        : `${toolCallGeneration.calls.length} tool calls`;
+    const size =
+      toolCallGeneration.totalArgumentChars >= 2_000
+        ? ` · ${formatChars(toolCallGeneration.totalArgumentChars)} chars`
+        : "";
+    detailSuffix = `preparing ${subject}${size}`;
+  }
+  const largeToolCall =
+    phase === "preparing_tool" && (toolCallGeneration?.totalArgumentChars ?? 0) >= 50_000;
+  const color = stalled || largeToolCall ? "yellow" : undefined;
   return (
     <Box>
       <Text color={color ?? "gray"}>● </Text>
       <Text color={color} bold={stalled}>
-        Working {turnElapsed}s
+        Working {formatElapsedTime(turnElapsed)}
       </Text>
       {detailSuffix !== undefined ? <Text dimColor> · {detailSuffix}</Text> : null}
     </Box>

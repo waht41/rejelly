@@ -11,10 +11,20 @@ export type RuntimePhase =
   | "connecting"
   | "thinking"
   | "streaming"
+  | "preparing_tool"
   | "compacting"
   | "tool"
   | "working"
   | "awaiting_user";
+
+export interface ToolCallGenerationProgress {
+  calls: Array<{
+    index: number;
+    name?: string;
+    argumentChars: number;
+  }>;
+  totalArgumentChars: number;
+}
 
 /** Complete host-facing presentation port for a conversation, including its tool activity. */
 export interface ConversationPresentationBindings {
@@ -33,5 +43,7 @@ export interface ConversationPresentationBindings {
   showSessionBanner?: () => void;
   onDetailUpdate?: (detail: string) => void;
   onPhaseUpdate?: (phase: RuntimePhase) => void;
+  /** Live model-side progress while one or more tool calls are still being serialized. */
+  onToolCallGenerationUpdate?: (progress: ToolCallGenerationProgress | null) => void;
   onTurnStart?: () => void;
 }

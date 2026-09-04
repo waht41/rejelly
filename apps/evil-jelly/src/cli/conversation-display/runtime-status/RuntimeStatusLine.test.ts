@@ -5,7 +5,7 @@ import stripAnsi from "strip-ansi";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { RuntimePhase } from "../../../shared/host/presentationBindings";
 import { resetOutputSession, useOutputStore } from "../useOutputStore";
-import { RuntimeStatusLine } from "./RuntimeStatusLine";
+import { formatElapsedTime, RuntimeStatusLine } from "./RuntimeStatusLine";
 
 beforeEach(() => {
   resetOutputSession();
@@ -44,6 +44,14 @@ function displayedSeconds(line: string): number | null {
   const match = /\b(\d+)s\b/.exec(line);
   return match ? Number(match[1]) : null;
 }
+
+describe("formatElapsedTime", () => {
+  it("changes units as elapsed work crosses minutes and hours", () => {
+    expect(formatElapsedTime(9)).toBe("9s");
+    expect(formatElapsedTime(61)).toBe("1m 1s");
+    expect(formatElapsedTime(3_661)).toBe("1h 1m 1s");
+  });
+});
 
 describe("RuntimeStatusLine", () => {
   it("stays within the terminal on a long detail", () => {
@@ -116,5 +124,32 @@ describe("RuntimeStatusLine", () => {
 
     expect(statusLine()).toContain("Starting MCP typescript…");
     expect(statusLine()).not.toContain("running tools");
+  });
+
+  it("shows generic model-side tool generation progress and reveals large argument size", () => {
+    useOutputStore.getState().setToolCallGeneration({
+      calls: [{ index: 0, name: "edit_file", argumentChars: 84_200 }],
+      totalArgumentChars: 84_200,
+    });
+    setRuntime({ phase: "preparing_tool", turnAgeSeconds: 70 });
+
+    const line = statusLine();
+    expect(line).toContain("Working 1m 10s");
+    expect(line).toContain("preparing edit_file · 84k chars");
+  });
+
+  it("keeps small tool calls concise and summarizes multiple calls", () => {
+    useOutputStore.getState().setToolCallGeneration({
+      calls: [
+        { index: 0, name: "run_command", argumentChars: 400 },
+        { index: 1, name: "read_file", argumentChars: 300 },
+      ],
+      totalArgumentChars: 700,
+    });
+    setRuntime({ phase: "preparing_tool" });
+
+    const line = statusLine();
+    expect(line).toContain("preparing 2 tool calls");
+    expect(line).not.toContain("chars");
   });
 });
