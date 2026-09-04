@@ -17,12 +17,15 @@ export interface WithRetryOptions {
   backoffMultiplier?: number;
   /** Maximum delay between attempts in ms. */
   maxDelayMs?: number;
+  /** Random delay added as a fraction of the selected backoff. */
+  jitterRatio?: number;
 }
 
 const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_INITIAL_DELAY_MS = 1_000;
 const DEFAULT_BACKOFF_MULTIPLIER = 2;
 const DEFAULT_MAX_DELAY_MS = 30_000;
+const DEFAULT_JITTER_RATIO = 0.25;
 
 function sleep(delayMs: number, options: { signal?: AbortSignal } = {}): Promise<void> {
   if (options.signal?.aborted) {
@@ -122,22 +125,39 @@ function clampDelay(delayMs: number, maxDelayMs: number): number {
   return Math.max(0, Math.min(delayMs, maxDelayMs));
 }
 
+/** Add positive jitter so concurrent clients never retry earlier than the selected delay. */
+export function addRetryJitter(
+  delayMs: number,
+  maxDelayMs: number,
+  jitterRatio: number,
+  random: () => number = Math.random,
+): number {
+  return clampDelay(delayMs + delayMs * jitterRatio * random(), maxDelayMs);
+}
+
 export function withRetry(options: WithRetryOptions = {}): ModelMiddleware {
   const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
   const initialDelayMs = options.initialDelayMs ?? DEFAULT_INITIAL_DELAY_MS;
   const backoffMultiplier = options.backoffMultiplier ?? DEFAULT_BACKOFF_MULTIPLIER;
   const maxDelayMs = options.maxDelayMs ?? DEFAULT_MAX_DELAY_MS;
+  const jitterRatio = options.jitterRatio ?? DEFAULT_JITTER_RATIO;
 
   if (!Number.isInteger(maxAttempts) || maxAttempts < 1) {
     throw new Error("withRetry: maxAttempts must be an integer >= 1");
   }
-  if (initialDelayMs < 0 || backoffMultiplier < 1 || maxDelayMs < 0) {
+  if (
+    initialDelayMs < 0 ||
+    backoffMultiplier < 1 ||
+    maxDelayMs < 0 ||
+    jitterRatio < 0 ||
+    jitterRatio > 1
+  ) {
     throw new Error("withRetry: invalid backoff options");
   }
 
   return {
     name: "evil_jelly_model_retry",
-    config: { maxAttempts, initialDelayMs, backoffMultiplier, maxDelayMs },
+    config: { maxAttempts, initialDelayMs, backoffMultiplier, maxDelayMs, jitterRatio },
     wrap(inner: ModelAdapter): ModelAdapter {
       return {
         ...inner,
@@ -162,7 +182,11 @@ export function withRetry(options: WithRetryOptions = {}): ModelMiddleware {
               }
 
               const retryAfterMs = readRetryAfterMs(error);
-              const delayMs = clampDelay(retryAfterMs ?? nextBackoffMs, maxDelayMs);
+              const delayMs = addRetryJitter(
+                retryAfterMs ?? nextBackoffMs,
+                maxDelayMs,
+                jitterRatio,
+              );
               await sleep(delayMs, { signal: streamOptions?.signal });
               nextBackoffMs = clampDelay(nextBackoffMs * backoffMultiplier, maxDelayMs);
             }
