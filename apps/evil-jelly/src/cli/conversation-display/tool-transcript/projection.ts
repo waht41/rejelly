@@ -33,6 +33,20 @@ export function buildToolTranscriptEntries(history: readonly Turn[]): ToolTransc
     .reverse();
 }
 
+/** Keep selection attached to a tool identity when newer entries are prepended. */
+export function findToolTranscriptEntryIndex(
+  entries: readonly ToolTranscriptEntry[],
+  selectedEntryId: string | null,
+): number {
+  if (selectedEntryId === null) {
+    return 0;
+  }
+  return Math.max(
+    0,
+    entries.findIndex((entry) => entry.id === selectedEntryId),
+  );
+}
+
 function appendVisualLines(
   target: ToolTranscriptRenderLine[],
   text: string,
