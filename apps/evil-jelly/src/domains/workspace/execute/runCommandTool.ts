@@ -46,28 +46,43 @@ const runCommandParameters = z.object({
     ),
 });
 
-function mergeAbortSignals(...signals: Array<AbortSignal | undefined>): AbortSignal | undefined {
+function mergeAbortSignals(...signals: Array<AbortSignal | undefined>): {
+  signal: AbortSignal | undefined;
+  dispose: () => void;
+} {
   const definedSignals = signals.filter((signal): signal is AbortSignal => signal !== undefined);
   if (definedSignals.length === 0) {
-    return undefined;
+    return { signal: undefined, dispose: () => undefined };
   }
   if (definedSignals.length === 1) {
-    return definedSignals[0];
+    return { signal: definedSignals[0], dispose: () => undefined };
   }
+
   const controller = new AbortController();
-  const abortFrom = (signal: AbortSignal) => {
-    if (!controller.signal.aborted) {
-      controller.abort(signal.reason);
-    }
-  };
-  for (const signal of definedSignals) {
-    if (signal.aborted) {
-      abortFrom(signal);
-      break;
-    }
-    signal.addEventListener("abort", () => abortFrom(signal), { once: true });
+  const abortedSignal = definedSignals.find((signal) => signal.aborted);
+  if (abortedSignal) {
+    controller.abort(abortedSignal.reason);
+    return { signal: controller.signal, dispose: () => undefined };
   }
-  return controller.signal;
+
+  const listeners = definedSignals.map((sourceSignal) => {
+    const onAbort = () => {
+      if (!controller.signal.aborted) {
+        controller.abort(sourceSignal.reason);
+      }
+    };
+    sourceSignal.addEventListener("abort", onAbort, { once: true });
+    return { sourceSignal, onAbort };
+  });
+
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      for (const { sourceSignal, onAbort } of listeners) {
+        sourceSignal.removeEventListener("abort", onAbort);
+      }
+    },
+  };
 }
 
 export const RunCommandTool: ToolDefinition<typeof runCommandParameters> = {
@@ -115,7 +130,7 @@ export const RunCommandTool: ToolDefinition<typeof runCommandParameters> = {
         }
       },
     });
-    const signal = mergeAbortSignals(contextSignal, localAbortController.signal);
+    const mergedAbort = mergeAbortSignals(contextSignal, localAbortController.signal);
     // Live output goes to this call's slot in the host's transient tail view, not
     // to printOut — that is the assistant's stream, and anything written there is
     // committed to scrollback in full and rendered as if the model had said it.
@@ -131,10 +146,11 @@ export const RunCommandTool: ToolDefinition<typeof runCommandParameters> = {
         command,
         cwd: resolvedCwd,
         timeoutMs,
-        signal,
+        signal: mergedAbort.signal,
       },
       onOutput,
     ).finally(() => {
+      mergedAbort.dispose();
       unregisterTask();
     });
     if (result.error?.code === "EABORTED") {
