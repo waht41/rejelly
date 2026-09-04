@@ -289,7 +289,7 @@ All variables except `OPENAI_API_KEY` are optional. Application-level LLM variab
 | `OPENAI_BASE_URL` | Defaults to `https://api.openai.com/v1`. |
 | `OPENAI_PROVIDER` | Defaults to `openai`; DeepSeek-shaped configurations automatically use JSON mode. |
 | `OPENAI_REASONING_EFFORT` | Thinking budget, sent as `reasoning_effort` and forwarded verbatim (the vocabulary is the provider's: DeepSeek takes `low`/`high`/`max`, OpenAI takes `minimal`…`high`). Unset sends nothing and keeps the provider default. DeepSeek-shaped configurations also get the `thinking` switch, which `none` sets to `disabled`. |
-| `OPENAI_RETRY_MAX_ATTEMPTS` | Maximum model-call attempts (positive integer). Defaults to `3`. |
+| `OPENAI_RETRY_MAX_ATTEMPTS` | Maximum model-call attempts (positive integer). Defaults to `3`. Evil owns these attempts, honors `Retry-After`, and otherwise uses exponential backoff with up to 25% positive jitter; nested OpenAI SDK retries are disabled. |
 | `OPENAI_CONTEXT_WINDOW` | Actual model context window in tokens (positive integer). `/status` shows the remainder, and compaction uses this as its trimming limit; otherwise `200000` is used. |
 | `OPENAI_AUTO_COMPACT_TOKENS` | Compaction threshold in tokens (positive integer); takes precedence over `OPENAI_AUTO_COMPACT_RATIO` and can force early compaction in tests. |
 | `OPENAI_AUTO_COMPACT_RATIO` | Compaction threshold as an exclusive fraction between 0 and 1. Defaults to `0.75`. |

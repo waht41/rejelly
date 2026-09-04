@@ -1,6 +1,6 @@
 import { augmentModel, type ModelAdapter, ModelCallError, type StreamEvent } from "@rejelly/core";
 import { describe, expect, it } from "vitest";
-import { withRetry } from "./withRetry";
+import { addRetryJitter, withRetry } from "./withRetry";
 
 async function collect(stream: AsyncGenerator<StreamEvent>): Promise<StreamEvent[]> {
   const events: StreamEvent[] = [];
@@ -25,6 +25,12 @@ async function* throwBeforeYield(error: unknown): AsyncGenerator<StreamEvent> {
 }
 
 describe("model composition withRetry", () => {
+  it("adds bounded positive jitter to retry delays", () => {
+    expect(addRetryJitter(1_000, 30_000, 0.25, () => 0)).toBe(1_000);
+    expect(addRetryJitter(1_000, 30_000, 0.25, () => 0.5)).toBe(1_125);
+    expect(addRetryJitter(30_000, 30_000, 0.25, () => 1)).toBe(30_000);
+  });
+
   it("retries retryable ModelCallError before the first yielded event", async () => {
     let calls = 0;
     const adapter: ModelAdapter = {
@@ -108,5 +114,10 @@ describe("model composition withRetry", () => {
 
     await expect(collect(model.stream([]))).rejects.toThrow("local rate limit");
     expect(calls).toBe(2);
+  });
+
+  it("rejects invalid jitter ratios", () => {
+    expect(() => withRetry({ jitterRatio: -0.1 })).toThrow("invalid backoff options");
+    expect(() => withRetry({ jitterRatio: 1.1 })).toThrow("invalid backoff options");
   });
 });

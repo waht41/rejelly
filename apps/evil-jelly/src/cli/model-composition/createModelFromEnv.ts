@@ -41,6 +41,9 @@ export function createOpenAIModelFromEnv(): ModelAdapter {
     baseURL,
     provider,
     apiKey,
+    // Evil owns model-call retries so one logical attempt cannot multiply with
+    // the OpenAI SDK's default retries (and any retries performed by a gateway).
+    requestOption: { maxRetries: 0 },
     ...(isDeepSeek ? { schemaMode: "json_object" as const } : {}),
     ...(chatCompletionParams ? { chatCompletionParams } : {}),
   });
