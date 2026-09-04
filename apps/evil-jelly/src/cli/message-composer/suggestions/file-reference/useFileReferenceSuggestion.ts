@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { TextBuffer } from "../../editor/document/textBuffer";
-import { activeAtTrigger, extractAtQuery, removeActiveAtTrigger } from "./atTrigger";
+import { activeAtTrigger } from "./atTrigger";
 
 export interface FileReferenceSuggestion {
   query: string | null;
@@ -18,13 +18,20 @@ export function useFileReferenceSuggestion({
   attachFile: (path: string, start: number, end: number) => void;
 }): FileReferenceSuggestion {
   const [query, setQuery] = useState<string | null>(null);
+  const [dismissedTriggerStart, setDismissedTriggerStart] = useState<number | null>(null);
 
   useEffect(() => {
     const followsSemanticToken = buffer.tokenSpans.some(
       (span) => span.start < buffer.cursor && buffer.cursor <= span.end,
     );
-    setQuery(followsSemanticToken ? null : extractAtQuery(buffer.text, buffer.cursor));
-  }, [buffer.text, buffer.cursor, buffer.tokenSpans]);
+    const trigger = followsSemanticToken ? null : activeAtTrigger(buffer.text, buffer.cursor);
+    if (trigger === null) {
+      setDismissedTriggerStart(null);
+      setQuery(null);
+      return;
+    }
+    setQuery(trigger.start === dismissedTriggerStart ? null : trigger.query);
+  }, [buffer.text, buffer.cursor, buffer.tokenSpans, dismissedTriggerStart]);
 
   const select = useCallback(
     (path: string) => {
@@ -49,9 +56,10 @@ export function useFileReferenceSuggestion({
     [buffer.cursor, buffer.replaceDisplayRange, buffer.text],
   );
   const dismiss = useCallback(() => {
-    buffer.apply(removeActiveAtTrigger);
+    const trigger = activeAtTrigger(buffer.text, buffer.cursor);
+    setDismissedTriggerStart(trigger?.start ?? null);
     setQuery(null);
-  }, [buffer.apply]);
+  }, [buffer.cursor, buffer.text]);
 
   return { query, open: query !== null, select, complete, dismiss };
 }
