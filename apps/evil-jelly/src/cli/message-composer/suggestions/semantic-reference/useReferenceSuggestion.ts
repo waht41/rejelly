@@ -13,11 +13,7 @@ import {
   filterPromptReferencePickerItems,
   type PromptReferencePickerItem,
 } from "./referenceMatching";
-import {
-  activeReferenceTrigger,
-  extractReferenceQuery,
-  removeActiveReferenceTrigger,
-} from "./referenceTrigger";
+import { activeReferenceTrigger } from "./referenceTrigger";
 
 export interface ReferenceSuggestion {
   matches: PromptReferencePickerItem[];
@@ -48,18 +44,28 @@ export function useReferenceSuggestion({
   onNotice: (message: string) => void;
 }): ReferenceSuggestion {
   const [query, setQuery] = useState<string | null>(null);
+  const [dismissedTriggerStart, setDismissedTriggerStart] = useState<number | null>(null);
 
   useEffect(() => {
     const followsSemanticToken = buffer.tokenSpans.some(
       (span) => span.start < buffer.cursor && buffer.cursor <= span.end,
     );
-    setQuery(followsSemanticToken ? null : extractReferenceQuery(buffer.text, buffer.cursor));
-  }, [buffer.text, buffer.cursor, buffer.tokenSpans]);
+    const trigger = followsSemanticToken
+      ? null
+      : activeReferenceTrigger(buffer.text, buffer.cursor);
+    if (trigger === null) {
+      setDismissedTriggerStart(null);
+      setQuery(null);
+      return;
+    }
+    setQuery(trigger.start === dismissedTriggerStart ? null : trigger.query);
+  }, [buffer.text, buffer.cursor, buffer.tokenSpans, dismissedTriggerStart]);
 
   const dismiss = useCallback(() => {
-    buffer.apply(removeActiveReferenceTrigger);
+    const trigger = activeReferenceTrigger(buffer.text, buffer.cursor);
+    setDismissedTriggerStart(trigger?.start ?? null);
     setQuery(null);
-  }, [buffer.apply]);
+  }, [buffer.cursor, buffer.text]);
   const select = useCallback(
     (item: PromptReferencePickerItem) => {
       if (
@@ -68,7 +74,8 @@ export function useReferenceSuggestion({
         !selectedSkills.some((selected) => selected.qualifiedName === item.skill.qualifiedName)
       ) {
         onNotice(`At most ${maxSelectedSkills} Skills can be selected for one input.`);
-        buffer.apply(removeActiveReferenceTrigger);
+        const trigger = activeReferenceTrigger(buffer.text, buffer.cursor);
+        setDismissedTriggerStart(trigger?.start ?? null);
         setQuery(null);
         return;
       }
@@ -78,7 +85,8 @@ export function useReferenceSuggestion({
         !selectedMemories.some((selected) => selected.memoryId === item.memory.id)
       ) {
         onNotice(`At most ${maxSelectedMemories} Memories can be selected for one input.`);
-        buffer.apply(removeActiveReferenceTrigger);
+        const trigger = activeReferenceTrigger(buffer.text, buffer.cursor);
+        setDismissedTriggerStart(trigger?.start ?? null);
         setQuery(null);
         return;
       }
