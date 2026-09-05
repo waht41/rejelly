@@ -80,6 +80,50 @@ describe("sessionJsonlStore", () => {
     ).resolves.toMatchObject({ sessionId: "session-1", createdAt: 100 });
   });
 
+  it("round-trips compatible Chat reasoning metadata without changing opaque payloads", async () => {
+    const reasoningDetails = [
+      { type: "reasoning.summary", index: 0, summary: "summary" },
+      {
+        type: "reasoning.encrypted",
+        index: 1,
+        data: "opaque-encrypted-payload",
+        signature: "signature-bytes",
+        format: "openai-responses-v1",
+      },
+    ];
+    const writer = await openSessionWriter(meta(), { sessionsRoot });
+    await writer.append({
+      type: "message_recorded",
+      turnId: "turn-1",
+      source: { kind: "model" },
+      message: {
+        role: "assistant",
+        content: "answer",
+        extra: {
+          openaiAdapter: {
+            chat: {
+              provider: "openrouter",
+              endpoint: "https://openrouter.ai/api/v1",
+              reasoningDetails,
+            },
+          },
+        },
+      },
+    });
+    await writer.close();
+
+    const result = await readSessionEvents(workspaceRoot, "session-1", { sessionsRoot });
+    expect(result.events[0]).toMatchObject({
+      type: "message_recorded",
+      message: {
+        extra: {
+          openaiAdapter: { chat: { reasoningDetails } },
+        },
+      },
+    });
+    expect(JSON.stringify(result.events[0])).toContain("opaque-encrypted-payload");
+  });
+
   it("rejects a second active writer for the same session", async () => {
     const writer = await openSessionWriter(meta(), { sessionsRoot, traceId: "trace-a" });
     await expect(
