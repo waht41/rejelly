@@ -17,6 +17,7 @@ import type {
   ChatCompletionChunk,
   ChatCompletionCreateParamsStreaming,
 } from "openai/resources/chat/completions/completions";
+import { normalizeOpenAIUsage } from "./usage";
 import {
   injectSchemaToMessages,
   toOpenAIMessages,
@@ -288,29 +289,10 @@ async function* streamHandler(
       }
 
       if (chunk.usage) {
-        lastUsage = {
-          promptTokens: chunk.usage.prompt_tokens,
-          completionTokens: chunk.usage.completion_tokens,
-          totalTokens: chunk.usage.total_tokens,
-        };
-
-        const reasoningTokens = chunk.usage.completion_tokens_details?.reasoning_tokens;
-        // OpenAI / DeepSeek: cached prompt tokens (SDK typings may omit prompt_tokens_details)
-        const cacheReadTokens = (
-          chunk.usage as { prompt_tokens_details?: { cached_tokens?: number } | null }
-        ).prompt_tokens_details?.cached_tokens;
-
-        if (reasoningTokens !== undefined || cacheReadTokens !== undefined) {
-          lastUsage.details = {};
-          if (reasoningTokens !== undefined) {
-            lastUsage.details.reasoningTokens = reasoningTokens;
-          }
-          if (cacheReadTokens !== undefined) {
-            lastUsage.details.cacheReadTokens = cacheReadTokens;
-          }
+        lastUsage = normalizeOpenAIUsage(chunk.usage, "chat_completions");
+        if (lastUsage) {
+          yield { type: "usage", usage: lastUsage };
         }
-
-        yield { type: "usage", usage: lastUsage };
       }
 
       const fr = choice?.finish_reason;

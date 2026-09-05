@@ -14,3 +14,5 @@ export type {
   SchemaMode,
 } from "./adapter";
 export { createOpenAIAdapter } from "./adapter";
+export type { OpenAIUsageProtocol } from "./usage";
+export { normalizeOpenAIUsage } from "./usage";
