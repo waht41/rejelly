@@ -22,6 +22,35 @@ async function* singleStopChunk() {
   yield { choices: [{ delta: {}, finish_reason: "stop" }] };
 }
 
+async function* reasoningDetailsChunks() {
+  yield {
+    choices: [
+      {
+        delta: {
+          reasoning: "thinking",
+          reasoning_details: [
+            { type: "reasoning.summary", index: 0, summary: "sum" },
+            { type: "reasoning.encrypted", index: 1, data: "opaque-" },
+          ],
+        },
+        finish_reason: null,
+      },
+    ],
+  };
+  yield {
+    choices: [
+      {
+        delta: {
+          reasoning_details: [
+            { type: "reasoning.encrypted", index: 1, data: "payload", signature: "sig" },
+          ],
+        },
+        finish_reason: "stop",
+      },
+    ],
+  };
+}
+
 const SCHEMA = {
   type: "object",
   properties: { answer: { type: "string" } },
@@ -97,5 +126,43 @@ describe("OpenAI adapter schemaMode request building", () => {
     const params = await runStream("json_object", { withSchema: false });
 
     expect(params.response_format).toBeUndefined();
+  });
+
+  it("aggregates compatible reasoning_details and emits complete metadata once", async () => {
+    mocks.create.mockImplementation(() => reasoningDetailsChunks());
+    const adapter = createOpenAIAdapter({
+      modelId: "test-model",
+      apiKey: "test-key",
+      baseURL: "https://mock.test/v1",
+      provider: "openrouter",
+    });
+    const events = [];
+
+    for await (const event of adapter.stream([{ role: "user", content: "hi" }])) {
+      events.push(event);
+    }
+
+    expect(events.filter((event) => event.type === "extra")).toEqual([
+      {
+        type: "extra",
+        extra: {
+          openaiAdapter: {
+            chat: {
+              provider: "openrouter",
+              endpoint: "https://mock.test/v1",
+              reasoningDetails: [
+                { type: "reasoning.summary", index: 0, summary: "sum" },
+                {
+                  type: "reasoning.encrypted",
+                  index: 1,
+                  data: "opaque-payload",
+                  signature: "sig",
+                },
+              ],
+            },
+          },
+        },
+      },
+    ]);
   });
 });

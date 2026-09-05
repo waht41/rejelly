@@ -48,6 +48,12 @@ type StreamHandlerOptions = {
   modelStreamOption?: ModelStreamOptions;
 };
 
+type OpenAIReasoningDetail = Record<string, unknown> & {
+  id?: string;
+  index?: number;
+  type?: string;
+};
+
 type OpenAIChoiceDeltaLike = {
   content?: string | Array<{ type?: string; text?: string }>;
   reasoning_content?: string;
@@ -55,7 +61,37 @@ type OpenAIChoiceDeltaLike = {
     | string
     | { text?: string }
     | Array<{ text?: string; content?: string; type?: string }>;
+  reasoning_details?: OpenAIReasoningDetail[];
 };
+
+const OPENAI_CHAT_EXTRA_KEY = "openaiAdapter";
+
+function reasoningDetailKey(item: OpenAIReasoningDetail, position: number): string {
+  if (typeof item.index === "number") return `index:${item.index}`;
+  if (typeof item.id === "string" && item.id.length > 0) return `id:${item.id}`;
+  return `position:${position}`;
+}
+
+function mergeReasoningDetail(
+  current: OpenAIReasoningDetail | undefined,
+  fragment: OpenAIReasoningDetail,
+): OpenAIReasoningDetail {
+  if (!current) return { ...fragment };
+  const merged: OpenAIReasoningDetail = { ...current };
+  for (const [key, value] of Object.entries(fragment)) {
+    const previous = merged[key];
+    if (
+      typeof previous === "string" &&
+      typeof value === "string" &&
+      ["data", "signature", "summary", "text"].includes(key)
+    ) {
+      merged[key] = value.startsWith(previous) ? value : previous + value;
+    } else if (value !== undefined) {
+      merged[key] = value;
+    }
+  }
+  return merged;
+}
 
 function extractReasoningFromDelta(delta: OpenAIChoiceDeltaLike | undefined): string | undefined {
   if (!delta) return undefined;
@@ -151,7 +187,10 @@ async function* streamHandler(
   }
   params.model = modelId;
   params.stream = true;
-  params.messages = toOpenAIMessages(finalMessages);
+  params.messages = toOpenAIMessages(finalMessages, {
+    provider,
+    endpoint: client.baseURL,
+  });
   params.stream_options = { include_usage: true };
 
   if (schema && schemaMode === "json_schema") {
@@ -184,6 +223,8 @@ async function* streamHandler(
     });
 
     const toolCallsMap = new Map<number, { id: string; name: string }>();
+    const reasoningDetails = new Map<string, OpenAIReasoningDetail>();
+    const reasoningDetailOrder: string[] = [];
     let lastUsage: TokenUsage | undefined;
     let lastFinishReason: FinishReason | undefined;
 
@@ -201,6 +242,12 @@ async function* streamHandler(
       const text = extractTextFromDelta(delta);
       if (text) {
         yield { type: "text", content: text };
+      }
+
+      for (const [position, detail] of (delta?.reasoning_details ?? []).entries()) {
+        const key = reasoningDetailKey(detail, position);
+        if (!reasoningDetails.has(key)) reasoningDetailOrder.push(key);
+        reasoningDetails.set(key, mergeReasoningDetail(reasoningDetails.get(key), detail));
       }
 
       if (choice?.delta?.tool_calls) {
@@ -260,6 +307,21 @@ async function* streamHandler(
           ? (fr as FinishReason)
           : "unknown";
       }
+    }
+
+    if (reasoningDetailOrder.length > 0) {
+      yield {
+        type: "extra",
+        extra: {
+          [OPENAI_CHAT_EXTRA_KEY]: {
+            chat: {
+              ...(provider ? { provider } : {}),
+              endpoint: client.baseURL,
+              reasoningDetails: reasoningDetailOrder.map((key) => reasoningDetails.get(key)),
+            },
+          },
+        },
+      };
     }
 
     yield {

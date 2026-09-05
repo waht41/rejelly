@@ -24,7 +24,43 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 
 type OpenAIReasoningAssistantMessageParam = ChatCompletionAssistantMessageParam & {
   reasoning_content?: string;
+  reasoning_details?: Record<string, unknown>[];
 };
+
+type OpenAIChatIdentity = {
+  provider?: string;
+  endpoint?: string;
+};
+
+type OpenAIChatMetadata = {
+  provider?: string;
+  endpoint?: string;
+  reasoningDetails?: Record<string, unknown>[];
+};
+
+function normalizedEndpoint(value: string | undefined): string | undefined {
+  return value?.replace(/\/+$/, "").toLowerCase();
+}
+
+function chatMetadataFor(
+  message: Message,
+  identity: OpenAIChatIdentity,
+): OpenAIChatMetadata | undefined {
+  const adapterMetadata = message.extra?.openaiAdapter;
+  if (!adapterMetadata || typeof adapterMetadata !== "object" || Array.isArray(adapterMetadata)) {
+    return undefined;
+  }
+  const chat = (adapterMetadata as Record<string, unknown>).chat;
+  if (!chat || typeof chat !== "object" || Array.isArray(chat)) return undefined;
+  const metadata = chat as OpenAIChatMetadata;
+  if (
+    metadata.provider !== identity.provider ||
+    normalizedEndpoint(metadata.endpoint) !== normalizedEndpoint(identity.endpoint)
+  ) {
+    return undefined;
+  }
+  return metadata;
+}
 
 // ── Schema injection (for models without native JSON Schema support) ───
 
@@ -172,7 +208,10 @@ export function convertContentMultimodal(
  * (e.g. an image returned via `toolContent`) is automatically split into two messages: a text
  * tool result plus a follow-up `user` message holding the media, so the model can actually see it.
  */
-export function toOpenAIMessages(messages: Message[]): ChatCompletionMessageParam[] {
+export function toOpenAIMessages(
+  messages: Message[],
+  identity: OpenAIChatIdentity = {},
+): ChatCompletionMessageParam[] {
   const result: ChatCompletionMessageParam[] = [];
   const wireMessages = messages.map(withoutRejellyInternalExtra);
   for (const msg of mergeConsecutiveSameRoleMessages(wireMessages)) {
@@ -186,6 +225,7 @@ export function toOpenAIMessages(messages: Message[]): ChatCompletionMessagePara
       case "assistant": {
         const content = convertContentToString(msg.content);
         const reasoningContent = msg.reasoning_content;
+        const reasoningDetails = chatMetadataFor(msg, identity)?.reasoningDetails;
         if (msg.tool_calls?.length) {
           const assistantMessage: OpenAIReasoningAssistantMessageParam = {
             role: "assistant",
@@ -199,6 +239,9 @@ export function toOpenAIMessages(messages: Message[]): ChatCompletionMessagePara
           if (reasoningContent) {
             assistantMessage.reasoning_content = reasoningContent;
           }
+          if (reasoningDetails?.length) {
+            assistantMessage.reasoning_details = reasoningDetails;
+          }
           result.push(assistantMessage);
           break;
         }
@@ -208,6 +251,9 @@ export function toOpenAIMessages(messages: Message[]): ChatCompletionMessagePara
         };
         if (reasoningContent) {
           assistantMessage.reasoning_content = reasoningContent;
+        }
+        if (reasoningDetails?.length) {
+          assistantMessage.reasoning_details = reasoningDetails;
         }
         result.push(assistantMessage);
         break;

@@ -111,6 +111,48 @@ describe("OpenAI message conversion", () => {
     ]);
   });
 
+  it("replays compatible Chat reasoning details only to the same provider endpoint", () => {
+    const reasoningDetails = [
+      { type: "reasoning.summary", index: 0, summary: "summary" },
+      { type: "reasoning.encrypted", index: 1, data: "opaque-payload", signature: "sig" },
+    ];
+    const message = {
+      role: "assistant" as const,
+      content: "answer",
+      extra: {
+        openaiAdapter: {
+          chat: {
+            provider: "openrouter",
+            endpoint: "https://openrouter.ai/api/v1/",
+            reasoningDetails,
+          },
+        },
+      },
+    };
+
+    expect(
+      toOpenAIMessages([message], {
+        provider: "openrouter",
+        endpoint: "https://openrouter.ai/api/v1",
+      }),
+    ).toEqual([{ role: "assistant", content: "answer", reasoning_details: reasoningDetails }]);
+    expect(
+      toOpenAIMessages([message], {
+        provider: "openai",
+        endpoint: "https://api.openai.com/v1",
+      }),
+    ).toEqual([{ role: "assistant", content: "answer" }]);
+  });
+
+  it("never invents reasoning details for official Chat messages", () => {
+    expect(
+      toOpenAIMessages(
+        [{ role: "assistant", content: "answer", reasoning_content: "visible reasoning" }],
+        { provider: "openai", endpoint: "https://api.openai.com/v1" },
+      ),
+    ).toEqual([{ role: "assistant", content: "answer", reasoning_content: "visible reasoning" }]);
+  });
+
   it("keeps user image content as multimodal Chat Completions content", () => {
     const messages = toOpenAIMessages([
       {
