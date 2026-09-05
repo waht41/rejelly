@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import type { JsonObject } from "@rejelly/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createSessionMetaLine,
@@ -80,8 +81,8 @@ describe("sessionJsonlStore", () => {
     ).resolves.toMatchObject({ sessionId: "session-1", createdAt: 100 });
   });
 
-  it("round-trips compatible Chat reasoning metadata without changing opaque payloads", async () => {
-    const reasoningDetails = [
+  it("round-trips durable provider state without changing opaque payloads", async () => {
+    const reasoningDetails: JsonObject[] = [
       { type: "reasoning.summary", index: 0, summary: "summary" },
       {
         type: "reasoning.encrypted",
@@ -99,15 +100,17 @@ describe("sessionJsonlStore", () => {
       message: {
         role: "assistant",
         content: "answer",
-        extra: {
-          openaiAdapter: {
-            chat: {
-              provider: "openrouter",
+        provider_state: [
+          {
+            provider: "openrouter",
+            protocol: "chat_completions",
+            version: 1,
+            payload: {
               endpoint: "https://openrouter.ai/api/v1",
               reasoningDetails,
             },
           },
-        },
+        ],
       },
     });
     await writer.close();
@@ -116,9 +119,14 @@ describe("sessionJsonlStore", () => {
     expect(result.events[0]).toMatchObject({
       type: "message_recorded",
       message: {
-        extra: {
-          openaiAdapter: { chat: { reasoningDetails } },
-        },
+        provider_state: [
+          {
+            provider: "openrouter",
+            protocol: "chat_completions",
+            version: 1,
+            payload: { reasoningDetails },
+          },
+        ],
       },
     });
     expect(JSON.stringify(result.events[0])).toContain("opaque-encrypted-payload");
