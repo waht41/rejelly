@@ -34,7 +34,7 @@ describe("combineSessionBudget", () => {
         completionTokens: 10,
         callCount: 1,
         costs: { micro_usd: 3000 },
-        details: { cacheReadTokens: 30 },
+        details: { cacheReadTokens: 30, cacheWriteTokens: 6, reasoningTokens: 12 },
       }),
       { contextTokens: 120, cacheReadTokens: 25 },
     );
@@ -43,6 +43,8 @@ describe("combineSessionBudget", () => {
       promptTokens: 120,
       completionTokens: 30,
       cacheReadTokens: 80,
+      cacheWriteTokens: 6,
+      reasoningTokens: 12,
       callCount: 3,
       costs: { micro_usd: 8000 },
     });

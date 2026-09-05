@@ -45,6 +45,8 @@ describe("sessionRecorder", () => {
     promptTokens: 20,
     completionTokens: 10,
     cacheReadTokens: 5,
+    cacheWriteTokens: 1,
+    reasoningTokens: 6,
     callCount: 2,
     costs: { micro_usd: 4 },
     lastContextTokens: 12,

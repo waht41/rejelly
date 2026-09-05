@@ -46,6 +46,8 @@ describe("mixed-format session store", () => {
     promptTokens: 20,
     completionTokens: 10,
     cacheReadTokens: 2,
+    cacheWriteTokens: 1,
+    reasoningTokens: 6,
     callCount: 2,
     costs: {},
     lastContextTokens: 12,
