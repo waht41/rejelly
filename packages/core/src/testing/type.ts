@@ -114,6 +114,7 @@ export interface RuleBuilder {
 interface MockSequenceStepBase {
   delay?: number;
   chunkInterval?: number;
+  reasoning?: string;
   extra?: Record<string, unknown>;
   usage?: MockUsage;
 }

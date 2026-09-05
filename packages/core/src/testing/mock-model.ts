@@ -236,6 +236,10 @@ class MockModelImpl implements MockModel {
               }
             }
 
+            if (step.reasoning) {
+              yield { type: "reasoning", content: step.reasoning };
+            }
+
             if (step.extra && Object.keys(step.extra).length > 0) {
               yield { type: "extra", extra: step.extra };
             }
