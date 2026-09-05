@@ -36,6 +36,7 @@ import {
   type ValidationFailEvent,
   type ValidationSuccessEvent,
 } from "../domain/events";
+import type { Message } from "../domain/model";
 import type { TraceContext } from "../domain/trace";
 
 // ============ Types ============
@@ -60,6 +61,15 @@ export type EventProps<T extends TraceEvent> = Omit<
 /**
  * Emitter interface
  */
+type TurnStartEmitProps = Omit<EventProps<TurnStartEvent>, "messages"> & {
+  messages: Message[];
+};
+
+type TurnEndEmitProps = Omit<EventProps<TurnEndEvent>, "message" | "messages"> & {
+  messages: Message[];
+  message?: Message;
+};
+
 export interface Emitter {
   agentStart(props: EventProps<AgentStartEvent>): void;
   agentEnd(props: EventProps<AgentEndEvent>): void;
@@ -68,8 +78,8 @@ export interface Emitter {
   generationEnd(props: EventProps<GenerationEndEvent>): void;
   promptAgentStart(props: EventProps<PromptAgentStartEvent>): void;
   promptAgentEnd(props: EventProps<PromptAgentEndEvent>): void;
-  turnStart(props: EventProps<TurnStartEvent>): void;
-  turnEnd(props: EventProps<TurnEndEvent>): void;
+  turnStart(props: TurnStartEmitProps): void;
+  turnEnd(props: TurnEndEmitProps): void;
   validationFail(props: EventProps<ValidationFailEvent>): void;
   validationSuccess(props: EventProps<ValidationSuccessEvent>): void;
   error(props: EventProps<ErrorEvent>): void;
@@ -98,6 +108,24 @@ export interface Emitter {
  * @param agentId - Agent ID
  * @returns Emitter object with methods for each event type
  */
+function providerPayloadBytes(payload: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(payload)).byteLength;
+}
+
+function traceMessage(message: Message): TurnStartEvent["messages"][number] {
+  const { provider_state: providerState, ...traceSafeMessage } = message;
+  if (!providerState) return traceSafeMessage;
+  return {
+    ...traceSafeMessage,
+    provider_state: providerState.map((state) => ({
+      provider: state.provider,
+      protocol: state.protocol,
+      version: state.version,
+      payloadBytes: providerPayloadBytes(state.payload),
+    })),
+  };
+}
+
 export function createEmitter(originEmit: EmitFn, trace: TraceContext, agentId?: string): Emitter {
   const emit = (event: TraceEvent) => {
     // Drop undefined keys first so sanitizeForJson does not stringify them as "[undefined]"
@@ -142,11 +170,22 @@ export function createEmitter(originEmit: EmitFn, trace: TraceContext, agentId?:
     },
 
     turnStart(props) {
-      emit({ type: EVENTS.TURN_START, ...base(), ...props });
+      emit({
+        type: EVENTS.TURN_START,
+        ...base(),
+        ...props,
+        messages: props.messages.map(traceMessage),
+      });
     },
 
     turnEnd(props) {
-      emit({ type: EVENTS.TURN_END, ...base(), ...props });
+      emit({
+        type: EVENTS.TURN_END,
+        ...base(),
+        ...props,
+        messages: props.messages.map(traceMessage),
+        message: props.message ? traceMessage(props.message) : undefined,
+      });
     },
 
     validationFail(props) {

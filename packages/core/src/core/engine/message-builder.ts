@@ -4,6 +4,7 @@
  * Normalization, validation, and wire-flattening helpers for LLM message arrays.
  */
 
+import { safeClone } from "../../utils/object";
 import { InvalidMessageHistoryError } from "../domain/errors";
 import type { ContentPart, Message, MessageContent } from "../domain/model";
 
@@ -31,6 +32,10 @@ export function normalizeMessages(messages: Message[]): Message[] {
       content: normalizeMessageContent(message.role, message.content),
       tool_calls: message.tool_calls ? [...message.tool_calls] : undefined,
       extra: message.extra ? { ...message.extra } : undefined,
+      provider_state: message.provider_state?.map((state) => ({
+        ...state,
+        payload: safeClone(state.payload),
+      })),
     });
     validateMessageForHistory(normalized, index, previousRole, pendingToolCallCounts);
     result.push(normalized);
@@ -55,7 +60,7 @@ export function normalizeMessages(messages: Message[]): Message[] {
  * information that only the final wire format may flatten.
  *
  * - Text content is joined across messages with a `\n\n` separator; non-text parts survive as-is
- * - Messages with differing `name`, differing `tool_call_id`, or any `extra` metadata never merge
+ * - Messages with differing `name`, differing `tool_call_id`, `extra`, or provider state never merge
  *
  * Does not mutate the input; unmerged messages are shallow-cloned into the result.
  */
@@ -178,6 +183,9 @@ function canMergeMessages(previous: Message, current: Message): boolean {
     return false;
   }
   if (previous.extra !== undefined || current.extra !== undefined) {
+    return false;
+  }
+  if (previous.provider_state !== undefined || current.provider_state !== undefined) {
     return false;
   }
   if (previous.role === "tool") {

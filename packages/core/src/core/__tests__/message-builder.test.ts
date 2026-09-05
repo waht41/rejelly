@@ -64,6 +64,34 @@ describe("normalizeMessages", () => {
     ]);
   });
 
+  it("deep-clones durable provider state", () => {
+    const messages: Message[] = [
+      {
+        role: "user",
+        content: "hello",
+        provider_state: [
+          {
+            provider: "fictional",
+            protocol: "items",
+            version: 1,
+            payload: { nested: [{ opaque: "bytes" }] },
+          },
+        ],
+      },
+    ];
+
+    const result = normalizeMessages(messages);
+
+    expect(result).toEqual([
+      {
+        ...messages[0],
+        content: [{ type: "text", text: "hello" }],
+      },
+    ]);
+    expect(result[0].provider_state).not.toBe(messages[0].provider_state);
+    expect(result[0].provider_state?.[0].payload).not.toBe(messages[0].provider_state?.[0].payload);
+  });
+
   it("throws for consecutive assistant messages", () => {
     expect(() =>
       normalizeMessages([
@@ -128,6 +156,21 @@ describe("mergeConsecutiveSameRoleMessages", () => {
     const messages: Message[] = [
       { role: "user", content: "plain" },
       { role: "user", content: "instruction", extra: { kind: "instruction" } },
+    ];
+
+    expect(mergeConsecutiveSameRoleMessages(messages)).toEqual(messages);
+  });
+
+  it("does not merge messages carrying provider state", () => {
+    const messages: Message[] = [
+      { role: "user", content: "plain" },
+      {
+        role: "user",
+        content: "stateful",
+        provider_state: [
+          { provider: "fictional", protocol: "items", version: 1, payload: { cursor: 2 } },
+        ],
+      },
     ];
 
     expect(mergeConsecutiveSameRoleMessages(messages)).toEqual(messages);

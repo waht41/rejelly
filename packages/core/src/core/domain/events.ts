@@ -7,7 +7,14 @@
 import type { UsageStats } from "./budget";
 import type { ErrorInfo } from "./errors";
 import type { DraftViewModel, MiddlewareInfo, TurnToolConfig } from "./event-payload";
-import type { FinishReason, JsonSchema, Message, TokenUsage, ToolCall } from "./model";
+import type {
+  FinishReason,
+  JsonSchema,
+  Message,
+  ProviderState,
+  TokenUsage,
+  ToolCall,
+} from "./model";
 import type { TraceContext } from "./trace";
 
 // ============ Event Type Constants ============
@@ -227,6 +234,16 @@ export interface PromptAgentEndEvent extends Omit<PromptAgentStartEvent, "type">
 
 // ============ Turn Events ============
 
+export interface ProviderStateSummary
+  extends Pick<ProviderState, "provider" | "protocol" | "version"> {
+  payloadBytes: number;
+}
+
+/** Telemetry-safe message projection that never includes opaque provider payloads. */
+export type TraceMessage = Omit<Message, "provider_state"> & {
+  provider_state?: ProviderStateSummary[];
+};
+
 /**
  * Turn start event
  */
@@ -234,8 +251,8 @@ export interface TurnStartEvent extends BaseTraceEvent {
   type: typeof EVENTS.TURN_START;
   /** Turn/step number (0-based) */
   step: number;
-  /** Complete conversation context for this logical turn. */
-  messages: Message[];
+  /** Complete conversation context with provider payloads reduced to metadata. */
+  messages: TraceMessage[];
   /** Target structured-output schema for this logical turn. */
   schema?: JsonSchema;
   /** Tool configuration selected by policy for this logical turn. */
@@ -253,8 +270,8 @@ export interface TurnEndEvent extends Omit<TurnStartEvent, "type"> {
   type: typeof EVENTS.TURN_END;
   /** Result type: 'content' (final) or 'tool_calls' (continue) */
   resultType: "content" | "tool_calls";
-  /** Final assistant message for this logical turn. */
-  message?: Message;
+  /** Final assistant message with provider payloads reduced to metadata. */
+  message?: TraceMessage;
   /** Duration in ms */
   duration: number;
   /** Whether completed successfully */

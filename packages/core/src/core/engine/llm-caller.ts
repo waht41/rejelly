@@ -14,6 +14,7 @@ import type {
   JsonSchema,
   Message,
   ModelAdapter,
+  ProviderState,
   TokenUsage,
   ToolCall,
   ToolCallChunk,
@@ -23,6 +24,17 @@ import { kModelMiddlewares } from "../shared/symbols";
 import { recordLLMUsage } from "./budget-system";
 import { emitStreamEvent } from "./effect";
 import { cleanLLMResponse, validatePartialSchema } from "./validation";
+
+function upsertProviderState(states: ProviderState[], next: ProviderState): void {
+  const existingIndex = states.findIndex(
+    (state) => state.provider === next.provider && state.protocol === next.protocol,
+  );
+  if (existingIndex >= 0) {
+    states[existingIndex] = next;
+  } else {
+    states.push(next);
+  }
+}
 
 interface PartialParseResult {
   partialData: Partial<unknown>;
@@ -190,6 +202,8 @@ export interface LLMCallResult {
   reasoning?: string;
   /** Message-level adapter/provider metadata merged from stream extra events. */
   extra?: Record<string, unknown>;
+  /** Durable provider state; later events replace the same provider/protocol namespace. */
+  providerState?: ProviderState[];
   usage?: TokenUsage;
   toolCalls?: ToolCall[];
   /** Time to first token in ms (from request start to first content chunk) */
@@ -218,6 +232,7 @@ async function _callLLM(
   let usage: TokenUsage | undefined;
   let finishReason: FinishReason | undefined;
   let messageExtra: Record<string, unknown> | undefined;
+  const providerState: ProviderState[] = [];
   let streamErrorEmitted = false;
 
   const sinceStreamStart = startTimer();
@@ -303,6 +318,8 @@ async function _callLLM(
           completed: false,
           skipParseIfEmpty: true,
         });
+      } else if (event.type === "state") {
+        upsertProviderState(providerState, event.state);
       } else if (event.type === "usage") {
         usage = event.usage;
         streamEmitter.emitUsage(event.usage);
@@ -356,6 +373,7 @@ async function _callLLM(
     text: fullText,
     reasoning: fullReasoning || undefined,
     extra: messageExtra && Object.keys(messageExtra).length > 0 ? messageExtra : undefined,
+    providerState: providerState.length > 0 ? providerState : undefined,
     usage,
     toolCalls,
     ttft,

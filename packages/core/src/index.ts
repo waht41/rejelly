@@ -25,6 +25,7 @@ export type {
   ModelAdapter,
   ModelMiddleware,
   ModelStreamOptions,
+  ProviderState,
   StreamEvent,
   TokenUsage,
   ToolCall,
@@ -170,6 +171,7 @@ export {
   getAbortHandle,
   getContextSignal,
 } from "./core/facade/async";
+export type { JsonObject, JsonValue } from "./utils/type";
 
 // ============ 5. Observability (Monitoring & Integration) ============
 
@@ -195,6 +197,7 @@ export type {
   ToolsExecuteEndEvent,
   ToolsExecuteStartEvent,
   TraceEvent,
+  TraceMessage,
   TurnEndEvent,
   TurnStartEvent,
   ValidationFailEvent,

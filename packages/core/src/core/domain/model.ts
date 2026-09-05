@@ -5,6 +5,7 @@
  * including messages, tokens, streaming, and adapters.
  */
 
+import type { JsonObject } from "../../utils/type";
 import type { ToolChoice, ToolDefinition } from "./tool";
 
 /**
@@ -92,6 +93,14 @@ export type ContentPart =
  */
 export type MessageContent = string | ContentPart[];
 
+/** Opaque, JSON-persistable state owned and interpreted by one provider protocol. */
+export interface ProviderState {
+  provider: string;
+  protocol: string;
+  version: number;
+  payload: JsonObject;
+}
+
 /**
  * LLM message structure
  */
@@ -104,6 +113,8 @@ export interface Message {
   name?: string; // Optional: OpenAI supports specifying name for user/function
   /** Message-level provider-specific metadata. */
   extra?: Record<string, unknown>;
+  /** Durable opaque state emitted by provider adapters for later replay. */
+  provider_state?: ProviderState[];
 }
 
 export const REJELLY_INSTRUCTION_MESSAGE_KIND = "instruction";
@@ -154,6 +165,7 @@ export type StreamEvent =
   | { type: "reasoning"; content: string }
   | { type: "tool_call"; toolCall: ToolCallChunk }
   | { type: "extra"; extra: Record<string, unknown> }
+  | { type: "state"; state: ProviderState }
   | { type: "usage"; usage: TokenUsage }
   | { type: "error"; error: unknown }
   | { type: "finish"; finishReason: FinishReason; usage?: TokenUsage };
