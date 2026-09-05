@@ -4,9 +4,11 @@
 
 import type {
   FinishReason,
+  JsonObject,
   Message,
   ModelAdapter,
   ModelStreamOptions,
+  ProviderState,
   StreamEvent,
   TokenUsage,
 } from "@rejelly/core";
@@ -48,11 +50,7 @@ type StreamHandlerOptions = {
   modelStreamOption?: ModelStreamOptions;
 };
 
-type OpenAIReasoningDetail = Record<string, unknown> & {
-  id?: string;
-  index?: number;
-  type?: string;
-};
+type OpenAIReasoningDetail = JsonObject;
 
 type OpenAIChoiceDeltaLike = {
   content?: string | Array<{ type?: string; text?: string }>;
@@ -64,7 +62,21 @@ type OpenAIChoiceDeltaLike = {
   reasoning_details?: OpenAIReasoningDetail[];
 };
 
-const OPENAI_CHAT_EXTRA_KEY = "openaiAdapter";
+const OPENAI_CHAT_PROTOCOL = "chat_completions";
+const OPENAI_CHAT_STATE_VERSION = 1;
+
+function createChatProviderState(
+  provider: string | undefined,
+  endpoint: string,
+  reasoningDetails: OpenAIReasoningDetail[],
+): ProviderState {
+  return {
+    provider: provider ?? "openai",
+    protocol: OPENAI_CHAT_PROTOCOL,
+    version: OPENAI_CHAT_STATE_VERSION,
+    payload: { endpoint, reasoningDetails },
+  };
+}
 
 function reasoningDetailKey(item: OpenAIReasoningDetail, position: number): string {
   if (typeof item.index === "number") return `index:${item.index}`;
@@ -86,7 +98,7 @@ function mergeReasoningDetail(
       ["data", "signature", "summary", "text"].includes(key)
     ) {
       merged[key] = value.startsWith(previous) ? value : previous + value;
-    } else if (value !== undefined) {
+    } else {
       merged[key] = value;
     }
   }
@@ -310,17 +322,13 @@ async function* streamHandler(
     }
 
     if (reasoningDetailOrder.length > 0) {
+      const completeDetails = reasoningDetailOrder.flatMap((key) => {
+        const detail = reasoningDetails.get(key);
+        return detail ? [detail] : [];
+      });
       yield {
-        type: "extra",
-        extra: {
-          [OPENAI_CHAT_EXTRA_KEY]: {
-            chat: {
-              ...(provider ? { provider } : {}),
-              endpoint: client.baseURL,
-              reasoningDetails: reasoningDetailOrder.map((key) => reasoningDetails.get(key)),
-            },
-          },
-        },
+        type: "state",
+        state: createChatProviderState(provider, client.baseURL, completeDetails),
       };
     }
 

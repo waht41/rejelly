@@ -142,24 +142,24 @@ describe("OpenAI adapter schemaMode request building", () => {
       events.push(event);
     }
 
-    expect(events.filter((event) => event.type === "extra")).toEqual([
+    expect(events.filter((event) => event.type === "state")).toEqual([
       {
-        type: "extra",
-        extra: {
-          openaiAdapter: {
-            chat: {
-              provider: "openrouter",
-              endpoint: "https://mock.test/v1",
-              reasoningDetails: [
-                { type: "reasoning.summary", index: 0, summary: "sum" },
-                {
-                  type: "reasoning.encrypted",
-                  index: 1,
-                  data: "opaque-payload",
-                  signature: "sig",
-                },
-              ],
-            },
+        type: "state",
+        state: {
+          provider: "openrouter",
+          protocol: "chat_completions",
+          version: 1,
+          payload: {
+            endpoint: "https://mock.test/v1",
+            reasoningDetails: [
+              { type: "reasoning.summary", index: 0, summary: "sum" },
+              {
+                type: "reasoning.encrypted",
+                index: 1,
+                data: "opaque-payload",
+                signature: "sig",
+              },
+            ],
           },
         },
       },

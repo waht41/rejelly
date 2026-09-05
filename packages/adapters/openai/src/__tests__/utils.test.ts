@@ -1,3 +1,4 @@
+import type { JsonObject, Message } from "@rejelly/core";
 import { describe, expect, it } from "vitest";
 import { toOpenAIMessages, wrapAsModelCallError } from "../utils";
 
@@ -111,23 +112,25 @@ describe("OpenAI message conversion", () => {
     ]);
   });
 
-  it("replays compatible Chat reasoning details only to the same provider endpoint", () => {
-    const reasoningDetails = [
+  it("replays provider-state Chat reasoning details only to the same provider endpoint", () => {
+    const reasoningDetails: JsonObject[] = [
       { type: "reasoning.summary", index: 0, summary: "summary" },
       { type: "reasoning.encrypted", index: 1, data: "opaque-payload", signature: "sig" },
     ];
-    const message = {
-      role: "assistant" as const,
+    const message: Message = {
+      role: "assistant",
       content: "answer",
-      extra: {
-        openaiAdapter: {
-          chat: {
-            provider: "openrouter",
+      provider_state: [
+        {
+          provider: "openrouter",
+          protocol: "chat_completions",
+          version: 1,
+          payload: {
             endpoint: "https://openrouter.ai/api/v1/",
             reasoningDetails,
           },
         },
-      },
+      ],
     };
 
     expect(

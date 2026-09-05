@@ -5,6 +5,7 @@
 
 import type {
   ContentPart,
+  JsonObject,
   Message,
   ModelErrorCode,
   ToolChoice,
@@ -33,33 +34,54 @@ type OpenAIChatIdentity = {
 };
 
 type OpenAIChatMetadata = {
-  provider?: string;
-  endpoint?: string;
-  reasoningDetails?: Record<string, unknown>[];
+  provider: string;
+  endpoint: string;
+  reasoningDetails: JsonObject[];
 };
+
+const OPENAI_CHAT_PROTOCOL = "chat_completions";
+const OPENAI_CHAT_STATE_VERSION = 1;
 
 function normalizedEndpoint(value: string | undefined): string | undefined {
   return value?.replace(/\/+$/, "").toLowerCase();
 }
 
-function chatMetadataFor(
+function stateChatMetadataFor(
   message: Message,
   identity: OpenAIChatIdentity,
 ): OpenAIChatMetadata | undefined {
-  const adapterMetadata = message.extra?.openaiAdapter;
-  if (!adapterMetadata || typeof adapterMetadata !== "object" || Array.isArray(adapterMetadata)) {
-    return undefined;
-  }
-  const chat = (adapterMetadata as Record<string, unknown>).chat;
-  if (!chat || typeof chat !== "object" || Array.isArray(chat)) return undefined;
-  const metadata = chat as OpenAIChatMetadata;
+  const expectedProvider = identity.provider ?? "openai";
+  const state = message.provider_state?.find(
+    (candidate) =>
+      candidate.provider === expectedProvider &&
+      candidate.protocol === OPENAI_CHAT_PROTOCOL &&
+      candidate.version === OPENAI_CHAT_STATE_VERSION,
+  );
   if (
-    metadata.provider !== identity.provider ||
-    normalizedEndpoint(metadata.endpoint) !== normalizedEndpoint(identity.endpoint)
+    !state ||
+    !state.payload ||
+    typeof state.payload !== "object" ||
+    Array.isArray(state.payload)
   ) {
     return undefined;
   }
-  return metadata;
+  const endpoint = state.payload.endpoint;
+  const reasoningDetails = state.payload.reasoningDetails;
+  if (
+    typeof endpoint !== "string" ||
+    normalizedEndpoint(endpoint) !== normalizedEndpoint(identity.endpoint) ||
+    !Array.isArray(reasoningDetails) ||
+    !reasoningDetails.every(
+      (detail) => detail !== null && typeof detail === "object" && !Array.isArray(detail),
+    )
+  ) {
+    return undefined;
+  }
+  return {
+    provider: expectedProvider,
+    endpoint,
+    reasoningDetails: reasoningDetails as JsonObject[],
+  };
 }
 
 // ── Schema injection (for models without native JSON Schema support) ───
@@ -225,7 +247,7 @@ export function toOpenAIMessages(
       case "assistant": {
         const content = convertContentToString(msg.content);
         const reasoningContent = msg.reasoning_content;
-        const reasoningDetails = chatMetadataFor(msg, identity)?.reasoningDetails;
+        const reasoningDetails = stateChatMetadataFor(msg, identity)?.reasoningDetails;
         if (msg.tool_calls?.length) {
           const assistantMessage: OpenAIReasoningAssistantMessageParam = {
             role: "assistant",
