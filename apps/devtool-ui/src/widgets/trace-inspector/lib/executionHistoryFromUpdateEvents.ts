@@ -3,11 +3,11 @@
 import { EVENTS } from "@entities/trace/core/traceEventConstants";
 import { convertMessagesToChatMessages } from "@entities/trace/lib/convertMessagesToChatMessages";
 import type {
-  Message,
   ModelCallEndEvent,
   PromptAgentEndEvent,
   PromptAgentStartEvent,
   TraceEvent,
+  TraceMessage,
   TurnEndEvent,
   TurnStartEvent,
   ValidationFailEvent,
@@ -60,7 +60,7 @@ function omitTypeTimestamp<T extends { type: string; timestamp: number }>(
 }
 
 function buildTurnStartMessages(
-  rawMessages: Message[],
+  rawMessages: TraceMessage[],
   previousTurnMessages: ChatMessage[] | undefined,
 ): ChatMessage[] {
   const normalizedMessages = convertMessagesToChatMessages(rawMessages);

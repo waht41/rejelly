@@ -3,7 +3,7 @@
  * Preserves tool role, tool results, and assistant tool_calls (AttemptStartEvent / AttemptEndEvent).
  * Lives under entities so TraceProcessor handlers can import without crossing into widgets.
  */
-import type { ContentPart, Message, ToolCall } from "@rejelly/core";
+import type { ContentPart, Message, ToolCall, TraceMessage } from "@rejelly/core";
 import type { ChatMessage } from "src/entities/trace/types";
 
 export type ToolCallPayload = NonNullable<ChatMessage["toolCalls"]>[number];
@@ -57,7 +57,7 @@ const KNOWN_ROLES: ChatMessage["role"][] = ["system", "user", "assistant", "tool
 /**
  * Core Message: tool results use role "tool" and tool_call_id; assistant may have tool_calls.
  */
-function normalizeMessageRole(msg: Message): ChatMessage["role"] {
+function normalizeMessageRole(msg: Message | TraceMessage): ChatMessage["role"] {
   const r = msg.role;
   if (typeof r === "string" && (KNOWN_ROLES as string[]).includes(r)) {
     return r as ChatMessage["role"];
@@ -74,7 +74,9 @@ function normalizeMessageRole(msg: Message): ChatMessage["role"] {
 /**
  * Converts core Message[] (attempt:start) to ChatMessage[], including tool / tool_calls.
  */
-export function convertMessagesToChatMessages(messages: Message[]): ChatMessage[] {
+export function convertMessagesToChatMessages(
+  messages: Array<Message | TraceMessage>,
+): ChatMessage[] {
   return messages.map((msg) => {
     const role = normalizeMessageRole(msg);
     const content = textFromContent(msg.content);
