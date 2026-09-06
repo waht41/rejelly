@@ -125,6 +125,8 @@ describe("parseCliArgs", () => {
       "https://api.deepseek.com",
       "--model",
       "deepseek-chat",
+      "--protocol",
+      "responses",
     ]);
     expect(args.kind).toBe("init");
     expect(args.cliApiKey).toBe("sk-global-key");
@@ -133,6 +135,7 @@ describe("parseCliArgs", () => {
     }
     expect(args.initBaseUrl).toBe("https://api.deepseek.com");
     expect(args.initModelId).toBe("deepseek-chat");
+    expect(args.initProtocol).toBe("responses");
   });
 
   it("parses MCP read commands without requiring model configuration", () => {

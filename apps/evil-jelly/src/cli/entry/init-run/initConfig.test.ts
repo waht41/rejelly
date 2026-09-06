@@ -4,7 +4,7 @@ import { collectInitConfig } from "./initConfig";
 describe("collectInitConfig", () => {
   it("keeps an existing key on Enter and prompts for optional endpoint and model", async () => {
     const questions: string[] = [];
-    const answers = ["", "https://api.deepseek.com", "deepseek-chat"];
+    const answers = ["", "https://api.deepseek.com", "deepseek-chat", "responses"];
 
     const values = await collectInitConfig(
       {},
@@ -19,11 +19,13 @@ describe("collectInitConfig", () => {
       apiKey: "sk-existing",
       baseUrl: "https://api.deepseek.com",
       modelId: "deepseek-chat",
+      protocol: "responses",
     });
     expect(questions[0]).toContain("already configured; Enter to keep it");
     expect(questions[1]).toContain("OPENAI_BASE_URL (optional;");
     expect(questions[2]).toContain("OPENAI_MODEL_ID (optional;");
     expect(questions[2]).toContain("Enter to use gpt-5.6-luna");
+    expect(questions[3]).toContain("OPENAI_API_PROTOCOL");
   });
 
   it("keeps existing optional values on Enter", async () => {
@@ -33,6 +35,7 @@ describe("collectInitConfig", () => {
         OPENAI_API_KEY: "sk-existing",
         OPENAI_BASE_URL: "https://existing.example/v1",
         OPENAI_MODEL_ID: "existing-model",
+        OPENAI_API_PROTOCOL: "responses",
       },
       async () => "",
     );
@@ -41,6 +44,7 @@ describe("collectInitConfig", () => {
       apiKey: "sk-existing",
       baseUrl: "https://existing.example/v1",
       modelId: "existing-model",
+      protocol: "responses",
     });
   });
 
@@ -51,6 +55,7 @@ describe("collectInitConfig", () => {
         apiKey: "sk-cli",
         baseUrl: "https://cli.example/v1",
         modelId: "cli-model",
+        protocol: "responses",
       },
       { OPENAI_API_KEY: "sk-existing" },
       async (question) => {
@@ -63,6 +68,7 @@ describe("collectInitConfig", () => {
       apiKey: "sk-cli",
       baseUrl: "https://cli.example/v1",
       modelId: "cli-model",
+      protocol: "responses",
     });
     expect(questions).toEqual([]);
   });

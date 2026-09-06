@@ -19,6 +19,7 @@ const trackedEnvKeys = [
   "OPENAI_API_KEY",
   "OPENAI_BASE_URL",
   "OPENAI_PROVIDER",
+  "OPENAI_API_PROTOCOL",
   "OPENAI_MODEL_ID",
   "OPENAI_CONTEXT_WINDOW",
   "OPENAI_AUTO_COMPACT_TOKENS",
@@ -412,6 +413,22 @@ describe("loadEvilJellyEnv with --env", () => {
     loadEvilJellyEnv({ envFile: "luna" });
 
     expect(process.env.OPENAI_BASE_URL).toBe("https://elsewhere.example/v1");
+  });
+});
+
+describe("OPENAI_API_PROTOCOL", () => {
+  it("defaults to Chat Completions", () => {
+    delete process.env.OPENAI_API_PROTOCOL;
+
+    expect(env.OPENAI_API_PROTOCOL).toBe("chat_completions");
+  });
+
+  it("accepts Responses and rejects unknown protocols", () => {
+    process.env.OPENAI_API_PROTOCOL = "responses";
+    expect(env.OPENAI_API_PROTOCOL).toBe("responses");
+
+    process.env.OPENAI_API_PROTOCOL = "auto";
+    expect(() => env.OPENAI_API_PROTOCOL).toThrow("Expected one of chat_completions, responses");
   });
 });
 

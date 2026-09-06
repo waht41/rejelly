@@ -11,6 +11,7 @@ export async function runInit(options: {
   apiKey: string | undefined;
   baseUrl: string | undefined;
   modelId: string | undefined;
+  protocol: string | undefined;
   /** With --env, write the named profile instead of the global file. */
   envFile: string | undefined;
 }): Promise<void> {
@@ -21,8 +22,13 @@ export async function runInit(options: {
   const readline = interactive
     ? createInterface({ input: process.stdin, output: process.stdout })
     : undefined;
-  const { apiKey, baseUrl, modelId } = await collectInitConfig(
-    { apiKey: options.apiKey, baseUrl: options.baseUrl, modelId: options.modelId },
+  const { apiKey, baseUrl, modelId, protocol } = await collectInitConfig(
+    {
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl,
+      modelId: options.modelId,
+      protocol: options.protocol,
+    },
     readEnvValues(targetPath),
     readline ? (question) => readline.question(question) : undefined,
   ).finally(() => readline?.close());
@@ -38,6 +44,7 @@ export async function runInit(options: {
     OPENAI_API_KEY: apiKey,
     ...(baseUrl ? { OPENAI_BASE_URL: baseUrl } : {}),
     ...(modelId ? { OPENAI_MODEL_ID: modelId } : {}),
+    OPENAI_API_PROTOCOL: protocol,
   });
   console.log(`Configuration saved to ${filePath}`);
 }

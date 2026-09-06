@@ -38,11 +38,12 @@ export interface SessionStatusInput {
   turns: number;
   budget: SessionUsageSummary;
   modelId: string;
+  protocol: "chat_completions" | "responses";
   contextWindow?: number;
 }
 
 export function formatSessionStatus(input: SessionStatusInput): string {
-  const { sessionId, workspace, turns, budget, modelId, contextWindow } = input;
+  const { sessionId, workspace, turns, budget, modelId, protocol, contextWindow } = input;
   const used = budget.lastContextTokens;
   const cachedSuffix =
     used > 0 && budget.lastCacheReadTokens > 0
@@ -68,6 +69,7 @@ export function formatSessionStatus(input: SessionStatusInput): string {
     `- Session: ${sessionId} (${turns} turns)`,
     `- Workspace: ${workspace}`,
     `- Model: ${modelId}`,
+    `- API protocol: ${protocol}`,
     `- Context window (approx): ${contextLine}`,
     "- Cumulative this session:",
     tokensLine,

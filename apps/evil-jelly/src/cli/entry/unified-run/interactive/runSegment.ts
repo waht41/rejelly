@@ -1,5 +1,6 @@
 /** Runs one interactive Unified session segment under @rejelly/core. */
 
+import { OPENAI_CHAT_STATE_KIND, OPENAI_RESPONSES_STATE_KIND } from "@rejelly/adapter-openai";
 import { type AgentSnapshot, isAbortError, type Message, type ModelAdapter } from "@rejelly/core";
 import type { ReviewOptions } from "@rejelly/core/debugger";
 import type { McpSessionControl } from "../../../../domains/mcp/management/sessionControl";
@@ -22,6 +23,7 @@ import {
   type SkillRuntimeSnapshot,
 } from "../../../../domains/skills/agent/skillRuntime";
 import type { ConversationAgentProps } from "../../../../features/unified/conversationRun";
+import { env } from "../../../../shared/configuration/env";
 import { getWorkspaceRoot } from "../../../../shared/fs-policy/workspace-context";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 import type { SessionMcpState } from "../../../../shared/model/mcp/sessionMcpState";
@@ -155,6 +157,19 @@ async function endRunSegmentBestEffort(
   }
 }
 
+function warnOnProtocolSwitch(messages: Message[], bindings: EvilJellyBindings): void {
+  const stateKinds = new Set(
+    messages.flatMap((message) => message.provider_state?.map((state) => state.kind) ?? []),
+  );
+  const ignoredKind =
+    env.OPENAI_API_PROTOCOL === "responses" ? OPENAI_CHAT_STATE_KIND : OPENAI_RESPONSES_STATE_KIND;
+  if (!stateKinds.has(ignoredKind)) return;
+
+  bindings.logSystemEvent(
+    `Compatibility notice: this session contains state from ${ignoredKind}, which is ignored while using ${env.OPENAI_API_PROTOCOL}; standard message history will still be sent.\n`,
+  );
+}
+
 async function closeRunSessionRecorder(
   recorder: SessionRecorder | undefined,
   bindings: EvilJellyBindings,
@@ -207,6 +222,7 @@ export async function runEvilJellyHost(
           options.session?.blobRoot ? { blobRoot: options.session.blobRoot } : {},
         )
       : undefined;
+    if (preparedSeedContext) warnOnProtocolSwitch(preparedSeedContext, bindings);
     await runWithReview({
       model,
       enableReview: options.enableReview,

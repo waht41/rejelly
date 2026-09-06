@@ -1,6 +1,10 @@
 /** CLI model composition from the already-loaded process environment. */
 
-import { type ChatCompletionParams, createOpenAIAdapter } from "@rejelly/adapter-openai";
+import {
+  type ChatCompletionParams,
+  createOpenAIAdapter,
+  type ResponseParams,
+} from "@rejelly/adapter-openai";
 import { augmentModel, type ModelAdapter } from "@rejelly/core";
 import { env } from "../../shared/configuration/env";
 import { withRetry } from "./withRetry";
@@ -16,11 +20,11 @@ function isDeepSeekModelConfig(options: {
   return provider === "deepseek" || modelId.includes("deepseek") || baseURL.includes("deepseek");
 }
 
-function resolveReasoningParams(isDeepSeek: boolean): ChatCompletionParams | undefined {
-  const effort = env.OPENAI_REASONING_EFFORT.trim().toLowerCase();
-  if (!effort) {
-    return undefined;
-  }
+function resolveChatReasoningParams(
+  effort: string,
+  isDeepSeek: boolean,
+): ChatCompletionParams | undefined {
+  if (!effort) return undefined;
   const params: Record<string, unknown> = { reasoning_effort: effort };
   if (isDeepSeek) {
     params.thinking = { type: effort === "none" ? "disabled" : "enabled" };
@@ -28,15 +32,19 @@ function resolveReasoningParams(isDeepSeek: boolean): ChatCompletionParams | und
   return params as ChatCompletionParams;
 }
 
+function resolveResponseParams(effort: string): ResponseParams | undefined {
+  return effort ? ({ reasoning: { effort } } as ResponseParams) : undefined;
+}
+
 export function createOpenAIModelFromEnv(): ModelAdapter {
   const apiKey = env.OPENAI_API_KEY;
   const modelId = env.OPENAI_MODEL_ID;
   const baseURL = env.OPENAI_BASE_URL;
   const provider = env.OPENAI_PROVIDER;
+  const protocol = env.OPENAI_API_PROTOCOL;
+  const effort = env.OPENAI_REASONING_EFFORT.trim().toLowerCase();
   const isDeepSeek = isDeepSeekModelConfig({ modelId, provider, baseURL });
-  const chatCompletionParams = resolveReasoningParams(isDeepSeek);
-
-  const adapter = createOpenAIAdapter({
+  const sharedConfig = {
     modelId,
     baseURL,
     provider,
@@ -45,8 +53,22 @@ export function createOpenAIModelFromEnv(): ModelAdapter {
     // the OpenAI SDK's default retries (and any retries performed by a gateway).
     requestOption: { maxRetries: 0 },
     ...(isDeepSeek ? { schemaMode: "json_object" as const } : {}),
-    ...(chatCompletionParams ? { chatCompletionParams } : {}),
-  });
+  };
+
+  const responseParams = resolveResponseParams(effort);
+  const chatCompletionParams = resolveChatReasoningParams(effort, isDeepSeek);
+  const adapter =
+    protocol === "responses"
+      ? createOpenAIAdapter({
+          ...sharedConfig,
+          api: "responses",
+          ...(responseParams ? { responseParams } : {}),
+        })
+      : createOpenAIAdapter({
+          ...sharedConfig,
+          api: "chat_completions",
+          ...(chatCompletionParams ? { chatCompletionParams } : {}),
+        });
 
   return augmentModel(adapter, [withRetry({ maxAttempts: env.OPENAI_RETRY_MAX_ATTEMPTS })]);
 }
