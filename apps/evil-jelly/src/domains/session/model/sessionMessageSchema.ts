@@ -18,8 +18,7 @@ const jsonObjectValueSchema: z.ZodType<JsonObject> = z.record(z.string(), jsonVa
 
 const providerStateSchema: z.ZodType<ProviderState> = z
   .object({
-    provider: z.string().min(1),
-    protocol: z.string().min(1),
+    kind: z.string().min(1),
     version: z.number().int().positive(),
     payload: jsonObjectValueSchema,
   })

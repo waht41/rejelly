@@ -102,11 +102,11 @@ describe("sessionJsonlStore", () => {
         content: "answer",
         provider_state: [
           {
-            provider: "openrouter",
-            protocol: "chat_completions",
+            kind: "@rejelly/adapter-openai/chat-completions",
             version: 1,
             payload: {
               endpoint: "https://openrouter.ai/api/v1",
+              provider: "openrouter",
               reasoningDetails,
             },
           },
@@ -121,10 +121,9 @@ describe("sessionJsonlStore", () => {
       message: {
         provider_state: [
           {
-            provider: "openrouter",
-            protocol: "chat_completions",
+            kind: "@rejelly/adapter-openai/chat-completions",
             version: 1,
-            payload: { reasoningDetails },
+            payload: { provider: "openrouter", reasoningDetails },
           },
         ],
       },
