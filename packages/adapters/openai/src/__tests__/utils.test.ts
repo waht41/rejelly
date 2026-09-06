@@ -122,11 +122,11 @@ describe("OpenAI message conversion", () => {
       content: "answer",
       provider_state: [
         {
-          provider: "openrouter",
-          protocol: "chat_completions",
+          kind: "@rejelly/adapter-openai/chat-completions",
           version: 1,
           payload: {
             endpoint: "https://openrouter.ai/api/v1/",
+            provider: "openrouter",
             reasoningDetails,
           },
         },

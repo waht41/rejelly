@@ -146,11 +146,11 @@ describe("OpenAI adapter schemaMode request building", () => {
       {
         type: "state",
         state: {
-          provider: "openrouter",
-          protocol: "chat_completions",
+          kind: "@rejelly/adapter-openai/chat-completions",
           version: 1,
           payload: {
             endpoint: "https://mock.test/v1",
+            provider: "openrouter",
             reasoningDetails: [
               { type: "reasoning.summary", index: 0, summary: "sum" },
               {

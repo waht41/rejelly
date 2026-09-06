@@ -22,6 +22,7 @@ import type {
   ChatCompletionToolChoiceOption,
 } from "openai/resources/chat/completions/completions";
 import { zodToJsonSchema } from "zod-to-json-schema";
+import { OPENAI_CHAT_STATE_KIND } from "./identity";
 
 type OpenAIReasoningAssistantMessageParam = ChatCompletionAssistantMessageParam & {
   reasoning_content?: string;
@@ -34,12 +35,10 @@ type OpenAIChatIdentity = {
 };
 
 type OpenAIChatMetadata = {
-  provider: string;
   endpoint: string;
   reasoningDetails: JsonObject[];
 };
 
-const OPENAI_CHAT_PROTOCOL = "chat_completions";
 const OPENAI_CHAT_STATE_VERSION = 1;
 
 function normalizedEndpoint(value: string | undefined): string | undefined {
@@ -50,12 +49,9 @@ function stateChatMetadataFor(
   message: Message,
   identity: OpenAIChatIdentity,
 ): OpenAIChatMetadata | undefined {
-  const expectedProvider = identity.provider ?? "openai";
   const state = message.provider_state?.find(
     (candidate) =>
-      candidate.provider === expectedProvider &&
-      candidate.protocol === OPENAI_CHAT_PROTOCOL &&
-      candidate.version === OPENAI_CHAT_STATE_VERSION,
+      candidate.kind === OPENAI_CHAT_STATE_KIND && candidate.version === OPENAI_CHAT_STATE_VERSION,
   );
   if (
     !state ||
@@ -66,10 +62,13 @@ function stateChatMetadataFor(
     return undefined;
   }
   const endpoint = state.payload.endpoint;
+  const provider = state.payload.provider;
   const reasoningDetails = state.payload.reasoningDetails;
   if (
     typeof endpoint !== "string" ||
     normalizedEndpoint(endpoint) !== normalizedEndpoint(identity.endpoint) ||
+    (provider !== undefined && typeof provider !== "string") ||
+    provider !== identity.provider ||
     !Array.isArray(reasoningDetails) ||
     !reasoningDetails.every(
       (detail) => detail !== null && typeof detail === "object" && !Array.isArray(detail),
@@ -78,7 +77,6 @@ function stateChatMetadataFor(
     return undefined;
   }
   return {
-    provider: expectedProvider,
     endpoint,
     reasoningDetails: reasoningDetails as JsonObject[],
   };
