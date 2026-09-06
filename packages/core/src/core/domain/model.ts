@@ -93,10 +93,10 @@ export type ContentPart =
  */
 export type MessageContent = string | ContentPart[];
 
-/** Opaque, JSON-persistable state owned and interpreted by one provider protocol. */
+/** Opaque, JSON-persistable state owned and interpreted by one component. */
 export interface ProviderState {
-  provider: string;
-  protocol: string;
+  /** Globally stable identifier for the state format and the component that interprets it. */
+  kind: string;
   version: number;
   payload: JsonObject;
 }

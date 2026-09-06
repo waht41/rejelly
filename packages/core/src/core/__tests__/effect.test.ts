@@ -185,8 +185,7 @@ describe("onStream", () => {
   it("persists provider state without exposing it on the public agent stream", async () => {
     const received: AgentStreamEvent[] = [];
     const state = {
-      provider: "fictional",
-      protocol: "items",
+      kind: "@test/fictional/items",
       version: 1,
       payload: { encrypted: "opaque-payload" },
     } as const;

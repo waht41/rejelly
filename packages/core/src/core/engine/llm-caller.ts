@@ -26,9 +26,7 @@ import { emitStreamEvent } from "./effect";
 import { cleanLLMResponse, validatePartialSchema } from "./validation";
 
 function upsertProviderState(states: ProviderState[], next: ProviderState): void {
-  const existingIndex = states.findIndex(
-    (state) => state.provider === next.provider && state.protocol === next.protocol,
-  );
+  const existingIndex = states.findIndex((state) => state.kind === next.kind);
   if (existingIndex >= 0) {
     states[existingIndex] = next;
   } else {
@@ -202,7 +200,7 @@ export interface LLMCallResult {
   reasoning?: string;
   /** Message-level adapter/provider metadata merged from stream extra events. */
   extra?: Record<string, unknown>;
-  /** Durable provider state; later events replace the same provider/protocol namespace. */
+  /** Durable provider state; later events replace the same state kind. */
   providerState?: ProviderState[];
   usage?: TokenUsage;
   toolCalls?: ToolCall[];

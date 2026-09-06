@@ -71,8 +71,7 @@ describe("normalizeMessages", () => {
         content: "hello",
         provider_state: [
           {
-            provider: "fictional",
-            protocol: "items",
+            kind: "@test/fictional/items",
             version: 1,
             payload: { nested: [{ opaque: "bytes" }] },
           },
@@ -167,9 +166,7 @@ describe("mergeConsecutiveSameRoleMessages", () => {
       {
         role: "user",
         content: "stateful",
-        provider_state: [
-          { provider: "fictional", protocol: "items", version: 1, payload: { cursor: 2 } },
-        ],
+        provider_state: [{ kind: "@test/fictional/items", version: 1, payload: { cursor: 2 } }],
       },
     ];
 

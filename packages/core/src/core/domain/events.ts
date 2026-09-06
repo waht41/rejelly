@@ -234,8 +234,7 @@ export interface PromptAgentEndEvent extends Omit<PromptAgentStartEvent, "type">
 
 // ============ Turn Events ============
 
-export interface ProviderStateSummary
-  extends Pick<ProviderState, "provider" | "protocol" | "version"> {
+export interface ProviderStateSummary extends Pick<ProviderState, "kind" | "version"> {
   payloadBytes: number;
 }
 

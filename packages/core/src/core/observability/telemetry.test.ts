@@ -15,8 +15,7 @@ describe("telemetry provider state projection", () => {
       content: "answer",
       provider_state: [
         {
-          provider: "fictional",
-          protocol: "items",
+          kind: "@test/fictional/items",
           version: 2,
           payload: { encrypted: "secret-payload" },
         },
@@ -41,8 +40,7 @@ describe("telemetry provider state projection", () => {
         {
           provider_state: [
             {
-              provider: "fictional",
-              protocol: "items",
+              kind: "@test/fictional/items",
               version: 2,
               payloadBytes: new TextEncoder().encode(
                 JSON.stringify(message.provider_state[0].payload),
@@ -54,8 +52,7 @@ describe("telemetry provider state projection", () => {
       message: {
         provider_state: [
           {
-            provider: "fictional",
-            protocol: "items",
+            kind: "@test/fictional/items",
             version: 2,
           },
         ],

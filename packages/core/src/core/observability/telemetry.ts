@@ -118,8 +118,7 @@ function traceMessage(message: Message): TurnStartEvent["messages"][number] {
   return {
     ...traceSafeMessage,
     provider_state: providerState.map((state) => ({
-      provider: state.provider,
-      protocol: state.protocol,
+      kind: state.kind,
       version: state.version,
       payloadBytes: providerPayloadBytes(state.payload),
     })),
