@@ -107,6 +107,20 @@ function mergeReasoningDetail(
   return merged;
 }
 
+function reasoningSummaryDelta(
+  current: OpenAIReasoningDetail | undefined,
+  fragment: OpenAIReasoningDetail,
+): string | undefined {
+  if (fragment.type !== "reasoning.summary" || typeof fragment.summary !== "string") {
+    return undefined;
+  }
+  const previousSummary = typeof current?.summary === "string" ? current.summary : "";
+  const delta = fragment.summary.startsWith(previousSummary)
+    ? fragment.summary.slice(previousSummary.length)
+    : fragment.summary;
+  return delta.length > 0 ? delta : undefined;
+}
+
 function extractReasoningFromDelta(delta: OpenAIChoiceDeltaLike | undefined): string | undefined {
   if (!delta) return undefined;
   if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0) {
@@ -260,8 +274,13 @@ async function* streamHandler(
 
       for (const [position, detail] of (delta?.reasoning_details ?? []).entries()) {
         const key = reasoningDetailKey(detail, position);
+        const current = reasoningDetails.get(key);
+        if (!reasoning && detail.type === "reasoning.summary") {
+          const summaryDelta = reasoningSummaryDelta(current, detail);
+          if (summaryDelta) yield { type: "reasoning", content: summaryDelta };
+        }
         if (!reasoningDetails.has(key)) reasoningDetailOrder.push(key);
-        reasoningDetails.set(key, mergeReasoningDetail(reasoningDetails.get(key), detail));
+        reasoningDetails.set(key, mergeReasoningDetail(current, detail));
       }
 
       if (choice?.delta?.tool_calls) {

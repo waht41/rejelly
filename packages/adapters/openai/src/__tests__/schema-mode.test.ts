@@ -51,6 +51,32 @@ async function* reasoningDetailsChunks() {
   };
 }
 
+async function* reasoningSummaryOnlyChunks() {
+  yield {
+    choices: [
+      {
+        delta: {
+          reasoning_details: [
+            { type: "reasoning.summary", index: 0, summary: "think" },
+            { type: "reasoning.encrypted", index: 1, data: "secret" },
+          ],
+        },
+        finish_reason: null,
+      },
+    ],
+  };
+  yield {
+    choices: [
+      {
+        delta: {
+          reasoning_details: [{ type: "reasoning.summary", index: 0, summary: "thinking" }],
+        },
+        finish_reason: "stop",
+      },
+    ],
+  };
+}
+
 const SCHEMA = {
   type: "object",
   properties: { answer: { type: "string" } },
@@ -126,6 +152,29 @@ describe("OpenAI adapter schemaMode request building", () => {
     const params = await runStream("json_object", { withSchema: false });
 
     expect(params.response_format).toBeUndefined();
+  });
+
+  it("uses reasoning_details summary for display when no top-level reasoning field exists", async () => {
+    mocks.create.mockImplementation(() => reasoningSummaryOnlyChunks());
+    const adapter = createOpenAIAdapter({
+      modelId: "test-model",
+      apiKey: "test-key",
+      baseURL: "https://mock.test/v1",
+      provider: "openrouter",
+    });
+    const events = [];
+
+    for await (const event of adapter.stream([{ role: "user", content: "hi" }])) {
+      events.push(event);
+    }
+
+    expect(events.filter((event) => event.type === "reasoning")).toEqual([
+      { type: "reasoning", content: "think" },
+      { type: "reasoning", content: "ing" },
+    ]);
+    expect(JSON.stringify(events.filter((event) => event.type === "reasoning"))).not.toContain(
+      "secret",
+    );
   });
 
   it("aggregates compatible reasoning_details and emits complete metadata once", async () => {
