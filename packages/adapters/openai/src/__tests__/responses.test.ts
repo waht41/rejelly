@@ -177,6 +177,46 @@ describe("OpenAI Responses adapter", () => {
     });
   });
 
+  it("streams compatible reasoning_text deltas used by DeepSeek", async () => {
+    mocks.create.mockImplementation(() =>
+      events(
+        {
+          type: "response.reasoning_text.delta",
+          item_id: "rs_1",
+          output_index: 0,
+          content_index: 0,
+          delta: "deep ",
+          sequence_number: 1,
+        },
+        {
+          type: "response.reasoning_text.delta",
+          item_id: "rs_1",
+          output_index: 0,
+          content_index: 0,
+          delta: "thought",
+          sequence_number: 2,
+        },
+        {
+          type: "response.reasoning_text.done",
+          item_id: "rs_1",
+          output_index: 0,
+          content_index: 0,
+          text: "deep thought",
+          sequence_number: 3,
+        },
+        { type: "response.completed", response: response(), sequence_number: 4 },
+      ),
+    );
+
+    const adapter = createOpenAIAdapter({ api: "responses", modelId: "test-model" });
+    const result = await drain(adapter, [{ role: "user", content: "hi" }]);
+
+    expect(result.filter((event) => event.type === "reasoning")).toEqual([
+      { type: "reasoning", content: "deep " },
+      { type: "reasoning", content: "thought" },
+    ]);
+  });
+
   it("streams parallel function calls using Responses call_id and marks the turn as tool_calls", async () => {
     const output = [
       {

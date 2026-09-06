@@ -57,6 +57,18 @@ type FunctionCallProgress = {
   arguments: string;
 };
 
+type CompatibleReasoningTextDelta = {
+  type: "response.reasoning_text.delta";
+  delta: string;
+};
+
+function getCompatibleReasoningTextDelta(event: ResponseStreamEvent): string | undefined {
+  const candidate = event as unknown as Partial<CompatibleReasoningTextDelta>;
+  return candidate.type === "response.reasoning_text.delta" && typeof candidate.delta === "string"
+    ? candidate.delta
+    : undefined;
+}
+
 function normalizedEndpoint(value: string): string {
   return value.replace(/\/+$/, "").toLowerCase();
 }
@@ -348,6 +360,12 @@ export async function* streamResponses(
 
     for await (const event of stream as AsyncIterable<ResponseStreamEvent>) {
       if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+      const compatibleReasoningDelta = getCompatibleReasoningTextDelta(event);
+      if (compatibleReasoningDelta) {
+        yield { type: "reasoning", content: compatibleReasoningDelta };
+        continue;
+      }
 
       switch (event.type) {
         case "response.output_text.delta":
