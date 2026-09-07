@@ -31,13 +31,13 @@ describe("createOpenAIModelFromEnv", () => {
     mockedEnv.OPENAI_REASONING_EFFORT = "";
   });
 
-  it("keeps Chat Completions explicit and disables nested SDK retries", () => {
+  it("keeps Chat Completions explicit and bounds SDK requests without nested retries", () => {
     createOpenAIModelFromEnv();
 
     expect(createOpenAIAdapter).toHaveBeenCalledWith(
       expect.objectContaining({
         api: "chat_completions",
-        requestOption: { maxRetries: 0 },
+        requestOption: { maxRetries: 0, timeout: 30_000 },
       }),
     );
   });
@@ -52,6 +52,7 @@ describe("createOpenAIModelFromEnv", () => {
     expect(createOpenAIAdapter).toHaveBeenCalledWith(
       expect.objectContaining({
         api: "responses",
+        requestOption: { maxRetries: 0, timeout: 30_000 },
         responseParams: { reasoning: { effort: "high" } },
       }),
     );
