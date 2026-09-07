@@ -41,6 +41,17 @@ export interface SubmissionDispatcherOptions {
 
 const USER_STOP_REASON = "Stopped by user (/stop or Esc)";
 
+type RunningCommandHandler = (commandText: string) => boolean;
+let runningCommandHandler: RunningCommandHandler | null = null;
+
+/** Register commands that are safe to execute without waiting for the active Agent turn. */
+export function setRunningCommandHandler(handler: RunningCommandHandler): () => void {
+  runningCommandHandler = handler;
+  return () => {
+    if (runningCommandHandler === handler) runningCommandHandler = null;
+  };
+}
+
 function abortError(reason: string): Error {
   const error = new Error(reason);
   error.name = "AbortError";
@@ -65,6 +76,7 @@ function restoreSteers(ports: SubmissionDispatchPorts): number {
 export function resetSubmissionDispatch(): void {
   resetMainInputQueue();
   clearSteers();
+  runningCommandHandler = null;
 }
 
 export function createSubmissionDispatcher(
@@ -102,7 +114,20 @@ export function createSubmissionDispatcher(
         return;
       }
       if (commandText?.startsWith("/")) {
-        ports.logSystem(`${commandText} is not available while the agent is running.`);
+        if (
+          command === "/clear" ||
+          command === "/compress" ||
+          command === "/resume" ||
+          command?.startsWith("/resume ")
+        ) {
+          ports.logSystem(`${commandText} is not available while the agent is running.`);
+          return;
+        }
+        if (runningCommandHandler?.(commandText)) {
+          return;
+        }
+        enqueueMainInput(input);
+        ports.logSystem(`${commandText} queued until the agent finishes.`);
         return;
       }
       enqueueSteer(input);

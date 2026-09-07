@@ -68,6 +68,7 @@ import {
 import { materializeSkillAwareUserInput } from "../message-composer/message-materialization/skillAwareUserMessage";
 import { memoryReferenceName } from "../message-composer/suggestions/semantic-reference/referenceNaming";
 import { withAbort } from "../runtime/withAbort";
+import { setRunningCommandHandler } from "../submission-dispatch/dispatcher";
 import { drainSteers } from "../submission-dispatch/steerQueue";
 import { combineSessionBudget } from "./budget";
 import { handleMcpCommand, isMcpLocalCommand } from "./mcpCommands";
@@ -495,6 +496,49 @@ async function handleSkills(runtime: RouterRuntime, rawInput: string): Promise<v
   });
 }
 
+function createRunningCommandController(runtime: RouterRuntime): {
+  handle: (commandText: string) => boolean;
+  waitForPending: () => Promise<void>;
+} {
+  const pending = new Set<Promise<void>>();
+  const start = (operation: () => Promise<void>) => {
+    const task = operation()
+      .catch((error) =>
+        runtime.host.logSystemEvent(
+          `Background command failed: ${formatPersistenceError(error)}\n`,
+        ),
+      )
+      .finally(() => pending.delete(task));
+    pending.add(task);
+  };
+
+  return {
+    handle: (commandText) => {
+      const normalized = commandText.trim().toLowerCase();
+      if (normalized === "/status") {
+        handleStatus(runtime);
+        return true;
+      }
+      if (isSkillsLocalCommand(commandText)) {
+        start(() => handleSkills(runtime, commandText));
+        return true;
+      }
+      if (isMemoryLocalCommand(commandText)) {
+        start(() => handleMemory(runtime, commandText));
+        return true;
+      }
+      if (isMcpLocalCommand(commandText)) {
+        start(() => handleMcp(runtime, commandText));
+        return true;
+      }
+      return false;
+    },
+    waitForPending: async () => {
+      while (pending.size > 0) await Promise.all([...pending]);
+    },
+  };
+}
+
 function formatPersistenceError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -780,9 +824,17 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
         case "skills":
           await handleSkills(runtime, intent.rawInput);
           return reborn();
-        case "message":
-          await runConversationTurn(runtime, intent.promptInput, intent.userInput);
+        case "message": {
+          const runningCommands = createRunningCommandController(runtime);
+          const disposeRunningCommands = setRunningCommandHandler(runningCommands.handle);
+          try {
+            await runConversationTurn(runtime, intent.promptInput, intent.userInput);
+            await runningCommands.waitForPending();
+          } finally {
+            disposeRunningCommands();
+          }
           return reborn();
+        }
       }
     } catch (error) {
       if (isAbortError(error)) {

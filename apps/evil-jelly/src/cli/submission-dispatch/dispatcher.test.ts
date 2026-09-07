@@ -7,6 +7,7 @@ import {
   createSubmissionDispatcher,
   resetSubmissionDispatch,
   type SubmissionDispatchPorts,
+  setRunningCommandHandler,
 } from "./dispatcher";
 import { enqueueSteer } from "./steerQueue";
 
@@ -89,6 +90,43 @@ describe("submission dispatcher", () => {
     expect(aborts).toEqual([]);
     expect(logs).toEqual([]);
     await expect(dispatcher.getInput()).resolves.toEqual(textPromptInput("/status"));
+  });
+
+  it("queues slash commands until the running agent finishes", async () => {
+    const { ports, logs } = createPorts();
+    const dispatcher = createSubmissionDispatcher(ports);
+
+    dispatcher.submit(textPromptInput("/status"));
+
+    expect(logs).toEqual(["/status queued until the agent finishes."]);
+    await expect(dispatcher.getInput()).resolves.toEqual(textPromptInput("/status"));
+  });
+
+  it("executes registered safe commands immediately while the agent is running", () => {
+    const { ports, logs } = createPorts();
+    const handler = vi.fn((commandText: string) => commandText === "/status");
+    setRunningCommandHandler(handler);
+    const dispatcher = createSubmissionDispatcher(ports);
+
+    dispatcher.submit(textPromptInput("/status"));
+
+    expect(handler).toHaveBeenCalledWith("/status");
+    expect(logs).toEqual([]);
+  });
+
+  it("continues to reject clear, resume, and compression while the agent is running", () => {
+    const { ports, logs } = createPorts();
+    const dispatcher = createSubmissionDispatcher(ports);
+
+    dispatcher.submit(textPromptInput("/clear"));
+    dispatcher.submit(textPromptInput("/resume session-1"));
+    dispatcher.submit(textPromptInput("/compress"));
+
+    expect(logs).toEqual([
+      "/clear is not available while the agent is running.",
+      "/resume session-1 is not available while the agent is running.",
+      "/compress is not available while the agent is running.",
+    ]);
   });
 
   it("does not route a rich document as a local command", async () => {
