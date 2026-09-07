@@ -17,6 +17,8 @@ Rejelly is a React-inspired Agent framework: treat an Agent as a **function that
 ## Why Rejelly
 
 - **Agent as a function** — `createAgent` wraps an async function: input goes in, result comes out, called like any ordinary function.
+
+[![Rejelly on StartupScores](https://startupscores.com/badge/rejelly.svg?style=shield&v=combo&theme=dark)](https://startupscores.com/open-source/rejelly)
 - **Build Prompts with Hooks** — the `equip` family (system / instruction / tool / memory) aggregates related logic in place, eliminating scattered string concatenation and explicit `ctx` passing (backed by AsyncLocalStorage).
 - **Contract-driven output** — `promptAgent` with a Zod Schema defines and validates the model's output structure; on a mismatch the framework retries automatically with error feedback.
 - **`reborn` rebuilds context** — each round re-renders the Prompt from the latest Memory instead of appending history across rounds, always describing the current state and intent.
