@@ -92,14 +92,20 @@ describe("submission dispatcher", () => {
     await expect(dispatcher.getInput()).resolves.toEqual(textPromptInput("/status"));
   });
 
-  it("queues slash commands until the running agent finishes", async () => {
+  it.each([
+    "/** comment */",
+    "// comment",
+    "/path/to/file",
+    "/foo/",
+    "/status later",
+  ])("routes leading-slash text as an ordinary steer: %s", async (text) => {
     const { ports, logs } = createPorts();
     const dispatcher = createSubmissionDispatcher(ports);
 
-    dispatcher.submit(textPromptInput("/status"));
+    dispatcher.submit(textPromptInput(text));
 
-    expect(logs).toEqual(["/status queued until the agent finishes."]);
-    await expect(dispatcher.getInput()).resolves.toEqual(textPromptInput("/status"));
+    expect(logs).toEqual([]);
+    await expect(dispatcher.getInput()).resolves.toEqual(textPromptInput(text));
   });
 
   it("executes registered safe commands immediately while the agent is running", () => {

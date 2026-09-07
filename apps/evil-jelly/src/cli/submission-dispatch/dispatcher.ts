@@ -113,21 +113,16 @@ export function createSubmissionDispatcher(
         rejectPendingLineInput(abortError(reason));
         return;
       }
-      if (commandText?.startsWith("/")) {
-        if (
-          command === "/clear" ||
-          command === "/compress" ||
-          command === "/resume" ||
-          command?.startsWith("/resume ")
-        ) {
-          ports.logSystem(`${commandText} is not available while the agent is running.`);
-          return;
-        }
-        if (runningCommandHandler?.(commandText)) {
-          return;
-        }
-        enqueueMainInput(input);
-        ports.logSystem(`${commandText} queued until the agent finishes.`);
+      if (
+        command === "/clear" ||
+        command === "/compress" ||
+        command === "/resume" ||
+        command?.startsWith("/resume ")
+      ) {
+        ports.logSystem(`${commandText} is not available while the agent is running.`);
+        return;
+      }
+      if (commandText && runningCommandHandler?.(commandText)) {
         return;
       }
       enqueueSteer(input);
