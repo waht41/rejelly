@@ -498,8 +498,10 @@ async function handleSkills(runtime: RouterRuntime, rawInput: string): Promise<v
 
 function createRunningCommandController(runtime: RouterRuntime): {
   handle: (commandText: string) => boolean;
+  flushDeferred: () => void;
   waitForPending: () => Promise<void>;
 } {
+  const deferred: Array<() => void> = [];
   const pending = new Set<Promise<void>>();
   const start = (operation: () => Promise<void>) => {
     const task = operation()
@@ -516,7 +518,7 @@ function createRunningCommandController(runtime: RouterRuntime): {
     handle: (commandText) => {
       const normalized = commandText.trim().toLowerCase();
       if (normalized === "/status") {
-        handleStatus(runtime);
+        deferred.push(() => handleStatus(runtime));
         return true;
       }
       if (isSkillsLocalCommand(commandText)) {
@@ -532,6 +534,9 @@ function createRunningCommandController(runtime: RouterRuntime): {
         return true;
       }
       return false;
+    },
+    flushDeferred: () => {
+      for (const operation of deferred.splice(0)) operation();
     },
     waitForPending: async () => {
       while (pending.size > 0) await Promise.all([...pending]);
@@ -833,6 +838,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
           try {
             await runConversationTurn(runtime, intent.promptInput, intent.userInput);
             await runningCommands.waitForPending();
+            runningCommands.flushDeferred();
           } finally {
             disposeRunningCommands();
           }
