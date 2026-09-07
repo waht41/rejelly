@@ -275,7 +275,7 @@ Every profile must set `OPENAI_API_KEY`, unless the invocation supplies `--api-k
 When `evil init` finds an existing key, press Enter to retain it. In a TTY it also asks for an optional Base URL and model. For non-interactive endpoint/model setup when the key is already saved (otherwise also pass `--api-key <key>`):
 
 ```bash
-evil init --base-url https://api.deepseek.com --model deepseek-v4-flash
+evil init --base-url https://api.openai.com/v1 --model gpt-5.6-luna --protocol responses
 ```
 
 All variables except `OPENAI_API_KEY` are optional. Application-level LLM variables are registered in `ENV_VARS` in `src/shared/config.ts`.
@@ -288,7 +288,8 @@ All variables except `OPENAI_API_KEY` are optional. Application-level LLM variab
 | `OPENAI_MODEL_ID` | Defaults to `gpt-5.6-luna`. |
 | `OPENAI_BASE_URL` | Defaults to `https://api.openai.com/v1`. |
 | `OPENAI_PROVIDER` | Defaults to `openai`; DeepSeek-shaped configurations automatically use JSON mode. |
-| `OPENAI_REASONING_EFFORT` | Thinking budget, sent as `reasoning_effort` and forwarded verbatim (the vocabulary is the provider's: DeepSeek takes `low`/`high`/`max`, OpenAI takes `minimal`…`high`). Unset sends nothing and keeps the provider default. DeepSeek-shaped configurations also get the `thinking` switch, which `none` sets to `disabled`. |
+| `OPENAI_API_PROTOCOL` | `chat_completions` (default) or `responses`. Evil never guesses from the model id and never retries through the other protocol. Responses uses stateless local replay with `store: false`. |
+| `OPENAI_REASONING_EFFORT` | Thinking budget. Chat sends `reasoning_effort` (and the DeepSeek `thinking` switch); Responses sends `reasoning: { effort }`. The value is forwarded verbatim using the selected provider's vocabulary. Unset sends nothing and keeps the provider default. |
 | `OPENAI_RETRY_MAX_ATTEMPTS` | Maximum model-call attempts (positive integer). Defaults to `3`. Evil owns these attempts, honors `Retry-After`, and otherwise uses exponential backoff with up to 25% positive jitter; nested OpenAI SDK retries are disabled. |
 | `OPENAI_CONTEXT_WINDOW` | Actual model context window in tokens (positive integer). `/status` shows the remainder, and compaction uses this as its trimming limit; otherwise `200000` is used. |
 | `OPENAI_AUTO_COMPACT_TOKENS` | Compaction threshold in tokens (positive integer); takes precedence over `OPENAI_AUTO_COMPACT_RATIO` and can force early compaction in tests. |
@@ -367,6 +368,7 @@ pnpm typecheck      # TypeScript checking
 - `--input <text>`: supply the first user input without prompting; required by `--headless`.
 - **`init --base-url <url>`**: save `OPENAI_BASE_URL` alongside the API key in `~/.evil-jelly/.env`.
 - **`init --model <id>`**: save `OPENAI_MODEL_ID` alongside the API key.
+- **`init --protocol <protocol>`**: save `OPENAI_API_PROTOCOL` (`chat_completions` or `responses`).
 - **`init --env <name>`**: write `~/.evil-jelly/<name>.env` instead of the global `.env`.
 - **`audit --family <name>`**: run one read-only audit family without Ink and exit. Required family values: `clone`, `complexity`, `fragmentation`, `doc-drift`, or `doc-sync`.
 - **`audit --only-actionable`**: render only actionable findings; statistics still cover the complete run.

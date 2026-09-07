@@ -281,6 +281,7 @@ function handleStatus(runtime: RouterRuntime): void {
       turns: countConversationTurns(runtime.history),
       budget: runtime.currentBudget(),
       modelId: env.OPENAI_MODEL_ID,
+      protocol: env.OPENAI_API_PROTOCOL,
       contextWindow: env.OPENAI_CONTEXT_WINDOW,
     }),
   );

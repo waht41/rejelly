@@ -173,4 +173,38 @@ describe("runEvilJellyHost session teardown", () => {
       "evil_jelly.skills.catalog_fingerprint": snapshot.catalog.fingerprint,
     });
   });
+
+  it("warns when resumed Chat state is ignored by the Responses protocol", async () => {
+    const previousProtocol = process.env.OPENAI_API_PROTOCOL;
+    process.env.OPENAI_API_PROTOCOL = "responses";
+    mocks.runWithReview.mockResolvedValue(undefined);
+    const logSystemEvent = vi.fn();
+
+    try {
+      await runEvilJellyHost({ logSystemEvent } as unknown as EvilJellyBindings, {
+        runControl: createInteractiveRunControl(),
+        model: { id: "test-model" } as ModelAdapter,
+        seedContext: [
+          {
+            role: "assistant",
+            content: "Visible answer",
+            provider_state: [
+              {
+                kind: "@rejelly/adapter-openai/chat-completions",
+                version: 1,
+                payload: {},
+              },
+            ],
+          },
+        ],
+      });
+    } finally {
+      if (previousProtocol === undefined) delete process.env.OPENAI_API_PROTOCOL;
+      else process.env.OPENAI_API_PROTOCOL = previousProtocol;
+    }
+
+    expect(logSystemEvent).toHaveBeenCalledWith(
+      "Compatibility notice: this session contains state from @rejelly/adapter-openai/chat-completions, which is ignored while using responses; standard message history will still be sent.\n",
+    );
+  });
 });

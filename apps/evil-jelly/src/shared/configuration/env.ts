@@ -73,6 +73,16 @@ function flag(): EnvParser<boolean> {
   return (raw) => raw === "true";
 }
 
+/** Closed string choice; blank uses the fallback while invalid explicit values fail early. */
+function choice<const T extends string>(values: readonly T[], fallback: T): EnvParser<T> {
+  return (raw) => {
+    if (!hasEnvValue(raw)) return fallback;
+    const normalized = raw.trim().toLowerCase();
+    if ((values as readonly string[]).includes(normalized)) return normalized as T;
+    throw new Error(`Expected one of ${values.join(", ")}; received ${raw}.`);
+  };
+}
+
 /** Fraction strictly between 0 and 1; unset/blank/invalid falls back to undefined. */
 function ratio(): EnvParser<number | undefined> {
   return (raw) => {
@@ -125,6 +135,8 @@ const ENV_VARS = {
   OPENAI_MODEL_ID: str(DEFAULT_OPENAI_MODEL_ID),
   OPENAI_BASE_URL: str(DEFAULT_OPENAI_BASE_URL),
   OPENAI_PROVIDER: str("openai"),
+  /** Explicit model API protocol; never inferred from the model id or endpoint. */
+  OPENAI_API_PROTOCOL: choice(["chat_completions", "responses"] as const, "chat_completions"),
   /** Real model context window (tokens); drives /status display and auto-compaction. */
   OPENAI_CONTEXT_WINDOW: contextWindow(),
   /** Absolute auto-compact trigger budget (tokens); wins over the ratio below. */

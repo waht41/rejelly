@@ -68,7 +68,7 @@ describe("session history projections", () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it("keeps the full transcript while compaction replaces only active context", () => {
+  it("keeps the full transcript while compaction removes old provider state from active context", () => {
     const events: SessionEvent[] = [
       userEvent(1, "turn-1", "old question"),
       event(
@@ -76,7 +76,17 @@ describe("session history projections", () => {
           type: "message_recorded",
           turnId: "turn-1",
           source: { kind: "model" },
-          message: { role: "assistant", content: '{"reply":"old answer"}' },
+          message: {
+            role: "assistant",
+            content: '{"reply":"old answer"}',
+            provider_state: [
+              {
+                kind: "@rejelly/adapter-openai/responses",
+                version: 1,
+                payload: { protocol: "responses", output: [{ type: "reasoning" }] },
+              },
+            ],
+          },
         },
         2,
       ),
@@ -135,11 +145,13 @@ describe("session history projections", () => {
     expect(buildTranscript(replay(events), { includeCompactionBoundaries: true })).toContainEqual(
       expect.objectContaining({ type: "system", kind: "compaction" }),
     );
-    expect(buildStoredActiveContext(replay(events)).map((message) => message.content)).toEqual([
+    const activeContext = buildStoredActiveContext(replay(events));
+    expect(activeContext.map((message) => message.content)).toEqual([
       "[Context was automatically compacted]\nprivate model summary",
       "new question",
       "new answer",
     ]);
+    expect(activeContext.every((message) => message.provider_state === undefined)).toBe(true);
   });
 
   it("pairs tool calls with results and marks interrupted turns without exposing internals", () => {

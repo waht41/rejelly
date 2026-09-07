@@ -22,10 +22,12 @@ describe("formatSessionStatus", () => {
       turns: 4,
       budget,
       modelId: "gpt-4o",
+      protocol: "responses",
       contextWindow: 128000,
     });
     expect(out).toContain("12.3k / 128.0k");
     expect(out).toContain("- Workspace: /work/reagent");
+    expect(out).toContain("- API protocol: responses");
     expect(out).toContain("% used");
     expect(out).toContain("8.1k cached");
     expect(out).toContain("cached 30.2k");
@@ -40,6 +42,7 @@ describe("formatSessionStatus", () => {
         turns: 4,
         budget,
         modelId: "gpt-4o",
+        protocol: "chat_completions",
       }),
     ).toContain("OPENAI_CONTEXT_WINDOW");
   });
@@ -52,6 +55,7 @@ describe("formatSessionStatus", () => {
         turns: 0,
         budget: emptySessionBudget(),
         modelId: "gpt-4o",
+        protocol: "chat_completions",
       }),
     ).toContain("not measured yet");
   });

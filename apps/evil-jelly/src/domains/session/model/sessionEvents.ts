@@ -22,6 +22,8 @@ export const sessionBudgetSchema = z.object({
   promptTokens: nonNegativeIntSchema,
   completionTokens: nonNegativeIntSchema,
   cacheReadTokens: nonNegativeIntSchema,
+  cacheWriteTokens: nonNegativeIntSchema.default(0),
+  reasoningTokens: nonNegativeIntSchema.default(0),
   callCount: nonNegativeIntSchema,
   costs: z.record(z.string(), z.number().int()),
   lastContextTokens: nonNegativeIntSchema,

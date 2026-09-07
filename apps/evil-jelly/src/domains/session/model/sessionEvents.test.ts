@@ -277,6 +277,27 @@ describe("sessionEvents", () => {
     ).toThrow(SessionSchemaError);
   });
 
+  it("defaults new cumulative budget dimensions when reading older V2/V3 events", () => {
+    const parsed = parseSessionEvent({
+      type: "budget_updated",
+      seq: 1,
+      timestamp: 2,
+      budget: {
+        totalTokens: 10,
+        promptTokens: 8,
+        completionTokens: 2,
+        cacheReadTokens: 3,
+        callCount: 1,
+        costs: {},
+        lastContextTokens: 8,
+        lastCacheReadTokens: 3,
+      },
+    });
+    expect(parsed).toMatchObject({
+      budget: { cacheWriteTokens: 0, reasoningTokens: 0 },
+    });
+  });
+
   it("only associates automatic compaction with a running parent turn", () => {
     const compact = {
       type: "context_compacted" as const,

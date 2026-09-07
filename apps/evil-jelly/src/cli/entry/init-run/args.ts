@@ -4,6 +4,7 @@ export type InitCommandArgs = {
   kind: "init";
   initBaseUrl: string | undefined;
   initModelId: string | undefined;
+  initProtocol: string | undefined;
 };
 
 function optionalString(raw: unknown): string | undefined {
@@ -19,7 +20,8 @@ export function registerInitArgs(cli: CAC): void {
       "--base-url <url>",
       "OPENAI_BASE_URL to save alongside the key (keeps key and endpoint in the same layer)",
     )
-    .option("--model <id>", "OPENAI_MODEL_ID to save");
+    .option("--model <id>", "OPENAI_MODEL_ID to save")
+    .option("--protocol <protocol>", "OPENAI_API_PROTOCOL to save (chat_completions or responses)");
 }
 
 export function parseInitArgs(options: Record<string, unknown>): InitCommandArgs {
@@ -27,5 +29,6 @@ export function parseInitArgs(options: Record<string, unknown>): InitCommandArgs
     kind: "init",
     initBaseUrl: optionalString(options.baseUrl),
     initModelId: optionalString(options.model),
+    initProtocol: optionalString(options.protocol),
   };
 }

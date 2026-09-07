@@ -20,6 +20,7 @@ async function main() {
       apiKey: args.cliApiKey,
       baseUrl: args.initBaseUrl,
       modelId: args.initModelId,
+      protocol: args.initProtocol,
       envFile: args.envFile,
     });
     process.exit(0);
