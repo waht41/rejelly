@@ -153,6 +153,9 @@ function createOutputBindings(): ConversationPresentationBindings {
     onPhaseUpdate: (phase) => {
       out().setPhase(phase);
     },
+    onToolCallGenerationUpdate: (progress) => {
+      out().setToolCallGeneration(progress);
+    },
     onTurnStart: () => {
       out().beginTurn();
     },

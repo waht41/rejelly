@@ -5,7 +5,10 @@
 import { type AgentStreamEvent, onStream } from "@rejelly/core";
 import { COMPACTION_STREAM_CHANNEL } from "../../domains/policy/compactionChannel";
 import { getBinding } from "../../shared/host/context";
-import type { RuntimePhase } from "../../shared/host/presentationBindings";
+import type {
+  RuntimePhase,
+  ToolCallGenerationProgress,
+} from "../../shared/host/presentationBindings";
 
 type StandardStreamingTextMode = "none" | "tool-preamble" | "plain";
 
@@ -98,7 +101,7 @@ export function phaseForStreamEvent(
       }
       return "streaming";
     case "tool_call_stream":
-      return turnEnded ? null : "streaming";
+      return turnEnded ? null : "preparing_tool";
     case "turn_done":
       // Whatever comes next (tools, another turn, the reply) owns the phase from here; left on
       // "streaming" the counter would keep running against a turn that already ended.
@@ -115,7 +118,7 @@ export function phaseForStreamEvent(
  * Call once per turn, immediately before promptAgent()/promptChat().
  */
 export function useStandardStreaming(options?: string | StandardStreamingOptions): void {
-  const { printOut, onPhaseUpdate, logToolRound } = getBinding();
+  const { printOut, onPhaseUpdate, onToolCallGenerationUpdate, logToolRound } = getBinding();
   const { structuredKey, textMode } = normalizeStandardStreamingOptions(options);
   onStream(async (stream) => {
     // Mirrored locally so the per-delta calls below collapse to nothing: text events arrive
@@ -143,6 +146,9 @@ export function useStandardStreaming(options?: string | StandardStreamingOptions
      * than a wrong one.
      */
     const toolCallIndexes = new Set<number>();
+    const toolCallProgress = new Map<number, { name?: string; argumentChars: number }>();
+    let lastToolProgressAt = 0;
+    let lastReportedArgumentChars = 0;
     /** Whether the model has produced answer-shaped output yet, for reasoning/streaming ordering. */
     let modelSpoke = false;
 
@@ -154,6 +160,10 @@ export function useStandardStreaming(options?: string | StandardStreamingOptions
       turnEnded = false;
       toolRequested = false;
       toolCallIndexes.clear();
+      toolCallProgress.clear();
+      lastToolProgressAt = 0;
+      lastReportedArgumentChars = 0;
+      onToolCallGenerationUpdate?.(null);
       modelSpoke = false;
     };
 
@@ -221,10 +231,37 @@ export function useStandardStreaming(options?: string | StandardStreamingOptions
           break;
         }
 
-        case "tool_call_stream":
+        case "tool_call_stream": {
           toolRequested = true;
           toolCallIndexes.add(event.chunk.index);
+          const previous = toolCallProgress.get(event.chunk.index) ?? { argumentChars: 0 };
+          const next = {
+            name: event.chunk.name ?? previous.name,
+            argumentChars: previous.argumentChars + (event.chunk.arguments?.length ?? 0),
+          };
+          toolCallProgress.set(event.chunk.index, next);
+
+          const totalArgumentChars = [...toolCallProgress.values()].reduce(
+            (total, call) => total + call.argumentChars,
+            0,
+          );
+          const now = Date.now();
+          const shouldReport =
+            lastToolProgressAt === 0 ||
+            now - lastToolProgressAt >= 200 ||
+            totalArgumentChars - lastReportedArgumentChars >= 1_024 ||
+            event.chunk.name !== undefined;
+          if (shouldReport) {
+            const progress: ToolCallGenerationProgress = {
+              calls: [...toolCallProgress.entries()].map(([index, call]) => ({ index, ...call })),
+              totalArgumentChars,
+            };
+            onToolCallGenerationUpdate?.(progress);
+            lastToolProgressAt = now;
+            lastReportedArgumentChars = totalArgumentChars;
+          }
           break;
+        }
 
         case "turn_done":
           if (textMode === "tool-preamble" && toolRequested) {
@@ -242,6 +279,7 @@ export function useStandardStreaming(options?: string | StandardStreamingOptions
           if (toolCallIndexes.size > 1) {
             logToolRound?.(toolCallIndexes.size);
           }
+          onToolCallGenerationUpdate?.(null);
           turnEnded = true;
           break;
       }
