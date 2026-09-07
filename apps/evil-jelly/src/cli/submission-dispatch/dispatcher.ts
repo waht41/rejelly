@@ -14,6 +14,7 @@ import {
   resetMainInputQueue,
   setAwaitingMainInput,
 } from "./mainInputQueue";
+import { resetPendingSubmissions } from "./pendingSubmissions";
 import { mergeSteersIntoDraft } from "./restoreDraft";
 import { clearSteers, drainSteers, enqueueSteer } from "./steerQueue";
 
@@ -76,6 +77,7 @@ function restoreSteers(ports: SubmissionDispatchPorts): number {
 export function resetSubmissionDispatch(): void {
   resetMainInputQueue();
   clearSteers();
+  resetPendingSubmissions();
   runningCommandHandler = null;
 }
 

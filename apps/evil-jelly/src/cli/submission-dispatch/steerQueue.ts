@@ -4,12 +4,18 @@ import {
   isPromptInputSemanticallyEmpty,
   type PromptInput,
 } from "../../shared/model/prompt/promptInput";
+import { addPendingSteer, removePendingSubmission } from "./pendingSubmissions";
 
-let queuedSteers: PromptInput[] = [];
+interface QueuedSteer {
+  readonly input: PromptInput;
+  readonly pendingId: string;
+}
+
+let queuedSteers: QueuedSteer[] = [];
 let subscribers: Array<(values: PromptInput[]) => void> = [];
 
 function snapshot(): PromptInput[] {
-  return queuedSteers.map(copyPromptInput);
+  return queuedSteers.map((entry) => copyPromptInput(entry.input));
 }
 
 function notifySubscribers(): void {
@@ -21,22 +27,27 @@ function notifySubscribers(): void {
 
 export function enqueueSteer(value: PromptInput): void {
   if (isPromptInputSemanticallyEmpty(value)) return;
-  queuedSteers.push(copyPromptInput(value));
+  const input = copyPromptInput(value);
+  queuedSteers.push({ input, pendingId: addPendingSteer(input) });
   notifySubscribers();
 }
 
 export function drainSteers(): PromptInput[] {
-  const values = queuedSteers;
+  const entries = queuedSteers;
   queuedSteers = [];
+  for (const entry of entries) removePendingSubmission(entry.pendingId);
   notifySubscribers();
-  return values;
+  return entries.map((entry) => entry.input);
 }
 
 export function clearSteers(): void {
   const discarded = queuedSteers;
   queuedSteers = [];
+  for (const entry of discarded) removePendingSubmission(entry.pendingId);
   notifySubscribers();
-  void Promise.all(discarded.map((input) => releasePromptResources(input))).catch(() => undefined);
+  void Promise.all(discarded.map((entry) => releasePromptResources(entry.input))).catch(
+    () => undefined,
+  );
 }
 
 export function getQueuedSteers(): PromptInput[] {

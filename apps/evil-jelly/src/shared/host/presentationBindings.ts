@@ -45,5 +45,11 @@ export interface ConversationPresentationBindings {
   onPhaseUpdate?: (phase: RuntimePhase) => void;
   /** Live model-side progress while one or more tool calls are still being serialized. */
   onToolCallGenerationUpdate?: (progress: ToolCallGenerationProgress | null) => void;
+  /**
+   * Run presentation-only work after the current assistant stream segment or tool batch ends.
+   * Returns a cancellation function. Headless hosts may omit this and let the router use its
+   * turn-end fallback.
+   */
+  runAtSafeOutputBoundary?: (operation: () => void) => () => void;
   onTurnStart?: () => void;
 }

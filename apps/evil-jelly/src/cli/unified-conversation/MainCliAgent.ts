@@ -69,6 +69,10 @@ import { materializeSkillAwareUserInput } from "../message-composer/message-mate
 import { memoryReferenceName } from "../message-composer/suggestions/semantic-reference/referenceNaming";
 import { withAbort } from "../runtime/withAbort";
 import { setRunningCommandHandler } from "../submission-dispatch/dispatcher";
+import {
+  ensurePendingCommand,
+  removePendingSubmission,
+} from "../submission-dispatch/pendingSubmissions";
 import { drainSteers } from "../submission-dispatch/steerQueue";
 import { combineSessionBudget } from "./budget";
 import { handleMcpCommand, isMcpLocalCommand } from "./mcpCommands";
@@ -500,9 +504,12 @@ function createRunningCommandController(runtime: RouterRuntime): {
   handle: (commandText: string) => boolean;
   flushDeferred: () => void;
   waitForPending: () => Promise<void>;
+  dispose: () => void;
 } {
-  const deferred: Array<() => void> = [];
   const pending = new Set<Promise<void>>();
+  let statusPending = false;
+  let pendingStatusId: string | undefined;
+  let cancelScheduledStatus: (() => void) | undefined;
   const start = (operation: () => Promise<void>) => {
     const task = operation()
       .catch((error) =>
@@ -518,7 +525,19 @@ function createRunningCommandController(runtime: RouterRuntime): {
     handle: (commandText) => {
       const normalized = commandText.trim().toLowerCase();
       if (normalized === "/status") {
-        deferred.push(() => handleStatus(runtime));
+        if (statusPending) return true;
+
+        statusPending = true;
+        pendingStatusId = ensurePendingCommand("/status").id;
+        const runStatus = () => {
+          if (!statusPending) return;
+          statusPending = false;
+          cancelScheduledStatus = undefined;
+          if (pendingStatusId) removePendingSubmission(pendingStatusId);
+          pendingStatusId = undefined;
+          handleStatus(runtime);
+        };
+        cancelScheduledStatus = runtime.host.runAtSafeOutputBoundary?.(runStatus);
         return true;
       }
       if (isSkillsLocalCommand(commandText)) {
@@ -536,10 +555,22 @@ function createRunningCommandController(runtime: RouterRuntime): {
       return false;
     },
     flushDeferred: () => {
-      for (const operation of deferred.splice(0)) operation();
+      if (!statusPending) return;
+      cancelScheduledStatus?.();
+      statusPending = false;
+      if (pendingStatusId) removePendingSubmission(pendingStatusId);
+      pendingStatusId = undefined;
+      handleStatus(runtime);
     },
     waitForPending: async () => {
       while (pending.size > 0) await Promise.all([...pending]);
+    },
+    dispose: () => {
+      cancelScheduledStatus?.();
+      cancelScheduledStatus = undefined;
+      statusPending = false;
+      if (pendingStatusId) removePendingSubmission(pendingStatusId);
+      pendingStatusId = undefined;
     },
   };
 }
@@ -840,6 +871,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
             await runningCommands.waitForPending();
             runningCommands.flushDeferred();
           } finally {
+            runningCommands.dispose();
             disposeRunningCommands();
           }
           return reborn();

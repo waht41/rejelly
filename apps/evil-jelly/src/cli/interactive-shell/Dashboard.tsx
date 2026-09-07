@@ -5,11 +5,7 @@
 import type { DOMElement } from "ink";
 import { Box, measureElement, Text, useInput, useWindowSize } from "ink";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import {
-  type PromptInput,
-  promptInputPlainText,
-  textPromptInput,
-} from "../../shared/model/prompt/promptInput";
+import { textPromptInput } from "../../shared/model/prompt/promptInput";
 import { hasActiveInterruptibleTask } from "../../shared/task-interruption/taskStack";
 import { AssistantStreamView } from "../conversation-display/assistant-stream/AssistantStreamView";
 import { StaticHistory } from "../conversation-display/history/StaticHistory";
@@ -29,14 +25,18 @@ import { DecisionDetail } from "../operator-decision/DecisionDetail";
 import { useDecisionStore } from "../operator-decision/decisionStore";
 import { TextDecisionPrompt } from "../operator-decision/TextDecisionPrompt";
 import { SkillManagerPrompt } from "../skill-manager/SkillManagerPrompt";
-import { getQueuedSteers, subscribeSteers } from "../submission-dispatch/steerQueue";
+import {
+  getPendingSubmissions,
+  type PendingSubmission,
+  subscribePendingSubmissions,
+} from "../submission-dispatch/pendingSubmissions";
 import { MODE_META, useModeStore } from "../tool-approval/approvalModeStore";
 import { saveClipboardImage } from "./clipboard/clipboardImage";
 import { copyTextToClipboard } from "./clipboard/clipboardText";
 import { handleLocalCommand } from "./interactiveCommandBinding";
 import { type CtrlCAbortHandler, useCtrlCAbort } from "./useCtrlCAbort";
 
-const STEER_QUEUE_VISIBLE_ROWS = 3;
+const PENDING_SUBMISSION_VISIBLE_ROWS = 3;
 const OUTER_VERTICAL_MARGIN_ROWS = 2;
 const TOOL_TAIL_MAX_ROWS = 8;
 
@@ -69,25 +69,34 @@ function ModeBadge() {
   );
 }
 
-function SteerQueueList({ items, columns }: { items: PromptInput[]; columns: number }) {
-  if (items.length === 0) {
-    return null;
-  }
-  const visible = items.slice(0, STEER_QUEUE_VISIBLE_ROWS);
+function PendingSubmissionList({
+  items,
+  columns,
+}: {
+  items: PendingSubmission[];
+  columns: number;
+}) {
+  if (items.length === 0) return null;
+
+  const visible = items.slice(0, PENDING_SUBMISSION_VISIBLE_ROWS);
   const hiddenCount = items.length - visible.length;
-  const textBudget = Math.max(20, Math.min(120, columns - 18));
+  const textBudget = Math.max(20, Math.min(120, columns - 24));
   return (
     <Box flexDirection="column" marginBottom={1}>
-      <Text dimColor>Queued steer ({items.length})</Text>
-      {visible.map((item, index) => {
-        const attachmentCount = item.attachments.length;
-        const attachmentSuffix = attachmentCount > 0 ? ` [+${attachmentCount} attachment(s)]` : "";
-        const text = promptInputPlainText(item);
+      <Text dimColor>Pending ({items.length})</Text>
+      {visible.map((item) => {
+        const attachmentSuffix =
+          item.kind === "steer" && item.attachmentCount > 0
+            ? ` [+${item.attachmentCount} attachment(s)]`
+            : "";
+        const label = item.kind === "steer" ? "Steer" : "Command";
         return (
-          <Box key={`${index}:${text}:${attachmentCount}`}>
-            <Text color="yellow">~ </Text>
+          <Box key={item.id}>
+            <Text color={item.kind === "steer" ? "yellow" : "cyan"}>
+              {item.kind === "steer" ? "~ " : "› "}
+            </Text>
             <Text dimColor wrap="truncate-end">
-              {truncateOneLine(`${text}${attachmentSuffix}`, textBudget)}
+              {truncateOneLine(`${label}: ${item.text}${attachmentSuffix}`, textBudget)}
             </Text>
           </Box>
         );
@@ -118,7 +127,9 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
   const submitMcpManager = useDecisionStore((state) => state.submitMcpManager);
   const submitMemoryManager = useDecisionStore((state) => state.submitMemoryManager);
   const submitSkillManager = useDecisionStore((state) => state.submitSkillManager);
-  const [queuedSteers, setQueuedSteers] = useState<PromptInput[]>(() => getQueuedSteers());
+  const [pendingSubmissions, setPendingSubmissions] = useState<PendingSubmission[]>(() =>
+    getPendingSubmissions(),
+  );
 
   // Ink's <Static> counts flushed items in instance state, so its items array must only grow
   // while mounted. `/clear` moves wiped turns into clearedStaticTurns (an already-flushed
@@ -161,7 +172,7 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
   const streamBudgetRows = nonStreamRows === null ? 0 : Math.max(0, rows - 1 - nonStreamRows - 1);
   useCtrlCAbort(onCtrlCAbort);
 
-  useEffect(() => subscribeSteers(setQueuedSteers), []);
+  useEffect(() => subscribePendingSubmissions(setPendingSubmissions), []);
 
   // ctrl+o opens the tool transcript; ToolTranscriptOverlay handles its own close (Esc / ctrl+o)
   useInput((input, key) => {
@@ -231,7 +242,7 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
                   borderRight={false}
                   paddingX={1}
                 >
-                  <SteerQueueList items={queuedSteers} columns={columns} />
+                  <PendingSubmissionList items={pendingSubmissions} columns={columns} />
                   {isAgentWorking ? <Text dimColor> · /stop or Esc to interrupt</Text> : null}
                   <MessageComposer
                     label=""

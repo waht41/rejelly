@@ -9,7 +9,8 @@ import {
   type SubmissionDispatchPorts,
   setRunningCommandHandler,
 } from "./dispatcher";
-import { enqueueSteer } from "./steerQueue";
+import { getPendingSubmissions } from "./pendingSubmissions";
+import { drainSteers, enqueueSteer } from "./steerQueue";
 
 function createPorts() {
   const restored: PromptInput[] = [];
@@ -108,7 +109,7 @@ describe("submission dispatcher", () => {
     await expect(dispatcher.getInput()).resolves.toEqual(textPromptInput(text));
   });
 
-  it("executes registered safe commands immediately while the agent is running", () => {
+  it("executes registered safe commands without placing them in the model steer queue", () => {
     const { ports, logs } = createPorts();
     const handler = vi.fn((commandText: string) => commandText === "/status");
     setRunningCommandHandler(handler);
@@ -117,6 +118,8 @@ describe("submission dispatcher", () => {
     dispatcher.submit(textPromptInput("/status"));
 
     expect(handler).toHaveBeenCalledWith("/status");
+    expect(drainSteers()).toEqual([]);
+    expect(getPendingSubmissions()).toEqual([]);
     expect(logs).toEqual([]);
   });
 
