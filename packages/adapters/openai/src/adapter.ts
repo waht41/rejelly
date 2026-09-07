@@ -71,12 +71,19 @@ const OPENAI_CHAT_STATE_VERSION = 1;
 function createChatProviderState(
   provider: string | undefined,
   endpoint: string,
-  reasoningDetails: OpenAIReasoningDetail[],
+  reasoningContent: string | undefined,
+  reasoningDetails: OpenAIReasoningDetail[] | undefined,
 ): ProviderState {
   return {
     kind: OPENAI_CHAT_STATE_KIND,
     version: OPENAI_CHAT_STATE_VERSION,
-    payload: { endpoint, ...(provider !== undefined && { provider }), reasoningDetails },
+    payload: {
+      protocol: "chat_completions",
+      endpoint,
+      ...(provider !== undefined && { provider }),
+      ...(reasoningContent !== undefined && { reasoningContent }),
+      ...(reasoningDetails !== undefined && { reasoningDetails }),
+    },
   };
 }
 
@@ -253,6 +260,7 @@ async function* streamHandler(
     const toolCallsMap = new Map<number, { id: string; name: string }>();
     const reasoningDetails = new Map<string, OpenAIReasoningDetail>();
     const reasoningDetailOrder: string[] = [];
+    let reasoningContent = "";
     let lastUsage: TokenUsage | undefined;
     let lastFinishReason: FinishReason | undefined;
 
@@ -264,6 +272,7 @@ async function* streamHandler(
       const delta = choice?.delta as OpenAIChoiceDeltaLike | undefined;
       const reasoning = extractReasoningFromDelta(delta);
       if (reasoning) {
+        reasoningContent += reasoning;
         yield { type: "reasoning", content: reasoning };
       }
 
@@ -323,14 +332,19 @@ async function* streamHandler(
       }
     }
 
-    if (reasoningDetailOrder.length > 0) {
+    if (reasoningContent.length > 0 || reasoningDetailOrder.length > 0) {
       const completeDetails = reasoningDetailOrder.flatMap((key) => {
         const detail = reasoningDetails.get(key);
         return detail ? [detail] : [];
       });
       yield {
         type: "state",
-        state: createChatProviderState(provider, client.baseURL, completeDetails),
+        state: createChatProviderState(
+          provider,
+          client.baseURL,
+          reasoningContent || undefined,
+          completeDetails.length > 0 ? completeDetails : undefined,
+        ),
       };
     }
 

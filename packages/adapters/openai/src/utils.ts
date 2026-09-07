@@ -36,7 +36,8 @@ type OpenAIChatIdentity = {
 
 type OpenAIChatMetadata = {
   endpoint: string;
-  reasoningDetails: JsonObject[];
+  reasoningContent?: string;
+  reasoningDetails?: JsonObject[];
 };
 
 const OPENAI_CHAT_STATE_VERSION = 1;
@@ -61,24 +62,31 @@ function stateChatMetadataFor(
   ) {
     return undefined;
   }
+  const protocol = state.payload.protocol;
   const endpoint = state.payload.endpoint;
   const provider = state.payload.provider;
+  const reasoningContent = state.payload.reasoningContent;
   const reasoningDetails = state.payload.reasoningDetails;
   if (
+    protocol !== "chat_completions" ||
     typeof endpoint !== "string" ||
     normalizedEndpoint(endpoint) !== normalizedEndpoint(identity.endpoint) ||
     (provider !== undefined && typeof provider !== "string") ||
     provider !== identity.provider ||
-    !Array.isArray(reasoningDetails) ||
-    !reasoningDetails.every(
-      (detail) => detail !== null && typeof detail === "object" && !Array.isArray(detail),
-    )
+    (reasoningContent !== undefined && typeof reasoningContent !== "string") ||
+    (reasoningDetails !== undefined &&
+      (!Array.isArray(reasoningDetails) ||
+        !reasoningDetails.every(
+          (detail) => detail !== null && typeof detail === "object" && !Array.isArray(detail),
+        ))) ||
+    (typeof reasoningContent !== "string" && !Array.isArray(reasoningDetails))
   ) {
     return undefined;
   }
   return {
     endpoint,
-    reasoningDetails: reasoningDetails as JsonObject[],
+    ...(typeof reasoningContent === "string" && { reasoningContent }),
+    ...(Array.isArray(reasoningDetails) && { reasoningDetails: reasoningDetails as JsonObject[] }),
   };
 }
 
@@ -244,8 +252,9 @@ export function toOpenAIMessages(
         break;
       case "assistant": {
         const content = convertContentToString(msg.content);
-        const reasoningContent = msg.reasoning_content;
-        const reasoningDetails = stateChatMetadataFor(msg, identity)?.reasoningDetails;
+        const reasoningState = stateChatMetadataFor(msg, identity);
+        const reasoningContent = reasoningState?.reasoningContent;
+        const reasoningDetails = reasoningState?.reasoningDetails;
         if (msg.tool_calls?.length) {
           const assistantMessage: OpenAIReasoningAssistantMessageParam = {
             role: "assistant",

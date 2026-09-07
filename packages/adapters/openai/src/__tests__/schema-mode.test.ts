@@ -51,6 +51,25 @@ async function* reasoningDetailsChunks() {
   };
 }
 
+async function* plaintextReasoningChunks() {
+  yield {
+    choices: [
+      {
+        delta: { reasoning_content: "plain-" },
+        finish_reason: null,
+      },
+    ],
+  };
+  yield {
+    choices: [
+      {
+        delta: { reasoning_content: "reasoning" },
+        finish_reason: "stop",
+      },
+    ],
+  };
+}
+
 async function* reasoningSummaryOnlyChunks() {
   yield {
     choices: [
@@ -154,6 +173,37 @@ describe("OpenAI adapter schemaMode request building", () => {
     expect(params.response_format).toBeUndefined();
   });
 
+  it("stores plaintext reasoning_content as provider-scoped replay state", async () => {
+    mocks.create.mockImplementation(() => plaintextReasoningChunks());
+    const adapter = createOpenAIAdapter({
+      modelId: "test-model",
+      apiKey: "test-key",
+      baseURL: "https://mock.test/v1",
+      provider: "deepseek",
+    });
+    const events = [];
+
+    for await (const event of adapter.stream([{ role: "user", content: "hi" }])) {
+      events.push(event);
+    }
+
+    expect(events.filter((event) => event.type === "state")).toEqual([
+      {
+        type: "state",
+        state: {
+          kind: "@rejelly/adapter-openai/chat-completions",
+          version: 1,
+          payload: {
+            protocol: "chat_completions",
+            endpoint: "https://mock.test/v1",
+            provider: "deepseek",
+            reasoningContent: "plain-reasoning",
+          },
+        },
+      },
+    ]);
+  });
+
   it("uses reasoning_details summary for display when no top-level reasoning field exists", async () => {
     mocks.create.mockImplementation(() => reasoningSummaryOnlyChunks());
     const adapter = createOpenAIAdapter({
@@ -177,7 +227,7 @@ describe("OpenAI adapter schemaMode request building", () => {
     );
   });
 
-  it("aggregates compatible reasoning_details and emits complete metadata once", async () => {
+  it("aggregates plaintext and opaque Chat reasoning into one provider state", async () => {
     mocks.create.mockImplementation(() => reasoningDetailsChunks());
     const adapter = createOpenAIAdapter({
       modelId: "test-model",
@@ -198,8 +248,10 @@ describe("OpenAI adapter schemaMode request building", () => {
           kind: "@rejelly/adapter-openai/chat-completions",
           version: 1,
           payload: {
+            protocol: "chat_completions",
             endpoint: "https://mock.test/v1",
             provider: "openrouter",
+            reasoningContent: "thinking",
             reasoningDetails: [
               { type: "reasoning.summary", index: 0, summary: "sum" },
               {

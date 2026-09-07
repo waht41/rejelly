@@ -107,6 +107,7 @@ function responsesStateFor(
   );
   if (
     !state ||
+    state.payload.protocol !== "responses" ||
     normalizedEndpoint(String(state.payload.endpoint ?? "")) !==
       normalizedEndpoint(identity.endpoint) ||
     state.payload.provider !== identity.provider
@@ -282,6 +283,7 @@ function createResponsesProviderState(
     kind: OPENAI_RESPONSES_STATE_KIND,
     version: OPENAI_RESPONSES_STATE_VERSION,
     payload: {
+      protocol: "responses",
       endpoint: identity.endpoint,
       ...(identity.provider !== undefined && { provider: identity.provider }),
       responseId: response.id,

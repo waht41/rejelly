@@ -112,7 +112,7 @@ describe("OpenAI message conversion", () => {
     ]);
   });
 
-  it("replays provider-state Chat reasoning details only to the same provider endpoint", () => {
+  it("replays provider-state Chat reasoning only to the same provider endpoint", () => {
     const reasoningDetails: JsonObject[] = [
       { type: "reasoning.summary", index: 0, summary: "summary" },
       { type: "reasoning.encrypted", index: 1, data: "opaque-payload", signature: "sig" },
@@ -125,8 +125,10 @@ describe("OpenAI message conversion", () => {
           kind: "@rejelly/adapter-openai/chat-completions",
           version: 1,
           payload: {
+            protocol: "chat_completions",
             endpoint: "https://openrouter.ai/api/v1/",
             provider: "openrouter",
+            reasoningContent: "native reasoning",
             reasoningDetails,
           },
         },
@@ -138,7 +140,14 @@ describe("OpenAI message conversion", () => {
         provider: "openrouter",
         endpoint: "https://openrouter.ai/api/v1",
       }),
-    ).toEqual([{ role: "assistant", content: "answer", reasoning_details: reasoningDetails }]);
+    ).toEqual([
+      {
+        role: "assistant",
+        content: "answer",
+        reasoning_content: "native reasoning",
+        reasoning_details: reasoningDetails,
+      },
+    ]);
     expect(
       toOpenAIMessages([message], {
         provider: "openai",
@@ -147,13 +156,13 @@ describe("OpenAI message conversion", () => {
     ).toEqual([{ role: "assistant", content: "answer" }]);
   });
 
-  it("never invents reasoning details for official Chat messages", () => {
+  it("does not replay display-only reasoning_content without matching provider state", () => {
     expect(
       toOpenAIMessages(
         [{ role: "assistant", content: "answer", reasoning_content: "visible reasoning" }],
         { provider: "openai", endpoint: "https://api.openai.com/v1" },
       ),
-    ).toEqual([{ role: "assistant", content: "answer", reasoning_content: "visible reasoning" }]);
+    ).toEqual([{ role: "assistant", content: "answer" }]);
   });
 
   it("keeps user image content as multimodal Chat Completions content", () => {

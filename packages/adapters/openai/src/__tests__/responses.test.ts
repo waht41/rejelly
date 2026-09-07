@@ -150,6 +150,7 @@ describe("OpenAI Responses adapter", () => {
           kind: "@rejelly/adapter-openai/responses",
           version: 1,
           payload: {
+            protocol: "responses",
             endpoint: "https://mock.test/v1",
             provider: "openrouter",
             responseId: "resp_1",
@@ -328,6 +329,7 @@ describe("OpenAI Responses adapter", () => {
           kind: "@rejelly/adapter-openai/responses",
           version: 1,
           payload: {
+            protocol: "responses",
             endpoint: "https://mock.test/v1/",
             responseId: "resp_1",
             outputItems,
