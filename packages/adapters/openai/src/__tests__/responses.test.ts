@@ -390,7 +390,7 @@ describe("OpenAI Responses adapter", () => {
     expect(mocks.create.mock.calls[0][0]).toMatchObject({
       instructions: "be precise",
       text: { format: { type: "json_schema", name: "response", schema, strict: true } },
-      tools: [{ type: "function", name: "lookup", description: "Lookup", strict: true }],
+      tools: [{ type: "function", name: "lookup", description: "Lookup", strict: false }],
       tool_choice: { type: "function", name: "lookup" },
       input: [
         {
@@ -402,6 +402,7 @@ describe("OpenAI Responses adapter", () => {
         },
       ],
     });
+    expect(mocks.create.mock.calls[0][0].tools[0]).toHaveProperty("strict", false);
   });
 
   it.each<[ResponseParams, string]>([

@@ -219,7 +219,9 @@ function toOpenAIResponseTools(tools: ToolDefinition[]): FunctionTool[] {
       string,
       unknown
     >,
-    strict: true,
+    // Responses may normalize an omitted value into strict mode. Evil's tool schemas preserve
+    // Zod optional/default fields, so opt out explicitly instead of sending an invalid strict schema.
+    strict: false,
   }));
 }
 
