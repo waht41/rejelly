@@ -271,6 +271,57 @@ describe("full conversation turn", () => {
   });
 });
 
+describe("safe output boundaries", () => {
+  it("waits for the current assistant stream segment to finish", () => {
+    vi.useFakeTimers();
+    const operation = vi.fn();
+    const store = useOutputStore.getState();
+
+    store.appendStream("partial response");
+    store.runAtSafeOutputBoundary(operation);
+    vi.advanceTimersByTime(50);
+
+    expect(operation).not.toHaveBeenCalled();
+    store.logAssistant("partial response");
+    expect(operation).toHaveBeenCalledOnce();
+  });
+
+  it("waits for every tool in the current parallel batch", () => {
+    const operation = vi.fn();
+    const store = useOutputStore.getState();
+    const first = store.beginTool({ toolName: "read_file", summary: "[Tools] read a" });
+    const second = store.beginTool({ toolName: "read_file", summary: "[Tools] read b" });
+    store.runAtSafeOutputBoundary(operation);
+
+    const block = (handle: typeof first, summary: string): ToolBlock => ({
+      id: handle.id,
+      ordinal: handle.ordinal,
+      toolName: "read_file",
+      summary,
+      preview: "",
+      fullResult: "",
+      ok: true,
+    });
+    store.logTool(block(first, "[Tools] read a"));
+    expect(operation).not.toHaveBeenCalled();
+
+    store.logTool(block(second, "[Tools] read b"));
+    expect(operation).toHaveBeenCalledOnce();
+  });
+
+  it("cancels deferred work on session reset", () => {
+    const operation = vi.fn();
+    const store = useOutputStore.getState();
+    store.appendStream("partial response");
+    store.runAtSafeOutputBoundary(operation);
+
+    resetOutputSession();
+    useOutputStore.getState().logAssistant("later");
+
+    expect(operation).not.toHaveBeenCalled();
+  });
+});
+
 describe("tool phase", () => {
   it("holds one timer across a parallel batch and releases it when the last tool ends", () => {
     const store = useOutputStore.getState();

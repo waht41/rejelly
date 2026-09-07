@@ -94,7 +94,24 @@ interface OutputState extends RunningToolsState, RuntimeStatusState {
   clearStream: () => void;
   clearHistory: () => void;
   hydrateHistory: (items: readonly TranscriptItem[]) => void;
+  runAtSafeOutputBoundary: (operation: () => void) => () => void;
 }
+let assistantSegmentActive = false;
+let nextSafeBoundaryOperationId = 1;
+const safeBoundaryOperations = new Map<number, () => void>();
+
+function isAtSafeOutputBoundary(): boolean {
+  return !assistantSegmentActive && useOutputStore.getState().runningTools.length === 0;
+}
+
+function flushSafeBoundaryOperations(): void {
+  if (!isAtSafeOutputBoundary()) return;
+  for (const [id, operation] of [...safeBoundaryOperations]) {
+    safeBoundaryOperations.delete(id);
+    operation();
+  }
+}
+
 const runningToolOutput = new RunningToolOutputBuffer((drained) => {
   useOutputStore.setState((state) => ({
     runningTools: applyRunningToolOutput(state.runningTools, drained),
@@ -116,10 +133,12 @@ export const useOutputStore = create<OutputState>((set) => ({
   toolCallGeneration: null,
 
   appendStream: (text) => {
+    assistantSegmentActive = true;
     assistantStream.append(text);
   },
 
   beginTool: ({ toolName, summary }) => {
+    assistantSegmentActive = false;
     // Numbered here, when the call starts, so parallel tools read in the order
     // the model issued them rather than the order they happen to finish in.
     const ordinal = historySequence.nextToolOrdinal();
@@ -184,6 +203,7 @@ export const useOutputStore = create<OutputState>((set) => ({
 
   logAssistant: (content) => {
     const { visualRemainder, shouldHideFinal } = assistantStream.finalize(content);
+    assistantSegmentActive = false;
     set((state) => {
       const duration =
         state.runtime.turnStartedAt === null
@@ -203,12 +223,14 @@ export const useOutputStore = create<OutputState>((set) => ({
         runtime: idleRuntime(),
       };
     });
+    flushSafeBoundaryOperations();
   },
 
   logToolRound: (calls) => {
     // Same commit-before-interrupting rule as logSystem: the text that introduced this batch
     // is still the transient tail, and it was written before the header.
     const tail = assistantStream.drain();
+    assistantSegmentActive = false;
     set((state) => ({
       history: [
         ...state.history,
@@ -217,6 +239,7 @@ export const useOutputStore = create<OutputState>((set) => ({
       ],
       streamBuffer: "",
     }));
+    flushSafeBoundaryOperations();
   },
 
   logTool: (block: ToolBlock) => {
@@ -249,13 +272,17 @@ export const useOutputStore = create<OutputState>((set) => ({
       }
       return patch;
     });
+    assistantSegmentActive = false;
+    flushSafeBoundaryOperations();
   },
 
   logDiff: (diff) => {
     assistantStream.flush();
+    assistantSegmentActive = false;
     set((state) => ({
       history: [...state.history, diffTurn(historySequence, diff)],
     }));
+    flushSafeBoundaryOperations();
   },
 
   logBanner: (banner) =>
@@ -276,6 +303,7 @@ export const useOutputStore = create<OutputState>((set) => ({
     // "here is what I am about to do" output takes. Discarding it here erased that
     // reasoning from the transcript at every auto-allowed call.
     const tail = assistantStream.drain();
+    assistantSegmentActive = false;
     set((state) => ({
       history: [
         ...state.history,
@@ -285,10 +313,13 @@ export const useOutputStore = create<OutputState>((set) => ({
       ],
       streamBuffer: "",
     }));
+    flushSafeBoundaryOperations();
   },
 
   clearStream: () => {
     clearStreamState();
+    assistantSegmentActive = false;
+    safeBoundaryOperations.clear();
     set({ streamBuffer: "", runningTools: [], toolCallGeneration: null, runtime: idleRuntime() });
   },
   clearHistory: () => {
@@ -296,6 +327,8 @@ export const useOutputStore = create<OutputState>((set) => ({
     // Ordinals restart because `/expand-tool #N` searches the tool archive, which is now empty.
     historySequence.resetToolOrdinals();
     clearStreamState();
+    assistantSegmentActive = false;
+    safeBoundaryOperations.clear();
     set((state) => ({
       clearedStaticTurns: [...state.clearedStaticTurns, ...state.history],
       history: [],
@@ -306,8 +339,22 @@ export const useOutputStore = create<OutputState>((set) => ({
       runtime: idleRuntime(),
     }));
   },
+  runAtSafeOutputBoundary: (operation) => {
+    if (isAtSafeOutputBoundary()) {
+      operation();
+      return () => undefined;
+    }
+    const id = nextSafeBoundaryOperationId++;
+    safeBoundaryOperations.set(id, operation);
+    return () => {
+      safeBoundaryOperations.delete(id);
+    };
+  },
+
   hydrateHistory: (items) => {
     clearStreamState();
+    assistantSegmentActive = false;
+    safeBoundaryOperations.clear();
     const projected = projectTranscriptHistory(items, historySequence);
     const visibleItems = tailTranscriptByInitialTurns(items, RESUME_VISIBLE_TURNS);
     const visibleProjected = projected.slice(projected.length - visibleItems.length);
@@ -326,6 +373,8 @@ export const useOutputStore = create<OutputState>((set) => ({
 export function resetOutputSession(): void {
   historySequence.reset();
   clearStreamState();
+  assistantSegmentActive = false;
+  safeBoundaryOperations.clear();
   useOutputStore.setState({
     streamBuffer: "",
     runningTools: [],

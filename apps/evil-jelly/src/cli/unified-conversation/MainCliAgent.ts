@@ -68,6 +68,11 @@ import {
 import { materializeSkillAwareUserInput } from "../message-composer/message-materialization/skillAwareUserMessage";
 import { memoryReferenceName } from "../message-composer/suggestions/semantic-reference/referenceNaming";
 import { withAbort } from "../runtime/withAbort";
+import { setRunningCommandHandler } from "../submission-dispatch/dispatcher";
+import {
+  ensurePendingCommand,
+  removePendingSubmission,
+} from "../submission-dispatch/pendingSubmissions";
 import { drainSteers } from "../submission-dispatch/steerQueue";
 import { combineSessionBudget } from "./budget";
 import { handleMcpCommand, isMcpLocalCommand } from "./mcpCommands";
@@ -495,6 +500,81 @@ async function handleSkills(runtime: RouterRuntime, rawInput: string): Promise<v
   });
 }
 
+function createRunningCommandController(runtime: RouterRuntime): {
+  handle: (commandText: string) => boolean;
+  flushDeferred: () => void;
+  waitForPending: () => Promise<void>;
+  dispose: () => void;
+} {
+  const pending = new Set<Promise<void>>();
+  let statusPending = false;
+  let pendingStatusId: string | undefined;
+  let cancelScheduledStatus: (() => void) | undefined;
+  const start = (operation: () => Promise<void>) => {
+    const task = operation()
+      .catch((error) =>
+        runtime.host.logSystemEvent(
+          `Background command failed: ${formatPersistenceError(error)}\n`,
+        ),
+      )
+      .finally(() => pending.delete(task));
+    pending.add(task);
+  };
+
+  return {
+    handle: (commandText) => {
+      const normalized = commandText.trim().toLowerCase();
+      if (normalized === "/status") {
+        if (statusPending) return true;
+
+        statusPending = true;
+        pendingStatusId = ensurePendingCommand("/status").id;
+        const runStatus = () => {
+          if (!statusPending) return;
+          statusPending = false;
+          cancelScheduledStatus = undefined;
+          if (pendingStatusId) removePendingSubmission(pendingStatusId);
+          pendingStatusId = undefined;
+          handleStatus(runtime);
+        };
+        cancelScheduledStatus = runtime.host.runAtSafeOutputBoundary?.(runStatus);
+        return true;
+      }
+      if (isSkillsLocalCommand(commandText)) {
+        start(() => handleSkills(runtime, commandText));
+        return true;
+      }
+      if (isMemoryLocalCommand(commandText)) {
+        start(() => handleMemory(runtime, commandText));
+        return true;
+      }
+      if (isMcpLocalCommand(commandText)) {
+        start(() => handleMcp(runtime, commandText));
+        return true;
+      }
+      return false;
+    },
+    flushDeferred: () => {
+      if (!statusPending) return;
+      cancelScheduledStatus?.();
+      statusPending = false;
+      if (pendingStatusId) removePendingSubmission(pendingStatusId);
+      pendingStatusId = undefined;
+      handleStatus(runtime);
+    },
+    waitForPending: async () => {
+      while (pending.size > 0) await Promise.all([...pending]);
+    },
+    dispose: () => {
+      cancelScheduledStatus?.();
+      cancelScheduledStatus = undefined;
+      statusPending = false;
+      if (pendingStatusId) removePendingSubmission(pendingStatusId);
+      pendingStatusId = undefined;
+    },
+  };
+}
+
 function formatPersistenceError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -668,6 +748,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
     // equipMemory getters are frozen at entry, so we mirror writes here for same-turn reads).
     let liveContextTokens = storedContextTokens;
     let liveCacheTokens = storedCacheTokens;
+    let liveRunAggregate = getUsageStats().aggregate;
     let liveSessionMcpState = storedSessionMcpState;
     let liveNextImageOrdinal = storedNextImageOrdinal;
     let liveContextTokenAnchor = storedContextTokenAnchor ?? undefined;
@@ -685,7 +766,9 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
     // the parent chain). Token-metered tools also contribute prompt tokens, but they do not occupy
     // the Chat context and must not replace the latest direct model-call snapshot.
     equipBudget({
-      onUpdate: ({ delta }) => {
+      onUpdate: ({ delta, aggregate }) => {
+        // Keep a context-independent mirror for terminal callbacks such as running `/status`.
+        liveRunAggregate = aggregate;
         if (delta.promptTokens > 0 && delta.items.some((item) => item.type === "model")) {
           liveContextTokens = delta.promptTokens;
           setLastContextTokens(delta.promptTokens);
@@ -698,7 +781,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
 
     // Cumulative session usage = resumed base + this run's aggregate (self + all sub-agents).
     const currentBudget = (): SessionBudget =>
-      combineSessionBudget(props.seedBudget, getUsageStats().aggregate, {
+      combineSessionBudget(props.seedBudget, liveRunAggregate, {
         contextTokens: liveContextTokens,
         cacheReadTokens: liveCacheTokens,
       });
@@ -780,9 +863,19 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
         case "skills":
           await handleSkills(runtime, intent.rawInput);
           return reborn();
-        case "message":
-          await runConversationTurn(runtime, intent.promptInput, intent.userInput);
+        case "message": {
+          const runningCommands = createRunningCommandController(runtime);
+          const disposeRunningCommands = setRunningCommandHandler(runningCommands.handle);
+          try {
+            await runConversationTurn(runtime, intent.promptInput, intent.userInput);
+            await runningCommands.waitForPending();
+            runningCommands.flushDeferred();
+          } finally {
+            runningCommands.dispose();
+            disposeRunningCommands();
+          }
           return reborn();
+        }
       }
     } catch (error) {
       if (isAbortError(error)) {

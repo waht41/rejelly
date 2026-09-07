@@ -156,6 +156,7 @@ function createOutputBindings(): ConversationPresentationBindings {
     onToolCallGenerationUpdate: (progress) => {
       out().setToolCallGeneration(progress);
     },
+    runAtSafeOutputBoundary: (operation) => out().runAtSafeOutputBoundary(operation),
     onTurnStart: () => {
       out().beginTurn();
     },

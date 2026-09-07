@@ -7,8 +7,10 @@ import {
   createSubmissionDispatcher,
   resetSubmissionDispatch,
   type SubmissionDispatchPorts,
+  setRunningCommandHandler,
 } from "./dispatcher";
-import { enqueueSteer } from "./steerQueue";
+import { getPendingSubmissions } from "./pendingSubmissions";
+import { drainSteers, enqueueSteer } from "./steerQueue";
 
 function createPorts() {
   const restored: PromptInput[] = [];
@@ -89,6 +91,51 @@ describe("submission dispatcher", () => {
     expect(aborts).toEqual([]);
     expect(logs).toEqual([]);
     await expect(dispatcher.getInput()).resolves.toEqual(textPromptInput("/status"));
+  });
+
+  it.each([
+    "/** comment */",
+    "// comment",
+    "/path/to/file",
+    "/foo/",
+    "/status later",
+  ])("routes leading-slash text as an ordinary steer: %s", async (text) => {
+    const { ports, logs } = createPorts();
+    const dispatcher = createSubmissionDispatcher(ports);
+
+    dispatcher.submit(textPromptInput(text));
+
+    expect(logs).toEqual([]);
+    await expect(dispatcher.getInput()).resolves.toEqual(textPromptInput(text));
+  });
+
+  it("executes registered safe commands without placing them in the model steer queue", () => {
+    const { ports, logs } = createPorts();
+    const handler = vi.fn((commandText: string) => commandText === "/status");
+    setRunningCommandHandler(handler);
+    const dispatcher = createSubmissionDispatcher(ports);
+
+    dispatcher.submit(textPromptInput("/status"));
+
+    expect(handler).toHaveBeenCalledWith("/status");
+    expect(drainSteers()).toEqual([]);
+    expect(getPendingSubmissions()).toEqual([]);
+    expect(logs).toEqual([]);
+  });
+
+  it("continues to reject clear, resume, and compression while the agent is running", () => {
+    const { ports, logs } = createPorts();
+    const dispatcher = createSubmissionDispatcher(ports);
+
+    dispatcher.submit(textPromptInput("/clear"));
+    dispatcher.submit(textPromptInput("/resume session-1"));
+    dispatcher.submit(textPromptInput("/compress"));
+
+    expect(logs).toEqual([
+      "/clear is not available while the agent is running.",
+      "/resume session-1 is not available while the agent is running.",
+      "/compress is not available while the agent is running.",
+    ]);
   });
 
   it("does not route a rich document as a local command", async () => {
