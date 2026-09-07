@@ -14,3 +14,8 @@ export type {
   SchemaMode,
 } from "./adapter";
 export { createOpenAIAdapter } from "./adapter";
+export { OPENAI_CHAT_STATE_KIND, OPENAI_RESPONSES_STATE_KIND } from "./identity";
+export type { ResponseParams } from "./responses";
+export { toOpenAIResponseInput } from "./responses";
+export type { OpenAIUsageProtocol } from "./usage";
+export { normalizeOpenAIUsage } from "./usage";

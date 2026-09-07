@@ -278,6 +278,50 @@ describe("promptChat", () => {
     expect(searchHandler).toHaveBeenCalledWith({ query: "test" });
   });
 
+  it("preserves reasoning content across tool loop turns", async () => {
+    const mock = createMockModel();
+    let observedSecondTurnMessages: Array<{
+      role: string;
+      reasoning_content?: string;
+    }> | null = null;
+
+    mock.sequence([
+      {
+        type: "tool_calls",
+        calls: [{ id: "call_1", name: "search", arguments: { query: "test" } }],
+        reasoning: "private reasoning",
+      },
+      {
+        type: "custom",
+        handler: async (payload) => {
+          observedSecondTurnMessages = payload.messages as typeof observedSecondTurnMessages;
+          return "final answer";
+        },
+      },
+    ]);
+
+    const agent = createAgent({
+      id: "prompt_chat_reasoning",
+      model: mock.adapter,
+      handler: async () => {
+        equipTool({
+          name: "search",
+          description: "Search for data",
+          parameters: z.object({ query: z.string() }),
+          handler: async () => ({ result: "ok" }),
+        });
+        return promptChat();
+      },
+    });
+
+    await agent({});
+
+    expect(
+      observedSecondTurnMessages!.find((message) => message.role === "assistant")
+        ?.reasoning_content,
+    ).toBe("private reasoning");
+  });
+
   it("preserves tool_call extra and message extra across tool loop turns", async () => {
     const mock = createMockModel();
     let observedSecondTurnMessages: Array<{

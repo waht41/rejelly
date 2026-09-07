@@ -5,6 +5,7 @@
 
 import type {
   ContentPart,
+  JsonObject,
   Message,
   ModelErrorCode,
   ToolChoice,
@@ -21,10 +22,73 @@ import type {
   ChatCompletionToolChoiceOption,
 } from "openai/resources/chat/completions/completions";
 import { zodToJsonSchema } from "zod-to-json-schema";
+import { OPENAI_CHAT_STATE_KIND } from "./identity";
 
 type OpenAIReasoningAssistantMessageParam = ChatCompletionAssistantMessageParam & {
   reasoning_content?: string;
+  reasoning_details?: Record<string, unknown>[];
 };
+
+type OpenAIChatIdentity = {
+  provider?: string;
+  endpoint?: string;
+};
+
+type OpenAIChatMetadata = {
+  endpoint: string;
+  reasoningContent?: string;
+  reasoningDetails?: JsonObject[];
+};
+
+const OPENAI_CHAT_STATE_VERSION = 1;
+
+function normalizedEndpoint(value: string | undefined): string | undefined {
+  return value?.replace(/\/+$/, "").toLowerCase();
+}
+
+function stateChatMetadataFor(
+  message: Message,
+  identity: OpenAIChatIdentity,
+): OpenAIChatMetadata | undefined {
+  const state = message.provider_state?.find(
+    (candidate) =>
+      candidate.kind === OPENAI_CHAT_STATE_KIND && candidate.version === OPENAI_CHAT_STATE_VERSION,
+  );
+  if (
+    !state ||
+    !state.payload ||
+    typeof state.payload !== "object" ||
+    Array.isArray(state.payload)
+  ) {
+    return undefined;
+  }
+  const protocol = state.payload.protocol;
+  const endpoint = state.payload.endpoint;
+  const provider = state.payload.provider;
+  const reasoningContent = state.payload.reasoningContent;
+  const reasoningDetails = state.payload.reasoningDetails;
+  if (
+    protocol !== "chat_completions" ||
+    typeof endpoint !== "string" ||
+    normalizedEndpoint(endpoint) !== normalizedEndpoint(identity.endpoint) ||
+    (provider !== undefined && typeof provider !== "string") ||
+    provider !== identity.provider ||
+    (reasoningContent !== undefined && typeof reasoningContent !== "string") ||
+    (reasoningDetails !== undefined &&
+      (!Array.isArray(reasoningDetails) ||
+        !reasoningDetails.every(
+          (detail) => detail !== null && typeof detail === "object" && !Array.isArray(detail),
+        ))) ||
+    (typeof reasoningContent !== "string" && !Array.isArray(reasoningDetails))
+  ) {
+    return undefined;
+  }
+  return {
+    endpoint,
+    ...(typeof reasoningContent === "string" && { reasoningContent }),
+    ...(Array.isArray(reasoningDetails) && { reasoningDetails: reasoningDetails as JsonObject[] }),
+  };
+}
 
 // ── Schema injection (for models without native JSON Schema support) ───
 
@@ -172,7 +236,10 @@ export function convertContentMultimodal(
  * (e.g. an image returned via `toolContent`) is automatically split into two messages: a text
  * tool result plus a follow-up `user` message holding the media, so the model can actually see it.
  */
-export function toOpenAIMessages(messages: Message[]): ChatCompletionMessageParam[] {
+export function toOpenAIMessages(
+  messages: Message[],
+  identity: OpenAIChatIdentity = {},
+): ChatCompletionMessageParam[] {
   const result: ChatCompletionMessageParam[] = [];
   const wireMessages = messages.map(withoutRejellyInternalExtra);
   for (const msg of mergeConsecutiveSameRoleMessages(wireMessages)) {
@@ -185,7 +252,9 @@ export function toOpenAIMessages(messages: Message[]): ChatCompletionMessagePara
         break;
       case "assistant": {
         const content = convertContentToString(msg.content);
-        const reasoningContent = msg.reasoning_content;
+        const reasoningState = stateChatMetadataFor(msg, identity);
+        const reasoningContent = reasoningState?.reasoningContent;
+        const reasoningDetails = reasoningState?.reasoningDetails;
         if (msg.tool_calls?.length) {
           const assistantMessage: OpenAIReasoningAssistantMessageParam = {
             role: "assistant",
@@ -199,6 +268,9 @@ export function toOpenAIMessages(messages: Message[]): ChatCompletionMessagePara
           if (reasoningContent) {
             assistantMessage.reasoning_content = reasoningContent;
           }
+          if (reasoningDetails?.length) {
+            assistantMessage.reasoning_details = reasoningDetails;
+          }
           result.push(assistantMessage);
           break;
         }
@@ -208,6 +280,9 @@ export function toOpenAIMessages(messages: Message[]): ChatCompletionMessagePara
         };
         if (reasoningContent) {
           assistantMessage.reasoning_content = reasoningContent;
+        }
+        if (reasoningDetails?.length) {
+          assistantMessage.reasoning_details = reasoningDetails;
         }
         result.push(assistantMessage);
         break;
