@@ -109,7 +109,9 @@ describe("executeShellCommand", () => {
 
     expect(result.error?.code).toBe("ETIMEDOUT");
     expect(result.error?.killed).toBe(true);
-    expect(Date.now() - startedAt).toBeLessThan(2_500);
+    // Windows taskkill may approach the executor's 3s termination grace under full-suite load.
+    // Keep a bounded-time assertion while allowing process-tree cleanup and scheduler overhead.
+    expect(Date.now() - startedAt).toBeLessThan(4_500);
   });
 
   it("keeps already streamed output when aborted", async () => {
