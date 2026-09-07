@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import type { JsonObject } from "@rejelly/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createSessionMetaLine,
@@ -78,6 +79,56 @@ describe("sessionJsonlStore", () => {
     await expect(
       readSessionMetaLine(workspaceRoot, "session-1", { sessionsRoot }),
     ).resolves.toMatchObject({ sessionId: "session-1", createdAt: 100 });
+  });
+
+  it("round-trips durable provider state without changing opaque payloads", async () => {
+    const reasoningDetails: JsonObject[] = [
+      { type: "reasoning.summary", index: 0, summary: "summary" },
+      {
+        type: "reasoning.encrypted",
+        index: 1,
+        data: "opaque-encrypted-payload",
+        signature: "signature-bytes",
+        format: "openai-responses-v1",
+      },
+    ];
+    const writer = await openSessionWriter(meta(), { sessionsRoot });
+    await writer.append({
+      type: "message_recorded",
+      turnId: "turn-1",
+      source: { kind: "model" },
+      message: {
+        role: "assistant",
+        content: "answer",
+        provider_state: [
+          {
+            kind: "@rejelly/adapter-openai/chat-completions",
+            version: 1,
+            payload: {
+              endpoint: "https://openrouter.ai/api/v1",
+              provider: "openrouter",
+              reasoningDetails,
+            },
+          },
+        ],
+      },
+    });
+    await writer.close();
+
+    const result = await readSessionEvents(workspaceRoot, "session-1", { sessionsRoot });
+    expect(result.events[0]).toMatchObject({
+      type: "message_recorded",
+      message: {
+        provider_state: [
+          {
+            kind: "@rejelly/adapter-openai/chat-completions",
+            version: 1,
+            payload: { provider: "openrouter", reasoningDetails },
+          },
+        ],
+      },
+    });
+    expect(JSON.stringify(result.events[0])).toContain("opaque-encrypted-payload");
   });
 
   it("rejects a second active writer for the same session", async () => {

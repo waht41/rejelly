@@ -80,6 +80,9 @@ function messageFromLLMResult(llmResult: LLMCallResult): Message {
   if (llmResult.extra && Object.keys(llmResult.extra).length > 0) {
     message.extra = llmResult.extra;
   }
+  if (llmResult.providerState && llmResult.providerState.length > 0) {
+    message.provider_state = llmResult.providerState;
+  }
   return message;
 }
 

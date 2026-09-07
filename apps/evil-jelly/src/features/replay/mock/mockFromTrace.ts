@@ -2,10 +2,10 @@ import {
   type AgentSnapshot,
   type AgentStartEvent,
   EVENTS,
-  type Message,
   type ModelAdapter,
   type StreamEvent,
   type TraceEvent,
+  type TraceMessage,
   type TurnEndEvent,
 } from "@rejelly/core";
 import { restoreSnapshot } from "@rejelly/core/debugger";
@@ -41,7 +41,7 @@ function isAgentStartEvent(event: TraceEvent): event is AgentStartEvent {
   return event.type === EVENTS.AGENT_START;
 }
 
-function messageText(message: Message): string {
+function messageText(message: TraceMessage): string {
   const content = message.content;
   if (typeof content === "string") {
     return content;

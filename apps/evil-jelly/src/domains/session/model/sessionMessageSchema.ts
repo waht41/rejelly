@@ -1,7 +1,28 @@
-import type { Message } from "@rejelly/core";
+import type { JsonObject, JsonValue, Message, ProviderState } from "@rejelly/core";
 import { z } from "zod";
 
 const jsonObjectSchema = z.record(z.string(), z.unknown());
+
+const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number().finite(),
+    z.boolean(),
+    z.null(),
+    z.array(jsonValueSchema),
+    z.record(z.string(), jsonValueSchema),
+  ]),
+);
+
+const jsonObjectValueSchema: z.ZodType<JsonObject> = z.record(z.string(), jsonValueSchema);
+
+const providerStateSchema: z.ZodType<ProviderState> = z
+  .object({
+    kind: z.string().min(1),
+    version: z.number().int().positive(),
+    payload: jsonObjectValueSchema,
+  })
+  .strict();
 
 const toolCallSchema = z
   .object({
@@ -42,5 +63,6 @@ export const sessionMessageSchema: z.ZodType<Message> = z
     tool_call_id: z.string().optional(),
     name: z.string().optional(),
     extra: jsonObjectSchema.optional(),
+    provider_state: z.array(providerStateSchema).optional(),
   })
   .passthrough();

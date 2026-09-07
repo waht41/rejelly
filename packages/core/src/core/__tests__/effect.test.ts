@@ -182,6 +182,40 @@ describe("onStream", () => {
     expect(received.every((event) => event.channel === "context_compaction")).toBe(true);
   });
 
+  it("persists provider state without exposing it on the public agent stream", async () => {
+    const received: AgentStreamEvent[] = [];
+    const state = {
+      kind: "@test/fictional/items",
+      version: 1,
+      payload: { encrypted: "opaque-payload" },
+    } as const;
+    const model = createStreamEventModel([
+      { type: "state", state },
+      { type: "text", content: "done" },
+      { type: "finish", finishReason: "stop" },
+    ]);
+    const policy = createAgentPolicy({
+      policyId: "test-provider-state",
+      handler: async (promptCtx) =>
+        executeTurn([{ role: "user", content: "hello" }], { runtime: promptCtx }),
+    });
+    const agent = createAgent({
+      id: "provider_state",
+      model,
+      handler: async () => {
+        onStream(async (stream) => {
+          for await (const event of stream) received.push(event);
+        });
+        return policy();
+      },
+    });
+
+    const result = await agent({});
+
+    expect(result.message.provider_state).toEqual([state]);
+    expect(received.map((event) => event.type)).not.toContain("state");
+  });
+
   it("stamps named channels on stream errors", async () => {
     const failure = new Error("stream failed");
     const received: AgentStreamEvent[] = [];

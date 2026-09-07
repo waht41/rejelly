@@ -35,6 +35,7 @@ const VALID_EVENT_TYPES = [
   "reasoning",
   "tool_call",
   "extra",
+  "state",
   "usage",
   "error",
   "finish",
@@ -67,6 +68,7 @@ function isValidStreamEvent(ev: unknown): ev is StreamEvent {
     return false;
   if (t === "tool_call" && !("toolCall" in ev)) return false;
   if (t === "extra" && !("extra" in ev)) return false;
+  if (t === "state" && !("state" in ev)) return false;
   if (t === "usage" && !("usage" in ev)) return false;
   return true;
 }
