@@ -712,6 +712,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
     // equipMemory getters are frozen at entry, so we mirror writes here for same-turn reads).
     let liveContextTokens = storedContextTokens;
     let liveCacheTokens = storedCacheTokens;
+    let liveRunAggregate = getUsageStats().aggregate;
     let liveSessionMcpState = storedSessionMcpState;
     let liveNextImageOrdinal = storedNextImageOrdinal;
     let liveContextTokenAnchor = storedContextTokenAnchor ?? undefined;
@@ -729,7 +730,9 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
     // the parent chain). Token-metered tools also contribute prompt tokens, but they do not occupy
     // the Chat context and must not replace the latest direct model-call snapshot.
     equipBudget({
-      onUpdate: ({ delta }) => {
+      onUpdate: ({ delta, aggregate }) => {
+        // Keep a context-independent mirror for terminal callbacks such as running `/status`.
+        liveRunAggregate = aggregate;
         if (delta.promptTokens > 0 && delta.items.some((item) => item.type === "model")) {
           liveContextTokens = delta.promptTokens;
           setLastContextTokens(delta.promptTokens);
@@ -742,7 +745,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
 
     // Cumulative session usage = resumed base + this run's aggregate (self + all sub-agents).
     const currentBudget = (): SessionBudget =>
-      combineSessionBudget(props.seedBudget, getUsageStats().aggregate, {
+      combineSessionBudget(props.seedBudget, liveRunAggregate, {
         contextTokens: liveContextTokens,
         cacheReadTokens: liveCacheTokens,
       });
