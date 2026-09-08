@@ -25,7 +25,7 @@
 
 > 这是适配器在“provider 能力边界”上做的归一化：知道哪种 provider 不能在工具结果里带图的，只有适配器层。因此该转换放在适配器、对所有 policy 与上层 Agent 透明生效，无需 metatool 或额外往返。
 
-**工具 / 来源 adapter（MCP / LangChain）—— 接收侧转成 `toolContent`。** 当工具自身返回多模态内容块（含图片）时，适配器会把它转换成 `toolContent`，以便作为原生模型可见内容流入上面的发送侧；**纯文本或未识别的结果原样透传**，不改变既有行为。
+**工具 / 来源 adapter（MCP / LangChain）—— 接收侧转成 `toolContent`。** 当工具自身返回多模态内容块（含图片）时，适配器会把它转换成 `toolContent`，以便作为原生模型可见内容流入上面的发送侧。MCP 的纯文本结果会合并为字符串；含非文本块时会转为 `toolContent`，未识别的 MCP 内容块会先 JSON 序列化为文本 `ContentPart`，不会原样透传。LangChain 中不含媒体的内容块数组或其它非媒体结果仍保持原有返回形状。
 
 - **MCP**（`formatCallToolResult`）：`image` 块 → 图片 `ContentPart`；`resource` 块按文本/标签降级。
 - **LangChain**（`fromLangChainTool`）：content-block 数组中的经典 `image_url` 与标准 `image`（`source_type: "base64" | "url"`）块 → 图片 `ContentPart`。
