@@ -67,7 +67,7 @@ const ruleLimitedModel = augmentModel(baseModel, [
 | 属性 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
 | `store` | `RateLimitStore` | ✅ | - | 注入的存储（MemoryStore / RedisStore / 自实现） |
-| `rules` | `RateLimitRule[]` | ✅ | - | 限流规则数组，按数组顺序检查、第一条超限即失败 |
+| `rules` | `RateLimitRule[]` | ✅ | - | 限流规则数组；store 的常规检查按数组顺序、第一条超限即失败，但 token 绝对上限会在调用 store 前统一预检 |
 | `calculatePreDeduct` | `(messages) => number` | ❌ | 输入文本长度 / 4 | Token 预扣估算：请求前按估算预扣，流结束后按实际 usage 多退少补 |
 | `retryAfterBufferMs` | `number` | ❌ | `100` | 在 store 返回的 `retryAfterMs` 上追加的缓冲，避免严格按时重试的客户端再次撞限 |
 
@@ -76,8 +76,8 @@ const ruleLimitedModel = augmentModel(baseModel, [
 | 类型 | 说明 | 字段 |
 |------|------|------|
 | `ConcurrencyRule` | 并发数 | `type: 'concurrency'`, `key`, `limit`（无 windowMs） |
-| `RequestRule` | 每分钟请求数 (RPM) | `type: 'request'`, `key`, `limit`, `windowMs` |
-| `TokenRule` | 每分钟 Token 数 (TPM) | `type: 'token'`, `key`, `limit`, `windowMs` |
+| `RequestRule` | 在配置的 `windowMs` 窗口内限制请求数；`windowMs: 60000` 时即 RPM | `type: 'request'`, `key`, `limit`, `windowMs` |
+| `TokenRule` | 在配置的 `windowMs` 窗口内限制 Token 数；`windowMs: 60000` 时即 TPM | `type: 'token'`, `key`, `limit`, `windowMs` |
 
 ## Store
 

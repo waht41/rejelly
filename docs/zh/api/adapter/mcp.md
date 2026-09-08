@@ -48,7 +48,7 @@ const result = await promptAgent(ResultSchema);
 
 **纯转换（单工具）：** 导出函数 `fromMCPTool(mcpTool, client, { name? })` 可将单个 MCP Tool 转为 `ToolDefinition`，便于自行组合或测试。
 
-**MCPKit：** `equipMCP` 返回 `client`、`tools`（仅 MCP 业务工具）、`resourceTools`（`list_resources` / `read_resource` 合成工具）、`toolMap`、`resourceToolMap`、`prompts`（`list` / `get` + **`asInstruction()`**，返回 `MessageContent`，可直接传给 `equipInstruction`）、`inject`。调用 **`inject({ injectTools?, injectResourceTools?, middleware? })`** 时才 `equipTool`：默认 **`injectTools: true`**、**`injectResourceTools: false`**（避免在 Prompt 里塞满资源 URI；需要时再打开）。**本次 `await equipMCP(...)` 返回的 `kit.tools` 即本轮拉取/缓存解析后的快照**，不会在之后静默变新；需要最新列表时应在**下一次**调用 `equipMCP` 时传入 **`forceRefresh: true`**（见下）。
+**MCPKit：** `equipMCP` 返回 `client`、`tools`（仅 MCP 业务工具）、`resourceTools`（默认名为 `mcp_list_resources` / `mcp_read_resource`；配置 `namespace` 后为 `<namespace>_list_resources` / `<namespace>_read_resource`）、`toolMap`、`resourceToolMap`、`prompts`（提供 `list()` / `get()`；**`asInstruction()`** 位于 `await get()` 的返回值上，返回可直接传给 `equipInstruction` 的 `MessageContent`）、`inject`。调用 **`inject({ injectTools?, injectResourceTools?, middleware? })`** 时才 `equipTool`：默认 **`injectTools: true`**、**`injectResourceTools: false`**（避免在 Prompt 里塞满资源 URI；需要时再打开）。**本次 `await equipMCP(...)` 返回的 `kit.tools` 即本轮拉取/缓存解析后的快照**，不会在之后静默变新；需要最新列表时应在**下一次**调用 `equipMCP` 时传入 **`forceRefresh: true`**（见下）。
 
 **命名契约：** `options.tools` 中的名字**始终是 MCP 服务端返回的原始工具名**（用于过滤与 `callTool`）；**`namespace`** 只影响注册到 Agent / LLM 侧的名字（多 MCP 并存时避免 `read_file` 重名）。若声明了 `tools` 却无法在分页与 `maxItems` 内找齐，适配器会 **抛错**（Fail Fast），避免带着残缺工具集调用模型。
 
@@ -83,7 +83,7 @@ interface EquipMCPOptions {
 1. **连接**：由你在 [equipResource](/zh/api/equip#equipresource) 的 `create` 中 `connect` 官方 Client；`destroy` 中 `close`。
 2. **工具**：`listTools` 支持 `nextCursor` 时由 `autoPaginate` + `maxItems` 控制拉取；若配置了 `tools`（原生名列表）却未能在分页与上限内找齐，**直接抛错**；结果默认经 `equipMemo` 缓存（相同 `clientId` 与 deps 时 `reborn()` 不重复 RPC）；**`forceRefresh: true`** 时跳过命中并刷新缓存；为每个 MCP 工具生成 `ToolDefinition`（JSON Schema 原样进入 `jsonSchemaToZod`）；**`kit.inject({ injectTools: true })`** 时注册。
 3. **调用**：`callTool` 兼容 SDK 的 `callTool({ name, arguments })` 与 `(name, args)`；纯文本结果按文本返回，含图片等非文本块时转成 `toolContent`（见 [Adapter · 多模态工具结果](/zh/api/adapter/#多模态工具结果-multimodal-tool-results)）。
-4. **资源**：**`enableResources`** 为 true 时生成 **`resourceTools`**（`list_resources` 带 cursor、`read_resource` 按 URI），**不在 equip 时全量 list**；需 **`inject({ injectResourceTools: true })`** 才注册。
+4. **资源**：**`enableResources`** 为 true 时生成 **`resourceTools`**（默认 `mcp_list_resources` 带 cursor、`mcp_read_resource` 按 URI；设置 `namespace` 后使用对应的 `<namespace>_...` 名称），**不在 equip 时全量 list**；需 **`inject({ injectResourceTools: true })`** 才注册。
 5. **Prompts**：`kit.prompts.list()` / `get()` 供你在业务里手动 `equipInstruction`；`get` 返回含 **`asInstruction()`**（`MessageContent`：`string | ContentPart[]`，含 text / image / video，与 `@rejelly/core` 中定义一致）。
 
 ## 与 equipResource 配合
@@ -104,7 +104,7 @@ import type { MCPClientAdapter } from '@rejelly/adapter-mcp';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { equipMCP } from '@rejelly/adapter-mcp';
-import { createAgent, equipResource, expectResource, equipScope, expectScope, promptAgent } from '@rejelly/core';
+import { createAgent, equipInstruction, equipResource, expectResource, equipScope, expectScope, promptAgent } from '@rejelly/core';
 import { z } from 'zod';
 
 const ParentAgent = createAgent({

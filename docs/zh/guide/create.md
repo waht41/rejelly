@@ -48,5 +48,6 @@ pnpm start
 
 ## 后续扩展
 
-- 需要更换或增加模型适配器时，直接安装对应包即可，例如：`pnpm add @rejelly/adapter-openai`、`pnpm add @rejelly/adapter-mcp`。
+- 需要更换或增加模型适配器时，安装 `@rejelly/adapter-openai`、`@rejelly/adapter-gemini` 等模型适配器包，并同步更新生成项目中的导入与模型配置。
+- `@rejelly/adapter-mcp` 是 MCP 工具与资源集成，不是模型提供方；使用它需要连接 MCP client，并通过 `equipMCP` 完成配置。
 - 更多 API 与用法见 [API 文档](/zh/api/) 与 [介绍](/zh/guide/)。

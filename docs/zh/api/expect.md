@@ -55,7 +55,7 @@ try {
 
 ## 持久化状态
 
-Core 不再提供专用 KV facade。跨 Agent、跨 Session 或跨进程的持久状态应通过 `runWith({ providers })` 注入真实客户端，并用 `expectResource()` 读取。
+Core 不再提供专用 KV facade。跨 Agent、跨 Session 或跨进程的持久状态应通过 `runWith(fn, { providers })` 注入真实客户端，并用 `expectResource(key)` 读取。
 
 ```typescript
 import { expectResource, runWith } from '@rejelly/core';

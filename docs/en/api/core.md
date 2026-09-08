@@ -76,6 +76,7 @@ type StreamEvent =
   | { type: 'reasoning'; content: string }  // Reasoning/thinking delta (chain-of-thought models like DeepSeek-R1)
   | { type: 'tool_call'; toolCall: ToolCallChunk }  // Streaming tool call chunk (accumulated by index into a complete ToolCall)
   | { type: 'extra'; extra: Record<string, unknown> } // Extra metadata from the adapter/model
+  | { type: 'state'; state: ProviderState } // Persistable provider state for later replay
   | { type: 'usage'; usage: TokenUsage }    // Statistics (may appear multiple times during streaming)
   | { type: 'finish'; finishReason: FinishReason; usage?: TokenUsage }  // Stream end (typically the last event)
   | { type: 'error'; error: unknown };     // Streaming error
@@ -100,10 +101,11 @@ interface Message {
   tool_call_id?: string;  // Tool call ID (used only by tool role)
   name?: string;
   extra?: Record<string, unknown>;
+  provider_state?: ProviderState[]; // Opaque, persistable provider replay state
 }
 ```
 
-`ToolDefinition` and `ToolChoice` in `ModelStreamOptions` match the types used by the framework's equip tool system and are exported by `@rejelly/core`. `MessageContent` is `string | ContentPart[]` (multimodal content including text, images, video), `FinishReason` values include: `stop`, `length`, `tool_calls`, `content_filter`, `error`, `unknown`.
+`ToolDefinition` and `ToolChoice` in `ModelStreamOptions` match the types used by the framework's equip tool system and are exported by `@rejelly/core`. `MessageContent` is `string | ContentPart[]` (multimodal content including text, images, video), and `FinishReason` includes `stop`, `length`, `tool_calls`, `content_filter`, `error`, and `unknown`. `ProviderState` contains a stable `kind`, `version`, and JSON `payload`; adapters emit it through `state` events, and the framework stores it in `Message.provider_state` for provider-specific replay.
 
 **OpenAI Adapter implementation example:**
 
@@ -217,28 +219,35 @@ const BaseSearchTool: ToolDefinition = {
 };
 
 const SafeSearchTool = augmentTool(BaseSearchTool, [
-  wrapLog(),            // Outer: logging
-  wrapRetry({ n: 3 })   // Inner: retry mechanism
+  {
+    name: 'log-search',
+    handler: async (ctx, next) => {
+      console.log(`Calling ${ctx.toolName}`);
+      return await next();
+    },
+  },
 ]);
 
-// Use in Agent
+// Register once in the Agent; dynamic middleware also uses ToolMiddleware objects
 const ResearchAgent = createAgent({
   id: 'researcher',
   model: enhancedModel,
-  handler: async (props) => {
-    equipTool(SafeSearchTool);
+  handler: async () => {
     equipTool(SafeSearchTool, {
       middleware: [
-        async (ctx, next) => {
-          const [history, setHistory] = equipMemory('history', []);
-          const result = await next();
-          setHistory([...history, `Used ${ctx.toolName}`]);
-          return result;
-        }
-      ]
+        {
+          name: 'record-search-history',
+          handler: async (ctx, next) => {
+            const [, setHistory] = equipMemory<string[]>('history', []);
+            const result = await next();
+            setHistory((history) => [...history, `Used ${ctx.toolName}`]);
+            return result;
+          },
+        },
+      ],
     });
     return await promptAgent(ResultSchema);
-  }
+  },
 });
 ```
 
@@ -253,17 +262,15 @@ A single `promptAgent(schema)` drives a "model request → parse response" loop 
 3. **If the model returns final content matching the schema**: The loop ends, `promptAgent` returns the parsed result.
 4. If more rounds of "model → tool → model" are needed, repeat steps 2–3 until the end condition is met or the framework limit is reached.
 
-**Actual position of this middleware**: Only at **step 2** above, and only within the **`promptAgent` internal** handling of "this round's `tool_calls` from the model" — i.e., **before** handing this batch to the underlying `executeToolOutputs` for execution, filtering or short-circuiting the **entire batch** of `ToolCall[]`. It does not participate in composing system/instruction, nor does it replace the per-tool `ToolMiddleware`.
+**Actual position of this middleware**: When a policy calls `executeTools(toolCalls, { runtime })` to execute a batch of `ToolCall[]`, the middleware chain runs **before** the underlying tools by default. Step 2 of the built-in `promptAgent` policy is one such caller. Passing `skipLoopMiddleware: true` explicitly bypasses the chain and executes the tools directly. The middleware does not compose system/instruction content and does not replace per-tool `ToolMiddleware`.
 
-> **⚠️ Scope: tool call loop inside promptAgent, NOT "global tool execution"**
+> **⚠️ Scope: the `executeTools` batch path, NOT "global tool execution"**
 >
-> `ToolCallLoopMiddleware` is bound to **`promptAgent`'s built-in tool round-trip loop** (corresponding one-to-one with tool rounds in the model conversation). It does **not** trigger when tools are executed through other entry points.
->
-> For example: when **directly executing** a `ToolDefinition` via **`callTool(tool, args)`** in code, it goes through the single-tool core path and does **not** pass through `equipToolCallLoopMiddleware`. Similarly, any path that does not go through "model produces `tool_calls` → `promptAgent` internally dispatches execution" will not execute Loop middleware. If unified interception is needed for "manual tool invocation" scenarios, handle it at the single-tool **`equipTool(..., { middleware })` / `augmentTool`** level, rather than relying on Loop middleware. (Note: `callTool` directly returns the handler's raw output, and on failure it **throws** — no fallback to string.)
+> The built-in `promptAgent` tool round-trip loop triggers `ToolCallLoopMiddleware` through `executeTools`; a custom policy calling the same primitive normally triggers it too, unless it explicitly passes `skipLoopMiddleware: true`. Directly executing one `ToolDefinition` via **`callTool(tool, args)`** uses the single-tool path and also bypasses Loop middleware. Any path that does not invoke `executeTools` bypasses it as well. Do not treat Loop middleware as an unskippable global authorization or rate-limit boundary. To cover manual single-tool calls, attach middleware at the **`equipTool(..., { middleware })` / `augmentTool`** layer. (`callTool` returns the handler's raw output and **throws** on failure; it does not fall back to a string.)
 
 **Registration semantics (connecting to above):** `equipToolCallLoopMiddleware` inserts a layer at step 2 above — after the model has produced `tool_calls` but **before** entering each tool's handler / single-tool middleware. It is unrelated to "modifying system / instruction / schema": the middleware **cannot** modify the prompt and schema that have already participated in hashing and snapshotting for this round. It only acts on the **jump before the entire batch of tool calls executes**, suitable for rate limiting, authorization, filtering calls, or **short-circuiting** some calls with synthetic `ToolOutput` (which the framework then converts to protocol-layer `role: "tool"` messages).
 
-**Must be called before `promptAgent()`** (same draft barrier as `equipTool`; violation throws `AfterPromptAgentError`).
+**Must be called before entering the policy draft barrier** (for example, before invoking `promptAgent()` or another policy created with `createAgentPolicy`; same constraint as `equipTool`, otherwise `AfterPromptAgentError`).
 
 **Execution order (onion, consistent with `equipTool` dynamic middleware):** Array order: **earlier registrations are outer layers**, later ones are closer to actual execution. When the outer layer calls `next(filteredCalls)`, the inner layer receives **`currentCalls` as the filtered list**; the outermost layer's first received `currentCalls` matches `ctx.originalCalls` (the model's original `tool_calls` for this round). `ctx` is a read-only snapshot where `originalCalls` is always the model's request; **the `currentCalls` parameter is passed through the middleware chain**.
 
@@ -477,7 +484,7 @@ Middleware can access the Agent ID and the current call's props, making it suita
 
 Executes an LLM call and returns output conforming to the schema definition, with automatic type inference.
 
-**Generation and a single promptAgent:** A **Generation** is one execution round of the Agent: the framework opens a new Generation each time before entering the handler (one round in the reborn loop), resets the draft (equip/expect, etc.), collects all equip/expect in this round, and initiates one LLM call. Therefore **each Generation can only call `promptAgent()` once**; subsequent calls within the same handler throw `PromptAgentAlreadyCalledError`. For multiple LLM calls, split them into multiple rounds via `reborn` (one Generation per round, one `promptAgent()` per Generation).
+**Generation and a single promptAgent:** A **Generation** is one execution round of the Agent: the framework opens a new Generation before each handler run (one round in the reborn loop), resets the draft, and collects that round's equip/expect declarations. **Each Generation can call `promptAgent()` only once**; subsequent calls in the same handler throw `PromptAgentAlreadyCalledError`. A single `promptAgent()` still runs the complete tool-call loop and may issue multiple underlying LLM requests for tool round trips or output-validation retries. Use `reborn` when you need multiple independent `promptAgent()` calls, not merely multiple underlying model requests.
 
 > **⚠️ Key rule: call order constraints**
 > 
@@ -493,15 +500,15 @@ Executes an LLM call and returns output conforming to the schema definition, wit
 > 
 > **Functions that do NOT need to be called before `promptAgent()`:**
 > 
-> - `equipMemory()` / `equipMemo()` - Bound to **Agent-level** `ctx.memory` (in-memory only, lives for the single Agent invocation, survives reborn, destroyed on Agent return; cross-Agent / cross-session persistence uses `runWith({ providers })` to inject real persistent clients read via `expectResource()`). Can be called at any time within the Generation (including first-time key registration, including after promptAgent), used for cross-reborn read/write state; **not** subject to `AfterPromptAgentError` (unlike draft equip for prompt building)
+> - `equipMemory()` / `equipMemo()` - Bound to **Agent-level** `ctx.memory` (in-memory only, lives for the single Agent invocation, survives reborn, destroyed on Agent return; cross-Agent / cross-session persistence uses `runWith(fn, { providers })` to inject real persistent clients read via `expectResource(key)`). Can be called at any time within the Generation (including first-time key registration, including after promptAgent), used for cross-reborn read/write state; **not** subject to `AfterPromptAgentError` (unlike draft equip for prompt building)
 > - `equipScope()` - Must be called before invoking a sub-agent (unrelated to promptAgent)
 > - `expectScope()` - Can be called anywhere (for reading parent Agent's scope)
-> - `expectResource()` - Can be called anywhere (for reading parent Agent's exposed resources)
+> - `expectResource(key)` - Can be called anywhere (for reading parent Agent's exposed resources)
 > 
 > **Rationale**:
 > - **promptAgent-related**: The framework collects all configured draft that participates in prompt building (system/instruction/tools/expect/onStream, etc.) when calling `promptAgent()`, builds the complete Prompt, and sends it to the LLM. If any API from the "must be before" list above is called after `promptAgent()` (violating order), `AfterPromptAgentError` is thrown directly. `equipMemory` / `equipMemo` (memory-based), `expectScope` / `expectResource` (reading dependencies, not draft) do not participate in this barrier.
 > - **Sub-agent related**: `equipScope()` provides scope for sub-agents, must be called before invoking a sub-agent — unrelated to `promptAgent()`.
-> - **Reading dependencies**: `expectScope()` and `expectResource()` read scope and resources provided by the parent Agent, can be called anywhere (including after promptAgent).
+> - **Reading dependencies**: `expectScope()` and `expectResource(key)` read scope and resources provided by the parent Agent and can be called anywhere (including after promptAgent).
 > - **Dependency array comparison**: `equipMemo` uses **deep compare** (convenient for inline objects like config, params — less boilerplate); `equipResource` uses **shallow compare (React-style)**, and its **`deps` allows non-serializable values** (class instances, closures, symbol-bearing references, etc. — different from `equipMemo`'s pure-data orientation; suitable for non-serializable, side-effect-having entities). See [Equip](/en/api/equip) for details.
 
 **Call order example:**
@@ -700,7 +707,7 @@ Executes the standard chat policy, returning the model's final text and messages
 
 **Tool loop rules:**
 
-- The preset policy does **not** set `toolChoice` (the model decides whether to call tools by default policy); if "force tool use" is needed, write a custom policy controlled via `executeTurn({ toolChoice })` per turn. Generation-level parameters (temperature, etc.) are configured when constructing the model adapter.
+- The preset policy does **not** set `toolChoice` (the model decides whether to call tools by default policy). To force tool use, write a custom policy, derive a runtime from the active `PromptContext`, and call `executeTurn(runtime.messages, { runtime, toolChoice })` for each turn. Generation-level parameters (temperature, etc.) are configured when constructing the model adapter.
 - Each round with `tool_calls` appends an assistant message, then executes tools and writes tool messages back to the conversation, continuing to the next round.
 
 **Termination and exceptions:**
@@ -714,7 +721,7 @@ Exports a snapshot of the current Agent execution state for persistence and futu
 
 ## `runWith(fn, options?)`
 
-Executes a function at the top level; optionally accepts a snapshot for context restoration. Without a snapshot, executes directly; with a snapshot, restores the root context from the snapshot first, then executes. Snapshot restoration, replay mechanism, and complete examples see [Time Travel](./time-travel.md#runwithfn-options-and-snapshots).
+Executes a function at the top level and optionally restores context from a snapshot. Without a snapshot, it executes directly. With snapshot support enabled, it restores the root context before execution. Production disables snapshot injection by default and requires explicit `enableSnapshot: true`; see [Time Travel](./time-travel.md#runwithfn-options-and-snapshots) for replay behavior and security considerations.
 
 ```typescript
 import { runWith } from '@rejelly/core';
@@ -726,7 +733,10 @@ const result = await runWith(async () => {
 });
 
 // Execute with snapshot restoration (snapshot from dumpSnapshot or restoreSnapshot in @rejelly/core/debugger)
-const resultFromSnapshot = await runWith(async () => { ... }, { snapshot });
+const resultFromSnapshot = await runWith(
+  async () => { ... },
+  { snapshot, enableSnapshot: true }, // Required in production; assess replay risks first
+);
 
 // Bind with external cancel source (e.g., HTTP Request, UI "Stop" button): after abort, the root context's signal synchronously enters aborted state; subsequent model calls and cancelable tools receive it
 const ac = new AbortController();
@@ -778,9 +788,9 @@ interface RunWithOptions<P = unknown> {
 **Brief explanation:**
 
 - **No snapshot**: Directly executes `fn`, no context restoration.
-- **With snapshot**: Restores root context (memory, replay cache, etc.) from the snapshot's root frame, then executes `fn`; child Agents auto-restore from `snapshot.children`.
+- **With snapshot**: When snapshot support is enabled, restores root context (memory, replay cache, etc.) from the snapshot's root frame, then executes `fn`; child Agents auto-restore from `snapshot.children`. Production rejects snapshot injection by default and requires explicit `enableSnapshot: true`.
 - **modelRegistry**: A dictionary of id → ModelAdapter, injected into the root context's `shared.modelRegistry`, shared across the chain. When an Agent's `model` is a string, it resolves at runtime from this; throws `ModelRegistryNotFoundError` if id does not exist.
-- **enableSnapshot**: Default `IS_DEV` (true in dev/test). When false, no journal recording, no child frame saving, and `dumpSnapshot()` throws; see [Time Travel - enableSnapshot](./time-travel.md#time-travel).
+- **enableSnapshot**: Enabled by default outside production and disabled by default in production. Passing a snapshot in production requires explicitly setting `enableSnapshot: true`; otherwise `runWith` throws immediately. Explicit production opt-in logs a security warning because replay may cause cache penetration or repeated execution of non-idempotent tools. When false, no journal is recorded, no child frames are saved, and `dumpSnapshot()` throws; see [Time Travel - enableSnapshot](./time-travel.md#time-travel).
 - **signal**: The passed `AbortSignal` is connected to the root `createAgentContext`: once externally `abort`ed, the root context's `controller` receives the same reason, `ctx.signal` enters aborted; child Agents still cascade parent signal by existing rules. Useful for aligning with HTTP `Request.signal`, front-end stop buttons, and other cancel sources.
 
 **Integration with `enableReview()`:**

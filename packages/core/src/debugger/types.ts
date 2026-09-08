@@ -47,7 +47,7 @@ export interface OTLPOptions {
   batchSize?: number;
   /** Flush interval in ms (default: 5000) */
   flushInterval?: number;
-  /** Maximum buffered events before dropping new events (default: 5000) */
+  /** Maximum buffered events; when full, drop the oldest before enqueueing the newest (default: 5000) */
   maxQueueSize?: number;
   /** HTTP transport retry count for retryable failures (default: 3) */
   maxRetries?: number;
@@ -80,7 +80,7 @@ export interface ReviewOptions {
   batchSize?: number;
   /** Flush interval in ms (default: 5000) */
   flushInterval?: number;
-  /** Maximum buffered events before dropping new events (default: 5000) */
+  /** Maximum buffered events; when full, drop the oldest before enqueueing the newest (default: 5000) */
   maxQueueSize?: number;
   /** HTTP transport retry count for retryable failures (default: 3) */
   maxRetries?: number;

@@ -115,5 +115,5 @@ const model = createOpenAIAdapter({
 Choose the schema delivery method via `schemaMode`:
 
 - `"prompt"`：Injects the schema into the system prompt — broadest compatibility (OpenAI default).
-- `"json_object"`：Sends `response_format: { type: "json_object" }` (Gemini: `responseMimeType: "application/json"`), while also injecting the schema into the prompt for field constraints. Suitable for models with JSON mode but without strict schema support (e.g., DeepSeek).
+- `"json_object"`: OpenAI Chat Completions uses `response_format: { type: "json_object" }`, OpenAI Responses uses the equivalent `text.format: { type: "json_object" }`, and Gemini uses `responseMimeType: "application/json"`. The schema is still injected into the prompt for field constraints. Suitable for models with JSON mode but without strict schema support (e.g., DeepSeek).
 - `"json_schema"`：Native Structured Outputs (OpenAI strict / Gemini `responseSchema`), where the model strictly enforces fields (Gemini default).

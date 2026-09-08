@@ -48,5 +48,6 @@ pnpm start
 
 ## Extending Later
 
-- To switch or add model adapters, simply install the corresponding package, e.g.: `pnpm add @rejelly/adapter-openai`, `pnpm add @rejelly/adapter-mcp`.
+- To switch or add model adapters, install a model adapter such as `@rejelly/adapter-openai` or `@rejelly/adapter-gemini`, then update the generated project's imports and model configuration.
+- `@rejelly/adapter-mcp` integrates MCP tools and resources; it is not a model provider. It requires a connected MCP client and configuration through `equipMCP`.
 - For more APIs and usage, see the [API docs](/en/api/) and [Introduction](/en/guide/).

@@ -84,6 +84,8 @@ equipTool({
 
 **带动态中间件的示例：**
 
+`ToolMiddleware` 是包含 `name`、`handler` 和可选 `config` 的对象，不是裸函数。
+
 ```typescript
 // 定义基础工具
 const BaseSearchTool: ToolDefinition = {
@@ -95,28 +97,40 @@ const BaseSearchTool: ToolDefinition = {
 
 // 使用 augmentTool 添加静态中间件（全局复用）
 const SafeSearchTool = augmentTool(BaseSearchTool, [
-  wrapLog(),            // 日志记录
-  wrapRetry({ n: 3 })   // 重试机制
+  {
+    name: 'log-search',
+    handler: async (ctx, next) => {
+      console.log(`Calling ${ctx.toolName}`);
+      return await next();
+    },
+  },
 ]);
 
-// 在 Agent 中使用，添加动态中间件（依赖上下文）
+// 在 Agent 中注册一次，并添加依赖 Agent 上下文的动态中间件
 equipTool(SafeSearchTool, {
   middleware: [
-    // 拦截器：将结果同步到 Agent 记忆
-    async (ctx, next) => {
-      const result = await next();
-      const [history, setHistory] = equipMemory('history', []);
-      setHistory([...history, `Used ${ctx.toolName}: ${JSON.stringify(result)}`]);
-      return result;
+    {
+      name: 'record-search-history',
+      handler: async (ctx, next) => {
+        const result = await next();
+        const [, setHistory] = equipMemory<string[]>('history', []);
+        setHistory((history) => [
+          ...history,
+          `Used ${ctx.toolName}: ${JSON.stringify(result)}`,
+        ]);
+        return result;
+      },
     },
-    // 拦截器：风控检查
-    async (ctx, next) => {
-      if (ctx.input.query.length > 100) {
-        return "Query too long"; // 阻断执行
-      }
-      return await next();
-    }
-  ]
+    {
+      name: 'limit-query-length',
+      handler: async (ctx, next) => {
+        if (String(ctx.input.query ?? '').length > 100) {
+          return 'Query too long';
+        }
+        return await next();
+      },
+    },
+  ],
 });
 ```
 
@@ -160,8 +174,8 @@ interface ToolCallLoopMiddleware {
 
 旧版通过 equip 写入 draft 的流式选项能力已移除（这是一处 ambient 配置，会被预设 policy 隐式读取、修改）。按生命周期归位到两处：
 
-- **`toolChoice`**（per-turn 指令）：由 `executeTurn(messages, { toolChoice })` 显式传入。预设 policy（`promptChat` / `promptAgent`）**刻意不暴露**它；需要「强制用工具」请编写自定义 policy，自行决定每个 turn 的 `toolChoice`。
-- **`additionalOptions`**（temperature、top_p 等 provider 参数）：generation 级参数应在**构造 model adapter** 时配置（一次设定、全程生效）；若要按单个 turn 覆盖，自定义 policy 可用 `executeTurn(messages, { additionalOptions })`，经 `callLLM` 透传到 `model.stream()`。
+- **`toolChoice`**（per-turn 指令）：在自定义 policy 中由 `executeTurn(runtime.messages, { runtime, toolChoice })` 显式传入，其中 `runtime` 必须派生自当前 `PromptContext`。预设 policy（`promptChat` / `promptAgent`）**刻意不暴露**它。
+- **`additionalOptions`**（temperature、top_p 等 provider 参数）：generation 级参数应在**构造 model adapter** 时配置（一次设定、全程生效）；若要按单个 turn 覆盖，自定义 policy 可用 `executeTurn(runtime.messages, { runtime, additionalOptions })`，经 `callLLM` 透传到 `model.stream()`。
 
 `StreamOptions` 类型也随之移除；model adapter 接口侧的 `ModelStreamOptions.{toolChoice, additionalOptions}` 保留不变。详见 [Policy 文档](./policy.md)。
 
@@ -213,7 +227,7 @@ equipMemory('undefined', undefined);    // undefined 禁止
 
 **行为说明：**
 
-- **作用域与生命周期**：绑定**当前 Agent invocation** 的 `ctx.memory`（纯内存）。它**跨 `reborn` 存活**（同一次 Agent 调用内的多代共享读写），但在 **Agent 返回后随 `ctx` 一起销毁**——不跨 Agent 调用、不跨对话轮次。需要跨 Agent / 跨 Session 持久化时，通过 `runWith({ providers })` 注入真实数据库、Redis 或 SDK 客户端，并用 `expectResource()` 读取。
+- **作用域与生命周期**：绑定**当前 Agent invocation** 的 `ctx.memory`（纯内存）。它**跨 `reborn` 存活**（同一次 Agent 调用内的多代共享读写），但在 **Agent 返回后随 `ctx` 一起销毁**——不跨 Agent 调用、不跨对话轮次。需要跨 Agent / 跨 Session 持久化时，通过 `runWith(fn, { providers })` 注入真实数据库、Redis 或 SDK 客户端，并用 `expectResource(key)` 读取。
 - **写入即时、读取为快照**：`setState` 会**立即**更新底层 `ctx.memory`，但不会回写你已经解构出来的那个局部值；本轮若要观察新值，需重新 `equipMemory(key)` 取一次，或自行用局部变量（见上方示例）。
 - 返回值的快照（深拷贝），防止直接修改存储的值
 - 所有值在读写时都会进行验证和克隆，确保不可变性和可序列化性
@@ -374,7 +388,7 @@ interface ResourceConfig<T> {
    * 异步函数，用于销毁/清理资源（可选）。
    *
    * 省略表示该资源无需 teardown——纯派生值，或当前 Agent 并不「拥有」的借用句柄
-   * （例如经 runWith({ providers }) 注入的应用级连接池）。省略时不注册全局
+   * （例如经 runWith(fn, { providers }) 注入的应用级连接池）。省略时不注册全局
    * teardown，也不会发出 destroy 的 resource:op span。
    *
    * destroy 的有无即「拥有 vs 借用」的信号：给了 = 我拥有、由我关闭；
@@ -407,7 +421,7 @@ interface ResourceConfig<T> {
 **自动清理机制：**
 
 - 资源创建后会自动注册到 Agent 的全局 Teardown 队列
-- Agent 执行完成时（无论成功或失败），会在 `finally` 块中按 LIFO 顺序执行所有 teardown 函数
+- Agent 执行完成时（无论成功或失败），会在 `finally` 块中按注册栈的逆序启动所有 teardown 函数；这些函数通过 `Promise.allSettled` 并发执行
 - 这确保了即使没有触发 reborn，资源也能在 Agent 结束时正确释放
 - 依赖变化时，旧资源的 teardown 会自动注销，避免重复销毁
 - 未提供 `destroy` 的资源（借用/派生）不注册 teardown，Agent 结束时不做任何清理
@@ -420,7 +434,7 @@ interface ResourceConfig<T> {
 - **`deps` 允许不可序列化**（函数、类实例、闭包、`Symbol` 等），在运行期按引用保存；**浅比较**，引用变化即视为依赖变化
 - 资源会在 reborn 后保留，但依赖变化时会自动重建
 - 适用于需要显式清理的资源（如数据库连接、文件句柄、网络连接），不适合纯数据缓存（应使用 `equipMemo`）
-- 资源清理顺序遵循 LIFO（后进先出）原则，确保依赖关系正确的资源按正确顺序清理
+- teardown 按注册栈的逆序提交，但清理函数并发执行，不保证串行 LIFO 完成顺序；若资源之间存在必须串行的清理依赖，应在单个 `destroy` 函数中显式协调
 - **`expose: true`** 时，资源会被存储到 `ctx.providers` Map 中，子 Agent 可通过 `expectResource` 获取
 - 即使命中缓存，如果 `expose: true`，也会确保资源在 `providers` Map 中（处理 reborn 场景）
 - **依赖比较**：Resource 使用**浅比较（React 风格，Object.is 逐项）**；`deps` 可含不可序列化值，但需保持引用稳定（如提取到外部变量或 `useCallback`），避免内联对象/匿名函数导致重复重建
@@ -429,7 +443,7 @@ interface ResourceConfig<T> {
 
 ## 持久化状态
 
-与**仅存活于单次 Agent invocation 的内存** `equipMemory` / `equipMemo`（跨 `reborn`，但 Agent 返回即销毁）不同，跨 Agent / 跨 Session 的持久化应通过 `runWith({ providers })` 注入真实数据库、Redis 或 SDK 客户端，再用 `expectResource()` 读取。完整说明与示例见 [Expect · 持久化状态](/zh/api/expect#持久化状态)。
+与**仅存活于单次 Agent invocation 的内存** `equipMemory` / `equipMemo`（跨 `reborn`，但 Agent 返回即销毁）不同，跨 Agent / 跨 Session 的持久化应通过 `runWith(fn, { providers: { db, redis, client } })` 注入真实数据库、Redis 或 SDK 客户端，再用对应 key（例如 `expectResource('db')`）读取。完整说明与示例见 [Expect · 持久化状态](/zh/api/expect#持久化状态)。
 
 ## 预算控制
 
@@ -576,7 +590,7 @@ equipScope({ items: new Map() });         // class instance 禁止
 
 ### `equipTraceAttr(attrs: Record<string, unknown>, options?: EquipTraceAttrOptions)`
 
-为当前 Agent 运行挂上追踪属性（span attributes）。默认（`target: 'agent'`）这些属性会合并到 **`agent:end`** 以及每一轮 **`generation:end`** 事件的 `trace.attributes` 中，便于在分布式追踪或日志里按请求 ID、用户 ID 等维度过滤与聚合。
+为当前 Agent 运行挂上追踪属性（span attributes）。默认（`target: 'agent'`）这些属性会合并到 **`agent:end`** 事件的 `trace.attributes` 中；不会附加到 `generation:end`。由于该目标属于 Draft 状态且每次 reborn 都会清空，`agent:end` 只会包含最终一轮 Generation 中设置的属性。
 
 **EquipTraceAttrOptions：**
 
@@ -584,7 +598,7 @@ equipScope({ items: new Map() });         // class instance 禁止
 interface EquipTraceAttrOptions {
   /**
    * 属性挂载位置：
-   * - 'agent'（默认）：合并进 draft，随本 agent 的 agent:end 与各轮 generation:end 事件发出
+   * - 'agent'（默认）：合并进 draft，随本 agent 的 agent:end 事件发出
    * - 'local'：立即合并进当前 trace span
    * - 'root'：沿上下文链上溯到顶层（runWith）context，立即合并进其 span；
    *   体现在 runWith:end 上（runWith:start 已发出）。用于在深层嵌套的
@@ -605,12 +619,12 @@ interface EquipTraceAttrOptions {
 **与 runWith 的 trace 区别：**
 
 - `runWith` 的 `trace` 选项用于**透传外部链路**（traceId、parentSpanId、根 span 名称、初始 attributes），在创建根 context 时生效。
-- `equipTraceAttr` 在 **handler 内** 按需打标，最终体现在该 agent 的 agent:end 与各 generation:end 的 span 上。
+- `equipTraceAttr` 在 **handler 内**按需打标；默认 `target: 'agent'` 最终只合并到该 Agent 的 `agent:end`。
 
 ```typescript
 handler: async (props) => {
   equipTraceAttr({ userId: props.userId, requestId: props.requestId });
-  // ... 后续 agent:end / generation:end 的 trace.attributes 会包含上述字段
+  // ... 后续 agent:end 的 trace.attributes 会包含上述字段
   return await promptAgent(schema);
 }
 

@@ -66,8 +66,8 @@ JSON Schema 定义见仓库内 `packages/jelly-lint/jellylint.schema.json`。
 
 1. **每个文件只归属一个节点**。所有节点的 pattern 参与竞争，胜者按 **`(specificity, 段数)`** 取最大，其中 **specificity = pattern 中字面段的数量**。`src/cli/ui/**/*` 有 3 个字面段，赢过 `src/cli/**/*` 的 2 个——ui 下的文件归 `@cli:ui`。**不会双重计边**。
 2. **粗节点会被「掏空」**。细节点覆盖到的文件全部被抢走后，`graph` / `rules` 里写在粗节点上的边对这些文件 **静默失效**——不报错，只是不再匹配。若在图上依赖粗节点表达边界（如 `@cli` → `@shared`），细化节点时必须同步把图改写到细节点（或用 glob 选择子如 `@cli:**` 占层），否则约束悄悄消失。
-3. **启动期 overlap 告警**。检测到「broad pattern 完全包含 narrow pattern」会报 `Ownership may be ambiguous; use '!' exclusion patterns`；若 broad 节点已用 `!` 挖掉 narrow 的前缀（两者物理不相交）则不报。想让粗细节点合法并存，唯一姿势是 **`!` 挖除**——此时粗节点只兜住未被细节点认领的「剩余」文件，可用作「禁止新增杂物」的执法节点。
-4. **同分平局不可依赖**。两个 pattern 对同一文件给出相同 `(specificity, 段数)` 时，取先遍历到的候选，而节点容器是 `HashMap`，迭代顺序 **不确定**。不要制造同 specificity 的重叠；出现 overlap 告警应当场消除，而不是依赖某次运行的归属结果。
+3. **启动期 overlap 告警**。检测到「broad pattern 完全包含 narrow pattern」会报 `Ownership may be ambiguous; use '!' exclusion patterns`，但该告警不会阻止配置使用；未排除时仍按 `(specificity, 段数)` 解析单一归属。推荐用 **`!` 挖除**明确粗细边界并消除告警——此时粗节点只兜住未被细节点认领的「剩余」文件，可用作「禁止新增杂物」的执法节点。
+4. **同分平局不可依赖**。两个 pattern 对同一文件给出相同 `(specificity, 段数)` 时，取先遍历到的候选，而节点容器是 `HashMap`，迭代顺序 **不确定**。必须避免同分重叠；其他 overlap 告警也应优先通过明确边界消除，而不是无条件依赖某次运行的归属结果。
 5. **无 glob 的 pattern 自动补 `**`**。`src/cli/index.ts` 会被编译为 `src/cli/index.ts/**` 参与匹配，因此 **单文件节点可行**，且其字面段最多、specificity 天然最高。
 
 ---

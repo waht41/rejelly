@@ -31,4 +31,4 @@
 | **共享模型与定价**：示例共用的 OpenAI 适配器、`calculateCost` 与 `model-pricing` 表。 | [`examples/shared/`](https://github.com/waht41/rejelly/tree/main/examples/shared) · 如 [`openai-model.ts`](https://github.com/waht41/rejelly/blob/main/examples/shared/openai-model.ts)、[`model-pricing.ts`](https://github.com/waht41/rejelly/blob/main/examples/shared/model-pricing.ts) |
 | **统一启动脚本**：按模块名选择示例（与 README 中 `pnpm run start` 一致）。 | [`examples/scripts/run.ts`](https://github.com/waht41/rejelly/blob/main/examples/scripts/run.ts) |
 
-各子目录下的 `README.md`（部分含 `README.zh-CN.md`）有运行命令与机制详解；本地请在 **`examples/`** 根目录安装依赖后按对应 README 执行。
+部分示例子目录提供 `README.md`（有些还包含 `README.zh-CN.md`），其中有运行命令与机制详解；没有独立 README 的示例（如 time-travel）请参考统一启动脚本和对应的 `index.ts`。本地请先在 **`examples/`** 根目录安装依赖。

@@ -4,7 +4,7 @@
 
 ## 调用子 Agent
 
-直接调用子 Agent 函数，等待其返回结果。_父子关系：_ 栈式调用（Stack）。
+直接调用子 Agent 函数，等待其返回结果。_父子关系：_ 栈式调用（Stack）。下例中的 `ChildAgent`、`SearchAgent` 和 `AnalyzeAgent` 都是应用代码预先通过 `createAgent(...)` 创建的 `AgentFunction` 占位名，并非 `@rejelly/core` 导出的内置 API。
 
 ```typescript
 // 直接调用子 Agent

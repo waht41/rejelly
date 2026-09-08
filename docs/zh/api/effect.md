@@ -58,7 +58,7 @@ Generation 流没有单独的结束事件：`for await...of` 循环结束就是�
 
 `structured_data` 是结构化输出 UI 最常用的事件：
 
-未提供 schema 时，只有累积文本被成功识别为 JSON 对象才会发出该事件；普通文本不会产生无效快照或最终解析错误。
+未提供 schema 时，只有累积文本被成功识别为 JSON 对象或 JSON 数组才会发出该事件；普通文本及其它 JSON 原始值不会产生无效快照或最终解析错误。
 
 ```typescript
 onStream(

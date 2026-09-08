@@ -67,7 +67,7 @@ const ruleLimitedModel = augmentModel(baseModel, [
 | Property | Type | Required | Default | Description |
 |----------|------|----------|---------|-------------|
 | `store` | `RateLimitStore` | ✅ | - | Injected storage (MemoryStore / RedisStore / custom implementation) |
-| `rules` | `RateLimitRule[]` | ✅ | - | Array of rate-limit rules, checked in array order — first exceeded limit causes failure |
+| `rules` | `RateLimitRule[]` | ✅ | - | Rate-limit rules; ordinary store checks use array order and fail on the first exceeded rule, but absolute token limits are prechecked across token rules before the store is called |
 | `calculatePreDeduct` | `(messages) => number` | ❌ | Input text length / 4 | Token pre-deduction estimation: pre-deducts before the request, refunds excess after streaming completes based on actual usage |
 | `retryAfterBufferMs` | `number` | ❌ | `100` | Buffer added to the store's returned `retryAfterMs`, preventing clients from hitting the limit again when retrying exactly on time |
 
@@ -76,8 +76,8 @@ const ruleLimitedModel = augmentModel(baseModel, [
 | Type | Description | Fields |
 |------|-------------|--------|
 | `ConcurrencyRule` | Concurrency count | `type: 'concurrency'`, `key`, `limit` (no windowMs) |
-| `RequestRule` | Requests per minute (RPM) | `type: 'request'`, `key`, `limit`, `windowMs` |
-| `TokenRule` | Tokens per minute (TPM) | `type: 'token'`, `key`, `limit`, `windowMs` |
+| `RequestRule` | Limits requests over the configured `windowMs`; it is RPM when `windowMs` is `60000` | `type: 'request'`, `key`, `limit`, `windowMs` |
+| `TokenRule` | Limits tokens over the configured `windowMs`; it is TPM when `windowMs` is `60000` | `type: 'token'`, `key`, `limit`, `windowMs` |
 
 ## Store
 

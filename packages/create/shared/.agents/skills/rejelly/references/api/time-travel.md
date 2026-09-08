@@ -2,9 +2,9 @@
 
 Snapshots enable persistence, restoration, and replay of execution state, supporting checkpoint resume, recovery from event traces, and prompt/tool cache replay based on `contentHash`. Related APIs are imported from `@rejelly/core/debugger`; `runWith` is imported from `@rejelly/core`.
 
-> **Warning: Snapshot throws by default in production.**
+> **Warning: snapshot capture and injection are disabled by default in production.**
 
-**enableSnapshot:** The root context's `enableSnapshot` is determined by `runWith`'s `options.enableSnapshot`, which defaults to `IS_DEV` (`true` when `NODE_ENV === 'development'` or `'test'`; the default can be overridden via `runWith` options). When `enableSnapshot` is `false`: journal recording and child Agent frame saving are both skipped; calling `dumpSnapshot()` throws `SnapshotDisabledError`. If snapshots are needed in **production**, collect trace events (TraceEvent) during runtime and use `restoreSnapshot(trace.events)` to reconstruct the snapshot from the event timeline afterward, then replay and debug locally.
+**enableSnapshot:** The root context's `enableSnapshot` is determined by `runWith`'s `options.enableSnapshot`, which defaults to `!IS_PROD`: it is disabled by default only when `NODE_ENV === 'production'` and enabled in other environments, including an unset value or `staging`. When it is `false`, journal recording and child Agent frame saving are skipped, and `dumpSnapshot()` throws `SnapshotDisabledError`. Passing a non-empty `snapshot` to `runWith` in production also throws unless `enableSnapshot: true` is explicit. That production opt-in logs a danger warning because cache penetration can repeat model requests or re-run non-idempotent tools. `restoreSnapshot(trace.events)` itself does not depend on this option: it can reconstruct a snapshot from production trace events for later local replay and debugging.
 
 ---
 
@@ -99,8 +99,9 @@ interface AgentFrameSnapshot {
 **Notes:**
 
 - Only callable when the current context's `enableSnapshot` is `true`; otherwise throws `SnapshotDisabledError` (checkable via `isSnapshotDisabledError` from `@rejelly/core`).
-- Snapshots only contain JSON-serializable data (memory, journal, etc.)
-- Non-serializable data (functions, class instances) are ignored or marked as errors
+- Snapshot root-frame state (including memory and frames) must be JSON-serializable; functions, class instances, `undefined`, cycles, and similar values make `dumpSnapshot()` throw `TypeError`
+- `metadata` is attached after root-frame validation and is not checked by `dumpSnapshot()`; callers should still keep it serializable for reliable JSON persistence
+- Prompt/tool journal outputs are checked separately: non-serializable outputs are replaced with tombstone/error entries and cannot be replayed from cache
 - Snapshots are deep copies — modifying a snapshot does not affect the original context
 - promptAgent's input hash includes prompt, schema, model id, model provider
 - Tool caching works via a cache middleware added at the innermost layer of the onion model
@@ -109,7 +110,7 @@ interface AgentFrameSnapshot {
 
 ## `runWith(fn, options?)` and Snapshots
 
-Executes a function in an optionally snapshot-restored context. If `options.snapshot` is provided, the root context is restored from the snapshot before execution; otherwise, normal execution proceeds.
+Executes a function in an optionally snapshot-restored context. If `options.snapshot` is provided, the root context is restored from the snapshot before execution; otherwise, normal execution proceeds. Snapshot injection is allowed by default in every non-production environment, but disabled by default in production. A non-empty production snapshot requires explicitly setting `enableSnapshot: true`; doing so logs a danger warning because cache misses can repeat model calls or re-run non-idempotent tools.
 
 ```typescript
 import { runWith } from '@rejelly/core';
@@ -127,8 +128,12 @@ const result = await runWith(async () => {
 const snapshot = await loadSnapshot(); // Load from file or database
 const result = await runWith(async () => {
   const agent = createAgent({ ... });
-  return await agent({ input: 'test' }); // With snapshot, Agent replays quickly, skipping tool and LLM execution via journal cache
-}, { snapshot });
+  return await agent({ input: 'test' }); // Matching journal entries skip the corresponding tool/LLM execution
+}, {
+  snapshot,
+  // Required in production; optional in development/test
+  enableSnapshot: true,
+});
 ```
 
 **Snapshot-related options:**
@@ -138,7 +143,7 @@ interface RunWithOptions<P = unknown> {
   /** Inject snapshot for context restoration; if provided, restores root context from snapshot before execution */
   snapshot?: AgentSnapshot;
   /**
-   * Whether to enable snapshots (default IS_DEV).
+   * Whether to enable snapshots (`runWith` defaults to `!IS_PROD`, so only production is disabled by default).
    * When true: records journal, saves child frames, dumpSnapshot is callable.
    * When false: recordJournal / saveChildFrame returns immediately, dumpSnapshot() throws SnapshotDisabledError.
    */
@@ -174,7 +179,7 @@ When an Agent executes in a restored context:
 
 - If a `snapshot` is used, it is restored only once at the start of `runWith`.
 - The restored context state (memory, replay cache, etc.) persists for the entire `runWith` call.
-- Prompt and tool calls in the snapshot are matched by hash value — the cache is hit only when inputs are identical. If inputs change, execution proceeds normally and the snapshot is updated.
+- Prompt and tool calls in the snapshot are matched by hash value — the cache is hit only when inputs are identical. If inputs change, the cache is missed and execution proceeds normally. New records are written to the current run context, but `runWith` does not mutate or persist the supplied snapshot; call `dumpSnapshot()` again inside the run context to produce a new snapshot containing those records.
 - `runWith` only injects the snapshot; sub-agents restore themselves automatically on invocation.
 - Sub-agent restoration depends on `snapshot.children[callId]`. The `seq` in `callId` is assigned in the order of actual `SubAgent(...)` calls. When calling the same sub-agent in parallel, ensure sub-agent calls happen during the synchronous construction phase so that both the original run and the replay have consistent ordering:
 
@@ -203,7 +208,7 @@ const tasks = prepared.map(item => SubAgent({ text: item.text }));
 await Promise.all(tasks);
 ```
 
-- Non-serializable data is marked as errors in the snapshot and skipped during replay.
+- Non-JSON-serializable values in memory or frame state make `dumpSnapshot()` throw `TypeError`. Non-serializable prompt/tool journal outputs instead become tombstone/error entries and are not replay-cacheable. `metadata` is not validated during dump, but should still be JSON-serializable for reliable persistence.
 
 ---
 
@@ -212,7 +217,7 @@ await Promise.all(tasks);
 Restores an AgentSnapshot from a linear array of event traces (TraceEvent[]), enabling time travel. Rebuilds the nested frame structure to restore the complete Agent execution state.
 
 ```typescript
-import { EVENTS } from '@rejelly/core';
+import { EVENTS, runWith } from '@rejelly/core';
 import type { TraceEvent, AgentEndEvent } from '@rejelly/core';
 import { restoreSnapshot } from '@rejelly/core/debugger';
 
@@ -234,7 +239,11 @@ if (agentEndEvent) {
   });
   const result = await runWith(async () => {
     return await MyAgent({ input: 'test' });
-  }, { snapshot });
+  }, {
+    snapshot,
+    // Required for production injection; optional in development/test
+    enableSnapshot: true,
+  });
 }
 ```
 
@@ -303,10 +312,16 @@ import { runWith, EVENTS } from '@rejelly/core';
 import type { TraceEvent, AgentStartEvent, AgentEndEvent } from '@rejelly/core';
 import { restoreSnapshot } from '@rejelly/core/debugger';
 
+// These examples can also run in production, so they explicitly allow snapshot injection.
+// This logs a danger warning; first assess cache-penetration and non-idempotent tool risks.
+
 // Scenario 1: Restore to latest state
 async function restoreToLatest(trace: TraceEvent[]) {
   const snapshot = restoreSnapshot(trace);
-  return await runWith(async () => await MyAgent({ input: 'test' }), { snapshot });
+  return await runWith(async () => await MyAgent({ input: 'test' }), {
+    snapshot,
+    enableSnapshot: true,
+  });
 }
 
 // Scenario 2: Resume execution (skip completed steps)
@@ -318,7 +333,10 @@ async function resumeExecution(trace: TraceEvent[]) {
     spanId: stepEndEvent.trace.spanId,
     anchor: 'after'
   });
-  return await runWith(async () => await MyAgent({ input: 'test' }), { snapshot });
+  return await runWith(async () => await MyAgent({ input: 'test' }), {
+    snapshot,
+    enableSnapshot: true,
+  });
 }
 
 // Scenario 3: Retry execution (re-execute failed steps)
@@ -330,7 +348,10 @@ async function retryExecution(trace: TraceEvent[]) {
     spanId: stepStartEvent.trace.spanId,
     anchor: 'before'
   });
-  return await runWith(async () => await MyAgent({ input: 'test' }), { snapshot });
+  return await runWith(async () => await MyAgent({ input: 'test' }), {
+    snapshot,
+    enableSnapshot: true,
+  });
 }
 ```
 
@@ -341,8 +362,8 @@ async function retryExecution(trace: TraceEvent[]) {
 
 **Relationship with `runWith()`:**
 
-- `restoreSnapshot()` generates a snapshot; `runWith()` uses the snapshot to restore execution
-- Together they provide full time-travel functionality: restore a snapshot from event traces, then use the snapshot to resume execution
+- `restoreSnapshot()` creates a snapshot without depending on `enableSnapshot`; `runWith()` injects that snapshot and restores execution.
+- Development and test environments allow snapshot injection by default. Production requires `{ snapshot, enableSnapshot: true }` and logs a danger warning. The option is unnecessary when only reconstructing a snapshot without executing it.
 
 **Error handling:**
 
@@ -359,4 +380,4 @@ The function throws errors in these cases:
 - Event traces are automatically sorted by timestamp to ensure chronological processing
 - Prompt and tool cache in the restored snapshot is matched by `contentHash`, ensuring identical inputs produce cache hits
 - Non-serializable data (functions, class instances) is not saved in event traces and will be lost on restoration
-- The restored snapshot can be used like one generated by `dumpSnapshot()`, passed to `runWith()` for execution restoration
+- A restored snapshot can be passed to `runWith()` like one generated by `dumpSnapshot()`; production injection requires explicitly setting `enableSnapshot: true`

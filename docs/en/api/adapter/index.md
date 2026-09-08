@@ -25,7 +25,7 @@ Tools can return model-visible multimodal content (e.g., images) by wrapping the
 
 > This is normalization performed by the adapter at the "provider capability boundary": only the adapter layer knows which providers cannot carry images in tool results. Hence this conversion lives in the adapter, transparent to all policies and upper-level Agents — no metatool or extra round-trips needed.
 
-**Tool / source adapter (MCP / LangChain) — receive-side conversion to `toolContent`.** When a tool itself returns multimodal content blocks (including images), the adapter converts them into `toolContent` so they flow as native model-visible content into the send-side above; **plain text or unrecognized results pass through unchanged**, preserving existing behavior.
+**Tool / source adapter (MCP / LangChain) — receive-side conversion to `toolContent`.** When a tool itself returns multimodal content blocks (including images), the adapter converts them into `toolContent` so they flow as native model-visible content into the send-side above. MCP all-text results are joined into a string. When non-text blocks are present, the result is converted to `toolContent`; unrecognized MCP blocks are JSON-serialized into text `ContentPart`s rather than passed through unchanged. LangChain content-block arrays without media, and other non-media results, retain their original shape.
 
 - **MCP** (`formatCallToolResult`): `image` blocks → image `ContentPart`; `resource` blocks degraded by text/label.
 - **LangChain** (`fromLangChainTool`): Classic `image_url` and standard `image` (`source_type: "base64" | "url"`) blocks in content-block arrays → image `ContentPart`.
