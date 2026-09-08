@@ -159,7 +159,7 @@ Resuming restores the active context, cumulative usage, and a bounded tail of th
 
 Pasted images are copied into Evil Jelly's content-addressed blob store when the message is submitted. Session history therefore does not depend on the clipboard's temporary source file. Compaction may omit older images from model context to stay within its token budget, but it does not delete their transcript events or stored blobs.
 
-Legacy `.json` sessions remain visible. The first resume migrates a legacy session to a self-contained V2 `.jsonl` log while leaving the original file unchanged. Migration, corruption, and permission failures stop resume instead of silently falling back to a different copy. History already discarded by legacy compaction cannot be reconstructed.
+Legacy `.json` sessions remain visible. The first resume migrates a legacy session to a self-contained V3 `.v3.jsonl` log while leaving the original file unchanged. Migration, corruption, and permission failures stop resume instead of silently falling back to a different copy. History already discarded by legacy compaction cannot be reconstructed.
 
 Session logs are stored under `~/.evil-jelly/sessions/<workspace-bucket>/`; image blobs are stored under `~/.evil-jelly/blobs/`. Evil Jelly does not yet provide session deletion, retention, or blob garbage collection. To remove all locally saved conversations, stop Evil Jelly and delete both directories. Deleting a single session log does not reclaim shared blobs.
 
@@ -213,7 +213,7 @@ Memory is lower-priority context, not a rule or permission grant. Application sa
 
 ### One-shot audits
 
-Run `evil audit --family <name>` to analyze a workspace without modifying it. Reports and their ledger are written to `.evil-jelly/audit/`.
+Run `evil audit --family <name>` to analyze source and documentation without modifying them. The audit updates only its reports and ledger under `.evil-jelly/audit/`.
 
 | Family | What it checks |
 |--------|----------------|
@@ -256,7 +256,7 @@ pnpm --filter @rejelly/evil-jelly start -- audit --family clone --workspace ../.
 
 `OPENAI_API_KEY` is the only required setting. The recommended setup is `evil init`; you can also provide it through the shell or `.evil-jelly/.env`. Defaults use the OpenAI-compatible endpoint and `gpt-5.6-luna`.
 
-Without `--env`, environment configuration is resolved in this order: **CLI arguments > shell environment > workspace `.evil-jelly/.env` > `~/.evil-jelly/.env`**. With `--env <profile>`, resolution is **CLI arguments > profile > shell environment > built-in defaults**; workspace and global env files do not fill missing profile values. Non-secret settings use a separate cascade: **CLI arguments > workspace `.evil-jelly/settings.jsonc` > user `~/.evil-jelly/settings.jsonc` > built-in defaults**. Documentation mappings live in `.evil-jelly/doc-map.jsonc`; secrets belong in `.evil-jelly/.env`.
+Without `--env`, environment configuration is resolved in this order: **CLI arguments > shell environment > workspace `.evil-jelly/.env` > `~/.evil-jelly/.env`**. With `--env <profile>`, optional values resolve as **CLI arguments > profile > shell environment > built-in defaults**; workspace and global env files do not fill missing profile values. `OPENAI_API_KEY` is stricter: it must come from the selected profile or an explicit `--api-key`, never from the shell. Non-secret settings use a separate cascade: **CLI arguments > workspace `.evil-jelly/settings.jsonc` > user `~/.evil-jelly/settings.jsonc` > built-in defaults**. Documentation mappings live in `.evil-jelly/doc-map.jsonc`; secrets belong in `.evil-jelly/.env`.
 
 <details>
 <summary><strong>Complete environment variables</strong></summary>
@@ -532,7 +532,7 @@ Documentation-domain configuration does not belong in settings. It uses the fixe
 
 ### doc-map format
 
-JSONC comments and trailing commas are supported. `sync.pairs` supplies symmetrical glob pairs to doc-sync. By convention Chinese is on the left, and the evaluator uses that side as its review spine. `docs` supplies file-level code/artifact mappings to doc-drift. Section-to-symbol matching is derived deterministically and cached in the ledger, rather than maintained manually.
+JSONC comments and trailing commas are supported. `sync.pairs` supplies symmetrical glob pairs to doc-sync. By convention Chinese is on the left, and the evaluator uses that side as its review spine. `docs` supplies file-level code/artifact mappings to doc-drift. Section-to-symbol matching is derived deterministically for each audit run rather than maintained manually; the ledger stores candidate identities and verdicts so unchanged non-actionable findings can be suppressed.
 
 ```jsonc
 {
@@ -567,22 +567,24 @@ Another valid mapping:
     "packages/*/README.md": { "paths": ["$dir/src"] },
     "apps/evil-jelly/README.md": {
       "paths": ["apps/evil-jelly/src"],
+      "sectionDepth": 3,
       "note": "Treat the current implementation under src as authoritative for the CLI documentation."
     }
   }
 }
 ```
 
-Use globs for batches and explicit entries for exceptions requiring `note`, `skip`, or `artifacts`. Explicit paths override glob matches regardless of order; among globs, the later entry wins.
+Use globs for batches and explicit entries for exceptions requiring `note`, `skip`, `artifacts`, or a different `sectionDepth`. Explicit paths override glob matches regardless of order; among globs, the later entry wins.
 
 | Field | Description |
 |-------|-------------|
 | `paths` | Workspace-relative prefixes whose exported TypeScript surfaces (signatures + JSDoc) become comparison material. |
 | `artifacts` | Files embedded verbatim in the evaluator prompt, such as JSON schemas or `.d.ts` mirrors; useful for non-TypeScript implementations. |
+| `sectionDepth` | Split the document at headings through H2 (`2`, the default) or H3 (`3`). Deeper headings remain inside their parent section. |
 | `skip` | Excludes the document and records the reason. |
 | `note` | Adds evaluator guidance, such as allowing an overview to omit details. |
 
-Missing maps do not affect code families. `doc-drift` reports the expected path clearly, while `--doc <file> --code <path>` can run without a map. Existing but malformed maps always fail loudly. See the repository-root `.evil-jelly/doc-map.jsonc` for another reference.
+Missing maps do not affect code families. `doc-drift` reports the expected path clearly, while `--doc <file> --code <path>` can run without loading a map. When map-based mode is used, an existing but malformed map fails loudly. See the repository-root `.evil-jelly/doc-map.jsonc` for another reference.
 
 </details>
 
@@ -597,7 +599,7 @@ Audits are read-only. A detector produces candidates, a per-seed evaluator deter
 
 `evil audit --family doc-drift`:
 
-1. Deterministically splits mapped documents into H1/H2 sections, extracts exported TypeScript surfaces (signatures + JSDoc) and verbatim artifacts, and matches symbols with zero LLM calls.
+1. Deterministically splits mapped documents at headings through each mapping's `sectionDepth` (`2` by default, optionally `3`), extracts exported TypeScript surfaces (signatures + JSDoc) and verbatim artifacts, and matches symbols with zero LLM calls.
 2. Uses a per-seed evaluator to identify factual drift: `signature-drift`, `default-drift`, `missing-symbol`, `behavior-drift`, or `stale-example`.
 3. Treats deliberate simplification or omission (`simplification`) as non-actionable, suppressing it until the document section or mapped surface changes.
 
@@ -635,62 +637,55 @@ Each `sync.pairs` value is a `[leftGlob, rightGlob]` pair whose `*` / `**` wildc
 
 ### Product role and interaction model
 
-Evil Jelly runs `@rejelly/core` in real CLI sessions to validate the same Host protocol, toolchain, and optional Review path used by other hosts. It is both a terminal example application and a reference for future Electron or HTTP integrations. Its tools cover filesystem access, AST inspection, search, unified diffs, optional command execution, and more under `src/tools/`.
+Evil Jelly runs `@rejelly/core` in real CLI sessions to validate the same Host protocol, toolchain, and optional Review path used by other hosts. It is both a terminal example application and a reference for future Electron or HTTP integrations. Workspace capabilities such as file access, AST inspection, search, unified-diff writes, and command execution live under `src/domains/workspace/`; other domain capabilities include MCP, Memory, Skills, sessions, and web access.
 
-Ink renders completed turns once in `<Static>` history and keeps the current input, streaming output, tool status, and Y/n confirmation in a transient bottom area. The React tree is rendered once per process and unmounted only on exit. `logUserMessage` records submitted input immediately, avoiding a visual gap before model output begins. Write diffs appear transiently in `DiffViewer`; after approval, the view disappears and only the Agent's summary enters history.
+Ink renders completed turns once in `<Static>` history and keeps the current input, streaming output, tool status, and interactive decisions in a transient bottom area. The React tree is rendered once per process and unmounted only on exit. `logUserMessage` records submitted input immediately, avoiding a visual gap before model output begins. A proposed write is previewed transiently during confirmation; after it is applied, its diff is recorded as a tool-observation block and remains visible in conversation history.
 
-### Layering
+### Source organization
 
-The directory structure is inspired by Feature-Sliced Design. Imports may only point downward:
+Source is organized primarily by ownership and change reason rather than by a universal technical-layer stack:
 
-```text
-shared → services → tools → features → shell → cli (entrypoint)
-```
+| Area | Directory | Responsibility |
+|------|-----------|----------------|
+| **shared** | `shared/` | Foundation utilities, configuration, filesystem policy, model/prompt types, session ports, and the host capability contracts. |
+| **domains** | `domains/` | Cohesive capabilities owned by MCP, Memory, policy, sessions, Skills, web access, and workspace operations. Workspace read/write/AST/execute tools live under `domains/workspace/`. |
+| **features** | `features/` | Cross-domain product flows: unified coding conversations, one-shot audits, and replay/snapshot support. |
+| **cli** | `cli/` | Process entry and argument dispatch, runtime composition, Ink presentation, interactive decisions, and headless/background host adapters. |
 
-| Layer | Directory | Responsibility |
-|-------|-----------|----------------|
-| **shared** | `shared/` | Cross-feature types and libraries (`AgentShared`, `lib/`, `fs-policy/`). Host-wide registration lives in `services/binding/hostBindings.ts`; shared AST limits live in `shared/lib/heuristicAstLimits.ts`. |
-| **services** | `services/` | Domain-agnostic technical services, chiefly heuristic workspace AST parsing under `services/ast/`; no business routing or Agent orchestration. |
-| **tools** | `tools/` | Tool definitions, domain kits in `kits.ts`, and middleware without business semantics. |
-| **features** | `features/*/` | Domain Agents and logic such as `unified/`, `analyze/`, and `audit/`. |
-| **shell** | `shell/` | Top-level session orchestration; `MainCliAgent` directly drives `UnifiedAgent`. |
-| **cli** | `cli/` | Ink UI, `runHost`, configuration loading, and the current process's sole entrypoint. |
+`MainCliAgent` in `cli/unified-conversation/` routes local slash commands such as `/skills`, `/memory`, `/mcp`, `/resume`, and `/status` without a model call; ordinary messages are forwarded to `UnifiedAgent` in `features/unified/`. One-shot audits bypass the interactive conversation and invoke `AuditAgent` from the `evil audit` entry flow.
 
-`MainCliAgent` routes local slash commands such as `/skills`, `/memory`, `/mcp`, `/resume`, and `/status` without a model call; ordinary messages are forwarded to `UnifiedAgent`. Read-only and permission scopes are Agent modes/sandboxes, while specialists should be delegated subagents. One-shot audits bypass the interactive session and invoke `AuditAgent` from the `evil audit` subcommand.
+Workspace writes are implemented by the workspace domain and cross the host's `confirmTool` boundary when confirmation is required. The CLI supplies either an Ink-backed interactive binding or a restricted background/headless binding; verification remains an explicit Agent-selected command rather than an automatic post-write pipeline.
 
-`UnifiedAgent` in `features/unified/` handles conversation, explanation, search, implementation, bug fixes, refactoring, file creation, and ad hoc web search; the `cli/` layer does not write files directly. Writes require a displayed unified diff and `confirmWrite`; post-change verification is chosen by the Agent through `run_command`, not an automatic verification pipeline.
-
-A future event-stream-driven `PulseAgent`, inspired by `jellypulse`, may reuse feature-level code agents while splitting long-lived connections, partitions, and quotas across multiple Agents. Future `entrypoints/` may mount CLI and persistent server interfaces; currently only `src/cli/index.ts` is implemented.
-
-### `src/cli` responsibilities
+### CLI and host responsibilities
 
 | Path | Responsibility |
 |------|----------------|
-| `cli/index.ts` | Load the environment, mount Ink `Dashboard`, reset prompt/output sessions, and bind Zustand to `runEvilJellyHost`. |
-| `cli/conversation-display/` | Project conversation events into `<Static>` history, assistant stream, runtime status, live tool tails, and tool transcripts. |
-| `cli/message-composer/` | Own the local editable draft and bridge submitted input, available Skills, and restored steer drafts to the host session. |
-| `cli/operator-decision/` | Arbitrate and render confirmation, choice, and text decisions independently from message composition. |
-| `shared/types.ts` | Host-protocol types such as `EvilJellyHostBindings`. |
-| `shared/config.ts` | Environment, OpenAI adapter, and Review options. |
-| `cli/app/host/runHost.ts` | `runEvilJellyHost`, options, and error reporting through `logSystemEvent`. |
-| `cli/app/host/runWithReview.ts` | `runWith` and the Review exporter lifecycle. |
-| `cli/ui/Dashboard.tsx` | Compose the terminal frame from conversation display, operator decision, message composer, and runtime controls. |
+| `cli/index.ts` | Bootstrap process-wide configuration and dispatch the selected user-facing run mode. |
+| `cli/entry/` | Parse commands and compose audit, init, MCP, Skill, interactive, and headless execution flows. |
+| `cli/bindings/` | Adapt the shared `EvilJellyBindings` contract to Ink or non-interactive execution. |
+| `cli/interactive-shell/` | Mount `Dashboard`, own the process-level Ink lifecycle, and coordinate local commands and submissions. |
+| `cli/conversation-display/` | Project conversation events into static history, assistant stream, runtime status, live tool tails, and tool transcripts. |
+| `cli/message-composer/` | Own the editable draft and materialize text, document, image, Skill, MCP, and Memory input. |
+| `cli/operator-decision/` and `cli/tool-approval/` | Render and arbitrate choices, text decisions, and confirmation policies. |
+| `cli/unified-conversation/` | Route local commands and ordinary inputs for an interactive conversation. |
+| `cli/runtime/runWithReview.ts` | Wrap a run with the optional Review exporter lifecycle. |
+| `shared/host/` | Define the UI-independent input, presentation, mode, and confirmation capability contracts composed as `EvilJellyBindings`. |
 
 ### Host protocol
 
-The host injects these UI-independent semantics:
+`EvilJellyBindings` composes independent input, presentation, mode, and confirmation capabilities. Important members include:
 
 | Member | Meaning |
 |--------|---------|
-| `getInput` | Read one input line at a time. |
-| `printOut` | Write current streaming/tool output to the transient buffer, not history. |
-| `logUserMessage` | Append user input to history as soon as it is received, before model/routing work completes. |
-| `logAssistantMessage` | Append the final response, clear transient output, and restore ready status. |
-| `logSystemEvent` | Append startup, farewell, or fatal-error events and clear transient output. |
-| `onPhaseUpdate?` | Report the coarse runtime phase (connecting/thinking/streaming/tool/…) for the status line. |
-| `onDetailUpdate?` | Update the status-line detail without writing history. |
-| `onTurnStart?` | Anchor the turn timer when an initial user input starts a turn. |
-| `confirmTool` | Show a transient highlighted unified diff and request Y/n confirmation. |
-| `requestChoice` | Show a generic hotkey menu with an optional transient diff for non-write decisions such as conflict policy. |
+| `getInput` | Return a structured `PromptInput`, which may contain text, a document, images, and explicit Skill, MCP, or Memory references. |
+| `printOut` | Stream current assistant output to the transient presentation surface. |
+| `logUserMessage` / `logAssistantMessage` / `logSystemEvent` | Append durable user-visible history events. |
+| `logToolStart?` / `appendToolOutput?` / `logToolBlock` | Present live tool activity and record completed tool observations, including applied write diffs. |
+| `onPhaseUpdate?` / `onDetailUpdate?` / `onTurnStart?` | Update transient runtime status and timing. |
+| `confirmTool` | Decide filesystem writes, outside-workspace access, shell commands, MCP access, or MCP calls. Results can accept, reject, request a retry with feedback, or return edited content where supported. |
+| `requestMemoryConfirmation?` | Independently confirm persistent-memory mutations; auto/headless policy must not accept them implicitly. |
+| `requestChoice` | Request a generic action choice with an optional diff, Markdown, or scrollable-text view. |
+| `requestMcpManager?` / `requestMemoryManager?` / `requestSkillManager?` | Open optional host-owned interactive managers. |
+| `getAgentMode?` | Expose the current host-owned `normal` or `auto` interaction mode. |
 
 </details>
