@@ -90,6 +90,15 @@ describe("workspace block replacement", () => {
     expect(next).toContain("    baz();");
     expect(next).not.toContain("        baz();");
   });
+
+  it("reports candidate line numbers for ambiguous line-trim matches", () => {
+    const match = findBlockToReplace("  foo\n  bar\nother\n    foo\n    bar\n", "foo\nbar");
+    expect(match).toEqual({
+      ok: false,
+      reason:
+        "After line-trim comparison, searchBlock matches 2 regions at lines 1, 4; add more unique context lines.",
+    });
+  });
 });
 
 describe("applyBlockEdits", () => {
@@ -134,5 +143,126 @@ describe("applyBlockEdits", () => {
       return;
     }
     expect(out.text).toBe("TOP\nmid\nBOT\n");
+  });
+
+  it("replaces an inclusive range between unique bounded anchors", () => {
+    const out = applyBlockEdits("before\nstart\nold one\nold two\nend\nafter\n", [
+      {
+        searchBlock: { kind: "bounded", startBlock: "start", endBlock: "end" },
+        replaceBlock: "replacement",
+      },
+    ]);
+
+    expect(out).toEqual({ ok: true, text: "before\nreplacement\nafter\n" });
+  });
+
+  it("supports @head and @end as positional bounded matcher boundaries", () => {
+    const fromHead = applyBlockEdits("first\nsecond\nthird\n", [
+      {
+        searchBlock: { kind: "bounded", startBlock: "@head", endBlock: "second" },
+        replaceBlock: "new head",
+      },
+    ]);
+    const toEnd = applyBlockEdits("first\nsecond\nthird\n", [
+      {
+        searchBlock: { kind: "bounded", startBlock: "second", endBlock: "@end" },
+        replaceBlock: "new tail\n",
+      },
+    ]);
+    const wholeFile = applyBlockEdits("first\nsecond\n", [
+      {
+        searchBlock: { kind: "bounded", startBlock: "@head", endBlock: "@end" },
+        replaceBlock: "replacement\n",
+      },
+    ]);
+
+    expect(fromHead).toEqual({ ok: true, text: "new head\nthird\n" });
+    expect(toEnd).toEqual({ ok: true, text: "first\nnew tail\n" });
+    expect(wholeFile).toEqual({ ok: true, text: "replacement\n" });
+  });
+
+  it("rejects positional sentinels on the wrong bounded anchor", () => {
+    expect(
+      applyBlockEdits("content\n", [
+        {
+          searchBlock: { kind: "bounded", startBlock: "@end", endBlock: "@end" },
+          replaceBlock: "replacement",
+        },
+      ]),
+    ).toEqual({
+      ok: false,
+      failures: [{ failedIndex: 0, reason: "startBlock must be non-blank and cannot use @end." }],
+    });
+    expect(
+      applyBlockEdits("content\n", [
+        {
+          searchBlock: { kind: "bounded", startBlock: "@head", endBlock: "@head" },
+          replaceBlock: "replacement",
+        },
+      ]),
+    ).toEqual({
+      ok: false,
+      failures: [{ failedIndex: 0, reason: "endBlock must be non-blank and cannot use @head." }],
+    });
+  });
+
+  it("rejects a bounded matcher when either anchor is not independently unique", () => {
+    const out = applyBlockEdits("start\none\nend\nstart\ntwo\n", [
+      {
+        searchBlock: { kind: "bounded", startBlock: "start", endBlock: "end" },
+        replaceBlock: "replacement",
+      },
+    ]);
+
+    expect(out).toEqual({
+      ok: false,
+      failures: [
+        {
+          failedIndex: 0,
+          reason:
+            "startBlock matches 2 times exactly at lines 1, 4; narrow the anchor or add surrounding lines.",
+        },
+      ],
+    });
+  });
+
+  it("rejects a bounded matcher whose end anchor precedes its start anchor", () => {
+    const out = applyBlockEdits("end\nmiddle\nstart\n", [
+      {
+        searchBlock: { kind: "bounded", startBlock: "start", endBlock: "end" },
+        replaceBlock: "replacement",
+      },
+    ]);
+
+    expect(out).toEqual({
+      ok: false,
+      failures: [
+        { failedIndex: 0, reason: "endBlock resolves to line 1 before startBlock at line 3." },
+      ],
+    });
+  });
+
+  it("reports every failed block instead of stopping at the first one", () => {
+    const out = applyBlockEdits("same\nsame\nkeep\n", [
+      { searchBlock: "same", replaceBlock: "changed" },
+      { searchBlock: "missing", replaceBlock: "added" },
+      { searchBlock: "keep", replaceBlock: "kept" },
+    ]);
+
+    expect(out).toEqual({
+      ok: false,
+      failures: [
+        {
+          failedIndex: 0,
+          reason:
+            "searchBlock matches 2 times exactly at lines 1, 2; narrow the anchor or add surrounding lines.",
+        },
+        {
+          failedIndex: 1,
+          reason:
+            "searchBlock not found in file. Copy a block from read_file output (exact or the same lines after trim).",
+        },
+      ],
+    });
   });
 });

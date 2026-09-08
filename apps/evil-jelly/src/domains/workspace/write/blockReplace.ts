@@ -4,6 +4,16 @@
 
 import { normalizeNewlines } from "../../../shared/foundation/string";
 
+export type BoundedSearchBlock = {
+  kind: "bounded";
+  /** Exact or line-trim opening anchor included in the range, or virtual boundary `@head`. */
+  startBlock: string;
+  /** Exact or line-trim closing anchor included in the range, or virtual boundary `@end`. */
+  endBlock: string;
+};
+
+export type SearchBlock = string | BoundedSearchBlock;
+
 export type BlockMatch =
   | { ok: true; start: number; end: number; mode: "exact" | "line_trim"; normalizedContent: string }
   | { ok: false; reason: string };
@@ -85,6 +95,24 @@ function findAllIndices(haystack: string, needle: string): number[] {
   return indices;
 }
 
+function lineNumberAtOffset(content: string, offset: number): number {
+  let line = 1;
+  for (let i = 0; i < offset; i += 1) {
+    if (content[i] === "\n") {
+      line += 1;
+    }
+  }
+  return line;
+}
+
+/** Keep diagnostics useful without dumping an unbounded list for tiny repeated needles. */
+function formatCandidateLines(content: string, offsets: number[]): string {
+  const maxShown = 8;
+  const lines = offsets.slice(0, maxShown).map((offset) => lineNumberAtOffset(content, offset));
+  const omitted = offsets.length - lines.length;
+  return `${lines.join(", ")}${omitted > 0 ? ` (+${omitted} more)` : ""}`;
+}
+
 /**
  * Find contiguous line ranges where each line matches needle lines after trim().
  * Returns exclusive [start, end) byte offsets into `hay`.
@@ -145,7 +173,11 @@ function findLineTrimMatchOffsets(hay: string, needle: string): { start: number;
  *
  * Indices are always offsets into `normalizedContent` (LF-only). Callers must slice that string, not raw CRLF input.
  */
-export function findBlockToReplace(fileContent: string, searchBlock: string): BlockMatch {
+function findBlockToReplaceWithLabel(
+  fileContent: string,
+  searchBlock: string,
+  label: "searchBlock" | "startBlock" | "endBlock",
+): BlockMatch {
   const hay = normalizeNewlines(fileContent);
   const needle = normalizeNewlines(searchBlock);
 
@@ -163,7 +195,9 @@ export function findBlockToReplace(fileContent: string, searchBlock: string): Bl
   if (exactIdxs.length > 1) {
     return {
       ok: false,
-      reason: `searchBlock matches ${exactIdxs.length} times exactly; narrow the snippet or add surrounding lines.`,
+      reason:
+        `${label} matches ${exactIdxs.length} times exactly at lines ` +
+        `${formatCandidateLines(hay, exactIdxs)}; narrow the anchor or add surrounding lines.`,
     };
   }
 
@@ -175,14 +209,77 @@ export function findBlockToReplace(fileContent: string, searchBlock: string): Bl
   if (trimRanges.length > 1) {
     return {
       ok: false,
-      reason: `After line-trim comparison, searchBlock matches ${trimRanges.length} regions; add more unique context lines.`,
+      reason:
+        `After line-trim comparison, ${label} matches ${trimRanges.length} regions ` +
+        `at lines ${formatCandidateLines(
+          hay,
+          trimRanges.map((range) => range.start),
+        )}; ` +
+        "add more unique context lines.",
     };
   }
 
   return {
     ok: false,
     reason:
-      "searchBlock not found in file. Copy a contiguous chunk from read_file output (exact or same lines after trim).",
+      `${label} not found in file. Copy a block from read_file output ` +
+      "(exact or the same lines after trim).",
+  };
+}
+
+export function findBlockToReplace(fileContent: string, searchBlock: string): BlockMatch {
+  return findBlockToReplaceWithLabel(fileContent, searchBlock, "searchBlock");
+}
+
+/** Locate one inclusive range whose opening and closing anchors are independently unique. */
+export function findBoundedBlockToReplace(
+  fileContent: string,
+  searchBlock: BoundedSearchBlock,
+): BlockMatch {
+  const hay = normalizeNewlines(fileContent);
+  const startAnchor = searchBlock.startBlock.trim();
+  const endAnchor = searchBlock.endBlock.trim();
+  if (startAnchor.length === 0 || startAnchor === "@end") {
+    return { ok: false, reason: "startBlock must be non-blank and cannot use @end." };
+  }
+  if (endAnchor.length === 0 || endAnchor === "@head") {
+    return { ok: false, reason: "endBlock must be non-blank and cannot use @head." };
+  }
+
+  const start =
+    startAnchor === "@head"
+      ? { ok: true as const, start: 0, end: 0, mode: "exact" as const, normalizedContent: hay }
+      : findBlockToReplaceWithLabel(hay, searchBlock.startBlock, "startBlock");
+  if (!start.ok) {
+    return start;
+  }
+  const end =
+    endAnchor === "@end"
+      ? {
+          ok: true as const,
+          start: hay.length,
+          end: hay.length,
+          mode: "exact" as const,
+          normalizedContent: hay,
+        }
+      : findBlockToReplaceWithLabel(hay, searchBlock.endBlock, "endBlock");
+  if (!end.ok) {
+    return end;
+  }
+  if (end.start < start.start) {
+    return {
+      ok: false,
+      reason:
+        `endBlock resolves to line ${lineNumberAtOffset(hay, end.start)} before ` +
+        `startBlock at line ${lineNumberAtOffset(hay, start.start)}.`,
+    };
+  }
+  return {
+    ok: true,
+    start: start.start,
+    end: end.end,
+    mode: start.mode,
+    normalizedContent: hay,
   };
 }
 
@@ -199,44 +296,49 @@ export function findBlockToReplace(fileContent: string, searchBlock: string): Bl
  */
 export function applyBlockEdits(
   fileContent: string,
-  edits: { searchBlock: string; replaceBlock: string }[],
-): { ok: true; text: string } | { ok: false; reason: string; failedIndex: number } {
+  edits: { searchBlock: SearchBlock; replaceBlock: string }[],
+):
+  | { ok: true; text: string }
+  | { ok: false; failures: Array<{ failedIndex: number; reason: string }> } {
   let updated = normalizeNewlines(fileContent);
-  let i = 0;
-  for (const edit of edits) {
-    const trimmedSearch = edit.searchBlock.trim();
+  const failures: Array<{ failedIndex: number; reason: string }> = [];
+
+  for (const [index, edit] of edits.entries()) {
+    const stringSearch = typeof edit.searchBlock === "string" ? edit.searchBlock : undefined;
+    const trimmedSearch = stringSearch?.trim();
     const replacement = normalizeNewlines(edit.replaceBlock);
 
     if (trimmedSearch === "") {
       updated = replacement;
-      i++;
       continue;
     }
 
     if (trimmedSearch === "@head") {
       const padding = replacement.endsWith("\n") || updated.startsWith("\n") ? "" : "\n";
       updated = replacement + padding + updated;
-      i++;
       continue;
     }
 
     if (trimmedSearch === "@end") {
       const padding = updated.endsWith("\n") || replacement.startsWith("\n") ? "" : "\n";
       updated = updated + padding + replacement;
-      i++;
       continue;
     }
 
-    const match = findBlockToReplace(updated, edit.searchBlock);
+    const match =
+      typeof edit.searchBlock === "string"
+        ? findBlockToReplace(updated, edit.searchBlock)
+        : findBoundedBlockToReplace(updated, edit.searchBlock);
     if (!match.ok) {
-      return { ok: false, reason: match.reason, failedIndex: i };
+      failures.push({ failedIndex: index, reason: match.reason });
+      continue;
     }
     const hay = match.normalizedContent;
     const merged = replacementForBlockMatch(match, hay, edit.replaceBlock);
     const before = hay.slice(0, match.start);
     const after = hay.slice(match.end);
     updated = before + merged + after;
-    i++;
   }
-  return { ok: true, text: updated };
+
+  return failures.length > 0 ? { ok: false, failures } : { ok: true, text: updated };
 }
