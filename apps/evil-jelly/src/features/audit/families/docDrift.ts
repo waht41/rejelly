@@ -1,6 +1,6 @@
 /**
  * Doc-drift seed family (INV-0015): validate user-facing API docs against the extracted code
- * surface. Phase 1 is deterministic and zero-LLM — split each mapped doc into H1/H2 sections,
+ * surface. Phase 1 is deterministic and zero-LLM — split each mapped doc at its configured heading depth,
  * extract the exported TS surface (and verbatim artifacts) for the doc's mapped paths, and match
  * section mentions against it. Phase 2 judges each section: does it state something the current
  * code contradicts? Intentional simplification is NOT drift (non-actionable verdicts are
@@ -20,7 +20,7 @@ import {
   loadDocMap,
   matchSectionSymbols,
   resolveDocMapEntries,
-  splitMarkdownH2Sections,
+  splitMarkdownSections,
 } from "../detectors/docDrift";
 import { sha256 } from "../runtime/ledger";
 import { makeSeedEvaluatorAgent } from "../seedEvaluator";
@@ -132,7 +132,7 @@ function candidatesForDoc(
 
   const candidates: DocSectionCandidate[] = [];
   let preFiltered = 0;
-  for (const section of splitMarkdownH2Sections(markdown)) {
+  for (const section of splitMarkdownSections(markdown, entry.sectionDepth ?? 2)) {
     const { matched, unmatched } = matchSectionSymbols(section, table);
     if (isTrivialSection(section, matched.length)) {
       preFiltered++;

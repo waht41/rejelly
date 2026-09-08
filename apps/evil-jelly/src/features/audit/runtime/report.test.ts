@@ -68,6 +68,15 @@ function data(findings: AuditFinding[]): AuditReportData {
 }
 
 describe("renderAuditReport", () => {
+  it("renders live progress so interrupted reports are visibly incomplete", () => {
+    const report = data([]);
+    report.progress = { status: "in-progress", settled: 47, total: 48 };
+
+    const md = renderAuditReport(report);
+
+    expect(md).toContain("- Status: in-progress (47/48 evaluations settled)");
+  });
+
   it("ranks real high-severity findings before non-actionable ones", () => {
     const findings: AuditFinding[] = [
       {

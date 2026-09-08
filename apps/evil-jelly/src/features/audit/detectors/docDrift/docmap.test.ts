@@ -45,6 +45,17 @@ describe("parseDocMap", () => {
     expect(map.docs["packages/*/README.md"].paths).toEqual(["$dir/src"]);
   });
 
+  it("allows H2 or H3 section depth and rejects unsupported levels", () => {
+    const map = parseDocMap(
+      `{ "version": 1, "docs": { "a.md": { "sectionDepth": 3 } } }`,
+      "m.jsonc",
+    );
+    expect(map.docs["a.md"].sectionDepth).toBe(3);
+    expect(() =>
+      parseDocMap(`{ "version": 1, "docs": { "a.md": { "sectionDepth": 4 } } }`, "m.jsonc"),
+    ).toThrow(/failed validation/);
+  });
+
   it("throws a clear error on invalid JSON", () => {
     expect(() => parseDocMap("{ nope", "doc-map.jsonc")).toThrow(/not valid JSON/);
   });
@@ -120,21 +131,27 @@ describe("resolveDocMapEntries", () => {
     ]);
   });
 
-  it("expands $dir per matched glob doc", async () => {
+  it("expands $dir per matched glob doc and preserves section depth", async () => {
     write("packages/a/README.md");
     write("packages/b/README.md");
     const map = parseDocMap(
       `{
         "version": 1,
         "docs": {
-          "packages/*/README.md": { "paths": ["$dir/src"] }
+          "packages/*/README.md": { "paths": ["$dir/src"], "sectionDepth": 3 }
         }
       }`,
       "doc-map.jsonc",
     );
     await expect(resolveDocMapEntries(map)).resolves.toEqual([
-      { docFile: "packages/a/README.md", entry: { paths: ["packages/a/src"] } },
-      { docFile: "packages/b/README.md", entry: { paths: ["packages/b/src"] } },
+      {
+        docFile: "packages/a/README.md",
+        entry: { paths: ["packages/a/src"], sectionDepth: 3 },
+      },
+      {
+        docFile: "packages/b/README.md",
+        entry: { paths: ["packages/b/src"], sectionDepth: 3 },
+      },
     ]);
   });
 

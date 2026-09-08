@@ -7,5 +7,5 @@ export {
 } from "./docmap";
 export type { MatchableSymbol } from "./match";
 export { buildSymbolTable, matchSectionSymbols } from "./match";
-export type { MarkdownSection } from "./sections";
-export { splitMarkdownH2Sections } from "./sections";
+export type { MarkdownSection, SectionDepth } from "./sections";
+export { splitMarkdownSections } from "./sections";
