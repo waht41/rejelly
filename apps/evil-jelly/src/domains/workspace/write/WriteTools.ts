@@ -19,7 +19,7 @@ import type {
 } from "../../../shared/host/toolConfirmationBindings";
 import { resolveFileToolPath } from "../file-access/resolveFileToolPath";
 import { MAX_READ_BYTES_PER_CALL } from "../read/FileSystemTools";
-import { applyBlockEdits } from "./blockReplace";
+import { applyBlockEdits, type SearchBlock } from "./blockReplace";
 import { createTwoFilesPatch } from "./unifiedDiff";
 
 const MAX_WRITE_BYTES = MAX_READ_BYTES_PER_CALL;
@@ -43,12 +43,36 @@ function recordAppliedPatches(
   }
 }
 
+const nonBlankBoundedAnchorSchema = z
+  .string()
+  .min(1)
+  .refine((value) => value.trim().length > 0, "Bounded anchors cannot be blank.");
+
+const boundedSearchBlockSchema = z
+  .object({
+    kind: z.literal("bounded"),
+    startBlock: nonBlankBoundedAnchorSchema
+      .refine((value) => value.trim() !== "@end", "startBlock cannot use @end; use @head.")
+      .describe(
+        "Exact or line-trim opening anchor included in the replaced range, or @head for the file start.",
+      ),
+    endBlock: nonBlankBoundedAnchorSchema
+      .refine((value) => value.trim() !== "@head", "endBlock cannot use @head; use @end.")
+      .describe(
+        "Exact or line-trim closing anchor included in the replaced range, or @end for the file end.",
+      ),
+  })
+  .strict()
+  .describe(
+    "Replace one inclusive range. Concrete anchors must each match exactly one region and the end must not precede the start; startBlock may be @head and endBlock may be @end.",
+  );
+
 const editBlockSchema = z.object({
   searchBlock: z
-    .string()
+    .union([z.string(), boundedSearchBlockSchema])
     .describe(
-      "Contiguous old code to replace (from read_file). Prefer exact text; indentation may match via line-trim fallback. " +
-        "Empty string replaces the whole file (only valid as the sole edit). Use '@head' to prepend or '@end' to append.",
+      "A string matches contiguous old code (exact first, then line-trim), with empty/@head/@end sentinels. " +
+        "For a large range, use { kind: 'bounded', startBlock, endBlock }; concrete anchors are inclusive and independently unique, while @head/@end select positional file boundaries.",
     ),
   replaceBlock: z.string().describe("New code to substitute for the matched region."),
 });
@@ -174,12 +198,12 @@ type PreparedEditTarget = {
 
 type EditTargetFailure = {
   filePath: string;
-  problems: Array<{ editIndex?: number; searchBlock?: string; reason: string }>;
+  problems: Array<{ editIndex?: number; searchBlock?: SearchBlock; reason: string }>;
 };
 
 /** Identify a failed block without echoing an arbitrarily large tool argument back to the model. */
-function summarizeSearchBlock(searchBlock: string): string {
-  const normalized = normalizeNewlines(searchBlock);
+function summarizeTextBlock(block: string): string {
+  const normalized = normalizeNewlines(block);
   const nonBlankLines = normalized
     .split("\n")
     .map((line) => line.trim())
@@ -194,6 +218,17 @@ function summarizeSearchBlock(searchBlock: string): string {
       ? summary
       : `${summary.slice(0, 160)} … ${summary.slice(-(maxLength - 163))}`;
   return JSON.stringify(bounded);
+}
+
+/** Identify a failed matcher without echoing arbitrarily large tool arguments back to the model. */
+function summarizeSearchBlock(searchBlock: SearchBlock): string {
+  if (typeof searchBlock === "string") {
+    return summarizeTextBlock(searchBlock);
+  }
+  return (
+    `{ kind: "bounded", startBlock: ${summarizeTextBlock(searchBlock.startBlock)}, ` +
+    `endBlock: ${summarizeTextBlock(searchBlock.endBlock)} }`
+  );
 }
 
 function appendEditFailures(lines: string[], failures: EditTargetFailure[]): void {
@@ -238,8 +273,9 @@ export function createEditFileTool(
   return {
     name: "edit_file",
     description:
-      "Apply search/replace edits to one or many files in one reviewed write. Uses exact match, or line-trim when only indentation differs. " +
-      "Sentinels: empty searchBlock = whole-file replace (single edit only); '@head' / '@end' prepend or append. " +
+      "Apply search/replace edits to one or many files in one reviewed write. A string searchBlock uses exact match, or line-trim when only indentation differs; " +
+      "a bounded matcher replaces the inclusive range between independently unique anchors, with @head/@end available as positional file boundaries. " +
+      "Sentinels: empty string searchBlock = whole-file replace (single edit only); '@head' / '@end' prepend or append. " +
       "Multiple edits run in order: prefer bottom-to-top and anchor searchBlocks on the original file to avoid offset drift. " +
       "Every target is validated before writing. Files with any invalid edit are left unchanged and reported with all block failures; " +
       "conflict-free files continue to one unified-diff approval. Input must be { targets: [{ filePath, edits }, ...] }.",
@@ -254,7 +290,7 @@ export function createEditFileTool(
       // in arrival order and still applied sequentially by applyBlockEdits.
       const mergedTargets: {
         filePath: string;
-        edits: { searchBlock: string; replaceBlock: string }[];
+        edits: { searchBlock: SearchBlock; replaceBlock: string }[];
       }[] = [];
       const indexByPath = new Map<string, number>();
       for (const { filePath, edits } of input.targets) {
@@ -278,7 +314,9 @@ export function createEditFileTool(
           continue;
         }
 
-        const hasWholeFileReplace = edits.some((e) => e.searchBlock.trim() === "");
+        const hasWholeFileReplace = edits.some(
+          (edit) => typeof edit.searchBlock === "string" && edit.searchBlock.trim() === "",
+        );
         if (hasWholeFileReplace && edits.length !== 1) {
           failedTargets.push({
             filePath: normalizedPath,

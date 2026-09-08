@@ -145,6 +145,103 @@ describe("applyBlockEdits", () => {
     expect(out.text).toBe("TOP\nmid\nBOT\n");
   });
 
+  it("replaces an inclusive range between unique bounded anchors", () => {
+    const out = applyBlockEdits("before\nstart\nold one\nold two\nend\nafter\n", [
+      {
+        searchBlock: { kind: "bounded", startBlock: "start", endBlock: "end" },
+        replaceBlock: "replacement",
+      },
+    ]);
+
+    expect(out).toEqual({ ok: true, text: "before\nreplacement\nafter\n" });
+  });
+
+  it("supports @head and @end as positional bounded matcher boundaries", () => {
+    const fromHead = applyBlockEdits("first\nsecond\nthird\n", [
+      {
+        searchBlock: { kind: "bounded", startBlock: "@head", endBlock: "second" },
+        replaceBlock: "new head",
+      },
+    ]);
+    const toEnd = applyBlockEdits("first\nsecond\nthird\n", [
+      {
+        searchBlock: { kind: "bounded", startBlock: "second", endBlock: "@end" },
+        replaceBlock: "new tail\n",
+      },
+    ]);
+    const wholeFile = applyBlockEdits("first\nsecond\n", [
+      {
+        searchBlock: { kind: "bounded", startBlock: "@head", endBlock: "@end" },
+        replaceBlock: "replacement\n",
+      },
+    ]);
+
+    expect(fromHead).toEqual({ ok: true, text: "new head\nthird\n" });
+    expect(toEnd).toEqual({ ok: true, text: "first\nnew tail\n" });
+    expect(wholeFile).toEqual({ ok: true, text: "replacement\n" });
+  });
+
+  it("rejects positional sentinels on the wrong bounded anchor", () => {
+    expect(
+      applyBlockEdits("content\n", [
+        {
+          searchBlock: { kind: "bounded", startBlock: "@end", endBlock: "@end" },
+          replaceBlock: "replacement",
+        },
+      ]),
+    ).toEqual({
+      ok: false,
+      failures: [{ failedIndex: 0, reason: "startBlock must be non-blank and cannot use @end." }],
+    });
+    expect(
+      applyBlockEdits("content\n", [
+        {
+          searchBlock: { kind: "bounded", startBlock: "@head", endBlock: "@head" },
+          replaceBlock: "replacement",
+        },
+      ]),
+    ).toEqual({
+      ok: false,
+      failures: [{ failedIndex: 0, reason: "endBlock must be non-blank and cannot use @head." }],
+    });
+  });
+
+  it("rejects a bounded matcher when either anchor is not independently unique", () => {
+    const out = applyBlockEdits("start\none\nend\nstart\ntwo\n", [
+      {
+        searchBlock: { kind: "bounded", startBlock: "start", endBlock: "end" },
+        replaceBlock: "replacement",
+      },
+    ]);
+
+    expect(out).toEqual({
+      ok: false,
+      failures: [
+        {
+          failedIndex: 0,
+          reason:
+            "startBlock matches 2 times exactly at lines 1, 4; narrow the anchor or add surrounding lines.",
+        },
+      ],
+    });
+  });
+
+  it("rejects a bounded matcher whose end anchor precedes its start anchor", () => {
+    const out = applyBlockEdits("end\nmiddle\nstart\n", [
+      {
+        searchBlock: { kind: "bounded", startBlock: "start", endBlock: "end" },
+        replaceBlock: "replacement",
+      },
+    ]);
+
+    expect(out).toEqual({
+      ok: false,
+      failures: [
+        { failedIndex: 0, reason: "endBlock resolves to line 1 before startBlock at line 3." },
+      ],
+    });
+  });
+
   it("reports every failed block instead of stopping at the first one", () => {
     const out = applyBlockEdits("same\nsame\nkeep\n", [
       { searchBlock: "same", replaceBlock: "changed" },
@@ -158,12 +255,12 @@ describe("applyBlockEdits", () => {
         {
           failedIndex: 0,
           reason:
-            "searchBlock matches 2 times exactly at lines 1, 2; narrow the snippet or add surrounding lines.",
+            "searchBlock matches 2 times exactly at lines 1, 2; narrow the anchor or add surrounding lines.",
         },
         {
           failedIndex: 1,
           reason:
-            "searchBlock not found in file. Copy a contiguous chunk from read_file output (exact or same lines after trim).",
+            "searchBlock not found in file. Copy a block from read_file output (exact or the same lines after trim).",
         },
       ],
     });
