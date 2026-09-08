@@ -48,6 +48,11 @@
     "docs/zh/api/adapter/langchain.md": {
       "paths": ["packages/adapters/langchain/src", "packages/core/src/core"]
     },
+    "apps/evil-jelly/README.md": {
+      "paths": ["apps/evil-jelly/src", "packages/core/src", "packages/adapters"],
+      "artifacts": ["apps/evil-jelly/package.json", "package.json"],
+      "note": "Product and CLI README. Verify factual command, option, configuration, default, package, adapter, audit, and architecture claims; do not flag intentionally high-level product descriptions or omitted implementation detail. For pnpm script examples, account for pnpm consuming its single `--` separator before forwarding script arguments, and validate the actual invocation before reporting a leading-separator error."
+    },
     "packages/jelly-lint/README.md": {
       "artifacts": [
         "packages/jelly-lint/jellylint.schema.json",
