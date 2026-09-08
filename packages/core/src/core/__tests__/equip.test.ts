@@ -962,6 +962,51 @@ describe("equipMemo", () => {
     expect(result.res3).toEqual({ id: "b" });
   });
 
+  it.each([
+    false,
+    0,
+    "",
+    null,
+    undefined,
+    Number.NaN,
+  ])("reuses and replaces the falsy resource value %p", async (resource) => {
+    const mock = createMockModel();
+    mock.setDefaultResponse({ result: "ok" });
+
+    const replacement = { id: "replacement" };
+    let createCount = 0;
+    const create = vi.fn(async () => (createCount++ === 0 ? resource : replacement));
+    const destroy = vi.fn(async (_resource: unknown) => {});
+
+    const agent = createAgent({
+      id: "test",
+      model: mock.adapter,
+      handler: async () => {
+        const first = await equipResource("falsy", { create, destroy, deps: [0] });
+        const reused = await equipResource("falsy", { create, destroy, deps: [0] });
+
+        expect(Object.is(first, resource)).toBe(true);
+        expect(Object.is(reused, resource)).toBe(true);
+        expect(create).toHaveBeenCalledTimes(1);
+        expect(destroy).not.toHaveBeenCalled();
+
+        const next = await equipResource("falsy", { create, destroy, deps: [1] });
+        expect(next).toBe(replacement);
+        expect(destroy).toHaveBeenCalledTimes(1);
+        expect(Object.is(destroy.mock.calls[0]?.[0], resource)).toBe(true);
+
+        return { done: true };
+      },
+    });
+
+    await agent({});
+
+    // The replacement is destroyed at teardown; the old falsy value was already
+    // destroyed exactly once during dependency-change replacement.
+    expect(destroy).toHaveBeenCalledTimes(2);
+    expect(destroy.mock.calls[1]?.[0]).toBe(replacement);
+  });
+
   it("handles deep object dependencies", async () => {
     const mock = createMockModel();
     mock.setDefaultResponse({ result: "ok" });
