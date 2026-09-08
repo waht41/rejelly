@@ -4,7 +4,7 @@
 
 ### Minor Changes
 
-- 574d513: ### Core runtime
+- ### Core runtime
   
   - Make `turn_done` the final per-turn boundary after stream drainage, structured output, assembled tool calls, and usage recording, while clarifying generation error semantics. ([#30](https://github.com/waht41/rejelly/pull/30))
   - Expose provider tool-call identifiers and cache provenance through middleware metadata. ([#55](https://github.com/waht41/rejelly/pull/55))

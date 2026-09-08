@@ -4,7 +4,7 @@
 
 ### Patch Changes
 
-- Updated dependencies [574d513]
+- Updated dependencies:
   - @rejelly/core@0.2.0
 
 ## 0.1.0

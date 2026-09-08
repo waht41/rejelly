@@ -4,7 +4,7 @@
 
 ### Minor Changes
 
-- 574d513: ### Model and agent runtime
+- ### Model and agent runtime
   
   - Give Evil Jelly an explicit identity and built-in CLI capability discovery. ([#1](https://github.com/waht41/rejelly/pull/1))
   - Replace Bing scraping with opt-in provider-backed web search while retaining direct webpage reads. ([#4](https://github.com/waht41/rejelly/pull/4))
@@ -14,7 +14,7 @@
   - Show progress while tool-call arguments stream, including tool names, accumulated size, and long-running elapsed time. ([#74](https://github.com/waht41/rejelly/pull/74))
   - Add explicit Chat Completions or Responses protocol selection, persisted native provider state, detailed token budgets, protocol status, and bounded request setup. ([#77](https://github.com/waht41/rejelly/pull/77))
   - Keep the composer and safe local commands available during active turns while queueing model steers and rejecting unsafe concurrent session commands. ([#78](https://github.com/waht41/rejelly/pull/78))
-- 574d513: ### Sessions, prompts, and context
+- ### Sessions, prompts, and context
   
   - Keep workspace instructions and compaction payloads directly copyable inside stable XML-like boundaries. ([#17](https://github.com/waht41/rejelly/pull/17))
   - Resume compacted sessions without exposing internal bridge messages, and preserve structured attachment summaries in user-facing transcripts. ([#19](https://github.com/waht41/rejelly/pull/19))
@@ -23,7 +23,7 @@
   - Replace display-text placeholders with a semantic prompt document and persist rich input as a frozen canonical Session V3 record with durable image resources and conservative V1/V2 migration. ([#36](https://github.com/waht41/rejelly/pull/36))
   - Assign stable session-level ordinals to pasted images across turns and resumed sessions. ([#48](https://github.com/waht41/rejelly/pull/48))
   - Anchor automatic compaction to provider-reported prompt usage and restore validated token anchors during resume. ([#62](https://github.com/waht41/rejelly/pull/62))
-- 574d513: ### Skills, memory, MCP, and configuration
+- ### Skills, memory, MCP, and configuration
   
   - Add layered user and workspace settings with CLI precedence, strict parse failures, and a tracked workspace template. ([#33](https://github.com/waht41/rejelly/pull/33))
   - Add configurable MCP servers with lifecycle modes, progressive tool discovery, policy-gated calls, approvals, auditing, and an interactive manager. ([#40](https://github.com/waht41/rejelly/pull/40))
@@ -34,7 +34,7 @@
   - Distinguish a home-directory workspace from user configuration while preserving independent project memories and safe legacy migration. ([#57](https://github.com/waht41/rejelly/pull/57))
   - Wrap long memory detail fields into scrollable visual lines instead of truncating them. ([#58](https://github.com/waht41/rejelly/pull/58))
   - Add local Skills with tokenized prompt references, then extend them with process-lifetime user and project roots, portable `.agents/skills` discovery, layered enablement, bounded tools, and explicit interactive selection. ([#34](https://github.com/waht41/rejelly/pull/34), [#66](https://github.com/waht41/rejelly/pull/66))
-- 574d513: ### Terminal and interactive experience
+- ### Terminal and interactive experience
   
   - Improve Markdown rendering with distinct heading levels, correct ordered-list numbering, standards-based mdast/GFM parsing, single-pass inline rendering, and context-preserving emphasis and links. ([#7](https://github.com/waht41/rejelly/pull/7), [#8](https://github.com/waht41/rejelly/pull/8), [#9](https://github.com/waht41/rejelly/pull/9), [#15](https://github.com/waht41/rejelly/pull/15))
   - Keep the prompt caret correctly positioned across soft-wrapped rows. ([#11](https://github.com/waht41/rejelly/pull/11))
@@ -49,7 +49,7 @@
   - Refresh terminal presentation with richer Markdown, lazy syntax highlighting, compact unified diffs, and resumable successful tool observations. ([#56](https://github.com/waht41/rejelly/pull/56))
   - Make Escape dismiss active composer pickers before clearing the draft. ([#69](https://github.com/waht41/rejelly/pull/69))
   - Keep expanded tool transcript selection stable as newer calls complete. ([#71](https://github.com/waht41/rejelly/pull/71))
-- 574d513: ### Workspace and command tools
+- ### Workspace and command tools
   
   - Refresh fuzzy-search candidates for each tool invocation and file-picker session. ([#10](https://github.com/waht41/rejelly/pull/10))
   - Return `read_file` content in metadata-rich raw envelopes and preserve canonical file locators across reads, attachments, resume, and compaction. ([#18](https://github.com/waht41/rejelly/pull/18), [#20](https://github.com/waht41/rejelly/pull/20))
@@ -64,12 +64,10 @@
 
 ### Patch Changes
 
-- 574d513: ### Architecture
+- ### Architecture
   
   - Reorganize Evil Jelly around explicit domains, user-facing features, and cohesive CLI capabilities, tighten the dependency graph, and preserve tool-call numbering during resume. ([#35](https://github.com/waht41/rejelly/pull/35))
-- Updated dependencies [574d513]
-- Updated dependencies [574d513]
-- Updated dependencies [574d513]
+- Updated dependencies:
   - @rejelly/core@0.2.0
   - @rejelly/adapter-mcp@0.2.0
   - @rejelly/adapter-openai@0.2.0

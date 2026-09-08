@@ -4,13 +4,13 @@
 
 ### Minor Changes
 
-- 574d513: ### MCP adapter
+- ### MCP adapter
   
   - Expose shared MCP gateway contracts, normalized tool catalogs, lifecycle support, and named adapter errors for dynamic MCP runtimes. ([#40](https://github.com/waht41/rejelly/pull/40))
 
 ### Patch Changes
 
-- Updated dependencies [574d513]
+- Updated dependencies:
   - @rejelly/core@0.2.0
 
 ## 0.1.0
