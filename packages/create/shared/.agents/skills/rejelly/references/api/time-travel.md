@@ -179,7 +179,7 @@ When an Agent executes in a restored context:
 
 - If a `snapshot` is used, it is restored only once at the start of `runWith`.
 - The restored context state (memory, replay cache, etc.) persists for the entire `runWith` call.
-- Prompt and tool calls in the snapshot are matched by hash value — the cache is hit only when inputs are identical. If inputs change, execution proceeds normally and the snapshot is updated.
+- Prompt and tool calls in the snapshot are matched by hash value — the cache is hit only when inputs are identical. If inputs change, the cache is missed and execution proceeds normally. New records are written to the current run context, but `runWith` does not mutate or persist the supplied snapshot; call `dumpSnapshot()` again inside the run context to produce a new snapshot containing those records.
 - `runWith` only injects the snapshot; sub-agents restore themselves automatically on invocation.
 - Sub-agent restoration depends on `snapshot.children[callId]`. The `seq` in `callId` is assigned in the order of actual `SubAgent(...)` calls. When calling the same sub-agent in parallel, ensure sub-agent calls happen during the synchronous construction phase so that both the original run and the replay have consistent ordering:
 

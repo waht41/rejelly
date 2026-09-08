@@ -179,7 +179,7 @@ interface RunWithOptions<P = unknown> {
 
 - 如果使用了 `snapshot`，快照只会在 `runWith` 开始时恢复一次。
 - 快照恢复的上下文状态（内存、重放缓存等）会在整个 `runWith` 调用期间保持不变。
-- 快照中的 prompt 和 tool 调用会基于哈希值匹配，输入完全一致才会命中缓存；若输入变化则正常执行并更新快照。
+- 快照中的 prompt 和 tool 调用会基于哈希值匹配，输入完全一致才会命中缓存；若输入变化则不会命中缓存，并会正常执行。新记录会写入当前运行上下文，但 `runWith` 不会修改或持久化传入的快照；必须在运行上下文中再次显式调用 `dumpSnapshot()`，才能生成包含新记录的快照。
 - runWith 只注入 snapshot，子 Agent 会在调用时自动恢复。
 - 子 Agent 的恢复依赖 `snapshot.children[callId]`。`callId` 中的 `seq` 按实际调用 `SubAgent(...)` 的顺序分配，因此并行调用同一个子 Agent 时，应让子 Agent 调用发生在同步构造阶段，保证原运行和重放时顺序一致：
 
