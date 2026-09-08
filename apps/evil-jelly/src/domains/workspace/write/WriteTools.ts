@@ -164,6 +164,73 @@ async function prepareDeleteTargets(
   return prepared;
 }
 
+type PreparedEditTarget = {
+  filePath: string;
+  resolved: ResolvedFsPath;
+  raw: string;
+  newContent: string;
+  editsCount: number;
+};
+
+type EditTargetFailure = {
+  filePath: string;
+  problems: Array<{ editIndex?: number; searchBlock?: string; reason: string }>;
+};
+
+/** Identify a failed block without echoing an arbitrarily large tool argument back to the model. */
+function summarizeSearchBlock(searchBlock: string): string {
+  const normalized = normalizeNewlines(searchBlock);
+  const nonBlankLines = normalized
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const first = nonBlankLines[0] ?? "";
+  const last = nonBlankLines.at(-1) ?? "";
+  const lineSuffix = nonBlankLines.length > 1 ? ` (${nonBlankLines.length} lines)` : "";
+  const summary = nonBlankLines.length > 1 ? `${first} … ${last}${lineSuffix}` : first;
+  const maxLength = 240;
+  const bounded =
+    summary.length <= maxLength
+      ? summary
+      : `${summary.slice(0, 160)} … ${summary.slice(-(maxLength - 163))}`;
+  return JSON.stringify(bounded);
+}
+
+function appendEditFailures(lines: string[], failures: EditTargetFailure[]): void {
+  lines.push(`Not applied files (${failures.length}):`);
+  for (const failure of failures) {
+    lines.push(`- ${failure.filePath}`);
+    for (const problem of failure.problems) {
+      const prefix = problem.editIndex === undefined ? "file" : `edit[${problem.editIndex}]`;
+      lines.push(`  - ${prefix}`);
+      if (problem.searchBlock !== undefined) {
+        lines.push(`    searchBlock: ${summarizeSearchBlock(problem.searchBlock)}`);
+      }
+      lines.push(`    reason: ${problem.reason.replace(/\r?\n/g, "\n    ")}`);
+    }
+  }
+}
+
+function formatEditFailures(failures: EditTargetFailure[]): string {
+  const lines = ["No files updated."];
+  appendEditFailures(lines, failures);
+  return lines.join("\n");
+}
+
+function formatPartialEditResult(
+  prepared: PreparedEditTarget[],
+  totalEdits: number,
+  failures: EditTargetFailure[],
+): string {
+  const lines = [
+    `Updated ${prepared.length} file(s) (${totalEdits} edit(s) total).`,
+    `Applied files (${prepared.length}):`,
+    ...prepared.map((target) => `- ${target.filePath} (${target.editsCount} edit(s))`),
+  ];
+  appendEditFailures(lines, failures);
+  return lines.join("\n");
+}
+
 export function createEditFileTool(
   confirmWrite: ToolConfirmationHandler,
   observation: WriteToolObservationOptions = {},
@@ -174,17 +241,13 @@ export function createEditFileTool(
       "Apply search/replace edits to one or many files in one reviewed write. Uses exact match, or line-trim when only indentation differs. " +
       "Sentinels: empty searchBlock = whole-file replace (single edit only); '@head' / '@end' prepend or append. " +
       "Multiple edits run in order: prefer bottom-to-top and anchor searchBlocks on the original file to avoid offset drift. " +
-      "Input must be { targets: [{ filePath, edits }, ...] }. User approves one unified diff for the whole batch.",
+      "Every target is validated before writing. Files with any invalid edit are left unchanged and reported with all block failures; " +
+      "conflict-free files continue to one unified-diff approval. Input must be { targets: [{ filePath, edits }, ...] }.",
     parameters: editFileParameters,
     handler: async (input) => {
       const policy = getWorkspaceFiles();
-      const preparedTargets: {
-        filePath: string;
-        resolved: ResolvedFsPath;
-        raw: string;
-        newContent: string;
-        editsCount: number;
-      }[] = [];
+      const preparedTargets: PreparedEditTarget[] = [];
+      const failedTargets: EditTargetFailure[] = [];
 
       // Merge edits for a repeated filePath instead of rejecting the batch: models
       // routinely emit one target per edit site in the same file. Edits are concatenated
@@ -211,29 +274,61 @@ export function createEditFileTool(
       for (const { filePath: normalizedPath, edits } of mergedTargets) {
         const resolved = await resolveFileToolPath(normalizedPath, { kind: "write" });
         if (!resolved.ok) {
-          return resolved.error;
+          failedTargets.push({ filePath: normalizedPath, problems: [{ reason: resolved.error }] });
+          continue;
         }
 
         const hasWholeFileReplace = edits.some((e) => e.searchBlock.trim() === "");
         if (hasWholeFileReplace && edits.length !== 1) {
-          return `Invalid edits for ${normalizedPath}: empty searchBlock is only allowed when edits has exactly one entry (whole-file replace).`;
+          failedTargets.push({
+            filePath: normalizedPath,
+            problems: [
+              {
+                reason:
+                  "empty searchBlock is only allowed when edits has exactly one entry (whole-file replace).",
+              },
+            ],
+          });
+          continue;
         }
 
         let raw: string;
         try {
           const stat = await policy.statResolved(resolved);
           if (stat.size > MAX_WRITE_BYTES) {
-            return `File too large (${stat.size} bytes): ${normalizedPath}; max ${MAX_WRITE_BYTES} for edits.`;
+            failedTargets.push({
+              filePath: normalizedPath,
+              problems: [
+                {
+                  reason: `File too large (${stat.size} bytes); max ${MAX_WRITE_BYTES} for edits.`,
+                },
+              ],
+            });
+            continue;
           }
           raw = await policy.readResolved(resolved);
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : String(e);
-          return `Failed to read file ${normalizedPath}: ${msg}`;
+          failedTargets.push({
+            filePath: normalizedPath,
+            problems: [{ reason: `Failed to read file: ${msg}` }],
+          });
+          continue;
         }
 
         const editResult = applyBlockEdits(raw, edits);
         if (!editResult.ok) {
-          return `Cannot apply edit for ${normalizedPath} at index ${editResult.failedIndex}: ${editResult.reason}`;
+          failedTargets.push({
+            filePath: normalizedPath,
+            problems: editResult.failures.map(({ failedIndex, reason }) => ({
+              editIndex: failedIndex,
+              ...(edits[failedIndex] !== undefined
+                ? { searchBlock: edits[failedIndex].searchBlock }
+                : {}),
+              reason,
+            })),
+          });
+          continue;
         }
 
         preparedTargets.push({
@@ -243,6 +338,10 @@ export function createEditFileTool(
           newContent: editResult.text,
           editsCount: edits.length,
         });
+      }
+
+      if (preparedTargets.length === 0) {
+        return formatEditFailures(failedTargets);
       }
 
       const unifiedDiff = preparedTargets
@@ -291,6 +390,9 @@ export function createEditFileTool(
       }
 
       const totalEdits = preparedTargets.reduce((sum, item) => sum + item.editsCount, 0);
+      if (failedTargets.length > 0) {
+        return formatPartialEditResult(preparedTargets, totalEdits, failedTargets);
+      }
       if (isBatch) {
         return `Updated ${preparedTargets.length} files (${totalEdits} edit(s) total).`;
       }

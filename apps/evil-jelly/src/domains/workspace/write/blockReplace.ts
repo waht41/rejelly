@@ -85,6 +85,24 @@ function findAllIndices(haystack: string, needle: string): number[] {
   return indices;
 }
 
+function lineNumberAtOffset(content: string, offset: number): number {
+  let line = 1;
+  for (let i = 0; i < offset; i += 1) {
+    if (content[i] === "\n") {
+      line += 1;
+    }
+  }
+  return line;
+}
+
+/** Keep diagnostics useful without dumping an unbounded list for tiny repeated needles. */
+function formatCandidateLines(content: string, offsets: number[]): string {
+  const maxShown = 8;
+  const lines = offsets.slice(0, maxShown).map((offset) => lineNumberAtOffset(content, offset));
+  const omitted = offsets.length - lines.length;
+  return `${lines.join(", ")}${omitted > 0 ? ` (+${omitted} more)` : ""}`;
+}
+
 /**
  * Find contiguous line ranges where each line matches needle lines after trim().
  * Returns exclusive [start, end) byte offsets into `hay`.
@@ -163,7 +181,9 @@ export function findBlockToReplace(fileContent: string, searchBlock: string): Bl
   if (exactIdxs.length > 1) {
     return {
       ok: false,
-      reason: `searchBlock matches ${exactIdxs.length} times exactly; narrow the snippet or add surrounding lines.`,
+      reason:
+        `searchBlock matches ${exactIdxs.length} times exactly at lines ` +
+        `${formatCandidateLines(hay, exactIdxs)}; narrow the snippet or add surrounding lines.`,
     };
   }
 
@@ -175,7 +195,13 @@ export function findBlockToReplace(fileContent: string, searchBlock: string): Bl
   if (trimRanges.length > 1) {
     return {
       ok: false,
-      reason: `After line-trim comparison, searchBlock matches ${trimRanges.length} regions; add more unique context lines.`,
+      reason:
+        `After line-trim comparison, searchBlock matches ${trimRanges.length} regions ` +
+        `at lines ${formatCandidateLines(
+          hay,
+          trimRanges.map((range) => range.start),
+        )}; ` +
+        "add more unique context lines.",
     };
   }
 
@@ -200,43 +226,44 @@ export function findBlockToReplace(fileContent: string, searchBlock: string): Bl
 export function applyBlockEdits(
   fileContent: string,
   edits: { searchBlock: string; replaceBlock: string }[],
-): { ok: true; text: string } | { ok: false; reason: string; failedIndex: number } {
+):
+  | { ok: true; text: string }
+  | { ok: false; failures: Array<{ failedIndex: number; reason: string }> } {
   let updated = normalizeNewlines(fileContent);
-  let i = 0;
-  for (const edit of edits) {
+  const failures: Array<{ failedIndex: number; reason: string }> = [];
+
+  for (const [index, edit] of edits.entries()) {
     const trimmedSearch = edit.searchBlock.trim();
     const replacement = normalizeNewlines(edit.replaceBlock);
 
     if (trimmedSearch === "") {
       updated = replacement;
-      i++;
       continue;
     }
 
     if (trimmedSearch === "@head") {
       const padding = replacement.endsWith("\n") || updated.startsWith("\n") ? "" : "\n";
       updated = replacement + padding + updated;
-      i++;
       continue;
     }
 
     if (trimmedSearch === "@end") {
       const padding = updated.endsWith("\n") || replacement.startsWith("\n") ? "" : "\n";
       updated = updated + padding + replacement;
-      i++;
       continue;
     }
 
     const match = findBlockToReplace(updated, edit.searchBlock);
     if (!match.ok) {
-      return { ok: false, reason: match.reason, failedIndex: i };
+      failures.push({ failedIndex: index, reason: match.reason });
+      continue;
     }
     const hay = match.normalizedContent;
     const merged = replacementForBlockMatch(match, hay, edit.replaceBlock);
     const before = hay.slice(0, match.start);
     const after = hay.slice(match.end);
     updated = before + merged + after;
-    i++;
   }
-  return { ok: true, text: updated };
+
+  return failures.length > 0 ? { ok: false, failures } : { ok: true, text: updated };
 }

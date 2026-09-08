@@ -229,6 +229,57 @@ describe("createEditFileTool", () => {
     }
   });
 
+  it("applies conflict-free files and reports every problem in skipped files", async () => {
+    const dir = createTempWorkspace();
+    try {
+      writeFileSync(join(dir, "a.ts"), "const a = 1\n", "utf8");
+      writeFileSync(join(dir, "b.ts"), "same\nsame\nkeep\n", "utf8");
+      writeFileSync(join(dir, "c.ts"), "const c = 3\n", "utf8");
+      setWorkspaceRoot(dir);
+
+      const seen: FsWritePayload[] = [];
+      const tool = createEditFileTool(async (params) => {
+        if (params.type !== "fs_write") {
+          throw new Error(`Unexpected payload type: ${params.type}`);
+        }
+        seen.push(params);
+        return { action: "accept" };
+      });
+
+      const result = await tool.handler({
+        targets: [
+          { filePath: "a.ts", edits: [{ searchBlock: "1", replaceBlock: "2" }] },
+          {
+            filePath: "b.ts",
+            edits: [
+              { searchBlock: "same", replaceBlock: "changed" },
+              { searchBlock: "missing", replaceBlock: "added" },
+            ],
+          },
+          { filePath: "c.ts", edits: [{ searchBlock: "missing", replaceBlock: "4" }] },
+        ],
+      });
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.filePath).toBe("a.ts");
+      expect(seen[0]?.unifiedDiff).toContain("--- a.ts");
+      expect(seen[0]?.unifiedDiff).not.toContain("--- b.ts");
+      expect(result).toContain("Applied files (1):\n- a.ts (1 edit(s))");
+      expect(result).toContain("Not applied files (2):");
+      expect(result).toContain("- b.ts");
+      expect(result).toContain('edit[0]\n    searchBlock: "same"');
+      expect(result).toContain("reason: searchBlock matches 2 times exactly at lines 1, 2");
+      expect(result).toContain('edit[1]\n    searchBlock: "missing"');
+      expect(result).toContain("reason: searchBlock not found in file");
+      expect(result).toContain("- c.ts");
+      expect(await readFile(join(dir, "a.ts"), "utf8")).toBe("const a = 2\n");
+      expect(await readFile(join(dir, "b.ts"), "utf8")).toBe("same\nsame\nkeep\n");
+      expect(await readFile(join(dir, "c.ts"), "utf8")).toBe("const c = 3\n");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("returns retry feedback for batch and keeps files unchanged", async () => {
     const dir = createTempWorkspace();
     try {

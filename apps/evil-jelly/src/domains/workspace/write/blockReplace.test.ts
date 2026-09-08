@@ -90,6 +90,15 @@ describe("workspace block replacement", () => {
     expect(next).toContain("    baz();");
     expect(next).not.toContain("        baz();");
   });
+
+  it("reports candidate line numbers for ambiguous line-trim matches", () => {
+    const match = findBlockToReplace("  foo\n  bar\nother\n    foo\n    bar\n", "foo\nbar");
+    expect(match).toEqual({
+      ok: false,
+      reason:
+        "After line-trim comparison, searchBlock matches 2 regions at lines 1, 4; add more unique context lines.",
+    });
+  });
 });
 
 describe("applyBlockEdits", () => {
@@ -134,5 +143,29 @@ describe("applyBlockEdits", () => {
       return;
     }
     expect(out.text).toBe("TOP\nmid\nBOT\n");
+  });
+
+  it("reports every failed block instead of stopping at the first one", () => {
+    const out = applyBlockEdits("same\nsame\nkeep\n", [
+      { searchBlock: "same", replaceBlock: "changed" },
+      { searchBlock: "missing", replaceBlock: "added" },
+      { searchBlock: "keep", replaceBlock: "kept" },
+    ]);
+
+    expect(out).toEqual({
+      ok: false,
+      failures: [
+        {
+          failedIndex: 0,
+          reason:
+            "searchBlock matches 2 times exactly at lines 1, 2; narrow the snippet or add surrounding lines.",
+        },
+        {
+          failedIndex: 1,
+          reason:
+            "searchBlock not found in file. Copy a contiguous chunk from read_file output (exact or same lines after trim).",
+        },
+      ],
+    });
   });
 });
