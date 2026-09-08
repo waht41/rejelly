@@ -55,6 +55,8 @@ export interface PromptChatResilientOptions<TSchema extends z.ZodTypeAny = z.Zod
   promptTokenUsage?: PromptTokenUsageReader;
   sessionRecorder?: SessionMessageSink;
   turnId?: string;
+  /** Cancellation scoped to this chat loop rather than its owning agent context. */
+  signal?: AbortSignal;
 }
 
 type PromptChatResilientStringOptions = Omit<PromptChatResilientOptions, "schema">;
@@ -111,6 +113,7 @@ export const promptChatResilient = createAgentPolicy({
       promptTokenUsage: options?.promptTokenUsage,
       sessionRecorder: options?.sessionRecorder,
       turnId: options?.turnId,
+      signal: options?.signal,
     };
 
     return await runResilientToolCallLoopPolicy(runtime, snapshot);

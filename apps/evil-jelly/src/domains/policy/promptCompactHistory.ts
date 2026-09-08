@@ -12,6 +12,7 @@ export interface PromptCompactHistoryOptions {
   /** Conversation to summarize (persisted history; the runtime supplies the equipped prefix). */
   message: Message[];
   compaction: PromptChatCompactionConfig;
+  signal?: AbortSignal;
 }
 
 /**
@@ -29,7 +30,12 @@ export const promptCompactHistory = createAgentPolicy({
     const runtime = ctx.fork({
       messages: normalizeMessages([...ctx.messages, ...options.message]),
     });
-    const result = await runContextCompaction(runtime, runtime.messages, options.compaction);
+    const result = await runContextCompaction(
+      runtime,
+      runtime.messages,
+      options.compaction,
+      options.signal,
+    );
     return result ? withoutEquippedPrefix(result.history) : null;
   },
 }) as (options: PromptCompactHistoryOptions) => Promise<Message[] | null>;

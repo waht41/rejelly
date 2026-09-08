@@ -457,6 +457,7 @@ async function summarizeCompactionInput(
   ctx: PromptContext,
   messages: Message[],
   contextWindowTokens: number | undefined,
+  signal?: AbortSignal,
 ): Promise<string | null> {
   let attemptMessages = contextWindowTokens
     ? truncateToolOutputsToFit(
@@ -475,6 +476,7 @@ async function summarizeCompactionInput(
         runtime: summaryRuntime,
         toolChoice: "none",
         channel: COMPACTION_STREAM_CHANNEL,
+        signal,
       });
       const summaryText = messageContentToText(turn.message.content).trim();
       return summaryText.length === 0 ? null : summaryText;
@@ -514,11 +516,13 @@ export async function runContextCompaction(
   ctx: PromptContext,
   working: Message[],
   config: PromptChatCompactionConfig,
+  signal?: AbortSignal,
 ): Promise<{ history: Message[]; keptUserMessages: number } | null> {
   const summaryText = await summarizeCompactionInput(
     ctx,
     [...working, { role: "user", content: config.summaryInstruction }],
     config.contextWindowTokens,
+    signal,
   );
   if (summaryText === null) {
     return null;

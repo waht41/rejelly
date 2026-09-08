@@ -41,6 +41,7 @@ export interface ToolCallLoopPolicySnapshot {
   promptTokenUsage?: PromptTokenUsageReader;
   sessionRecorder?: SessionMessageSink;
   turnId?: string;
+  signal?: AbortSignal;
 }
 
 class CompactionController {
@@ -56,6 +57,7 @@ class CompactionController {
     initialTokenAnchor?: PromptTokenAnchor,
     private readonly recorder?: SessionMessageSink,
     private readonly turnId?: string,
+    private readonly signal?: AbortSignal,
   ) {
     this.#baseMessages = baseMessages;
     this.#tokenAnchor = initialTokenAnchor;
@@ -101,7 +103,7 @@ class CompactionController {
     }
 
     const startedAt = Date.now();
-    const compactionResult = await runContextCompaction(this.ctx, working, compaction);
+    const compactionResult = await runContextCompaction(this.ctx, working, compaction, this.signal);
     if (!compactionResult) {
       // Summarization produced nothing usable; stop retrying so we don't burn model turns.
       this.#rounds = compaction.maxRounds ?? DEFAULT_COMPACTION_MAX_ROUNDS;
@@ -195,6 +197,7 @@ export async function runResilientToolCallLoopPolicy<T = unknown>(
     snapshot.initialTokenAnchor,
     snapshot.sessionRecorder,
     snapshot.turnId,
+    snapshot.signal,
   );
 
   let step = 0;
@@ -221,6 +224,7 @@ export async function runResilientToolCallLoopPolicy<T = unknown>(
         jsonSchema: snapshot.jsonSchema,
         parser: snapshot.parser,
         maxRetries: ctx.maxRetries,
+        signal: snapshot.signal,
       });
 
       const latestUsage = snapshot.promptTokenUsage?.read();

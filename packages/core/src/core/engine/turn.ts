@@ -1,7 +1,12 @@
 import { startTimer } from "../../utils/clock";
 import { hashValue } from "../../utils/hash";
 import { getCurrentContextSafe } from "../context/accessor";
-import { ModelNotFoundError, TurnBudgetExceededError, toErrorInfo } from "../domain/errors";
+import {
+  AbortError,
+  ModelNotFoundError,
+  TurnBudgetExceededError,
+  toErrorInfo,
+} from "../domain/errors";
 import type { TurnToolConfig } from "../domain/event-payload";
 import type { FinishReason, JsonSchema, Message } from "../domain/model";
 import { assertUniqueToolNames, type ToolChoice, type ToolDefinition } from "../domain/tool";
@@ -16,6 +21,11 @@ import { assertRuntimeUsable, type PromptRuntime } from "./runtime";
 
 export interface ExecuteTurnOptions {
   jsonSchema?: JsonSchema;
+  /**
+   * Cancellation scoped to this model operation. It is combined with the owning agent context's
+   * signal, so callers can stop one turn without cancelling the whole agent run.
+   */
+  signal?: AbortSignal;
   /**
    * Forked runtime for this turn — required. It must be derived (via `fork()`)
    * from the `PromptContext` handed to the active policy handler; anything else
@@ -136,6 +146,41 @@ function emitTurnEndSuccess(
   }
 }
 
+function combineAbortSignals(
+  ambientSignal: AbortSignal,
+  operationSignal: AbortSignal | undefined,
+): { signal: AbortSignal; dispose: () => void } {
+  if (!operationSignal || operationSignal === ambientSignal) {
+    return { signal: ambientSignal, dispose: () => undefined };
+  }
+
+  const controller = new AbortController();
+  const forwardAbort = (source: AbortSignal) => {
+    if (!controller.signal.aborted) {
+      controller.abort(source.reason);
+    }
+  };
+  const onAmbientAbort = () => forwardAbort(ambientSignal);
+  const onOperationAbort = () => forwardAbort(operationSignal);
+
+  if (ambientSignal.aborted) {
+    forwardAbort(ambientSignal);
+  } else if (operationSignal.aborted) {
+    forwardAbort(operationSignal);
+  } else {
+    ambientSignal.addEventListener("abort", onAmbientAbort, { once: true });
+    operationSignal.addEventListener("abort", onOperationAbort, { once: true });
+  }
+
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      ambientSignal.removeEventListener("abort", onAmbientAbort);
+      operationSignal.removeEventListener("abort", onOperationAbort);
+    },
+  };
+}
+
 export async function executeTurn(
   messages: Message[],
   options: ExecuteTurnOptions,
@@ -193,18 +238,26 @@ export async function executeTurn(
         finishReason = message.tool_calls?.length ? "tool_calls" : "unknown";
         isCacheHit = true;
       } else {
-        const llmResult: LLMCallResult = await callLLM(model, messages, {
-          schema: options.jsonSchema,
-          signal: ctx.signal,
-          tools: turnTools.length > 0 ? turnTools : undefined,
-          toolChoice: options.toolChoice,
-          additionalOptions: options.additionalOptions,
-          turnIndex: step,
-          channel: options.channel,
-        });
+        const combinedSignal = combineAbortSignals(ctx.signal, options.signal);
+        try {
+          if (combinedSignal.signal.aborted) {
+            throw AbortError.fromSignal(combinedSignal.signal);
+          }
+          const llmResult: LLMCallResult = await callLLM(model, messages, {
+            schema: options.jsonSchema,
+            signal: combinedSignal.signal,
+            tools: turnTools.length > 0 ? turnTools : undefined,
+            toolChoice: options.toolChoice,
+            additionalOptions: options.additionalOptions,
+            turnIndex: step,
+            channel: options.channel,
+          });
 
-        message = messageFromLLMResult(llmResult);
-        finishReason = llmResult.finishReason ?? "unknown";
+          message = messageFromLLMResult(llmResult);
+          finishReason = llmResult.finishReason ?? "unknown";
+        } finally {
+          combinedSignal.dispose();
+        }
       }
 
       // On replay this also replaces legacy plain-string output with the normalized Message
