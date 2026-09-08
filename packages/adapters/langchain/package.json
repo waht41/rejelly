@@ -1,6 +1,6 @@
 {
   "name": "@rejelly/adapter-langchain",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "waht41",
   "description": "Convert LangChain tools to Rejelly ToolDefinition for @rejelly/core",
   "type": "module",

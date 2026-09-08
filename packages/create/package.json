@@ -1,6 +1,6 @@
 {
   "name": "create-rejelly",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "waht41",
   "description": "Scaffold a new Rejelly app in seconds",
   "type": "module",
