@@ -157,7 +157,7 @@ await runWith(async () => {
 The most common use of the event system is execution logging. The framework provides built-in observability exporters:
 
 - **Review Exporter**: Use `enableReview()` to send trace events in real time to the Rejelly Review Server for visual debugging
-- **OTLP Exporter**: Use `enableOTLP()` to send trace events to OTLP-compatible servers (Jaeger, Zipkin, Tempo, etc.)
+- **OTLP Exporter**: Use `enableOTLP(options)` to send trace events to OTLP-compatible servers (Jaeger, Zipkin, Tempo, etc.); the required `OTLPOptions` includes destination configuration such as `endpoint`
 
 ### Performance Monitoring
 

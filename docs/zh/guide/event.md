@@ -157,7 +157,7 @@ await runWith(async () => {
 事件系统最常见的用途是记录执行日志。框架提供了内置的可观测性导出器：
 
 - **Review Exporter**：使用 `enableReview()` 将追踪事件实时发送到 Rejelly Review Server 可视化调试
-- **OTLP Exporter**：使用 `enableOTLP()` 将追踪事件发送到 OTLP 兼容服务器（Jaeger、Zipkin、Tempo 等）
+- **OTLP Exporter**：使用 `enableOTLP(options)` 将追踪事件发送到 OTLP 兼容服务器（Jaeger、Zipkin、Tempo 等）；必填的 `OTLPOptions` 需包含 `endpoint` 等目标配置
 
 ### 性能监控
 

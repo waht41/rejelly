@@ -2,9 +2,9 @@
 
 通过快照（Snapshot）实现执行状态的持久化、恢复与重放，支持断点续传、从事件追踪恢复、以及基于 `contentHash` 的 Prompt/Tool 缓存重放。相关 API 从 `@rejelly/core/debugger` 引入，`runWith` 从 `@rejelly/core` 引入。
 
-> **警告：生产环境使用 Snapshot 默认会抛错。**
+> **警告：生产环境默认禁用快照采集和注入。**
 
-**enableSnapshot：** 根 context 的 `enableSnapshot` 由 `runWith` 的 `options.enableSnapshot` 决定，默认值为 `IS_DEV`（即 `NODE_ENV === 'development'` 或 `'test'` 时为 `true`，可通过 runWith 参数修改默认值）。当 `enableSnapshot` 为 `false` 时：journal 记录与子 Agent 帧保存都会跳过；调用 `dumpSnapshot()` 会抛出 `SnapshotDisabledError`。若需要**生产环境**的快照，可在运行期间采集事件追踪（TraceEvent），事后用 `restoreSnapshot(trace.events)` 从事件线重建快照，然后在本地回放、调试。
+**enableSnapshot：** 根 context 的 `enableSnapshot` 由 `runWith` 的 `options.enableSnapshot` 决定，默认值为 `IS_DEV`（即 `NODE_ENV === 'development'` 或 `'test'` 时为 `true`）。当它为 `false` 时，journal 记录与子 Agent 帧保存都会跳过，调用 `dumpSnapshot()` 会抛出 `SnapshotDisabledError`；生产环境向 `runWith` 传入非空 `snapshot` 也会抛错，除非显式设置 `enableSnapshot: true`。该生产开关会记录危险警告，因为缓存穿透可能导致模型重复请求或非幂等工具重复执行。`restoreSnapshot(trace.events)` 本身不依赖此开关：可以从生产环境采集的事件线重建快照，再在本地回放、调试。
 
 ---
 
@@ -99,8 +99,8 @@ interface AgentFrameSnapshot {
 **注意事项：**
 
 - 仅当当前 context 的 `enableSnapshot` 为 `true` 时可调用；否则会抛出 `SnapshotDisabledError`（可从 `@rejelly/core` 引入 `isSnapshotDisabledError` 判断）。
-- 快照只包含 JSON 可序列化的数据（内存、日志等）
-- 非序列化的数据（如函数、类实例）会被忽略或标记为错误
+- 快照状态（包括内存、帧和 metadata）必须是 JSON 可序列化数据；函数、类实例、`undefined`、循环引用等值会使 `dumpSnapshot()` 抛出 `TypeError`
+- Prompt/Tool journal 输出会单独检查：非序列化输出会被替换为 tombstone/error 条目，不能作为缓存重放
 - 快照是深拷贝，修改快照不会影响原始上下文
 - promptAgent 的输入哈希包括 prompt，schema，model id，model provider
 - tool 的原理是在洋葱模型的最内部添加了 cache 中间件
@@ -109,7 +109,7 @@ interface AgentFrameSnapshot {
 
 ## `runWith(fn, options?)` 与快照
 
-在可选的快照恢复上下文中执行函数。如果提供了 `options.snapshot`，会从快照恢复根上下文再执行；否则正常执行。
+在可选的快照恢复上下文中执行函数。如果提供了 `options.snapshot`，会从快照恢复根上下文再执行；否则正常执行。开发和测试环境默认允许注入快照；生产环境默认禁止，传入非空快照时必须同时显式设置 `enableSnapshot: true`。开启后会记录危险警告，因为缓存未命中可能导致重复调用模型或重新执行非幂等工具。
 
 ```typescript
 import { runWith } from '@rejelly/core';
@@ -127,8 +127,12 @@ const result = await runWith(async () => {
 const snapshot = await loadSnapshot(); // 从文件或数据库加载
 const result = await runWith(async () => {
   const agent = createAgent({ ... });
-  return await agent({ input: 'test' }); //使用快照后，Agent会快速重放，根据journal跳过tool，llm的执行，直接
-}, { snapshot });
+  return await agent({ input: 'test' }); // 命中 journal 时跳过对应的 tool/LLM 执行
+}, {
+  snapshot,
+  // 生产环境必须显式开启；开发/测试环境可省略
+  enableSnapshot: true,
+});
 ```
 
 **与快照相关的选项：**
@@ -203,7 +207,7 @@ const tasks = prepared.map(item => SubAgent({ text: item.text }));
 await Promise.all(tasks);
 ```
 
-- 非序列化的数据在快照中会被标记为错误，重放时会跳过这些缓存。
+- 内存、帧状态或 metadata 中的非 JSON 可序列化值会使 `dumpSnapshot()` 抛出 `TypeError`。Prompt/Tool journal 的非序列化输出会改记为 tombstone/error 条目，且不会作为缓存重放。
 
 ---
 
@@ -234,7 +238,11 @@ if (agentEndEvent) {
   });
   const result = await runWith(async () => {
     return await MyAgent({ input: 'test' });
-  }, { snapshot });
+  }, {
+    snapshot,
+    // 生产环境注入快照必须显式开启；开发/测试环境可省略
+    enableSnapshot: true,
+  });
 }
 ```
 
@@ -303,10 +311,16 @@ import { runWith, EVENTS } from '@rejelly/core';
 import type { TraceEvent, AgentStartEvent, AgentEndEvent } from '@rejelly/core';
 import { restoreSnapshot } from '@rejelly/core/debugger';
 
+// 以下示例也可在生产环境运行，因此显式允许快照注入。
+// 该选项会触发危险警告；请先评估缓存穿透和非幂等工具重复执行风险。
+
 // 场景1: 恢复到最新状态
 async function restoreToLatest(trace: TraceEvent[]) {
   const snapshot = restoreSnapshot(trace);
-  return await runWith(async () => await MyAgent({ input: 'test' }), { snapshot });
+  return await runWith(async () => await MyAgent({ input: 'test' }), {
+    snapshot,
+    enableSnapshot: true,
+  });
 }
 
 // 场景2: 恢复执行（跳过已完成的步骤）
@@ -318,7 +332,10 @@ async function resumeExecution(trace: TraceEvent[]) {
     spanId: stepEndEvent.trace.spanId,
     anchor: 'after'
   });
-  return await runWith(async () => await MyAgent({ input: 'test' }), { snapshot });
+  return await runWith(async () => await MyAgent({ input: 'test' }), {
+    snapshot,
+    enableSnapshot: true,
+  });
 }
 
 // 场景3: 重试执行（重新执行失败的步骤）
@@ -330,7 +347,10 @@ async function retryExecution(trace: TraceEvent[]) {
     spanId: stepStartEvent.trace.spanId,
     anchor: 'before'
   });
-  return await runWith(async () => await MyAgent({ input: 'test' }), { snapshot });
+  return await runWith(async () => await MyAgent({ input: 'test' }), {
+    snapshot,
+    enableSnapshot: true,
+  });
 }
 ```
 
@@ -341,8 +361,8 @@ async function retryExecution(trace: TraceEvent[]) {
 
 **与 `runWith()` 的关系：**
 
-- `restoreSnapshot()` 生成快照，`runWith()` 使用快照恢复执行
-- 两者配合使用可以实现完整的时间旅行功能：从事件追踪恢复快照，然后使用快照恢复执行
+- `restoreSnapshot()` 生成快照时不依赖 `enableSnapshot`；`runWith()` 负责注入该快照并恢复执行。
+- 开发和测试环境默认允许注入快照；生产环境必须显式传入 `{ snapshot, enableSnapshot: true }`，并会记录危险警告。只需重建快照而不执行时，无需开启该选项。
 
 **错误处理：**
 
@@ -359,4 +379,4 @@ async function retryExecution(trace: TraceEvent[]) {
 - 事件追踪会按时间戳自动排序，确保按时间顺序处理
 - 恢复的快照中的 prompt 和 tool 缓存基于 `contentHash` 匹配，确保输入完全一致才会命中
 - 非序列化的数据（如函数、类实例）在事件追踪中不会保存，恢复时这些数据会丢失
-- 恢复的快照可以像 `dumpSnapshot()` 生成的快照一样使用，传递给 `runWith()` 进行恢复执行
+- 恢复的快照可以像 `dumpSnapshot()` 生成的快照一样传给 `runWith()`；若在生产环境注入，必须显式设置 `enableSnapshot: true`
