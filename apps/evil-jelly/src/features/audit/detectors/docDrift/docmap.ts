@@ -24,6 +24,8 @@ const DocMapEntrySchema = z
     skip: z.string().optional(),
     /** Extra per-doc guidance injected into the evaluator prompt. */
     note: z.string().optional(),
+    /** Deepest Markdown heading level that starts an audit seed; defaults to H2. */
+    sectionDepth: z.union([z.literal(2), z.literal(3)]).optional(),
   })
   .strict();
 
@@ -228,6 +230,7 @@ function expandEntryPlaceholders(docFile: string, entry: DocMapEntry): DocMapEnt
     ...(entry.artifacts !== undefined ? { artifacts: entry.artifacts.map(subst) } : {}),
     ...(entry.skip !== undefined ? { skip: entry.skip } : {}),
     ...(entry.note !== undefined ? { note: entry.note } : {}),
+    ...(entry.sectionDepth !== undefined ? { sectionDepth: entry.sectionDepth } : {}),
   };
 }
 

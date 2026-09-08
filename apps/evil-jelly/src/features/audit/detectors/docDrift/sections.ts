@@ -1,13 +1,16 @@
 /**
- * Fence-aware Markdown H2 splitter for doc-drift validation (INV-0015). Sections are the audit
- * seeds: one per H1/H2 heading plus an optional preamble. Headings inside fenced code blocks must
- * NOT split (docs/api/core.md embeds `# Markdown` inside a fence), hence the fence tracking.
+ * Fence-aware Markdown section splitter for doc-drift validation (INV-0015). Sections are the
+ * audit seeds: one per heading through the configured depth plus an optional preamble. Headings
+ * inside fenced code blocks must NOT split (docs/api/core.md embeds `# Markdown` inside a fence),
+ * hence the fence tracking.
  */
+
+export type SectionDepth = 2 | 3;
 
 export interface MarkdownSection {
   /** Heading text without leading hashes; `(preamble)` for content before the first heading. */
   heading: string;
-  /** H1→H2 trail identifying the section, e.g. `["Core", "createAgent(config)"]`. */
+  /** Available heading trail through the section heading, e.g. H1→H2→H3. */
   headingPath: string[];
   /** 1-based heading line (or 1 for the preamble). */
   startLine: number;
@@ -38,14 +41,18 @@ function closesFence(line: string, open: OpenFence): boolean {
 }
 
 /**
- * Split a Markdown document into H1/H2-delimited sections. H3+ headings stay inside their section.
- * Content before the first heading becomes a `(preamble)` section when non-blank.
+ * Split a Markdown document at headings through `sectionDepth` (H2 by default). Deeper headings
+ * stay inside their parent section. Content before the first split heading becomes a `(preamble)`
+ * section when non-blank.
  */
-export function splitMarkdownH2Sections(markdown: string): MarkdownSection[] {
+export function splitMarkdownSections(
+  markdown: string,
+  sectionDepth: SectionDepth = 2,
+): MarkdownSection[] {
   const lines = markdown.split(/\r?\n/);
   const sections: MarkdownSection[] = [];
 
-  let currentH1: string | undefined;
+  const ancestors: Array<string | undefined> = [];
   let open: { heading: string; headingPath: string[]; startLine: number } | null = null;
   let fence: OpenFence | null = null;
 
@@ -77,8 +84,9 @@ export function splitMarkdownH2Sections(markdown: string): MarkdownSection[] {
       continue;
     }
 
-    const headingMatch = /^(#{1,2})\s+(.+?)\s*$/.exec(line);
-    if (!headingMatch) {
+    const headingMatch = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
+    const level = headingMatch?.[1].length;
+    if (!headingMatch || level === undefined || level > sectionDepth) {
       if (!open) {
         open = { heading: "(preamble)", headingPath: ["(preamble)"], startLine: lineNo };
       }
@@ -86,18 +94,14 @@ export function splitMarkdownH2Sections(markdown: string): MarkdownSection[] {
     }
 
     close(lineNo - 1);
-    const level = headingMatch[1].length;
     const heading = headingMatch[2];
-    if (level === 1) {
-      currentH1 = heading;
-      open = { heading, headingPath: [heading], startLine: lineNo };
-    } else {
-      open = {
-        heading,
-        headingPath: currentH1 !== undefined ? [currentH1, heading] : [heading],
-        startLine: lineNo,
-      };
-    }
+    ancestors.length = level - 1;
+    ancestors[level - 1] = heading;
+    open = {
+      heading,
+      headingPath: ancestors.filter((ancestor): ancestor is string => ancestor !== undefined),
+      startLine: lineNo,
+    };
   }
   close(lines.length);
 

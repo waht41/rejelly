@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MatchableSymbol } from "./match";
 import { buildSymbolTable, extractSectionMentions, matchSectionSymbols } from "./match";
-import { splitMarkdownH2Sections } from "./sections";
+import { splitMarkdownSections } from "./sections";
 
 function symbol(name: string, file = "src/api.ts", line = 1): MatchableSymbol {
   return { name, kind: "function", file, line, signature: `export function ${name}()` };
@@ -18,7 +18,7 @@ const MD = [
 ].join("\n");
 
 describe("extractSectionMentions", () => {
-  const section = splitMarkdownH2Sections(MD)[0];
+  const section = splitMarkdownSections(MD)[0];
   const mentions = extractSectionMentions(section);
 
   it("takes heading and inline-span identifiers as primary", () => {
@@ -38,7 +38,7 @@ describe("extractSectionMentions", () => {
 });
 
 describe("matchSectionSymbols", () => {
-  const section = splitMarkdownH2Sections(MD)[0];
+  const section = splitMarkdownSections(MD)[0];
 
   it("matches primary and secondary mentions, reports only primary misses", () => {
     const table = buildSymbolTable([

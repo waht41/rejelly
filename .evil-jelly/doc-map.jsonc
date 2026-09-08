@@ -6,6 +6,7 @@
 // per run and cached in the audit ledger — never listed here. Explicit path entries override glob
 // matches regardless of order; later globs override earlier globs.
 // `skip` excludes a doc (say why); `note` is injected into the evaluator prompt for that doc.
+// `sectionDepth` may opt a document into H3 seeds; omitted entries retain the H2 default.
 // Cross-doc links are locale-mirrored: each side links its own language's variant of the target
 // (zh docs link docs/zh/..., en docs link docs/en/...); linking the counterpart locale is drift.
 {
@@ -49,6 +50,7 @@
       "paths": ["packages/adapters/langchain/src", "packages/core/src/core"]
     },
     "apps/evil-jelly/README.md": {
+      "sectionDepth": 3,
       "paths": ["apps/evil-jelly/src", "packages/core/src", "packages/adapters"],
       "artifacts": ["apps/evil-jelly/package.json", "package.json"],
       "note": "Product and CLI README. Verify factual command, option, configuration, default, package, adapter, audit, and architecture claims; do not flag intentionally high-level product descriptions or omitted implementation detail. For pnpm script examples, account for pnpm consuming its single `--` separator before forwarding script arguments, and validate the actual invocation before reporting a leading-separator error."
