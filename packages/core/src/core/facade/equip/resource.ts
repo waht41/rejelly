@@ -202,10 +202,12 @@ export async function equipResource<T>(key: string, config: ResourceConfig<T>): 
 
   if (depsChanged) {
     // === 1. Cleanup old resource ===
-    const oldResource = ctx.resources.active.get(key) as T | undefined;
     const oldMetadata = currentMetadata;
 
-    if (oldResource) {
+    // Resource presence is Map membership, not value truthiness. Resource factories may
+    // legitimately return false, 0, "", null, undefined, or NaN; those instances still
+    // own teardown metadata and must be replaced through the normal cleanup path.
+    if (ctx.resources.active.has(key)) {
       // Old deps: the deps that were used when this resource was created (not the new deps that triggered destroy)
       const oldDeps = storedDeps ?? undefined;
       // A. ✅ Critical: Unregister from global Teardown BEFORE destroying.
@@ -334,12 +336,13 @@ export async function equipResource<T>(key: string, config: ResourceConfig<T>): 
   }
 
   // Dependencies unchanged: reuse the active resource instance (emit create hit span).
-  const reusedResource = ctx.resources.active.get(key) as T | undefined;
-
-  if (!reusedResource) {
+  // Check Map membership rather than value truthiness: false, 0, "", null, undefined,
+  // and NaN are all valid resource values.
+  if (!ctx.resources.active.has(key)) {
     // This should not happen, but handle gracefully
     throw new Error(`[Rejelly] Resource "${key}" not found in active resources despite reuse hit`);
   }
+  const reusedResource = ctx.resources.active.get(key) as T;
 
   await withSpan("resource:op", (emitter) => {
     emitter?.resourceOpStart({ operation: "create", resourceId: key, deps });
