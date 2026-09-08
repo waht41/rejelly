@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { Message } from "@rejelly/core";
+import { AbortError, type Message, type ModelAdapter, type StreamEvent } from "@rejelly/core";
 import { createMockModel } from "@rejelly/core/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { recordInitialTextInput } from "../../../../domains/session/__tests__/sessionTestInput";
@@ -19,6 +19,10 @@ import { messageContentToText } from "../../../../shared/model/message/content";
 import { projectFrozenUserInputMessage } from "../../../../shared/model/prompt/frozenUserInput";
 import { textPromptInput } from "../../../../shared/model/prompt/promptInput";
 import type { TranscriptItem } from "../../../../shared/session/transcript";
+import {
+  interruptActiveTask,
+  resetInterruptibleTaskStack,
+} from "../../../../shared/task-interruption/taskStack";
 import { createInteractiveRunControl } from "./runControl";
 import { runEvilJellyHost } from "./runSegment";
 
@@ -78,6 +82,7 @@ describe("non-TTY session lifecycle", () => {
     restoreEnv("OPENAI_AUTO_COMPACT_RATIO", originalAutoCompactRatio);
     restoreEnv("OPENAI_CONTEXT_WINDOW", originalContextWindow);
     setWorkspaceRoot(process.cwd());
+    resetInterruptibleTaskStack("test cleanup");
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -365,6 +370,110 @@ describe("non-TTY session lifecycle", () => {
     });
     expect(completed?.turnId).toBe(initialUser?.turnId);
     expect(compact?.seq).toBeLessThan(completed?.seq ?? 0);
+  });
+
+  it("keeps an interrupted multi-round turn in live and resumed context", async () => {
+    const modelCalls: Message[][] = [];
+    let callIndex = 0;
+    const model: ModelAdapter = {
+      id: "interruptible-conversation-model",
+      async *stream(messages, options): AsyncGenerator<StreamEvent> {
+        modelCalls.push(messages.map((message) => ({ ...message })));
+        const currentCall = callIndex++;
+        if (currentCall === 0) {
+          yield {
+            type: "tool_call",
+            toolCall: {
+              index: 0,
+              id: "interrupted-list-call",
+              name: "list_directory",
+              arguments: JSON.stringify({ dirPath: ".", depth: 1 }),
+            },
+          };
+          return;
+        }
+        if (currentCall === 1) {
+          const signal = options?.signal;
+          if (!signal) throw new Error("expected operation-aware model signal");
+          queueMicrotask(() => interruptActiveTask("interrupt test model turn"));
+          await new Promise<void>((_resolve, reject) => {
+            const rejectAbort = () => reject(AbortError.fromSignal(signal));
+            if (signal.aborted) {
+              rejectAbort();
+              return;
+            }
+            signal.addEventListener("abort", rejectAbort, { once: true });
+          });
+          return;
+        }
+        yield { type: "text", content: "Continued with the interrupted work in context." };
+      },
+    };
+
+    await runEvilJellyHost(
+      createMemoryBindings(["Inspect before interruption", "Continue after interruption", "/exit"]),
+      {
+        runControl: createInteractiveRunControl(),
+        model,
+        sessionId: "interrupted-context",
+        sessionStartMode: "new",
+        seedContext: [
+          { role: "user", content: "Earlier compacted request" },
+          { role: "assistant", content: "Earlier compacted checkpoint" },
+        ],
+        session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+      },
+    );
+
+    const hasText = (messages: readonly Message[], role: Message["role"], text: string) =>
+      messages.some(
+        (message) =>
+          message.role === role &&
+          message.content !== null &&
+          messageContentToText(message.content).includes(text),
+      );
+
+    expect(modelCalls).toHaveLength(3);
+    const continuedCall = modelCalls[2] ?? [];
+    expect(hasText(continuedCall, "user", "Inspect before interruption")).toBe(true);
+    expect(hasText(continuedCall, "user", "Continue after interruption")).toBe(true);
+    expect(
+      continuedCall.some((message) =>
+        message.tool_calls?.some((call) => call.id === "interrupted-list-call"),
+      ),
+    ).toBe(true);
+    expect(
+      continuedCall.some(
+        (message) => message.role === "tool" && message.tool_call_id === "interrupted-list-call",
+      ),
+    ).toBe(true);
+
+    const resumed = await resumeSession(workspaceRoot, "interrupted-context", {
+      originator: "evil-jelly-cli",
+      appVersion: "1.0.0",
+      sessionsRoot,
+    });
+    const resumedMessages = resumed?.messages ?? [];
+    expect(hasText(resumedMessages, "user", "Inspect before interruption")).toBe(true);
+    expect(hasText(resumedMessages, "user", "Continue after interruption")).toBe(true);
+    expect(hasText(resumedMessages, "assistant", "Continued with the interrupted work")).toBe(true);
+    expect(
+      resumedMessages.some((message) =>
+        message.tool_calls?.some((call) => call.id === "interrupted-list-call"),
+      ),
+    ).toBe(true);
+    expect(
+      resumedMessages.some(
+        (message) => message.role === "tool" && message.tool_call_id === "interrupted-list-call",
+      ),
+    ).toBe(true);
+
+    const stored = await readSessionEvents(workspaceRoot, "interrupted-context", { sessionsRoot });
+    expect(
+      stored.events
+        .filter((event) => isKnownSessionEvent(event) && event.type === "turn_completed")
+        .map((event) => (event.type === "turn_completed" ? event.status : undefined)),
+    ).toEqual(["interrupted", "completed"]);
   });
 
   it("does not automatically rerun a user-only turn recovered from a crashed segment", async () => {

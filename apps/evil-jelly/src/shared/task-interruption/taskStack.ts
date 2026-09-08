@@ -17,10 +17,14 @@ export interface InterruptedTask {
 }
 
 export type TaskInterruptionResult =
-  | { interrupted: false }
-  | { interrupted: true; task: InterruptedTask };
+  | { status: "idle" }
+  | { status: "interrupted"; task: InterruptedTask }
+  | { status: "already_interrupted"; task: InterruptedTask };
 
-type InterruptibleTask = InterruptibleTaskRegistration & { id: number };
+type InterruptibleTask = InterruptibleTaskRegistration & {
+  id: number;
+  state: "running" | "interrupting";
+};
 
 let taskIdCounter = 0;
 let taskStack: InterruptibleTask[] = [];
@@ -31,7 +35,10 @@ export function resetInterruptibleTaskStack(reason: string): void {
   for (let i = pendingTasks.length - 1; i >= 0; i -= 1) {
     const pendingTask = pendingTasks[i];
     if (!pendingTask) continue;
-    pendingTask.abort?.(reason);
+    if (pendingTask.state === "running") {
+      pendingTask.state = "interrupting";
+      pendingTask.abort?.(reason);
+    }
   }
   taskIdCounter = 0;
 }
@@ -39,6 +46,7 @@ export function resetInterruptibleTaskStack(reason: string): void {
 export function registerInterruptibleTask(task: InterruptibleTaskRegistration): () => void {
   const entry: InterruptibleTask = {
     id: ++taskIdCounter,
+    state: "running",
     ...task,
   };
   taskStack.push(entry);
@@ -57,15 +65,18 @@ export function hasActiveInterruptibleTask(): boolean {
 export function interruptActiveTask(reason: string): TaskInterruptionResult {
   const topTask = taskStack.at(-1);
   if (!topTask) {
-    return { interrupted: false };
+    return { status: "idle" };
   }
 
-  topTask.abort?.(reason);
-  return {
-    interrupted: true,
-    task: {
-      type: topTask.type,
-      name: topTask.name,
-    },
+  const task = {
+    type: topTask.type,
+    name: topTask.name,
   };
+  if (topTask.state === "interrupting") {
+    return { status: "already_interrupted", task };
+  }
+
+  topTask.state = "interrupting";
+  topTask.abort?.(reason);
+  return { status: "interrupted", task };
 }

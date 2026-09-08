@@ -16,7 +16,10 @@ export interface InteractiveSubmissionControl {
 }
 
 function formatTaskInterruption(result: TaskInterruptionResult): string {
-  if (!result.interrupted) return "[System] Nothing to stop right now.";
+  if (result.status === "idle") return "[System] Nothing to stop right now.";
+  if (result.status === "already_interrupted") {
+    return `[System] Active task [${result.task.type}] ${result.task.name} is already stopping.`;
+  }
   return `[System] Interrupted active task [${result.task.type}] ${result.task.name}.`;
 }
 

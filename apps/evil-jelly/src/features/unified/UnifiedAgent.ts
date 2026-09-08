@@ -188,6 +188,7 @@ async function runManualCompression(
     const compactHistory = await promptCompactHistory({
       message: history,
       compaction: buildAutoCompactionConfig(memoryRuntime),
+      signal: props.operationSignal,
     });
     return compactHistory
       ? { reply: "", compactHistory }
@@ -250,6 +251,7 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
         promptTokenUsage,
         sessionRecorder: props.sessionRecorder,
         turnId: props.turnId,
+        signal: props.operationSignal,
       });
 
       if (result.aborted) {

@@ -60,6 +60,7 @@ import {
   promptInputPlainText,
 } from "../../shared/model/prompt/promptInput";
 import { startupTimeline } from "../../shared/profile/startup/timeline";
+import { registerInterruptibleTask } from "../../shared/task-interruption/taskStack";
 import { formatUserInputDisplay } from "../conversation-display/history/userInputDisplay";
 import {
   formatSessionStatus,
@@ -67,7 +68,6 @@ import {
 } from "../conversation-display/session-summary/format";
 import { materializeSkillAwareUserInput } from "../message-composer/message-materialization/skillAwareUserMessage";
 import { memoryReferenceName } from "../message-composer/suggestions/semantic-reference/referenceNaming";
-import { withAbort } from "../runtime/withAbort";
 import { setRunningCommandHandler } from "../submission-dispatch/dispatcher";
 import {
   ensurePendingCommand,
@@ -82,8 +82,6 @@ import {
   isSkillsLocalCommand,
   type SkillDoctorReport,
 } from "./skillsCommands";
-
-const UnifiedAgentWithAbort = UnifiedAgent.fork({ middlewares: [withAbort()] });
 
 export type ConversationLoopIntent =
   | { type: "exit" }
@@ -278,6 +276,28 @@ async function handleClear(runtime: RouterRuntime): Promise<void> {
   runtime.props.runLoopControl.request({ type: "new_session" });
 }
 
+async function runInterruptibleConversationOperation<T>(
+  name: string,
+  operation: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController();
+  const unregisterTask = registerInterruptibleTask({
+    type: "agent_thinking",
+    name,
+    abort: (reason) => {
+      if (!controller.signal.aborted) {
+        controller.abort(new DOMException(reason || "Stopped by user", "AbortError"));
+      }
+    },
+  });
+
+  try {
+    return await operation(controller.signal);
+  } finally {
+    unregisterTask();
+  }
+}
+
 function handleStatus(runtime: RouterRuntime): void {
   runtime.host.logSystemEvent(
     formatSessionStatus({
@@ -298,11 +318,16 @@ async function handleCompress(runtime: RouterRuntime): Promise<void> {
     return;
   }
   runtime.host.logSystemEvent("Compressing session history…\n");
-  const result = await UnifiedAgentWithAbort({
-    history: runtime.history,
-    operation: "compress",
-    sessionBlobRoot: runtime.props.sessionBlobRoot,
-  });
+  const result = await runInterruptibleConversationOperation(
+    "session_compression",
+    (operationSignal) =>
+      UnifiedAgent({
+        history: runtime.history,
+        operation: "compress",
+        sessionBlobRoot: runtime.props.sessionBlobRoot,
+        operationSignal,
+      }),
+  );
   if (!result.compactHistory) {
     runtime.host.logSystemEvent(`${result.reply || "Compression failed."}\n`);
     return;
@@ -644,18 +669,23 @@ async function runConversationTurn(
         })
       : undefined;
 
-    const result = await UnifiedAgentWithAbort({
-      message: submittedUserMessage,
-      history: runtime.history,
-      pendingUserMessages: () =>
-        drainAndPrepareSteerMessages(runtime, activeTurnId!, turnMcpSelection),
-      sessionBlobRoot: runtime.props.sessionBlobRoot,
-      sessionRecorder: runtime.props.sessionRecorder,
-      sessionId: runtime.props.sessionId,
-      turnId: activeTurnId,
-      mcpBindingFactory,
-      initialTokenAnchor: runtime.contextTokenAnchor(),
-    });
+    const result = await runInterruptibleConversationOperation(
+      "conversation_turn",
+      (operationSignal) =>
+        UnifiedAgent({
+          message: submittedUserMessage!,
+          history: runtime.history,
+          pendingUserMessages: () =>
+            drainAndPrepareSteerMessages(runtime, activeTurnId!, turnMcpSelection),
+          sessionBlobRoot: runtime.props.sessionBlobRoot,
+          sessionRecorder: runtime.props.sessionRecorder,
+          sessionId: runtime.props.sessionId,
+          turnId: activeTurnId,
+          mcpBindingFactory,
+          initialTokenAnchor: runtime.contextTokenAnchor(),
+          operationSignal,
+        }),
+    );
 
     if (result.compactHistory) {
       // The auto-compact event already reset V2 active context. Keep the live memory aligned with

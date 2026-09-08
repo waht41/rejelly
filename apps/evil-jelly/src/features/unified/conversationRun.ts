@@ -20,6 +20,8 @@ interface ConversationAgentBaseProps {
   initialTokenAnchor?: { promptTokens: number; messageCount: number };
   /** Captures one immutable MCP route/catalog view at each model dispatch boundary. */
   mcpBindingFactory?: McpDispatchBindingFactory;
+  /** Cancels this chat/compression operation without aborting the owning agent run. */
+  operationSignal?: AbortSignal;
 }
 
 export type ConversationAgentProps =
