@@ -144,6 +144,12 @@ export interface AuditReportData {
   };
   evaluatedCount: number;
   findings: AuditFinding[];
+  /** Live persistence state. In-progress reports survive interruption with their settled count. */
+  progress?: {
+    status: "in-progress" | "complete";
+    settled: number;
+    total: number;
+  };
   /** Actual native MCP calls observed during this run; schemas and responses are not copied. */
   mcp?: readonly McpAuditProvenance[];
 }

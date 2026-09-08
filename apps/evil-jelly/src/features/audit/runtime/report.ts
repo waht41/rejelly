@@ -164,6 +164,9 @@ export function renderAuditReport(
       : []),
     ...renderDetectorLines(data),
     options.onlyActionable ? "- Report filters: actionable findings only" : false,
+    data.progress
+      ? `- Status: ${data.progress.status} (${data.progress.settled}/${data.progress.total} evaluations settled)`
+      : false,
     data.ledger
       ? `- Ledger: loaded ${data.ledger.loaded}, reused ${data.ledger.reused}, ` +
         `suppressed ${data.ledger.skippedSuppressed}, updated ${data.ledger.updated}, ` +

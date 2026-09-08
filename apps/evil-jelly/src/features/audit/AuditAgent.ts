@@ -45,6 +45,7 @@ import {
   type AuditFamilyStats,
   type AuditFinding,
   type AuditLedgerFile,
+  type AuditReportData,
   type AuditSeedIdentity,
 } from "./types";
 
@@ -94,6 +95,7 @@ async function evaluatePreparedSeeds(
   familyLabel: string,
   concurrency: number,
   printOut: PrintOut,
+  onFindingSettled: (finding: AuditFinding) => Promise<void>,
 ): Promise<AuditFinding[]> {
   if (seeds.length === 0) {
     return [];
@@ -104,21 +106,26 @@ async function evaluatePreparedSeeds(
     seeds,
     concurrency,
     async (prepared: PreparedSeed): Promise<AuditFinding> => {
+      let finding: AuditFinding;
       try {
         const verdict = await prepared.evaluate();
-        return {
+        finding = {
           seed: prepared.seed,
           identity: prepared.identity,
           verdict,
           ledger: { source: "evaluated", status: "open" },
         };
       } catch (error) {
-        return {
+        finding = {
           seed: prepared.seed,
           identity: prepared.identity,
           error: error instanceof Error ? error.message : String(error),
         };
       }
+      // Persist this result before counting it as settled. A later evaluator may hang or the user
+      // may interrupt the run; completed work must already be present in the ledger and live report.
+      await onFindingSettled(finding);
+      return finding;
     },
     (finding, _prepared, completed) => {
       const tag = finding.error
@@ -188,8 +195,22 @@ function formatFamilyPlanLine(
   );
 }
 
-/** Update ledger entries for one family's findings and mark resolved. */
-function reconcileLedger(
+/** Record findings as they settle; errors intentionally leave any prior verdict untouched. */
+function recordFindings(
+  ledger: AuditLedgerFile,
+  findings: AuditFinding[],
+  nowIso: string,
+  ledgerStats: AuditLedgerStats,
+): void {
+  for (const finding of findings) {
+    if (recordFindingInLedger(ledger, finding, nowIso)) {
+      ledgerStats.updated++;
+    }
+  }
+}
+
+/** Finalize identity bookkeeping only after the complete family scan has settled. */
+function finalizeLedgerFamily(
   ledger: AuditLedgerFile,
   findings: AuditFinding[],
   prepared: PreparedSeed[],
@@ -199,11 +220,6 @@ function reconcileLedger(
   partialScan: boolean,
   ledgerGcDays: number | undefined,
 ): void {
-  for (const finding of findings) {
-    if (recordFindingInLedger(ledger, finding, nowIso)) {
-      ledgerStats.updated++;
-    }
-  }
   const findingIds = new Set(
     findings.map((f) => f.identity?.id).filter((id): id is string => typeof id === "string"),
   );
@@ -222,6 +238,14 @@ function reconcileLedger(
   }
 }
 
+interface AuditProgressSnapshot {
+  findings: AuditFinding[];
+  stats: AuditFamilyStats;
+  settled: number;
+  total: number;
+  complete: boolean;
+}
+
 /** Run one family end-to-end: collect → ledger reuse split → evaluate → record → resolve bookkeeping. */
 async function processFamily(
   family: AuditSeedFamily,
@@ -233,6 +257,7 @@ async function processFamily(
   ledgerStats: AuditLedgerStats,
   collectOptions: AuditCollectOptions,
   ledgerGcDays: number | undefined,
+  persistProgress: (snapshot: AuditProgressSnapshot) => Promise<void>,
 ): Promise<{ findings: AuditFinding[]; stats: AuditFamilyStats }> {
   printOut(`\n[Audit] Phase 1 — ${family.label}: scanning…\n`);
   const { prepared, stats, partial } = await family.collect(collectOptions);
@@ -248,12 +273,47 @@ async function processFamily(
     printOut(`[Audit]   Warning: ${warning}\n`);
   }
 
-  // Step 3: evaluate new/changed seeds (agentic per-seed loop).
-  const evaluated = await evaluatePreparedSeeds(toEvaluate, family.label, concurrency, printOut);
+  const settledFindings = [...cachedFindings];
+  recordFindings(ledger, cachedFindings, nowIso, ledgerStats);
+  await persistProgress({
+    findings: [...settledFindings],
+    stats,
+    settled: 0,
+    total: toEvaluate.length,
+    complete: false,
+  });
+
+  // Step 3: evaluate and durably checkpoint each new/changed seed. The promise chain serializes
+  // writes from concurrent workers, preventing stale report or ledger snapshots from winning races.
+  let settled = 0;
+  let checkpointChain = Promise.resolve();
+  const checkpointFinding = (finding: AuditFinding): Promise<void> => {
+    const checkpoint = checkpointChain.then(async () => {
+      settledFindings.push(finding);
+      settled++;
+      recordFindings(ledger, [finding], nowIso, ledgerStats);
+      await persistProgress({
+        findings: [...settledFindings],
+        stats,
+        settled,
+        total: toEvaluate.length,
+        complete: false,
+      });
+    });
+    checkpointChain = checkpoint;
+    return checkpoint;
+  };
+  const evaluated = await evaluatePreparedSeeds(
+    toEvaluate,
+    family.label,
+    concurrency,
+    printOut,
+    checkpointFinding,
+  );
   const findings = [...cachedFindings, ...evaluated];
 
-  // Step 4: update ledger entries, mark resolved, tally stats.
-  reconcileLedger(
+  // Step 4: only a fully settled scan may resolve or garbage-collect absent identities.
+  finalizeLedgerFamily(
     ledger,
     findings,
     prepared,
@@ -263,6 +323,13 @@ async function processFamily(
     partial === true,
     ledgerGcDays,
   );
+  await persistProgress({
+    findings,
+    stats,
+    settled,
+    total: toEvaluate.length,
+    complete: true,
+  });
 
   return { findings, stats };
 }
@@ -294,6 +361,10 @@ export const AuditAgent = createAgent<AuditAgentProps, string>({
 
     const allFindings: AuditFinding[] = [];
     const detectors: AuditFamilyStats[] = [];
+    let latestData: AuditReportData | undefined;
+    let latestMarkdown = "";
+    let savedPath: string | null = null;
+    let reportedLivePath = false;
     if (props.family) {
       printOut(`[Audit] Family filter: ${props.family}\n`);
     }
@@ -305,6 +376,39 @@ export const AuditAgent = createAgent<AuditAgentProps, string>({
       ...(props.docCodePaths !== undefined ? { docCodePaths: props.docCodePaths } : {}),
     };
     for (const family of families) {
+      const persistProgress = async (snapshot: AuditProgressSnapshot): Promise<void> => {
+        const findings = [...allFindings, ...snapshot.findings];
+        const evaluatedCount = findings.filter(
+          (finding) => finding.ledger?.source !== "reused" && finding.ledger?.source !== "skipped",
+        ).length;
+        latestData = {
+          generatedAt,
+          workspaceRoot: getWorkspaceRoot(),
+          detectors: [...detectors, snapshot.stats],
+          ledger: ledgerStats,
+          evaluatedCount,
+          findings,
+          progress: {
+            status: snapshot.complete ? "complete" : "in-progress",
+            settled: snapshot.settled,
+            total: snapshot.total,
+          },
+          mcp: expectResource<McpAuditProvenanceCollector>(MCP_AUDIT_PROVENANCE_RESOURCE_KEY, {
+            optional: true,
+          })?.snapshot(),
+        };
+        latestMarkdown = renderAuditReport(latestData, { onlyActionable: props.onlyActionable });
+
+        // Ledger first: a completed verdict must be reusable even if Markdown persistence is
+        // best-effort. Both writes are serialized by processFamily's checkpoint chain.
+        await saveAuditLedger(ledger, new Date().toISOString());
+        savedPath = await persistAuditReport(latestMarkdown, generatedAt);
+        if (savedPath && !reportedLivePath) {
+          printOut(`[Audit] Live report: ${savedPath}\n`);
+          reportedLivePath = true;
+        }
+      };
+
       const { findings, stats } = await processFamily(
         family,
         ledger,
@@ -315,36 +419,22 @@ export const AuditAgent = createAgent<AuditAgentProps, string>({
         ledgerStats,
         collectOptions,
         ledgerGcDays,
+        persistProgress,
       );
       allFindings.push(...findings);
       detectors.push(stats);
     }
 
-    await saveAuditLedger(ledger, generatedAt);
-
-    const evaluatedCount = allFindings.filter(
-      (f) => f.ledger?.source !== "reused" && f.ledger?.source !== "skipped",
-    ).length;
-    const data = {
-      generatedAt,
-      workspaceRoot: getWorkspaceRoot(),
-      detectors,
-      ledger: ledgerStats,
-      evaluatedCount,
-      findings: allFindings,
-      mcp: expectResource<McpAuditProvenanceCollector>(MCP_AUDIT_PROVENANCE_RESOURCE_KEY, {
-        optional: true,
-      })?.snapshot(),
-    };
-    const markdown = renderAuditReport(data, { onlyActionable: props.onlyActionable });
-
-    printOut("\n[Audit] Phase 3 — aggregating report…\n");
-    const savedPath = await persistAuditReport(markdown, generatedAt);
-    printOut(`\n${summarizeAuditReport(data, { onlyActionable: props.onlyActionable })}\n`);
-    if (savedPath) {
-      printOut(`[Audit] Report written to ${savedPath}\n`);
+    if (!latestData) {
+      throw new Error("Audit completed without producing a report checkpoint");
     }
 
-    return markdown;
+    printOut("\n[Audit] Phase 3 — report finalized.\n");
+    printOut(`\n${summarizeAuditReport(latestData, { onlyActionable: props.onlyActionable })}\n`);
+    if (savedPath) {
+      printOut(`[Audit] Report finalized at ${savedPath}\n`);
+    }
+
+    return latestMarkdown;
   },
 });
