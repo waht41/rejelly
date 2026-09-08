@@ -1,6 +1,6 @@
 {
   "name": "@rejelly/evil-jelly",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "waht41",
   "description": "CLI agent demo: filesystem tools + @rejelly/core (host entry for future Electron/Fastify)",
   "type": "module",

@@ -1,6 +1,6 @@
 {
   "name": "@rejelly/adapter-gemini",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "waht41",
   "description": "Gemini ModelAdapter for @rejelly/core: streaming, tools, multimodal (images/videos)",
   "type": "module",

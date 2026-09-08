@@ -1,6 +1,6 @@
 {
   "name": "@rejelly/adapter-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "waht41",
   "description": "Model Context Protocol adapter for @rejelly/core: connect MCP servers, discover tools/resources",
   "type": "module",

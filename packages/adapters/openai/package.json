@@ -1,6 +1,6 @@
 {
   "name": "@rejelly/adapter-openai",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "waht41",
   "description": "OpenAI-compatible ModelAdapter for @rejelly/core: streaming, tool calling, structured outputs, multimodal",
   "type": "module",

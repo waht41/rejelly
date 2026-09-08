@@ -1,6 +1,6 @@
 {
   "name": "@rejelly/core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "waht41",
   "description": "A React-inspired Agent framework where Agents are functions with Hooks for building LLM applications (Rejelly)",
   "type": "module",
