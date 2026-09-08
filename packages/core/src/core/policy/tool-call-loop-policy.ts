@@ -46,6 +46,8 @@ export interface ExecuteValidatedLoopTurnParams {
   jsonSchema?: JsonSchema;
   parser?: OutputParser;
   maxRetries: number;
+  /** Cancellation scoped to the current model operation rather than the owning agent run. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -60,7 +62,7 @@ export interface ExecuteValidatedLoopTurnParams {
 export async function executeValidatedLoopTurn(
   params: ExecuteValidatedLoopTurnParams,
 ): Promise<LoopTurnResult> {
-  const { runtime, jsonSchema, parser, maxRetries } = params;
+  const { runtime, jsonSchema, parser, maxRetries, signal } = params;
   const allErrors: string[] = [];
   let lastFailure: FailureInfo | null = null;
   let lastData: unknown = null;
@@ -74,6 +76,7 @@ export async function executeValidatedLoopTurn(
       const { message } = await executeTurn([...runtime.messages, ...deltaMessages], {
         runtime,
         jsonSchema,
+        signal,
       });
 
       const toolCalls = message.tool_calls;
