@@ -422,7 +422,7 @@ interface ResourceConfig<T> {
 **Automatic cleanup mechanism:**
 
 - After creation, resources are automatically registered in the Agent's global Teardown queue
-- When the Agent finishes execution (success or failure), all teardown functions are executed in LIFO order in a `finally` block
+- When the Agent finishes execution (success or failure), teardown functions are started in reverse registration order in a `finally` block and run concurrently through `Promise.allSettled`
 - This ensures resources are properly released even without a reborn trigger
 - When dependencies change, the old resource's teardown is automatically unregistered to avoid double-destruction
 - Resources without `destroy` (borrowed/derived) are not registered in teardown and are not cleaned up when the Agent ends
@@ -435,7 +435,7 @@ interface ResourceConfig<T> {
 - **`deps` allows non-serializable values** (functions, class instances, closures, `Symbol`, etc.), stored by reference at runtime; **shallow compare**, reference change = deps change
 - Resources persist across reborn but are automatically rebuilt when dependencies change
 - Suitable for resources requiring explicit cleanup (database connections, file handles, network connections), not for pure data caching (use `equipMemo` instead)
-- Resource cleanup follows LIFO (last in, first out) order, ensuring resources with correct dependency ordering are cleaned up properly
+- Teardowns are submitted in reverse registration order, but cleanup functions run concurrently and do not have a serial LIFO completion guarantee; coordinate required cleanup dependencies explicitly inside one `destroy` function
 - When **`expose: true`**, the resource is stored in the `ctx.providers` Map and child Agents can retrieve it via `expectResource`
 - Even on cache hit, if `expose: true`, the resource is ensured to be in the `providers` Map (handles reborn scenarios)
 - **Dependency comparison**: Resource uses **shallow compare (React-style, `Object.is` per item)**; `deps` may contain non-serializable values but require stable references (extract to external variables or use `useCallback`-like patterns), avoiding inline objects/anonymous functions that cause unnecessary rebuilds

@@ -20,7 +20,7 @@ cd apps/evil-jelly && pnpm link --global
 evil init
 evil
 
-# Or run a one-shot read-only audit from any workspace root
+# Or run a one-shot audit from any workspace root (source stays unchanged; audit artifacts are written)
 evil audit --family clone
 ```
 
@@ -227,9 +227,9 @@ Run `evil audit --family <name>` to analyze source and documentation without mod
 
 ```bash
 evil                                      # Interactive coding session
-evil audit --family clone                 # Read-only clone audit
-evil audit --family complexity            # Read-only complexity audit
-evil audit --family fragmentation         # Read-only fragmentation audit
+evil audit --family clone                 # Clone audit; writes report and ledger artifacts
+evil audit --family complexity            # Complexity audit; writes report and ledger artifacts
+evil audit --family fragmentation         # Fragmentation audit; writes report and ledger artifacts
 evil audit --family doc-drift              # Validate docs against code
 evil audit --family doc-sync               # Compare bilingual docs
 evil audit --family fragmentation --only-actionable
@@ -370,7 +370,7 @@ pnpm typecheck      # TypeScript checking
 - **`init --model <id>`**: save `OPENAI_MODEL_ID` alongside the API key.
 - **`init --protocol <protocol>`**: save `OPENAI_API_PROTOCOL` (`chat_completions` or `responses`).
 - **`init --env <name>`**: write `~/.evil-jelly/<name>.env` instead of the global `.env`.
-- **`audit --family <name>`**: run one read-only audit family without Ink and exit. Required family values: `clone`, `complexity`, `fragmentation`, `doc-drift`, or `doc-sync`.
+- **`audit --family <name>`**: run one audit family without Ink and exit. Audits do not modify the inspected source, but they update report and ledger artifacts under `.evil-jelly/audit/`. Required family values: `clone`, `complexity`, `fragmentation`, `doc-drift`, or `doc-sync`.
 - **`audit --only-actionable`**: render only actionable findings; statistics still cover the complete run.
 - **`audit --max-seeds <n>`**: set a positive limit on new or changed seeds evaluated in this run.
 - **`audit --ledger-gc-days <n>`**: prune same-family ledger entries not seen for this positive number of days.
@@ -593,7 +593,7 @@ Missing maps do not affect code families. `doc-drift` reports the expected path 
 
 ### Shared audit workflow
 
-Audits are read-only. A detector produces candidates, a per-seed evaluator determines whether they are actionable, and fan-in writes `.evil-jelly/audit/audit-<timestamp>.md` while maintaining `.evil-jelly/audit/ledger.json`. Selecting one family isolates new detector results from other families' historical noise.
+Audits do not modify the inspected source or documentation. A detector produces candidates, a per-seed evaluator determines whether they are actionable, and each settled evaluation incrementally updates `.evil-jelly/audit/audit-<timestamp>.md` and `.evil-jelly/audit/ledger.json`; the final fan-in marks the report complete and performs resolved-entry bookkeeping. Selecting one family isolates new detector results from other families' historical noise.
 
 ### doc-drift: documentation versus implementation
 

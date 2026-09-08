@@ -154,7 +154,7 @@ const disable = enableOTLP({
 - Auto-flushes every `flushInterval` ms
 - Only one send task is allowed at a time; no new HTTP requests are initiated concurrently during retries
 - When the queue reaches `maxQueueSize`, the oldest events are dropped — newest observations are prioritized
-- Calling `disable()` flushes all remaining events
+- Calling `disable()` flushes remaining spans and attached instant events; orphaned instant events whose parent span was not exported are dropped with a warning
 
 **Process exit handling:**
 
@@ -179,7 +179,7 @@ const disable = enableOTLP({
 
 ## Review Exporter
 
-Review exporter sends trace events in real time to the Rejelly Review Server. Supports both `:start` and `:end` events for real-time visual tracing. Uses the raw event format (no OTLP conversion).
+Review exporter sends trace events in real time to the Rejelly Review Server. It supports both `:start` and `:end` events for real-time visual tracing. Events are not converted to OTLP, but each exported copy receives a monotonically increasing `_seq` field to order events with identical timestamps.
 
 **Basic usage:**
 
@@ -252,7 +252,7 @@ const disable = enableReview({
 **Real-time mode features:**
 
 - **Supports Start events**: Unlike the OTLP Exporter, Review Exporter supports `:start` events for true real-time tracing
-- **Raw event format**: Sends events in raw format — no OTLP conversion
+- **TraceEvent format**: Performs no OTLP conversion, but adds a monotonically increasing `_seq` field to the exported copy without mutating the EventBus event
 - **Real-time visualization**: Default batch size is 10, flush interval is 5 seconds; adjust `batchSize` and `flushInterval` for lower latency
 
 **Batch sending mechanism:**
@@ -273,6 +273,6 @@ const disable = enableReview({
 **Notes:**
 
 - Supports `:start` and `:end` events for real-time visualization
-- Uses raw event format — no OTLP conversion
+- Uses TraceEvent format with the `_seq` ordering field — no OTLP conversion
 - Adjust `batchSize` and `flushInterval` to tune real-time responsiveness vs. request frequency
 - Errors are logged to console and do not throw (to avoid affecting the main flow)

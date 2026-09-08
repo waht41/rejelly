@@ -421,7 +421,7 @@ interface ResourceConfig<T> {
 **自动清理机制：**
 
 - 资源创建后会自动注册到 Agent 的全局 Teardown 队列
-- Agent 执行完成时（无论成功或失败），会在 `finally` 块中按 LIFO 顺序执行所有 teardown 函数
+- Agent 执行完成时（无论成功或失败），会在 `finally` 块中按注册栈的逆序启动所有 teardown 函数；这些函数通过 `Promise.allSettled` 并发执行
 - 这确保了即使没有触发 reborn，资源也能在 Agent 结束时正确释放
 - 依赖变化时，旧资源的 teardown 会自动注销，避免重复销毁
 - 未提供 `destroy` 的资源（借用/派生）不注册 teardown，Agent 结束时不做任何清理
@@ -434,7 +434,7 @@ interface ResourceConfig<T> {
 - **`deps` 允许不可序列化**（函数、类实例、闭包、`Symbol` 等），在运行期按引用保存；**浅比较**，引用变化即视为依赖变化
 - 资源会在 reborn 后保留，但依赖变化时会自动重建
 - 适用于需要显式清理的资源（如数据库连接、文件句柄、网络连接），不适合纯数据缓存（应使用 `equipMemo`）
-- 资源清理顺序遵循 LIFO（后进先出）原则，确保依赖关系正确的资源按正确顺序清理
+- teardown 按注册栈的逆序提交，但清理函数并发执行，不保证串行 LIFO 完成顺序；若资源之间存在必须串行的清理依赖，应在单个 `destroy` 函数中显式协调
 - **`expose: true`** 时，资源会被存储到 `ctx.providers` Map 中，子 Agent 可通过 `expectResource` 获取
 - 即使命中缓存，如果 `expose: true`，也会确保资源在 `providers` Map 中（处理 reborn 场景）
 - **依赖比较**：Resource 使用**浅比较（React 风格，Object.is 逐项）**；`deps` 可含不可序列化值，但需保持引用稳定（如提取到外部变量或 `useCallback`），避免内联对象/匿名函数导致重复重建

@@ -262,11 +262,11 @@ const ResearchAgent = createAgent({
 3. **若模型返回符合 schema 的最终内容**：循环结束，`promptAgent` 返回解析后的结果。
 4. 若仍需多轮「模型 → tool → 模型」，则重复 2～3，直到满足结束条件或达到框架限制。
 
-**本中间件实际起作用的位置**：任何 policy 调用 `executeTools(toolCalls, { runtime })` 执行整批 `ToolCall[]` 时，都会在底层工具执行**之前**运行该中间件链；内置 `promptAgent` 的第 2 步就是其中一个调用方。它不参与拼 system/instruction，也不替代单工具层的 `ToolMiddleware`。
+**本中间件实际起作用的位置**：policy 调用 `executeTools(toolCalls, { runtime })` 执行整批 `ToolCall[]` 时，默认会在底层工具执行**之前**运行该中间件链；内置 `promptAgent` 的第 2 步就是其中一个调用方。传入 `skipLoopMiddleware: true` 会显式绕过该链并直接执行工具。它不参与拼 system/instruction，也不替代单工具层的 `ToolMiddleware`。
 
 > **⚠️ 作用域：`executeTools` 的批量执行路径，不是「全局工具执行」**
 >
-> 内置 `promptAgent` 的 tool 往返循环通过 `executeTools` 触发 `ToolCallLoopMiddleware`；自定义 policy 只要调用同一原语，也会触发它。相反，通过 **`callTool(tool, args)`** 直接执行单个 `ToolDefinition` 时走单工具核心路径，不会经过 Loop 中间件。其它未调用 `executeTools` 的路径同样绕过它。若需要覆盖手动单工具调用，应在 **`equipTool(..., { middleware })` / `augmentTool`** 层处理。（`callTool` 直接返回 handler 的原始输出，失败时**抛错**，不兜底成字符串。）
+> 内置 `promptAgent` 的 tool 往返循环通过 `executeTools` 触发 `ToolCallLoopMiddleware`；自定义 policy 调用同一原语时通常也会触发它，除非显式传入 `skipLoopMiddleware: true`。通过 **`callTool(tool, args)`** 直接执行单个 `ToolDefinition` 时走单工具核心路径，也不会经过 Loop 中间件。其它未调用 `executeTools` 的路径同样绕过它。因此不要把 Loop 中间件当作无法绕过的全局鉴权或限流边界；若需要覆盖手动单工具调用，应在 **`equipTool(..., { middleware })` / `augmentTool`** 层处理。（`callTool` 直接返回 handler 的原始输出，失败时**抛错**，不兜底成字符串。）
 
 **注册语义（与上文衔接）：** `equipToolCallLoopMiddleware` 即在上述第 2 步、模型已给出 `tool_calls` 且**尚未**进入各工具 handler / 单工具中间件之前插入一层。与「改 system / instruction / schema」无关：中间件**不能**修改本轮已参与哈希与快照的 prompt 与 schema，只作用于**整批 tool calls 执行前**这一跳，适合做限流、鉴权、过滤调用、或对部分调用**短路**并返回合成 `ToolOutput`（由框架再转成协议层的 `role: "tool"` 消息）。
 
@@ -484,7 +484,7 @@ Middleware[0] (outer) → Middleware[1] → ... → Handler (inner)
 
 执行 LLM 调用，返回符合 schema 定义的输出结果，自动类型推断。
 
-**Generation 与一次 promptAgent：** **Generation** 指 Agent 的一次执行轮次：框架在每次进入 handler 前会开启一轮新的 Generation（reborn 循环中的一轮），重置 draft（equip/expect 等），在本轮内收集所有 equip/expect 后发起一次 LLM 调用。因此**每个 Generation 只能调用一次 `promptAgent()`**；若在一次 handler 内多次调用 `promptAgent()`，后续调用会抛出 `PromptAgentAlreadyCalledError`。需要多次 LLM 调用时，应通过 `reborn` 拆成多轮（每轮一个 Generation、一次 `promptAgent()`）。
+**Generation 与一次 promptAgent：** **Generation** 指 Agent 的一次执行轮次：框架在每次进入 handler 前会开启一轮新的 Generation（reborn 循环中的一轮），重置 draft（equip/expect 等），并在本轮内收集所有 equip/expect。**每个 Generation 只能调用一次 `promptAgent()`**；若在一次 handler 内多次调用，后续调用会抛出 `PromptAgentAlreadyCalledError`。但一次 `promptAgent()` 会运行完整的工具调用循环，并可能因工具往返或输出校验重试而发起多次底层 LLM 请求。只有需要多次彼此独立的 `promptAgent()` 调用时，才应通过 `reborn` 拆成多轮。
 
 > **⚠️ 关键规则：调用顺序约束**
 > 

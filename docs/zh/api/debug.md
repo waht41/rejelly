@@ -153,7 +153,7 @@ const disable = enableOTLP({
 - 每隔 `flushInterval` 毫秒自动刷新一次
 - 同一时间只允许一个发送任务执行；重试期间不会并发发起新的 HTTP 请求
 - 当队列长度达到 `maxQueueSize` 时会丢弃最旧事件，优先保留最新观测数据
-- 调用 `disable()` 时会刷新所有剩余事件
+- 调用 `disable()` 时会刷新剩余的 Span 及已附着的即时事件；找不到已导出父 Span 的孤立即时事件会被丢弃并输出警告
 
 **进程退出处理：**
 
@@ -178,7 +178,7 @@ const disable = enableOTLP({
 
 ## Review Exporter
 
-Review 导出器，将追踪事件实时发送到 Rejelly Review Server。支持 `:start` 和 `:end` 事件，用于实时可视化追踪。使用原始事件格式（不进行 OTLP 转换）。
+Review 导出器，将追踪事件实时发送到 Rejelly Review Server。支持 `:start` 和 `:end` 事件，用于实时可视化追踪。事件不进行 OTLP 转换，但导出时会增加单调递增的 `_seq` 字段，用于排列时间戳相同的事件。
 
 **基本用法：**
 
@@ -252,7 +252,7 @@ const disable = enableReview({
 **实时模式特性：**
 
 - **支持 Start 事件**：与 OTLP Exporter 不同，Review Exporter 支持 `:start` 事件，实现真正的实时追踪
-- **原始事件格式**：直接发送原始事件格式，不进行 OTLP 转换
+- **TraceEvent 格式**：不进行 OTLP 转换，但会在导出副本上增加单调递增的 `_seq` 字段；不会修改 EventBus 中的原事件
 - **实时可视化**：默认批次大小为 10，刷新间隔为 5 秒；可通过 `batchSize` 和 `flushInterval` 调低延迟
 
 **批量发送机制：**
@@ -273,6 +273,6 @@ const disable = enableReview({
 **注意事项：**
 
 - 支持 `:start` 和 `:end` 事件，用于实时可视化
-- 使用原始事件格式，不进行 OTLP 转换
+- 使用带 `_seq` 排序字段的 TraceEvent 格式，不进行 OTLP 转换
 - 可通过 `batchSize` 和 `flushInterval` 调整实时性与请求频率
 - 错误会输出到控制台，不会抛出异常（避免影响主流程）

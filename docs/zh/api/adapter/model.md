@@ -115,5 +115,5 @@ const model = createOpenAIAdapter({
 通过 `schemaMode` 选择 schema 交付方式：
 
 - `"prompt"`：把 schema 注入 system prompt，兼容最广（OpenAI 默认）。
-- `"json_object"`：发 `response_format: { type: "json_object" }`（Gemini 为 `responseMimeType: "application/json"`），同时仍注入 schema 到 prompt 补字段约束。适合有 JSON 模式但无严格 schema 的模型（如 DeepSeek）。
+- `"json_object"`：OpenAI Chat Completions 使用 `response_format: { type: "json_object" }`，OpenAI Responses API 使用等价的 `text.format: { type: "json_object" }`，Gemini 使用 `responseMimeType: "application/json"`；同时仍注入 schema 到 prompt 补字段约束。适合有 JSON 模式但无严格 schema 的模型（如 DeepSeek）。
 - `"json_schema"`：原生 Structured Outputs（OpenAI strict / Gemini `responseSchema`），由模型强约束字段（Gemini 默认）。
