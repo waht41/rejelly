@@ -75,7 +75,7 @@ export interface RunWithOptions<P = unknown> {
   };
   /**
    * Whether to enable snapshot (record journal, saveChildFrame, allow dumpSnapshot).
-   * If not set, defaults to IS_DEV (createAgentContext default).
+   * If not set, runWith defaults to !IS_PROD (enabled in every non-production environment).
    */
   enableSnapshot?: boolean;
   /**

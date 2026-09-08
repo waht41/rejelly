@@ -4,7 +4,7 @@ Snapshots enable persistence, restoration, and replay of execution state, suppor
 
 > **Warning: snapshot capture and injection are disabled by default in production.**
 
-**enableSnapshot:** The root context's `enableSnapshot` is determined by `runWith`'s `options.enableSnapshot`, which defaults to `IS_DEV` (`true` when `NODE_ENV === 'development'` or `'test'`). When it is `false`, journal recording and child Agent frame saving are skipped, and `dumpSnapshot()` throws `SnapshotDisabledError`. Passing a non-empty `snapshot` to `runWith` in production also throws unless `enableSnapshot: true` is explicit. That production opt-in logs a danger warning because cache penetration can repeat model requests or re-run non-idempotent tools. `restoreSnapshot(trace.events)` itself does not depend on this option: it can reconstruct a snapshot from production trace events for later local replay and debugging.
+**enableSnapshot:** The root context's `enableSnapshot` is determined by `runWith`'s `options.enableSnapshot`, which defaults to `!IS_PROD`: it is disabled by default only when `NODE_ENV === 'production'` and enabled in other environments, including an unset value or `staging`. When it is `false`, journal recording and child Agent frame saving are skipped, and `dumpSnapshot()` throws `SnapshotDisabledError`. Passing a non-empty `snapshot` to `runWith` in production also throws unless `enableSnapshot: true` is explicit. That production opt-in logs a danger warning because cache penetration can repeat model requests or re-run non-idempotent tools. `restoreSnapshot(trace.events)` itself does not depend on this option: it can reconstruct a snapshot from production trace events for later local replay and debugging.
 
 ---
 
@@ -99,7 +99,8 @@ interface AgentFrameSnapshot {
 **Notes:**
 
 - Only callable when the current context's `enableSnapshot` is `true`; otherwise throws `SnapshotDisabledError` (checkable via `isSnapshotDisabledError` from `@rejelly/core`).
-- Snapshot state (including memory, frames, and metadata) must be JSON-serializable; functions, class instances, `undefined`, cycles, and similar values make `dumpSnapshot()` throw `TypeError`
+- Snapshot root-frame state (including memory and frames) must be JSON-serializable; functions, class instances, `undefined`, cycles, and similar values make `dumpSnapshot()` throw `TypeError`
+- `metadata` is attached after root-frame validation and is not checked by `dumpSnapshot()`; callers should still keep it serializable for reliable JSON persistence
 - Prompt/tool journal outputs are checked separately: non-serializable outputs are replaced with tombstone/error entries and cannot be replayed from cache
 - Snapshots are deep copies — modifying a snapshot does not affect the original context
 - promptAgent's input hash includes prompt, schema, model id, model provider
@@ -109,7 +110,7 @@ interface AgentFrameSnapshot {
 
 ## `runWith(fn, options?)` and Snapshots
 
-Executes a function in an optionally snapshot-restored context. If `options.snapshot` is provided, the root context is restored from the snapshot before execution; otherwise, normal execution proceeds. Snapshot injection is allowed by default in development and test environments, but disabled by default in production. A non-empty production snapshot requires explicitly setting `enableSnapshot: true`; doing so logs a danger warning because cache misses can repeat model calls or re-run non-idempotent tools.
+Executes a function in an optionally snapshot-restored context. If `options.snapshot` is provided, the root context is restored from the snapshot before execution; otherwise, normal execution proceeds. Snapshot injection is allowed by default in every non-production environment, but disabled by default in production. A non-empty production snapshot requires explicitly setting `enableSnapshot: true`; doing so logs a danger warning because cache misses can repeat model calls or re-run non-idempotent tools.
 
 ```typescript
 import { runWith } from '@rejelly/core';
@@ -142,7 +143,7 @@ interface RunWithOptions<P = unknown> {
   /** Inject snapshot for context restoration; if provided, restores root context from snapshot before execution */
   snapshot?: AgentSnapshot;
   /**
-   * Whether to enable snapshots (default IS_DEV).
+   * Whether to enable snapshots (`runWith` defaults to `!IS_PROD`, so only production is disabled by default).
    * When true: records journal, saves child frames, dumpSnapshot is callable.
    * When false: recordJournal / saveChildFrame returns immediately, dumpSnapshot() throws SnapshotDisabledError.
    */
@@ -207,7 +208,7 @@ const tasks = prepared.map(item => SubAgent({ text: item.text }));
 await Promise.all(tasks);
 ```
 
-- Non-JSON-serializable values in memory, frame state, or metadata make `dumpSnapshot()` throw `TypeError`. Non-serializable prompt/tool journal outputs instead become tombstone/error entries and are not replay-cacheable.
+- Non-JSON-serializable values in memory or frame state make `dumpSnapshot()` throw `TypeError`. Non-serializable prompt/tool journal outputs instead become tombstone/error entries and are not replay-cacheable. `metadata` is not validated during dump, but should still be JSON-serializable for reliable persistence.
 
 ---
 
@@ -216,7 +217,7 @@ await Promise.all(tasks);
 Restores an AgentSnapshot from a linear array of event traces (TraceEvent[]), enabling time travel. Rebuilds the nested frame structure to restore the complete Agent execution state.
 
 ```typescript
-import { EVENTS } from '@rejelly/core';
+import { EVENTS, runWith } from '@rejelly/core';
 import type { TraceEvent, AgentEndEvent } from '@rejelly/core';
 import { restoreSnapshot } from '@rejelly/core/debugger';
 

@@ -4,7 +4,7 @@
 
 > **警告：生产环境默认禁用快照采集和注入。**
 
-**enableSnapshot：** 根 context 的 `enableSnapshot` 由 `runWith` 的 `options.enableSnapshot` 决定，默认值为 `IS_DEV`（即 `NODE_ENV === 'development'` 或 `'test'` 时为 `true`）。当它为 `false` 时，journal 记录与子 Agent 帧保存都会跳过，调用 `dumpSnapshot()` 会抛出 `SnapshotDisabledError`；生产环境向 `runWith` 传入非空 `snapshot` 也会抛错，除非显式设置 `enableSnapshot: true`。该生产开关会记录危险警告，因为缓存穿透可能导致模型重复请求或非幂等工具重复执行。`restoreSnapshot(trace.events)` 本身不依赖此开关：可以从生产环境采集的事件线重建快照，再在本地回放、调试。
+**enableSnapshot：** 根 context 的 `enableSnapshot` 由 `runWith` 的 `options.enableSnapshot` 决定，默认值为 `!IS_PROD`：仅当 `NODE_ENV === 'production'` 时默认关闭，其他环境（包括未设置或 `staging`）默认开启。当它为 `false` 时，journal 记录与子 Agent 帧保存都会跳过，调用 `dumpSnapshot()` 会抛出 `SnapshotDisabledError`；生产环境向 `runWith` 传入非空 `snapshot` 也会抛错，除非显式设置 `enableSnapshot: true`。该生产开关会记录危险警告，因为缓存穿透可能导致模型重复请求或非幂等工具重复执行。`restoreSnapshot(trace.events)` 本身不依赖此开关：可以从生产环境采集的事件线重建快照，再在本地回放、调试。
 
 ---
 
@@ -99,7 +99,8 @@ interface AgentFrameSnapshot {
 **注意事项：**
 
 - 仅当当前 context 的 `enableSnapshot` 为 `true` 时可调用；否则会抛出 `SnapshotDisabledError`（可从 `@rejelly/core` 引入 `isSnapshotDisabledError` 判断）。
-- 快照状态（包括内存、帧和 metadata）必须是 JSON 可序列化数据；函数、类实例、`undefined`、循环引用等值会使 `dumpSnapshot()` 抛出 `TypeError`
+- 快照根帧状态（包括内存和帧）必须是 JSON 可序列化数据；函数、类实例、`undefined`、循环引用等值会使 `dumpSnapshot()` 抛出 `TypeError`
+- `metadata` 会在根帧校验完成后直接附加，`dumpSnapshot()` 不会校验它；为了可靠地 JSON 持久化快照，调用方仍应提供可序列化的 metadata
 - Prompt/Tool journal 输出会单独检查：非序列化输出会被替换为 tombstone/error 条目，不能作为缓存重放
 - 快照是深拷贝，修改快照不会影响原始上下文
 - promptAgent 的输入哈希包括 prompt，schema，model id，model provider
@@ -109,7 +110,7 @@ interface AgentFrameSnapshot {
 
 ## `runWith(fn, options?)` 与快照
 
-在可选的快照恢复上下文中执行函数。如果提供了 `options.snapshot`，会从快照恢复根上下文再执行；否则正常执行。开发和测试环境默认允许注入快照；生产环境默认禁止，传入非空快照时必须同时显式设置 `enableSnapshot: true`。开启后会记录危险警告，因为缓存未命中可能导致重复调用模型或重新执行非幂等工具。
+在可选的快照恢复上下文中执行函数。如果提供了 `options.snapshot`，会从快照恢复根上下文再执行；否则正常执行。所有非生产环境默认允许注入快照；生产环境默认禁止，传入非空快照时必须同时显式设置 `enableSnapshot: true`。开启后会记录危险警告，因为缓存未命中可能导致重复调用模型或重新执行非幂等工具。
 
 ```typescript
 import { runWith } from '@rejelly/core';
@@ -142,7 +143,7 @@ interface RunWithOptions<P = unknown> {
   /** 注入快照用于上下文恢复；若提供则从快照恢复根上下文后再执行 */
   snapshot?: AgentSnapshot;
   /**
-   * 是否开启快照（默认 IS_DEV）。
+   * 是否开启快照（`runWith` 中默认 `!IS_PROD`，即仅生产环境默认关闭）。
    * 为 true 时：会记录 journal、保存子帧，可调用 dumpSnapshot。
    * 为 false 时：recordJournal / saveChildFrame 直接 return，dumpSnapshot() 会抛 SnapshotDisabledError。
    */
@@ -207,7 +208,7 @@ const tasks = prepared.map(item => SubAgent({ text: item.text }));
 await Promise.all(tasks);
 ```
 
-- 内存、帧状态或 metadata 中的非 JSON 可序列化值会使 `dumpSnapshot()` 抛出 `TypeError`。Prompt/Tool journal 的非序列化输出会改记为 tombstone/error 条目，且不会作为缓存重放。
+- 内存和帧状态中的非 JSON 可序列化值会使 `dumpSnapshot()` 抛出 `TypeError`。Prompt/Tool journal 的非序列化输出会改记为 tombstone/error 条目，且不会作为缓存重放。`metadata` 在 dump 阶段不会校验，但为了可靠持久化仍应保持 JSON 可序列化。
 
 ---
 
@@ -216,7 +217,7 @@ await Promise.all(tasks);
 从线性的事件追踪数组（TraceEvent）中恢复 AgentSnapshot，实现时间旅行功能。通过重建树形结构来恢复完整的 Agent 执行状态。
 
 ```typescript
-import { EVENTS } from '@rejelly/core';
+import { EVENTS, runWith } from '@rejelly/core';
 import type { TraceEvent, AgentEndEvent } from '@rejelly/core';
 import { restoreSnapshot } from '@rejelly/core/debugger';
 
