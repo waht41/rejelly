@@ -186,7 +186,7 @@ export const myPolicy = createAgentPolicy({
 });
 ```
 
-> 流式调用参数不属于 runtime：`toolChoice` 是 `executeTurn({ toolChoice })` 的 per-turn 参数，temperature 等 provider 选项通过 `executeTurn({ additionalOptions })` 按单 turn 覆盖。预设 tool-call-loop policy 刻意不设置 `toolChoice` 或 `additionalOptions`；需要这些控制时，在扩展 policy 中直接组合 `executeTurn`。
+> 流式调用参数不属于 runtime：`toolChoice` 是 `executeTurn(runtime.messages, { runtime, toolChoice })` 的 per-turn 参数，temperature 等 provider 选项通过 `executeTurn(runtime.messages, { runtime, additionalOptions })` 按单 turn 覆盖。预设 tool-call-loop policy 刻意不设置 `toolChoice` 或 `additionalOptions`；需要这些控制时，在扩展 policy 中直接组合 `executeTurn`。
 
 ## 语法糖：`executeValidatedLoopTurn`
 

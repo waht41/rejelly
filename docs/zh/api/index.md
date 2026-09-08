@@ -118,12 +118,12 @@ LLM 输出 → 验证 → 失败 → 拼接错误提示到 prompt → 重新调�
 **不需要在 `promptAgent()` 之前调用的函数：**
 
 - `equipScope()` - 必须在调用子 Agent 之前（与 promptAgent 无关）
-- `equipTraceAttr()` - 可在 handler 内任意位置调用，用于给当前 agent/generation 的 span 打标（在 agent:end、generation:end 的 trace.attributes 中透出）
+- `equipTraceAttr()` - 可在 handler 内调用；默认 `target: 'agent'` 的属性在 `agent:end` 的 `trace.attributes` 中透出，不会附加到 `generation:end`
 - `expectScope()` - 可在任何位置调用（用于读取父 Agent 提供的作用域）
-- `expectResource()` - 可在任何位置调用（用于读取父 Agent 暴露的资源）
+- `expectResource(key)` - 可在任何位置调用（用于读取父 Agent 暴露的资源）
 - `equipMemory()` / `equipMemo()` - 可在任何位置调用（Agent 内存：单次 invocation 内、跨 reborn，Agent 返回即销毁）
 
 **原理**：
 - **promptAgent 相关**：框架在调用 `promptAgent()` 时收集所有已配置的 equip/expect，构建完整的 Prompt 并发送给 LLM。在 `promptAgent()` 之后调用的这些函数不会生效。
 - **子 Agent 相关**：`equipScope()` 用于为子 Agent 提供作用域，必须在调用子 Agent 之前调用，与 `promptAgent()` 无关。
-- **读取依赖**：`expectScope()` 和 `expectResource()` 用于读取父 Agent 提供的作用域和资源，可以在任何位置调用（包括 promptAgent 之后）。跨 Agent / 跨 Session 的持久状态通过 `runWith({ providers })` 注入真实数据库、Redis 或 SDK 客户端，再用 `expectResource()` 读取。
+- **读取依赖**：`expectScope()` 和 `expectResource(key)` 用于读取父 Agent 提供的作用域和资源，可以在任何位置调用（包括 promptAgent 之后）。跨 Agent / 跨 Session 的持久状态通过 `runWith(fn, { providers })` 注入真实数据库、Redis 或 SDK 客户端，再用 `expectResource(key)` 读取。

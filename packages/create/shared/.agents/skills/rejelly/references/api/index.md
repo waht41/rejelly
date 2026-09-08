@@ -118,12 +118,12 @@ If you manually write a loop inside a single handler execution and repeatedly pr
 **Functions that do NOT need to be called before `promptAgent()`:**
 
 - `equipScope()` - Must be called before invoking a sub-agent (unrelated to promptAgent)
-- `equipTraceAttr()` - Can be called anywhere in the handler to tag the current agent/generation span (exposed in trace.attributes of agent:end, generation:end)
+- `equipTraceAttr()` - Can be called in the handler; default `target: 'agent'` attributes appear in `agent:end` trace attributes and are not attached to `generation:end`
 - `expectScope()` - Can be called anywhere (used to read parent Agent's scope)
-- `expectResource()` - Can be called anywhere (used to read parent Agent's exposed resources)
+- `expectResource(key)` - Can be called anywhere (used to read parent Agent's exposed resources)
 - `equipMemory()` / `equipMemo()` - Can be called anywhere (Agent memory: within a single invocation, across reborn, destroyed on Agent return)
 
 **Rationale**:
 - **promptAgent-related**: The framework collects all configured equip/expect calls when `promptAgent()` is invoked, building the complete Prompt and sending it to the LLM. Functions called after `promptAgent()` have no effect.
 - **Sub-agent related**: `equipScope()` provides scope for sub-agents and must be called before invoking a sub-agent — unrelated to `promptAgent()`.
-- **Reading dependencies**: `expectScope()` and `expectResource()` read scope and resources provided by the parent Agent and can be called anywhere (including after promptAgent). Cross-agent / cross-session persistent state is injected via `runWith({ providers })` using real database, Redis, or SDK clients, then read via `expectResource()`.
+- **Reading dependencies**: `expectScope()` and `expectResource(key)` read scope and resources provided by the parent Agent and can be called anywhere (including after promptAgent). Cross-agent / cross-session persistent state is injected via `runWith(fn, { providers })` using real database, Redis, or SDK clients, then read via `expectResource(key)`.

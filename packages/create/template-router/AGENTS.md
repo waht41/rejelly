@@ -44,7 +44,7 @@ Each generation may call `promptAgent()` or `promptChat()` exactly once; a secon
 
 Not part of the prompt draft — safe to call after the prompt:
 
-- `equipMemory()` / `equipMemo()`, `expectScope()` / `expectResource()`, `equipTraceAttr()`
+- `equipMemory()` / `equipMemo()`, `expectScope()` / `expectResource(key)`, `equipTraceAttr()`
 
 `equipScope()` is unrelated to the prompt barrier: call it before invoking the child Agent that reads it.
 
@@ -77,7 +77,7 @@ Use this map to pick the right API; link to the referenced doc for details inste
 
 - `expectValidator(fn)` (`.agents/skills/rejelly/references/api/expect.md`): Semantic validation beyond schema shape; return an error string to make the model retry with feedback.
 - `expectScope(schema)` (`.agents/skills/rejelly/references/api/expect.md`): Read typed data from a parent's `equipScope()`.
-- `expectResource<T>(key)` (`.agents/skills/rejelly/references/api/expect.md`): Read a resource exposed by an ancestor or injected via `runWith({ providers })`.
+- `expectResource<T>(key)` (`.agents/skills/rejelly/references/api/expect.md`): Read a resource exposed by an ancestor or injected via `runWith(fn, { providers })`.
 
 ## Effect & Middleware
 
@@ -102,7 +102,7 @@ Point users at these instead of inlining advanced material in first-contact exam
 - Prefer one small Agent with a clear Zod schema before introducing sub-Agents.
 - Keep prompts declarative: role, task, available state, output expectations.
 - Put business decisions in normal TypeScript after `promptAgent()`; use `reborn()` only when another generation is needed.
-- For persistence across requests or restarts, inject the real database or SDK via `runWith({ providers })` and read it with `expectResource()` — `equipMemory` is per-invocation only.
+- For persistence across requests or restarts, inject the real database or SDK via `runWith(fn, { providers })` and read it with `expectResource(key)` — `equipMemory` is per-invocation only.
 
 # Version Note
 

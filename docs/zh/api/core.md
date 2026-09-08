@@ -76,6 +76,7 @@ type StreamEvent =
   | { type: 'reasoning'; content: string }  // 推理/思考增量（链式思维类模型，如 DeepSeek-R1）
   | { type: 'tool_call'; toolCall: ToolCallChunk }  // 工具调用流式分片（按 index 累积为完整 ToolCall）
   | { type: 'extra'; extra: Record<string, unknown> } // 适配器/模型返回的额外元数据
+  | { type: 'state'; state: ProviderState } // 可持久化并用于后续重放的 provider 状态
   | { type: 'usage'; usage: TokenUsage }    // 统计数据（流式过程中可出现多次）
   | { type: 'finish'; finishReason: FinishReason; usage?: TokenUsage }  // 流结束（通常最后一条）
   | { type: 'error'; error: unknown };     // 流式错误
@@ -100,10 +101,11 @@ interface Message {
   tool_call_id?: string;  // 工具调用 ID（仅 tool 角色使用）
   name?: string;
   extra?: Record<string, unknown>;
+  provider_state?: ProviderState[]; // provider 发出的不透明、可持久化重放状态
 }
 ```
 
-`ModelStreamOptions` 中的 `ToolDefinition`、`ToolChoice` 与框架 equip 工具所用类型一致，由 `@rejelly/core` 导出。`MessageContent` 为 `string | ContentPart[]`（文本、图片、视频等多模态内容），`FinishReason` 取值见类型定义：`stop`、`length`、`tool_calls`、`content_filter`、`error`、`unknown`。
+`ModelStreamOptions` 中的 `ToolDefinition`、`ToolChoice` 与框架 equip 工具所用类型一致，由 `@rejelly/core` 导出。`MessageContent` 为 `string | ContentPart[]`（文本、图片、视频等多模态内容），`FinishReason` 取值见类型定义：`stop`、`length`、`tool_calls`、`content_filter`、`error`、`unknown`。`ProviderState` 包含稳定的 `kind`、`version` 与 JSON `payload`；适配器可通过 `state` 事件发出，框架将其保存到 `Message.provider_state`，供 provider 后续重放。
 
 **OpenAI Adapter 实现示例：**
 
@@ -217,28 +219,35 @@ const BaseSearchTool: ToolDefinition = {
 };
 
 const SafeSearchTool = augmentTool(BaseSearchTool, [
-  wrapLog(),            // Outer: 记录日志
-  wrapRetry({ n: 3 })   // Inner: 重试机制
+  {
+    name: 'log-search',
+    handler: async (ctx, next) => {
+      console.log(`Calling ${ctx.toolName}`);
+      return await next();
+    },
+  },
 ]);
 
-// 在 Agent 中使用
+// 在 Agent 中只注册一次；动态中间件同样使用 ToolMiddleware 对象
 const ResearchAgent = createAgent({
   id: 'researcher',
   model: enhancedModel,
-  handler: async (props) => {
-    equipTool(SafeSearchTool);
+  handler: async () => {
     equipTool(SafeSearchTool, {
       middleware: [
-        async (ctx, next) => {
-          const [history, setHistory] = equipMemory('history', []);
-          const result = await next();
-          setHistory([...history, `Used ${ctx.toolName}`]);
-          return result;
-        }
-      ]
+        {
+          name: 'record-search-history',
+          handler: async (ctx, next) => {
+            const [, setHistory] = equipMemory<string[]>('history', []);
+            const result = await next();
+            setHistory((history) => [...history, `Used ${ctx.toolName}`]);
+            return result;
+          },
+        },
+      ],
     });
     return await promptAgent(ResultSchema);
-  }
+  },
 });
 ```
 
@@ -253,17 +262,15 @@ const ResearchAgent = createAgent({
 3. **若模型返回符合 schema 的最终内容**：循环结束，`promptAgent` 返回解析后的结果。
 4. 若仍需多轮「模型 → tool → 模型」，则重复 2～3，直到满足结束条件或达到框架限制。
 
-**本中间件实际起作用的位置**：仅在上述**第 2 步**、且仅限于 **`promptAgent` 内部**处理「模型当轮产出的 `tool_calls`」时——即在把这一批调用交给底层 `executeToolOutputs` 执行**之前**，对**整批** `ToolCall[]` 做过滤或短路。它不参与拼 system/instruction，也不替代单工具层的 `ToolMiddleware`。
+**本中间件实际起作用的位置**：任何 policy 调用 `executeTools(toolCalls, { runtime })` 执行整批 `ToolCall[]` 时，都会在底层工具执行**之前**运行该中间件链；内置 `promptAgent` 的第 2 步就是其中一个调用方。它不参与拼 system/instruction，也不替代单工具层的 `ToolMiddleware`。
 
-> **⚠️ 作用域：promptAgent 内部的 tool call loop，不是「全局工具执行」**
+> **⚠️ 作用域：`executeTools` 的批量执行路径，不是「全局工具执行」**
 >
-> `ToolCallLoopMiddleware` 绑定在 **`promptAgent` 自带的 tool 往返循环**上（与模型对话里的 tool 轮次一一对应）。**不会**在其它入口执行工具时触发。
->
-> 例如：通过 **`callTool(tool, args)`** 在代码里**直接执行**某个 `ToolDefinition` 时，走的是单工具核心路径，**不会**经过 `equipToolCallLoopMiddleware`；同理，任何不经过「模型先产出 `tool_calls` → `promptAgent` 内部再派发执行」的路径，都不会跑 Loop 中间件。若需要在「手动调工具」场景做统一拦截，应在单工具 **`equipTool(..., { middleware })` / `augmentTool`** 上处理，而不是依赖 Loop 中间件。（注意：`callTool` 直接返回 handler 的原始输出，失败时**抛错**，不再兜底成字符串。）
+> 内置 `promptAgent` 的 tool 往返循环通过 `executeTools` 触发 `ToolCallLoopMiddleware`；自定义 policy 只要调用同一原语，也会触发它。相反，通过 **`callTool(tool, args)`** 直接执行单个 `ToolDefinition` 时走单工具核心路径，不会经过 Loop 中间件。其它未调用 `executeTools` 的路径同样绕过它。若需要覆盖手动单工具调用，应在 **`equipTool(..., { middleware })` / `augmentTool`** 层处理。（`callTool` 直接返回 handler 的原始输出，失败时**抛错**，不兜底成字符串。）
 
 **注册语义（与上文衔接）：** `equipToolCallLoopMiddleware` 即在上述第 2 步、模型已给出 `tool_calls` 且**尚未**进入各工具 handler / 单工具中间件之前插入一层。与「改 system / instruction / schema」无关：中间件**不能**修改本轮已参与哈希与快照的 prompt 与 schema，只作用于**整批 tool calls 执行前**这一跳，适合做限流、鉴权、过滤调用、或对部分调用**短路**并返回合成 `ToolOutput`（由框架再转成协议层的 `role: "tool"` 消息）。
 
-**须在 `promptAgent()` 之前调用**（与 `equipTool` 同属 draft barrier，违反则 `AfterPromptAgentError`）。
+**须在进入 policy draft barrier 之前调用**（例如调用 `promptAgent()` 或其它 `createAgentPolicy` 创建的 policy 之前；与 `equipTool` 约束相同，违反则 `AfterPromptAgentError`）。
 
 **执行顺序（洋葱，与 `equipTool` 动态中间件一致）：** 数组**先注册者为外层**，后注册者更靠近真实执行。外层调用 `next(filteredCalls)` 时，内层收到的 **`currentCalls` 即为过滤后的列表**；最外层第一次收到的 `currentCalls` 与 `ctx.originalCalls` 一致（模型当轮原始 `tool_calls`）。`ctx` 为只读快照，其中 `originalCalls` 始终为模型请求；**随链路透传的是 `currentCalls` 参数**。
 
@@ -493,15 +500,15 @@ Middleware[0] (outer) → Middleware[1] → ... → Handler (inner)
 > 
 > **不需要在 `promptAgent()` 之前调用的函数：**
 > 
-> - `equipMemory()` / `equipMemo()` - 绑定 **Agent 级** `ctx.memory`（纯内存，随单次 Agent invocation 存活、跨 reborn，Agent 返回即销毁；跨 Agent / 跨 Session 用 `runWith({ providers })` 注入真实持久化客户端并通过 `expectResource()` 读取），可在本 Generation 内任意时刻调用（含首次注册新 key、含 promptAgent 之后），用于跨 reborn 保留与读写状态；**不**受 `AfterPromptAgentError` 约束（与用于拼 Prompt 的 draft equip 不同）
+> - `equipMemory()` / `equipMemo()` - 绑定 **Agent 级** `ctx.memory`（纯内存，随单次 Agent invocation 存活、跨 reborn，Agent 返回即销毁；跨 Agent / 跨 Session 用 `runWith(fn, { providers })` 注入真实持久化客户端并通过 `expectResource(key)` 读取），可在本 Generation 内任意时刻调用（含首次注册新 key、含 promptAgent 之后），用于跨 reborn 保留与读写状态；**不**受 `AfterPromptAgentError` 约束（与用于拼 Prompt 的 draft equip 不同）
 > - `equipScope()` - 必须在调用子 Agent 之前（与 promptAgent 无关）
 > - `expectScope()` - 可在任何位置调用（用于读取父 Agent 提供的作用域）
-> - `expectResource()` - 可在任何位置调用（用于读取父 Agent 暴露的资源）
+> - `expectResource(key)` - 可在任何位置调用（用于读取父 Agent 暴露的资源）
 > 
 > **原理**：
 > - **promptAgent 相关**：框架在调用 `promptAgent()` 时收集所有已配置的、参与拼 Prompt 的 draft（如 system/instruction/tools/expect/onStream 等），构建完整的 Prompt 并发送给 LLM。在 `promptAgent()` 之后若仍调用上述「必须在之前」列表中的 API（违反顺序），会直接抛出 `AfterPromptAgentError`。`equipMemory` / `equipMemo`（基于 memory）、`expectScope` / `expectResource`（读取依赖，非 draft）不参与该 barrier。
 > - **子 Agent 相关**：`equipScope()` 用于为子 Agent 提供作用域，必须在调用子 Agent 之前调用，与 `promptAgent()` 无关。
-> - **读取依赖**：`expectScope()` 和 `expectResource()` 用于读取父 Agent 提供的作用域和资源，可以在任何位置调用（包括 promptAgent 之后）。
+> - **读取依赖**：`expectScope()` 和 `expectResource(key)` 用于读取父 Agent 提供的作用域和资源，可以在任何位置调用（包括 promptAgent 之后）。
 > - **依赖数组比较**：`equipMemo` 使用**深比较**（便于 config、params 等内联对象，减少样板代码）；`equipResource` 使用**浅比较（React 风格）**，其 **`deps` 允许包含不可序列化的值**（类实例、闭包、带符号的引用等，与 `equipMemo` 的纯数据取向不同；适用于不可序列化、有副作用的实体）。详见 [Equip（输入与上下文）](/zh/api/equip)。
 
 **调用顺序示例：**
@@ -701,7 +708,7 @@ handler: async () => {
 
 **工具循环规则：**
 
-- 预设 policy **不设置** `toolChoice`（模型按默认策略自行决定是否调工具）；需要「强制用工具」请编写自定义 policy，用 `executeTurn({ toolChoice })` 控制每个 turn。generation 级参数（temperature 等）在构造 model adapter 时配置。
+- 预设 policy **不设置** `toolChoice`（模型按默认策略自行决定是否调工具）；需要「强制用工具」请编写自定义 policy，从当前 `PromptContext` 派生 runtime，并用 `executeTurn(runtime.messages, { runtime, toolChoice })` 控制每个 turn。generation 级参数（temperature 等）在构造 model adapter 时配置。
 - 每轮若返回 `tool_calls`，会先追加 assistant 消息，再执行工具并把 tool 消息写回对话，继续下一轮。
 
 **终止与异常：**
@@ -715,7 +722,7 @@ handler: async () => {
 
 ## `runWith(fn, options?)`
 
-在顶层执行函数；可选传入快照以恢复上下文。无快照时直接执行；有快照时从快照恢复根上下文后再执行。快照恢复、重放机制及完整示例见 [时间旅行 (time-travel.md)](./time-travel.md#runWithfn-options-与快照)。
+在顶层执行函数；可选传入快照以恢复上下文。无快照时直接执行；启用快照能力且传入快照时，从快照恢复根上下文后再执行。生产环境默认禁止快照注入，必须显式设置 `enableSnapshot: true`；快照恢复、重放机制及完整示例见 [时间旅行 (time-travel.md)](./time-travel.md#runWithfn-options-与快照)。
 
 ```typescript
 import { runWith } from '@rejelly/core';
@@ -727,7 +734,10 @@ const result = await runWith(async () => {
 });
 
 // 使用快照恢复执行（snapshot 从 @rejelly/core/debugger 的 dumpSnapshot 或 restoreSnapshot 获得）
-const resultFromSnapshot = await runWith(async () => { ... }, { snapshot });
+const resultFromSnapshot = await runWith(
+  async () => { ... },
+  { snapshot, enableSnapshot: true }, // 生产环境必须显式开启；请先评估重放安全风险
+);
 
 // 与外部取消源绑定（例如 HTTP Request、UI 上的「停止」）：abort 后根上下文的 signal 同步进入 aborted，后续模型调用与可取消工具会收到
 const ac = new AbortController();
@@ -779,9 +789,9 @@ interface RunWithOptions<P = unknown> {
 **简要说明：**
 
 - **无快照**：直接执行 `fn`，不恢复上下文。
-- **有 snapshot**：从快照根帧恢复根上下文（内存、重放缓存等），再执行 `fn`；子 Agent 会从 `snapshot.children` 自动恢复。
+- **有 snapshot**：启用快照能力后，从快照根帧恢复根上下文（内存、重放缓存等），再执行 `fn`；子 Agent 会从 `snapshot.children` 自动恢复。生产环境默认拒绝快照注入，必须显式传入 `enableSnapshot: true`。
 - **modelRegistry**：id → ModelAdapter 的字典，注入到根 context 的 `shared.modelRegistry`，链上共享。Agent 的 `model` 为 string 时在运行期由此解析；id 不存在时抛出 `ModelRegistryNotFoundError`。
-- **enableSnapshot**：默认 `IS_DEV`（开发/测试为 true）。为 false 时不记录 journal、不保存子帧，且 `dumpSnapshot()` 会抛错；详见 [时间旅行 - enableSnapshot](./time-travel.md#时间旅行-time-travel)。
+- **enableSnapshot**：默认在非生产环境启用、生产环境禁用。生产环境传入 snapshot 时必须显式设置 `enableSnapshot: true`，否则 `runWith` 会直接抛错；显式开启会输出安全警告，因为恢复快照可能造成缓存穿透或重复执行非幂等工具。为 false 时不记录 journal、不保存子帧，且 `dumpSnapshot()` 会抛错；详见 [时间旅行 - enableSnapshot](./time-travel.md#时间旅行-time-travel)。
 - **signal**：传入的 `AbortSignal` 会挂接到根 `createAgentContext`：外部一旦 `abort`，根上下文的 `controller` 会收到相同 reason，`ctx.signal` 进入 aborted；子 Agent 仍按原有规则级联父级 signal。适合与 HTTP `Request.signal`、前端停止按钮等取消源对齐。
 
 **与 `enableReview()` 的配合：**

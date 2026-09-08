@@ -91,7 +91,7 @@ interface OTLPOptions {
   batchSize?: number;
   /** 刷新间隔（毫秒）（默认: 5000） */
   flushInterval?: number;
-  /** 最大内存队列长度，超过后丢弃新事件（默认: 5000） */
+  /** 最大内存队列长度；队列已满时丢弃最旧事件并保留新事件（默认: 5000） */
   maxQueueSize?: number;
   /** HTTP 可重试失败的最大重试次数（默认: 3） */
   maxRetries?: number;
@@ -210,11 +210,13 @@ interface ReviewOptions {
   headers?: Record<string, string>;
   /** 按事件过滤（可选） */
   filter?: (event: TraceEvent) => boolean;
+  /** 在导出边界转换事件；发生在 filter 之后、Review 序列化之前 */
+  convert?: TraceEventConverter;
   /** 批量发送前的批次大小（默认: 10） */
   batchSize?: number;
   /** 刷新间隔（毫秒）（默认: 5000） */
   flushInterval?: number;
-  /** 最大内存队列长度，超过后丢弃新事件（默认: 5000） */
+  /** 最大内存队列长度；队列已满时丢弃最旧事件并保留新事件（默认: 5000） */
   maxQueueSize?: number;
   /** HTTP 可重试失败的最大重试次数（默认: 3） */
   maxRetries?: number;

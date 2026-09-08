@@ -104,7 +104,7 @@ import type { MCPClientAdapter } from '@rejelly/adapter-mcp';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { equipMCP } from '@rejelly/adapter-mcp';
-import { createAgent, equipResource, expectResource, equipScope, expectScope, promptAgent } from '@rejelly/core';
+import { createAgent, equipInstruction, equipResource, expectResource, equipScope, expectScope, promptAgent } from '@rejelly/core';
 import { z } from 'zod';
 
 const ParentAgent = createAgent({

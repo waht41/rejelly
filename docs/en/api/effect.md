@@ -58,7 +58,7 @@ The Generation stream has no separate end event: the `for await...of` loop endin
 
 `structured_data` is the most commonly used event for structured output UIs:
 
-Without a schema, it is emitted only when the accumulated text is successfully recognized as a JSON object. Ordinary prose does not emit invalid snapshots or a final parse error.
+Without a schema, it is emitted only when the accumulated text is successfully recognized as a JSON object or JSON array. Ordinary prose and other JSON primitive values do not emit invalid snapshots or a final parse error.
 
 ```typescript
 onStream(

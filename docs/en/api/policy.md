@@ -179,7 +179,7 @@ export const myPolicy = createAgentPolicy({
 });
 ```
 
-> Streaming call parameters do not belong to runtime: `toolChoice` is a per-turn parameter of `executeTurn({ toolChoice })`, provider options like temperature are overridden per-turn via `executeTurn({ additionalOptions })`. The preset tool-call-loop policy deliberately does not set `toolChoice` or `additionalOptions` — when such control is needed, compose `executeTurn` directly in an extended policy.
+> Streaming call parameters do not belong to runtime: `toolChoice` is a per-turn parameter of `executeTurn(runtime.messages, { runtime, toolChoice })`, while provider options such as temperature are overridden per turn through `executeTurn(runtime.messages, { runtime, additionalOptions })`. The preset tool-call-loop policy deliberately does not set `toolChoice` or `additionalOptions`; when this control is needed, compose `executeTurn` directly in an extended policy.
 
 ## Syntactic Sugar: `executeValidatedLoopTurn`
 

@@ -84,6 +84,8 @@ equipTool({
 
 **Example with dynamic middleware:**
 
+`ToolMiddleware` is an object with `name`, `handler`, and optional `config` fields, not a bare function.
+
 ```typescript
 // Define base tool
 const BaseSearchTool: ToolDefinition = {
@@ -95,28 +97,40 @@ const BaseSearchTool: ToolDefinition = {
 
 // Use augmentTool to add static middleware (global reuse)
 const SafeSearchTool = augmentTool(BaseSearchTool, [
-  wrapLog(),            // Logging
-  wrapRetry({ n: 3 })   // Retry mechanism
+  {
+    name: 'log-search',
+    handler: async (ctx, next) => {
+      console.log(`Calling ${ctx.toolName}`);
+      return await next();
+    },
+  },
 ]);
 
-// Use in Agent with dynamic middleware (context-dependent)
+// Register once in the Agent and add context-dependent dynamic middleware
 equipTool(SafeSearchTool, {
   middleware: [
-    // Interceptor: sync results to Agent memory
-    async (ctx, next) => {
-      const result = await next();
-      const [history, setHistory] = equipMemory('history', []);
-      setHistory([...history, `Used ${ctx.toolName}: ${JSON.stringify(result)}`]);
-      return result;
+    {
+      name: 'record-search-history',
+      handler: async (ctx, next) => {
+        const result = await next();
+        const [, setHistory] = equipMemory<string[]>('history', []);
+        setHistory((history) => [
+          ...history,
+          `Used ${ctx.toolName}: ${JSON.stringify(result)}`,
+        ]);
+        return result;
+      },
     },
-    // Interceptor: risk control
-    async (ctx, next) => {
-      if (ctx.input.query.length > 100) {
-        return "Query too long"; // Block execution
-      }
-      return await next();
-    }
-  ]
+    {
+      name: 'limit-query-length',
+      handler: async (ctx, next) => {
+        if (String(ctx.input.query ?? '').length > 100) {
+          return 'Query too long';
+        }
+        return await next();
+      },
+    },
+  ],
 });
 ```
 
@@ -160,8 +174,8 @@ interface ToolCallLoopMiddleware {
 
 The old capability to write streaming options to the draft via equip has been removed (it was an ambient configuration implicitly read and modified by preset policies). The lifecycle has been relocated to two places:
 
-- **`toolChoice`** (per-turn directive): Explicitly passed via `executeTurn(messages, { toolChoice })`. Preset policies (`promptChat` / `promptAgent`) **deliberately do not expose** it; if you need "force tool use," write a custom policy that decides `toolChoice` per turn.
-- **`additionalOptions`** (temperature, top_p, etc. provider parameters): Generation-level parameters should be configured when **constructing the model adapter** (set once, effective for the entire run). To override per turn, custom policies can use `executeTurn(messages, { additionalOptions })`, forwarded via `callLLM` to `model.stream()`.
+- **`toolChoice`** (per-turn directive): In a custom policy, pass it explicitly via `executeTurn(runtime.messages, { runtime, toolChoice })`, where `runtime` must be derived from the active `PromptContext`. Preset policies (`promptChat` / `promptAgent`) **deliberately do not expose** it.
+- **`additionalOptions`** (temperature, top_p, etc. provider parameters): Generation-level parameters should be configured when **constructing the model adapter** (set once, effective for the entire run). To override per turn, a custom policy can use `executeTurn(runtime.messages, { runtime, additionalOptions })`, forwarded via `callLLM` to `model.stream()`.
 
 The `StreamOptions` type has also been removed; `ModelStreamOptions.{toolChoice, additionalOptions}` on the model adapter interface remain unchanged. See [Policy](./policy.md) for details.
 
@@ -213,7 +227,7 @@ equipMemory('undefined', undefined);    // undefined forbidden
 
 **Behavior notes:**
 
-- **Scope and lifecycle**: Bound to the **current Agent invocation**'s `ctx.memory` (in-memory only). It **survives `reborn`** (multiple generations within the same Agent invocation share reads/writes), but is **destroyed when the Agent returns** — it does not persist across different Agent calls or conversation turns. For cross-Agent / cross-session persistence, inject real database, Redis, or SDK clients via `runWith({ providers })` and read with `expectResource()`.
+- **Scope and lifecycle**: Bound to the **current Agent invocation**'s `ctx.memory` (in-memory only). It **survives `reborn`** (multiple generations within the same Agent invocation share reads/writes), but is **destroyed when the Agent returns** — it does not persist across different Agent calls or conversation turns. For cross-Agent / cross-session persistence, inject real database, Redis, or SDK clients via `runWith(fn, { providers })` and read with `expectResource(key)`.
 - **Write is immediate, read is a snapshot**: `setState` **immediately** updates the underlying `ctx.memory`, but does not backfill the local variable you already destructured. To observe the new value in the current round, call `equipMemory(key)` again, or use a local variable (see example above).
 - Return value is a snapshot (deep clone) to prevent direct mutation of stored values.
 - All values are validated and cloned on read/write to ensure immutability and serializability.
@@ -375,7 +389,7 @@ interface ResourceConfig<T> {
    *
    * Omitting means the resource does not need teardown — it's a pure derived value,
    * or a borrowed handle the current Agent doesn't "own"
-   * (e.g., an application-level connection pool injected via runWith({ providers })).
+   * (e.g., an application-level connection pool injected via runWith(fn, { providers })).
    * Omitting also means no global teardown is registered, and no destroy resource:op span is emitted.
    *
    * Whether destroy is provided is the signal for "own vs borrow": given = I own it, I close it;
@@ -430,7 +444,7 @@ interface ResourceConfig<T> {
 
 ## Persistent State
 
-Unlike **in-memory-only** `equipMemory` / `equipMemo` (which survive `reborn` but are destroyed when the Agent returns), cross-Agent / cross-session persistence should use `runWith({ providers })` to inject real database, Redis, or SDK clients and read them via `expectResource()`. Full details and examples in [Expect · Persistent State](/en/api/expect#persistent-state).
+Unlike **in-memory-only** `equipMemory` / `equipMemo` (which survive `reborn` but are destroyed when the Agent returns), cross-Agent / cross-session persistence should use `runWith(fn, { providers: { db, redis, client } })` to inject real database, Redis, or SDK clients, then read one by its matching key, such as `expectResource('db')`. Full details and examples in [Expect · Persistent State](/en/api/expect#persistent-state).
 
 ## Budget Control
 
@@ -577,7 +591,7 @@ equipScope({ items: new Map() });         // class instance forbidden
 
 ### `equipTraceAttr(attrs: Record<string, unknown>, options?: EquipTraceAttrOptions)`
 
-Attaches tracing attributes (span attributes) to the current Agent run. By default (`target: 'agent'`), these attributes are merged into the **`agent:end`** and each round's **`generation:end`** event's `trace.attributes`, facilitating filtering and aggregation by dimensions such as request ID, user ID, etc. in distributed tracing or logs.
+Attaches tracing attributes (span attributes) to the current Agent run. By default (`target: 'agent'`), these attributes are merged into the **`agent:end`** event's `trace.attributes`; they are not attached to `generation:end`. Because this target is Draft state and is cleared on each reborn, `agent:end` contains only attributes set during the final Generation.
 
 **EquipTraceAttrOptions:**
 
@@ -585,7 +599,7 @@ Attaches tracing attributes (span attributes) to the current Agent run. By defau
 interface EquipTraceAttrOptions {
   /**
    * Attribute attachment target:
-   * - 'agent' (default): Merged into draft, emitted with this agent's agent:end and each generation:end event
+   * - 'agent' (default): Merged into draft and emitted with this agent's agent:end event
    * - 'local': Immediately merged into the current trace span
    * - 'root': Traverses up the context chain to the top-level (runWith) context, immediately merges into its span;
    *   visible on runWith:end (runWith:start has already been emitted). Useful for tagging the entire run's
@@ -606,12 +620,12 @@ interface EquipTraceAttrOptions {
 **Differences from runWith's trace:**
 
 - `runWith`'s `trace` option is used for **forwarding external links** (traceId, parentSpanId, root span name, initial attributes), taking effect when the root context is created.
-- `equipTraceAttr` tags **inside the handler** on demand, ultimately reflected in the span of that agent's agent:end and each generation:end.
+- `equipTraceAttr` tags **inside the handler** on demand; the default `target: 'agent'` is ultimately merged only into that Agent's `agent:end`.
 
 ```typescript
 handler: async (props) => {
   equipTraceAttr({ userId: props.userId, requestId: props.requestId });
-  // ... subsequent agent:end / generation:end trace.attributes will include the above fields
+  // ... subsequent agent:end trace.attributes will include the above fields
   return await promptAgent(schema);
 }
 

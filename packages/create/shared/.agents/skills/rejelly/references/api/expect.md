@@ -55,7 +55,7 @@ try {
 
 ## Persistent State
 
-Core no longer provides a dedicated KV facade. Cross-agent, cross-session, or cross-process persistent state should be injected via `runWith({ providers })` with real clients and read via `expectResource()`.
+Core no longer provides a dedicated KV facade. Cross-agent, cross-session, or cross-process persistent state should be injected via `runWith(fn, { providers })` with real clients and read via `expectResource(key)`.
 
 ```typescript
 import { expectResource, runWith } from '@rejelly/core';

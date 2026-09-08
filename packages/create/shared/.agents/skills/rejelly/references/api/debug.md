@@ -211,6 +211,8 @@ interface ReviewOptions {
   headers?: Record<string, string>;
   /** Event filter (optional) */
   filter?: (event: TraceEvent) => boolean;
+  /** Convert events at the export boundary, after filtering and before Review serialization */
+  convert?: TraceEventConverter;
   /** Batch size before sending (default: 10) */
   batchSize?: number;
   /** Flush interval in ms (default: 5000) */

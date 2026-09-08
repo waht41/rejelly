@@ -263,7 +263,7 @@ export function equipScope<T>(data: Loose<T>): void {
 export interface EquipTraceAttrOptions {
   /**
    * Where to attach attributes:
-   * - agent: merge into draft and emit on generation:end/agent:end (default)
+   * - agent: merge into draft and emit on agent:end (default); cleared on reborn
    * - local: merge into the current trace span immediately
    * - root: walk up to the top-level (runWith) context and merge into its span
    *   immediately. Surfaces on runWith:end (not runWith:start, which has already

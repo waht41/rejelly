@@ -4,7 +4,7 @@ These are return values or interrupt operations of the async handler.
 
 ## Calling Sub-Agents
 
-Call a sub-agent function directly and await its result. _Parent-child relationship:_ Stack-based invocation.
+Call a sub-agent function directly and await its result. _Parent-child relationship:_ Stack-based invocation. In the example below, `ChildAgent`, `SearchAgent`, and `AnalyzeAgent` are placeholder names for `AgentFunction`s previously created by application code with `createAgent(...)`; they are not built-in exports from `@rejelly/core`.
 
 ```typescript
 // Directly call a sub-agent
