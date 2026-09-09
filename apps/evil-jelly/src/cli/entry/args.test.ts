@@ -138,6 +138,61 @@ describe("parseCliArgs", () => {
     expect(args.initProtocol).toBe("responses");
   });
 
+  it("parses Session inspection with an optional id and JSON output", () => {
+    const latest = parseCliArgs(["node", "evil", "inspect"]);
+    expect(latest.kind).toBe("inspect");
+    if (latest.kind !== "inspect") throw new Error("expected inspect args");
+    expect(latest.inspectSessionId).toBeUndefined();
+    expect(latest.inspectJson).toBe(false);
+    expect(latest.inspectAllWorkspaces).toBe(false);
+
+    const selected = parseCliArgs([
+      "node",
+      "evil",
+      "inspect",
+      "session-1",
+      "--json",
+      "--all-workspaces",
+    ]);
+    expect(selected.kind).toBe("inspect");
+    if (selected.kind !== "inspect") throw new Error("expected inspect args");
+    expect(selected.inspectSessionId).toBe("session-1");
+    expect(selected.inspectJson).toBe(true);
+    expect(selected.inspectAllWorkspaces).toBe(true);
+  });
+
+  it("requires a Session id for cross-workspace inspection", () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+
+    expect(() => parseCliArgs(["node", "evil", "inspect", "--all-workspaces"])).toThrow("exit 1");
+    expect(console.error).toHaveBeenCalledWith("--all-workspaces requires a sessionId");
+  });
+
+  it("does not combine explicit workspace and cross-workspace inspection", () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+
+    expect(() =>
+      parseCliArgs([
+        "node",
+        "evil",
+        "inspect",
+        "session-1",
+        "--all-workspaces",
+        "--workspace",
+        ".",
+      ]),
+    ).toThrow("exit 1");
+    expect(console.error).toHaveBeenCalledWith(
+      "--all-workspaces cannot be combined with --workspace",
+    );
+  });
+
   it("parses MCP read commands without requiring model configuration", () => {
     const list = parseCliArgs(["node", "evil", "mcp", "list", "--scope", "project"]);
     expect(list.kind).toBe("mcp");

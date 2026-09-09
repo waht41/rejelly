@@ -34,6 +34,15 @@ async function main() {
   applyWorkspaceRootFromArgs(args.workspace);
   initSettings(args.settings);
   startupTimeline.mark("workspace_ready");
+  if (args.kind === "inspect") {
+    const { runInspect } = await import("./entry/inspect-run/runInspect");
+    await runInspect({
+      sessionId: args.inspectSessionId,
+      json: args.inspectJson,
+      allWorkspaces: args.inspectAllWorkspaces,
+    });
+    process.exit(0);
+  }
   if (args.kind === "mcp") {
     const { runMcpCommand } = await import("./entry/mcp-run/runMcp");
     await runMcpCommand(args.mcpCommand);

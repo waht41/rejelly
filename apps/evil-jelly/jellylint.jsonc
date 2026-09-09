@@ -58,6 +58,11 @@
       "!src/**/*.test.*"
     ],
     "@cli:init-run": ["src/cli/entry/init-run/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@cli:inspect-run": [
+      "src/cli/entry/inspect-run/**/*",
+      "!src/**/__tests__/**/*",
+      "!src/**/*.test.*"
+    ],
     "@cli:mcp-run": ["src/cli/entry/mcp-run/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
     "@cli:skill-run": [
       "src/cli/entry/skill-run/**/*",
@@ -203,6 +208,11 @@
       },
       "connect": {
         "@cli:audit-run": ["@feature:audit", "@domain:mcp"],
+        "@cli:inspect-run": [
+          "@feature:inspect",
+          "@domain:session:journal",
+          "@domain:session:repository"
+        ],
         "@cli:skill-run": ["@domain:skills:agent"],
         "@cli:unified-run": [
           "@feature:unified",
@@ -227,6 +237,7 @@
           "@domain:mcp"
         ],
         "@feature:audit": ["@domain:workspace", "@domain:mcp"],
+        "@feature:inspect": ["@domain:session:model"],
         "@cli:message-composer": [
           "@domain:workspace",
           "@domain:skills:agent",
@@ -239,6 +250,7 @@
         "@cli:entry": [
           "@cli:audit-run",
           "@cli:init-run",
+          "@cli:inspect-run",
           "@cli:mcp-run",
           "@cli:skill-run",
           "@cli:unified-run",

@@ -17,6 +17,7 @@ import {
   registerAuditArgs,
 } from "./audit-run/args";
 import { type InitCommandArgs, parseInitArgs, registerInitArgs } from "./init-run/args";
+import { type InspectCommandArgs, parseInspectArgs, registerInspectArgs } from "./inspect-run/args";
 import {
   extractMcpAddCommand,
   type McpCommandArgs,
@@ -35,9 +36,11 @@ export type ParsedAuditArgs = CommonParsedArgs & AuditCommandArgs;
 export type ParsedUnifiedArgs = CommonParsedArgs & UnifiedRunCommandArgs;
 export type ParsedMcpArgs = CommonParsedArgs & McpCommandArgs;
 export type ParsedSkillsArgs = CommonParsedArgs & SkillsCommandArgs;
+export type ParsedInspectArgs = CommonParsedArgs & InspectCommandArgs;
 export type ParsedEvilJellyArgs =
   | ParsedInitArgs
   | ParsedAuditArgs
+  | ParsedInspectArgs
   | ParsedMcpArgs
   | ParsedSkillsArgs
   | ParsedUnifiedArgs;
@@ -104,6 +107,7 @@ cli
 registerUnifiedRunArgs(cli);
 registerInitArgs(cli);
 registerAuditArgs(cli);
+registerInspectArgs(cli);
 registerMcpArgs(cli);
 registerSkillsArgs(cli);
 
@@ -162,6 +166,13 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
       );
     }
     return { ...common, ...parseAuditArgs(args, options) };
+  }
+  if (commandName === "inspect") {
+    const inspect = parseInspectArgs(args, options);
+    if (inspect.inspectAllWorkspaces && common.workspace) {
+      failArgs("--all-workspaces cannot be combined with --workspace");
+    }
+    return { ...common, ...inspect };
   }
   if (commandName === "mcp") {
     return { ...common, ...parseMcpArgs(args, options, extractMcpAddCommand(argv)) };
