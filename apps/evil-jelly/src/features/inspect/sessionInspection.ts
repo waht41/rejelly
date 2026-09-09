@@ -50,6 +50,19 @@ export interface SessionInspectionTotals {
   costs: Record<string, number>;
 }
 
+export interface CompactionInspection {
+  seq: number;
+  timestamp: number;
+  trigger: "auto" | "manual";
+  activeTurnId?: string;
+  beforeMessageCount: number;
+  afterMessageCount: number;
+  beforeTokens?: number;
+  afterTokens?: number;
+  keptUserMessages?: number;
+  durationMs?: number;
+}
+
 export interface SessionInspection {
   type: "session_inspection_v1";
   sessionId: string;
@@ -65,6 +78,7 @@ export interface SessionInspection {
   unattributedModelCalls: number;
   unattributedToolCalls: number;
   turns: TurnInspection[];
+  compactions: CompactionInspection[];
   warnings: string[];
 }
 
@@ -126,6 +140,7 @@ export function projectSessionInspection(
 ): SessionInspection {
   const totals = emptyTotals();
   const turns = new Map<string, TurnInspection>();
+  const compactions: CompactionInspection[] = [];
   const warnings = [...readWarnings];
   let title = "(untitled)";
   let status: SessionInspection["status"] = "idle";
@@ -210,6 +225,20 @@ export function projectSessionInspection(
       }
       case "context_compacted":
         totals.compactions += 1;
+        compactions.push({
+          seq: event.seq,
+          timestamp: event.timestamp,
+          trigger: event.trigger,
+          ...(event.activeTurnId ? { activeTurnId: event.activeTurnId } : {}),
+          beforeMessageCount: event.beforeMessageCount,
+          afterMessageCount: event.afterMessageCount,
+          ...(event.beforeTokens !== undefined ? { beforeTokens: event.beforeTokens } : {}),
+          ...(event.afterTokens !== undefined ? { afterTokens: event.afterTokens } : {}),
+          ...(event.keptUserMessages !== undefined
+            ? { keptUserMessages: event.keptUserMessages }
+            : {}),
+          ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
+        });
         if (event.activeTurnId) {
           turnFor(event.activeTurnId, event.seq, event.timestamp).compactions += 1;
         }
@@ -254,6 +283,7 @@ export function projectSessionInspection(
     unattributedModelCalls,
     unattributedToolCalls,
     turns: projectedTurns,
+    compactions,
     warnings,
   };
 }

@@ -95,6 +95,10 @@ describe("projectSessionInspection", () => {
           replacementHistory: [],
           beforeMessageCount: 10,
           afterMessageCount: 2,
+          beforeTokens: 12_000,
+          afterTokens: 3_000,
+          keptUserMessages: 2,
+          durationMs: 1_500,
         },
         5,
       ),
@@ -141,8 +145,24 @@ describe("projectSessionInspection", () => {
       transportFailures: 0,
       compactions: 1,
     });
-    expect(renderSessionInspection(inspection)).toContain(
-      "40 cache read, 7 cache write, 40.0% cache hit",
+    expect(inspection.compactions).toEqual([
+      {
+        seq: 5,
+        timestamp: 50,
+        trigger: "auto",
+        activeTurnId: "turn-1",
+        beforeMessageCount: 10,
+        afterMessageCount: 2,
+        beforeTokens: 12_000,
+        afterTokens: 3_000,
+        keptUserMessages: 2,
+        durationMs: 1_500,
+      },
+    ]);
+    const rendered = renderSessionInspection(inspection);
+    expect(rendered).toContain("40 cache read, 7 cache write, 40.0% cache hit");
+    expect(rendered).toContain(
+      "  - Compact [auto] 12,000 -> 3,000 tokens (-9,000, 75.0% reduction), 10 -> 2 messages, 1.5s",
     );
   });
 

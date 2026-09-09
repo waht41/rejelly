@@ -1,4 +1,4 @@
-import type { SessionInspection, TurnInspection } from "./sessionInspection";
+import type { CompactionInspection, SessionInspection, TurnInspection } from "./sessionInspection";
 
 function integer(value: number): string {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
@@ -27,6 +27,21 @@ function turnLine(turn: TurnInspection): string {
   const failures =
     turn.transportFailures > 0 ? ` / ${turn.transportFailures} transport failures` : "";
   return `- ${turn.turnId} [${turn.status}] ${turn.modelCalls} models, ${usage}, ${tools}, ${duration(turn.modelDurationMs)} model${failures}`;
+}
+
+function compactionLine(compaction: CompactionInspection): string {
+  const tokenChange =
+    compaction.beforeTokens !== undefined && compaction.afterTokens !== undefined
+      ? (() => {
+          const removed = compaction.beforeTokens - compaction.afterTokens;
+          const reduction = compaction.beforeTokens > 0 ? removed / compaction.beforeTokens : 0;
+          return `${integer(compaction.beforeTokens)} -> ${integer(compaction.afterTokens)} tokens (-${integer(removed)}, ${percentage(reduction)} reduction)`;
+        })()
+      : "token change unavailable";
+  const messageChange = `${compaction.beforeMessageCount} -> ${compaction.afterMessageCount} messages`;
+  const elapsed = compaction.durationMs !== undefined ? `, ${duration(compaction.durationMs)}` : "";
+  const prefix = compaction.activeTurnId ? "  -" : "-";
+  return `${prefix} Compact [${compaction.trigger}] ${tokenChange}, ${messageChange}${elapsed}`;
 }
 
 export function renderSessionInspection(inspection: SessionInspection): string {
@@ -58,8 +73,15 @@ export function renderSessionInspection(inspection: SessionInspection): string {
   }
 
   lines.push("", "Turns");
-  if (inspection.turns.length === 0) lines.push("(none)");
-  else lines.push(...inspection.turns.map(turnLine));
+  const timeline = [
+    ...inspection.turns.map((turn) => ({ seq: turn.firstSeq, line: turnLine(turn) })),
+    ...inspection.compactions.map((compaction) => ({
+      seq: compaction.seq,
+      line: compactionLine(compaction),
+    })),
+  ].sort((left, right) => left.seq - right.seq);
+  if (timeline.length === 0) lines.push("(none)");
+  else lines.push(...timeline.map((entry) => entry.line));
 
   if (inspection.warnings.length > 0) {
     lines.push("", "Warnings", ...inspection.warnings.map((warning) => `- ${warning}`));
