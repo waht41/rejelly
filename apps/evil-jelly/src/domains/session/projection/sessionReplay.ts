@@ -8,10 +8,12 @@ import {
   type McpSelectionChangedEvent,
   type McpToolGrantsChangedEvent,
   type MessageRecordedEvent,
+  type ModelCallCompletedEvent,
   type RunSegmentEndedEvent,
   type RunSegmentStartedEvent,
   type SessionEvent,
   type SessionStateEvent,
+  type ToolCallCompletedEvent,
   type ToolObservationRecordedEvent,
   type TurnCompletedEvent,
   type UserInputRecordedEvent,
@@ -49,6 +51,8 @@ export type PreparedSessionEvent =
   | PreparedMessageRecordedEvent
   | PreparedUserInputRecordedEvent
   | ToolObservationRecordedEvent
+  | ModelCallCompletedEvent
+  | ToolCallCompletedEvent
   | McpSelectionChangedEvent
   | McpToolGrantsChangedEvent
   | TurnCompletedEvent

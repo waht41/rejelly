@@ -9,6 +9,7 @@ import {
   type SessionMemoryRuntime,
 } from "../../../../domains/memory/runtime/sessionMemoryRuntime";
 import { LazySessionRecorder } from "../../../../domains/session/recorder/lazySessionRecorder";
+import { observeSessionRecorder } from "../../../../domains/session/recorder/sessionObservationRecorder";
 import {
   openSessionRecorder,
   type SessionRecorder,
@@ -27,6 +28,7 @@ import { env } from "../../../../shared/configuration/env";
 import { getWorkspaceRoot } from "../../../../shared/fs-policy/workspace-context";
 import type { EvilJellyBindings } from "../../../../shared/host/bindings";
 import type { SessionMcpState } from "../../../../shared/model/mcp/sessionMcpState";
+import { getSessionModelConfiguration } from "../../../../shared/model/observation/modelConfiguration";
 import { runWithReview } from "../../../runtime/runWithReview";
 import { generateTraceId } from "../../../runtime/traceId";
 import { MainCliAgent, type MainCliAgentProps } from "../../../unified-conversation/MainCliAgent";
@@ -117,6 +119,7 @@ async function openRunSessionRecorder(
   if (!options.sessionStartMode) {
     throw new Error("Session start mode is required for durable session execution");
   }
+  const modelConfiguration = getSessionModelConfiguration(model);
   const recorderOptions = {
     workspaceRoot: getWorkspaceRoot(),
     sessionId,
@@ -130,9 +133,11 @@ async function openRunSessionRecorder(
     ...(session.blobRoot ? { blobRoot: session.blobRoot } : {}),
   };
   const openRecorder = () => openSessionRecorder(recorderOptions);
-  return options.sessionStartMode === "new"
-    ? new LazySessionRecorder(sessionId, traceId, openRecorder)
-    : openRecorder();
+  const recorder =
+    options.sessionStartMode === "new"
+      ? new LazySessionRecorder(sessionId, traceId, openRecorder)
+      : await openRecorder();
+  return observeSessionRecorder(recorder, { modelConfiguration });
 }
 
 async function endRunSegment(

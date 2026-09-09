@@ -164,6 +164,78 @@ export const toolObservationRecordedEventSchema = z
   })
   .passthrough();
 
+const modelProtocolSchema = z.enum(["chat_completions", "responses"]);
+
+const modelCallModelSchema = z
+  .object({
+    adapterId: z.string().min(1),
+    modelId: z.string().min(1),
+    provider: z.string().min(1).optional(),
+    protocol: modelProtocolSchema.optional(),
+    /** Stored verbatim by product decision; credentials and auth headers remain out of Session. */
+    endpoint: z.string().min(1).optional(),
+    reasoningEffort: z.string().min(1).optional(),
+  })
+  .passthrough();
+
+const modelCallUsageSchema = z.object({
+  promptTokens: nonNegativeIntSchema,
+  completionTokens: nonNegativeIntSchema,
+  totalTokens: nonNegativeIntSchema,
+  cacheReadTokens: nonNegativeIntSchema.optional(),
+  cacheWriteTokens: nonNegativeIntSchema.optional(),
+  reasoningTokens: nonNegativeIntSchema.optional(),
+});
+
+export const modelCallCompletedEventSchema = z
+  .object({
+    ...eventBaseFields,
+    type: z.literal("model_call_completed"),
+    /** Absent for model-backed maintenance operations that run outside a user turn. */
+    turnId: z.string().min(1).optional(),
+    traceId: z.string().min(1),
+    spanId: z.string().min(1),
+    parentSpanId: z.string().min(1).optional(),
+    model: modelCallModelSchema,
+    messageCount: nonNegativeIntSchema,
+    usedTools: z.boolean(),
+    durationMs: z.number().nonnegative(),
+    ttftMs: z.number().nonnegative().optional(),
+    finishReason: z.string().min(1).optional(),
+    success: z.boolean(),
+    errorCode: z.string().min(1).optional(),
+    usage: modelCallUsageSchema.optional(),
+    costs: z.record(z.string(), z.number().int()).optional(),
+    attemptCount: z.number().int().positive().optional(),
+    retryCount: nonNegativeIntSchema.optional(),
+    totalRetryDelayMs: z.number().nonnegative().optional(),
+  })
+  .passthrough();
+
+export const toolCallCompletedEventSchema = z
+  .object({
+    ...eventBaseFields,
+    type: z.literal("tool_call_completed"),
+    /** Normally present; optional for maintenance tools executed outside a user turn. */
+    turnId: z.string().min(1).optional(),
+    traceId: z.string().min(1),
+    spanId: z.string().min(1),
+    parentSpanId: z.string().min(1).optional(),
+    toolCallId: z.string().min(1),
+    toolName: z.string().min(1),
+    durationMs: z.number().nonnegative(),
+    success: z.boolean(),
+    fromCache: z.boolean(),
+    inputBytes: nonNegativeIntSchema,
+    outputBytes: nonNegativeIntSchema,
+    outputChars: nonNegativeIntSchema,
+    approvalWaitMs: z.number().nonnegative().optional(),
+    admittedResultBytes: nonNegativeIntSchema.optional(),
+    admittedResultChars: nonNegativeIntSchema.optional(),
+    truncated: z.boolean().optional(),
+  })
+  .passthrough();
+
 export const mcpSelectionChangedEventSchema = z
   .object({
     ...eventBaseFields,
@@ -264,8 +336,8 @@ export const budgetUpdatedEventSchema = z
     ...eventBaseFields,
     type: z.literal("budget_updated"),
     /**
-     * Latest cumulative session budget, persisted after each successful model usage update.
-     * This limits budget loss in a killed mid-turn. session_state may repeat it as a checkpoint.
+     * Latest cumulative session budget, persisted at the completed Turn boundary.
+     * Call-level model/tool facts are stored separately; session_state repeats this checkpoint.
      */
     budget: sessionBudgetSchema,
   })
@@ -309,6 +381,8 @@ export const knownSessionEventSchema = z.discriminatedUnion("type", [
   messageRecordedEventSchema,
   userInputRecordedEventSchema,
   toolObservationRecordedEventSchema,
+  modelCallCompletedEventSchema,
+  toolCallCompletedEventSchema,
   mcpSelectionChangedEventSchema,
   mcpToolGrantsChangedEventSchema,
   turnCompletedEventSchema,
@@ -334,6 +408,59 @@ export type RunSegmentEndedEvent = z.infer<typeof runSegmentEndedEventSchema>;
 export type MessageRecordedEvent = z.infer<typeof messageRecordedEventSchema>;
 export type UserInputRecordedEvent = z.infer<typeof userInputRecordedEventSchema>;
 export type ToolObservationRecordedEvent = z.infer<typeof toolObservationRecordedEventSchema>;
+export type ModelCallCompletedEvent = z.infer<typeof modelCallCompletedEventSchema>;
+export type ToolCallCompletedEvent = z.infer<typeof toolCallCompletedEventSchema>;
+export interface ModelCallCompletedInput {
+  turnId?: string;
+  traceId: string;
+  spanId: string;
+  parentSpanId?: string;
+  model: {
+    adapterId: string;
+    modelId: string;
+    provider?: string;
+    protocol?: "chat_completions" | "responses";
+    endpoint?: string;
+    reasoningEffort?: string;
+  };
+  messageCount: number;
+  usedTools: boolean;
+  durationMs: number;
+  ttftMs?: number;
+  finishReason?: string;
+  success: boolean;
+  errorCode?: string;
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
+    reasoningTokens?: number;
+  };
+  costs?: Record<string, number>;
+  attemptCount?: number;
+  retryCount?: number;
+  totalRetryDelayMs?: number;
+}
+export interface ToolCallCompletedInput {
+  turnId?: string;
+  traceId: string;
+  spanId: string;
+  parentSpanId?: string;
+  toolCallId: string;
+  toolName: string;
+  durationMs: number;
+  success: boolean;
+  fromCache: boolean;
+  inputBytes: number;
+  outputBytes: number;
+  outputChars: number;
+  approvalWaitMs?: number;
+  admittedResultBytes?: number;
+  admittedResultChars?: number;
+  truncated?: boolean;
+}
 export type McpSelectionChangedEvent = z.infer<typeof mcpSelectionChangedEventSchema>;
 export type McpToolGrantsChangedEvent = z.infer<typeof mcpToolGrantsChangedEventSchema>;
 export type TurnCompletedEvent = z.infer<typeof turnCompletedEventSchema>;
@@ -352,6 +479,8 @@ const newSessionEventSchema = z.discriminatedUnion("type", [
   v3MessageRecordedEventSchema.omit({ seq: true, timestamp: true }),
   userInputRecordedEventSchema.omit({ seq: true, timestamp: true }),
   toolObservationRecordedEventSchema.omit({ seq: true, timestamp: true }),
+  modelCallCompletedEventSchema.omit({ seq: true, timestamp: true }),
+  toolCallCompletedEventSchema.omit({ seq: true, timestamp: true }),
   mcpSelectionChangedEventSchema.omit({ seq: true, timestamp: true }),
   mcpToolGrantsChangedEventSchema.omit({ seq: true, timestamp: true }),
   turnCompletedEventSchema.omit({ seq: true, timestamp: true }),
@@ -407,7 +536,9 @@ export function parseSessionEvent(
     (parsed.data.type === "user_input_recorded" ||
       parsed.data.type === "mcp_selection_changed" ||
       parsed.data.type === "mcp_tool_grants_changed" ||
-      parsed.data.type === "tool_observation_recorded")
+      parsed.data.type === "tool_observation_recorded" ||
+      parsed.data.type === "model_call_completed" ||
+      parsed.data.type === "tool_call_completed")
   ) {
     throw new SessionSchemaError(`Session V2 cannot contain ${parsed.data.type} events`);
   }

@@ -20,7 +20,13 @@ import {
   type SessionWriter,
 } from "../journal/sessionJsonlStore";
 import { freezeResolvedUserInput } from "../journal/userInputStorage";
-import type { NewSessionEvent, SessionEvent, SessionStatus } from "../model/sessionEvents";
+import type {
+  ModelCallCompletedInput,
+  NewSessionEvent,
+  SessionEvent,
+  SessionStatus,
+  ToolCallCompletedInput,
+} from "../model/sessionEvents";
 import { isKnownSessionEvent } from "../model/sessionEvents";
 import type { SessionBudget } from "../model/sessionTypes";
 import { projectSessionSummary } from "../projection/sessionProjection";
@@ -69,6 +75,8 @@ export interface SessionRecorder extends SessionMessageSink {
     toolCallId: string,
     observation: SessionToolObservation,
   ): Promise<void>;
+  recordModelCall(call: ModelCallCompletedInput): Promise<void>;
+  recordToolCall(call: ToolCallCompletedInput): Promise<void>;
   completeTurn(
     turnId: string,
     status: "completed" | "interrupted" | "error",
@@ -294,6 +302,18 @@ class JsonlSessionRecorder implements SessionRecorder {
       toolCallId,
       ...observation,
     });
+    await this.writer.flush();
+  }
+
+  async recordModelCall(call: ModelCallCompletedInput): Promise<void> {
+    await this.#append({ type: "model_call_completed", ...call });
+    // Model usage is expensive and may complete long before its parent Turn. Flush the fact now so
+    // a killed process loses at most the in-flight call, not all completed calls in the Turn.
+    await this.writer.flush();
+  }
+
+  async recordToolCall(call: ToolCallCompletedInput): Promise<void> {
+    await this.#append({ type: "tool_call_completed", ...call });
     await this.writer.flush();
   }
 
