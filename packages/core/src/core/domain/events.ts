@@ -369,7 +369,11 @@ export interface ModelCallStartEvent extends BaseTraceEvent {
   usedTools: boolean;
   /** Applied middlewares (name + config) for debug */
   middlewares?: MiddlewareInfo[];
-  /** Physical network retry index (0 = first request). */
+  /**
+   * Physical network retry index (0 = first request).
+   *
+   * @deprecated No Core producer populates this field.
+   */
   networkAttempt?: number;
 }
 
