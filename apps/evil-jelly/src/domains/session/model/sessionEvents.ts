@@ -160,7 +160,11 @@ export const toolObservationRecordedEventSchema = z
     summary: z.string(),
     args: z.string().optional(),
     detail: toolObservationDetailSchema.optional(),
+    /** Transport/handler completion only; do not interpret as business success. */
     ok: z.boolean(),
+    outcome: z.enum(["succeeded", "failed", "denied", "aborted", "timed_out"]).optional(),
+    exitCode: z.number().int().nullable().optional(),
+    failureKind: z.string().min(1).optional(),
   })
   .passthrough();
 
@@ -198,6 +202,21 @@ export const modelCallCompletedEventSchema = z
     parentSpanId: z.string().min(1).optional(),
     model: modelCallModelSchema,
     messageCount: nonNegativeIntSchema,
+    input: z
+      .object({
+        messagesByRole: z.object({
+          system: nonNegativeIntSchema,
+          user: nonNegativeIntSchema,
+          assistant: nonNegativeIntSchema,
+          tool: nonNegativeIntSchema,
+        }),
+        messageChars: nonNegativeIntSchema,
+        systemPromptChars: nonNegativeIntSchema,
+        toolResultChars: nonNegativeIntSchema,
+        toolDefinitionCount: nonNegativeIntSchema,
+        toolSchemaBytes: nonNegativeIntSchema,
+      })
+      .optional(),
     usedTools: z.boolean(),
     durationMs: z.number().nonnegative(),
     ttftMs: z.number().nonnegative().optional(),
@@ -224,7 +243,10 @@ export const toolCallCompletedEventSchema = z
     toolCallId: z.string().min(1),
     toolName: z.string().min(1),
     durationMs: z.number().nonnegative(),
-    success: z.boolean(),
+    transportOk: z.boolean(),
+    outcome: z.enum(["succeeded", "failed", "denied", "aborted", "timed_out"]).optional(),
+    exitCode: z.number().int().nullable().optional(),
+    failureKind: z.string().min(1).optional(),
     fromCache: z.boolean(),
     inputBytes: nonNegativeIntSchema,
     outputBytes: nonNegativeIntSchema,
@@ -233,6 +255,7 @@ export const toolCallCompletedEventSchema = z
     admittedResultBytes: nonNegativeIntSchema.optional(),
     admittedResultChars: nonNegativeIntSchema.optional(),
     truncated: z.boolean().optional(),
+    truncationReason: z.enum(["size_limit", "line_limit", "host_summary"]).optional(),
   })
   .passthrough();
 
@@ -424,6 +447,14 @@ export interface ModelCallCompletedInput {
     reasoningEffort?: string;
   };
   messageCount: number;
+  input?: {
+    messagesByRole: { system: number; user: number; assistant: number; tool: number };
+    messageChars: number;
+    systemPromptChars: number;
+    toolResultChars: number;
+    toolDefinitionCount: number;
+    toolSchemaBytes: number;
+  };
   usedTools: boolean;
   durationMs: number;
   ttftMs?: number;
@@ -451,7 +482,10 @@ export interface ToolCallCompletedInput {
   toolCallId: string;
   toolName: string;
   durationMs: number;
-  success: boolean;
+  transportOk: boolean;
+  outcome?: "succeeded" | "failed" | "denied" | "aborted" | "timed_out";
+  exitCode?: number | null;
+  failureKind?: string;
   fromCache: boolean;
   inputBytes: number;
   outputBytes: number;
@@ -460,6 +494,7 @@ export interface ToolCallCompletedInput {
   admittedResultBytes?: number;
   admittedResultChars?: number;
   truncated?: boolean;
+  truncationReason?: "size_limit" | "line_limit" | "host_summary";
 }
 export type McpSelectionChangedEvent = z.infer<typeof mcpSelectionChangedEventSchema>;
 export type McpToolGrantsChangedEvent = z.infer<typeof mcpToolGrantsChangedEventSchema>;

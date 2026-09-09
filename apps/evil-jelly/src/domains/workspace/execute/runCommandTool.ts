@@ -8,7 +8,10 @@ import { z } from "zod";
 import { getWorkspaceFiles } from "../../../shared/fs-policy/workspace-files";
 import { getBinding } from "../../../shared/host/context";
 import { registerInterruptibleTask } from "../../../shared/task-interruption/taskStack";
-import { getActiveToolCall } from "../../../shared/tool-observation/invocationContext";
+import {
+  getActiveToolCall,
+  recordActiveToolOutcome,
+} from "../../../shared/tool-observation/invocationContext";
 import { executeShellCommand, getShellEnvironmentSummary } from "./executeShellCommand";
 
 const runCommandParameters = z.object({
@@ -99,10 +102,12 @@ export const RunCommandTool: ToolDefinition<typeof runCommandParameters> = {
     try {
       const stat = await policy.statResolved(resolvedCwdPath);
       if (!stat.isDirectory()) {
+        recordActiveToolOutcome({ outcome: "failed", failureKind: "cwd_not_directory" });
         return `Command cwd is not a directory: ${resolvedCwdPath.displayPath}`;
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
+      recordActiveToolOutcome({ outcome: "failed", failureKind: "cwd_inspection_failed" });
       return `Failed to inspect command cwd: ${message}`;
     }
     const resolvedCwd = resolvedCwdPath.abs;
@@ -117,6 +122,7 @@ export const RunCommandTool: ToolDefinition<typeof runCommandParameters> = {
       supportedActions: ["accept", "reject"],
     });
     if (decision.action !== "accept") {
+      recordActiveToolOutcome({ outcome: "denied", failureKind: "user_denied" });
       return "Command execution denied by user.";
     }
     const contextSignal = getContextSignal();
@@ -154,14 +160,25 @@ export const RunCommandTool: ToolDefinition<typeof runCommandParameters> = {
       unregisterTask();
     });
     if (result.error?.code === "EABORTED") {
+      recordActiveToolOutcome({ outcome: "aborted", exitCode: null, failureKind: "user_abort" });
       const output = result.output?.trim().length ? result.output : "(no output)";
       return `exitCode=null status=aborted\n${output}\nCommand aborted by user (/stop or Esc).`;
     }
     if (result.error?.code === "ETIMEDOUT") {
+      recordActiveToolOutcome({
+        outcome: "timed_out",
+        exitCode: null,
+        failureKind: "hard_timeout",
+      });
       const output = result.output?.trim().length ? result.output : "(no output)";
       return `exitCode=null status=timed_out ${getShellEnvironmentSummary()}\n${output}\nCommand exceeded the hard timeout and its process tree was terminated.`;
     }
     const status = result.exitCode === 0 ? "ok" : "failed";
+    recordActiveToolOutcome({
+      outcome: result.exitCode === 0 ? "succeeded" : "failed",
+      exitCode: result.exitCode,
+      ...(result.exitCode === 0 ? {} : { failureKind: "nonzero_exit" }),
+    });
     const exitCode = result.exitCode === null ? "null" : String(result.exitCode);
     const head = `exitCode=${exitCode} status=${status} ${getShellEnvironmentSummary()}\n`;
     return head + result.output;

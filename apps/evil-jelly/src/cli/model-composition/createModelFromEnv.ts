@@ -8,6 +8,7 @@ import {
 import { augmentModel, type ModelAdapter } from "@rejelly/core";
 import { env } from "../../shared/configuration/env";
 import { registerSessionModelConfiguration } from "../../shared/model/observation/modelConfiguration";
+import { withModelInputMetrics } from "../../shared/model/observation/modelInputMetrics";
 import { withRetry } from "./withRetry";
 
 function isDeepSeekModelConfig(options: {
@@ -72,7 +73,10 @@ export function createOpenAIModelFromEnv(): ModelAdapter {
           ...(chatCompletionParams ? { chatCompletionParams } : {}),
         });
 
-  const model = augmentModel(adapter, [withRetry({ maxAttempts: env.OPENAI_RETRY_MAX_ATTEMPTS })]);
+  const model = augmentModel(adapter, [
+    withModelInputMetrics(),
+    withRetry({ maxAttempts: env.OPENAI_RETRY_MAX_ATTEMPTS }),
+  ]);
   return registerSessionModelConfiguration(model, {
     modelId,
     provider,

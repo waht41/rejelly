@@ -6,6 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getWorkspaceRoot, setWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import type { FsOutsideAccessPayload } from "../../../shared/host/toolConfirmationBindings";
+import {
+  runWithToolDetailSlot,
+  takeActiveToolOutcome,
+} from "../../../shared/tool-observation/invocationContext";
 import { createTestHostBindings } from "../__tests__/testHostBindings";
 
 const hostBindingMock = vi.hoisted(() => ({
@@ -76,6 +80,47 @@ describe("RunCommandTool cwd policy", () => {
     expect(result).toContain("exitCode=null status=timed_out test shell");
     expect(result).toContain("partial output");
     expect(result).toContain("process tree was terminated");
+  });
+
+  it("reports a structured timeout outcome without throwing", async () => {
+    hostBindingMock.current = createTestHostBindings({ mode: "normal" });
+    executeShellCommandMock.mockResolvedValue({
+      exitCode: null,
+      output: "partial output",
+      error: { code: "ETIMEDOUT", message: "Command timed out", killed: true },
+    });
+
+    const outcome = await runWithToolDetailSlot(async () => {
+      await RunCommandTool.handler({
+        command: "example",
+        declaredSafety: "read_only",
+        reason: "test timeout outcome",
+      });
+      return takeActiveToolOutcome();
+    });
+
+    expect(outcome).toEqual({ outcome: "timed_out", exitCode: null, failureKind: "hard_timeout" });
+  });
+
+  it("reports nonzero exit as a business failure while returning its output", async () => {
+    hostBindingMock.current = createTestHostBindings({ mode: "normal" });
+    executeShellCommandMock.mockResolvedValue({ exitCode: 2, output: "bad option" });
+
+    const captured = await runWithToolDetailSlot(async () => {
+      const result = await RunCommandTool.handler({
+        command: "example",
+        declaredSafety: "read_only",
+        reason: "test nonzero exit",
+      });
+      return { result, outcome: takeActiveToolOutcome() };
+    });
+
+    expect(captured.result).toContain("exitCode=2 status=failed");
+    expect(captured.outcome).toEqual({
+      outcome: "failed",
+      exitCode: 2,
+      failureKind: "nonzero_exit",
+    });
   });
 
   it("passes an explicit hard timeout to the shell executor", async () => {

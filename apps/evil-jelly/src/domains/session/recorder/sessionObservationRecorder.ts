@@ -2,10 +2,13 @@ import {
   EVENTS,
   type EventBus,
   getGlobalEventBus,
+  type Message,
   type ModelCallEndEvent,
   type ToolsExecuteEndEvent,
 } from "@rejelly/core";
 import type { SessionModelConfiguration } from "../../../shared/model/observation/modelConfiguration";
+import { readModelInputMetrics } from "../../../shared/model/observation/modelInputMetrics";
+import type { SessionToolObservation } from "../../../shared/session/recorderPort";
 import type { SessionRecorder } from "./sessionRecorder";
 
 export interface SessionObservationRecorderOptions {
@@ -35,6 +38,8 @@ function utf8Bytes(value: string): number {
   return Buffer.byteLength(value, "utf8");
 }
 
+type PendingToolCall = Parameters<SessionRecorder["recordToolCall"]>[0];
+
 /**
  * Run-segment-scoped bridge from Core execution events to durable Session facts.
  *
@@ -48,6 +53,8 @@ class ObservedSessionRecorder implements SessionRecorder {
   readonly #eventBus: EventBus;
   readonly #unsubscribe: () => void;
   #activeTurnId: string | undefined;
+  readonly #toolOutcomes = new Map<string, SessionToolObservation>();
+  readonly #pendingToolCalls = new Map<string, PendingToolCall>();
   #queue: Promise<void> = Promise.resolve();
   #failure: unknown;
   #closed = false;
@@ -65,7 +72,7 @@ class ObservedSessionRecorder implements SessionRecorder {
     });
     const unsubscribeTools = this.#eventBus.subscribe(EVENTS.TOOLS_EXECUTE_END, (event) => {
       if (event.trace.traceId !== this.traceId) return;
-      this.#enqueue(() => this.#recordToolCalls(event, this.#activeTurnId));
+      this.#captureToolCalls(event, this.#activeTurnId);
     });
     this.#unsubscribe = () => {
       unsubscribeModel();
@@ -89,6 +96,10 @@ class ObservedSessionRecorder implements SessionRecorder {
   }
 
   async #drain(): Promise<void> {
+    for (const call of this.#pendingToolCalls.values()) {
+      this.#enqueue(() => this.recorder.recordToolCall(call));
+    }
+    this.#pendingToolCalls.clear();
     await this.#queue;
     if (this.#failure !== undefined) {
       throw this.#failure;
@@ -97,6 +108,7 @@ class ObservedSessionRecorder implements SessionRecorder {
 
   async #recordModelCall(event: ModelCallEndEvent, turnId: string | undefined): Promise<void> {
     const config = this.options.modelConfiguration;
+    const input = readModelInputMetrics(event.trace.attributes);
     const usage = event.usage;
     await this.recorder.recordModelCall({
       ...(turnId ? { turnId } : {}),
@@ -118,6 +130,7 @@ class ObservedSessionRecorder implements SessionRecorder {
           : {}),
       },
       messageCount: event.messageCount,
+      ...(input ? { input } : {}),
       usedTools: event.usedTools,
       durationMs: event.duration,
       ...(event.ttft !== undefined ? { ttftMs: event.ttft } : {}),
@@ -146,11 +159,13 @@ class ObservedSessionRecorder implements SessionRecorder {
     });
   }
 
-  async #recordToolCalls(event: ToolsExecuteEndEvent, turnId: string | undefined): Promise<void> {
+  #captureToolCalls(event: ToolsExecuteEndEvent, turnId: string | undefined): void {
     for (const result of event.toolResults) {
       const input = metricText(result.input);
       const output = metricText(result.output);
-      await this.recorder.recordToolCall({
+      const owner = this.#toolOutcomes.get(result.callId);
+      this.#toolOutcomes.delete(result.callId);
+      this.#pendingToolCalls.set(result.callId, {
         ...(turnId ? { turnId } : {}),
         traceId: event.trace.traceId,
         spanId: event.trace.spanId,
@@ -158,7 +173,10 @@ class ObservedSessionRecorder implements SessionRecorder {
         toolCallId: result.callId,
         toolName: result.toolName,
         durationMs: result.duration,
-        success: result.success,
+        transportOk: result.success,
+        ...(owner?.outcome ? { outcome: owner.outcome } : {}),
+        ...(owner?.exitCode !== undefined ? { exitCode: owner.exitCode } : {}),
+        ...(owner?.failureKind ? { failureKind: owner.failureKind } : {}),
         fromCache: result.cache ?? false,
         inputBytes: utf8Bytes(input),
         outputBytes: utf8Bytes(output),
@@ -167,8 +185,24 @@ class ObservedSessionRecorder implements SessionRecorder {
     }
   }
 
+  async #recordAdmittedToolMessage(message: Message): Promise<void> {
+    if (message.role !== "tool" || !message.tool_call_id) return;
+    const call = this.#pendingToolCalls.get(message.tool_call_id);
+    if (!call) return;
+    this.#pendingToolCalls.delete(message.tool_call_id);
+    const admitted = metricText(message.content ?? "");
+    const admittedResultBytes = utf8Bytes(admitted);
+    await this.recorder.recordToolCall({
+      ...call,
+      admittedResultBytes,
+      admittedResultChars: admitted.length,
+      truncated: admittedResultBytes < call.outputBytes,
+    });
+  }
+
   async recordMessage(...args: Parameters<SessionRecorder["recordMessage"]>): Promise<void> {
     await this.recorder.recordMessage(...args);
+    await this.#recordAdmittedToolMessage(args[2]);
   }
 
   async recordUserInput(...args: Parameters<SessionRecorder["recordUserInput"]>) {
@@ -190,11 +224,27 @@ class ObservedSessionRecorder implements SessionRecorder {
 
   async recordMessages(...args: Parameters<SessionRecorder["recordMessages"]>): Promise<void> {
     await this.recorder.recordMessages(...args);
+    for (const entry of args[1]) {
+      await this.#recordAdmittedToolMessage(entry.message);
+    }
   }
 
   async recordToolObservation(
     ...args: Parameters<SessionRecorder["recordToolObservation"]>
   ): Promise<void> {
+    const toolCallId = args[1];
+    const observation = args[2];
+    this.#toolOutcomes.set(toolCallId, observation);
+    const pending = this.#pendingToolCalls.get(toolCallId);
+    if (pending) {
+      this.#pendingToolCalls.set(toolCallId, {
+        ...pending,
+        ...(observation.outcome ? { outcome: observation.outcome } : {}),
+        ...(observation.exitCode !== undefined ? { exitCode: observation.exitCode } : {}),
+        ...(observation.failureKind ? { failureKind: observation.failureKind } : {}),
+      });
+      this.#toolOutcomes.delete(toolCallId);
+    }
     await this.recorder.recordToolObservation(...args);
   }
 

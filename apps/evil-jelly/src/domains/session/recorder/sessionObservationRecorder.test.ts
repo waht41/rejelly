@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { createEventBus, EVENTS, TRACE_EVENT_SCHEMA_VERSION } from "@rejelly/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { MODEL_INPUT_METRICS_TRACE_ATTRIBUTE } from "../../../shared/model/observation/modelInputMetrics";
 import { recordInitialTextInput } from "../__tests__/sessionTestInput";
 import { readSessionEvents } from "../journal/sessionJsonlStore";
 import { observeSessionRecorder } from "./sessionObservationRecorder";
@@ -50,7 +51,21 @@ describe("sessionObservationRecorder", () => {
     eventBus.emit({
       schemaVersion: TRACE_EVENT_SCHEMA_VERSION,
       type: EVENTS.MODEL_CALL_END,
-      trace: { traceId: "trace-1", spanId: "model-span", parentSpanId: "turn-span" },
+      trace: {
+        traceId: "trace-1",
+        spanId: "model-span",
+        parentSpanId: "turn-span",
+        attributes: {
+          [MODEL_INPUT_METRICS_TRACE_ATTRIBUTE]: {
+            messagesByRole: { system: 1, user: 1, assistant: 1, tool: 1 },
+            messageChars: 80,
+            systemPromptChars: 20,
+            toolResultChars: 30,
+            toolDefinitionCount: 2,
+            toolSchemaBytes: 400,
+          },
+        },
+      },
       timestamp: 10,
       adapterId: "adapter-a",
       provider: "openai",
@@ -93,6 +108,18 @@ describe("sessionObservationRecorder", () => {
       ],
       success: true,
     });
+    await recorder.recordToolObservation("turn-1", "tool-call-1", {
+      toolName: "read_file",
+      summary: "[Tools] read_file → README.md",
+      ok: true,
+      outcome: "succeeded",
+    });
+    await recorder.recordMessage(
+      "turn-1",
+      { kind: "tool" },
+      { role: "tool", tool_call_id: "tool-call-1", content: "hello" },
+    );
+
     // Same event type from another segment must never leak into this Session.
     eventBus.emit({
       schemaVersion: TRACE_EVENT_SCHEMA_VERSION,
@@ -137,6 +164,11 @@ describe("sessionObservationRecorder", () => {
         reasoningEffort: "high",
       },
       durationMs: 125,
+      input: {
+        messagesByRole: { system: 1, user: 1, assistant: 1, tool: 1 },
+        toolResultChars: 30,
+        toolSchemaBytes: 400,
+      },
       usage: { totalTokens: 45, cacheReadTokens: 12, reasoningTokens: 2 },
       costs: {},
     });
@@ -149,9 +181,14 @@ describe("sessionObservationRecorder", () => {
         turnId: "turn-1",
         toolCallId: "tool-call-1",
         durationMs: 8,
+        transportOk: true,
+        outcome: "succeeded",
         fromCache: true,
         outputBytes: 5,
         outputChars: 5,
+        admittedResultBytes: 5,
+        admittedResultChars: 5,
+        truncated: false,
       }),
     );
 

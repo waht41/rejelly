@@ -15,7 +15,11 @@ vi.mock("../host/context", () => ({
   getBinding: () => mockGetBinding(),
 }));
 
-import { getActiveToolCall, recordActiveToolDetail } from "./invocationContext";
+import {
+  getActiveToolCall,
+  recordActiveToolDetail,
+  recordActiveToolOutcome,
+} from "./invocationContext";
 import { withToolLogger } from "./middleware";
 
 describe("withToolLogger", () => {
@@ -118,6 +122,26 @@ describe("withToolLogger", () => {
     expect(block.toolName).toBe("run_command");
     expect(block.ok).toBe(false);
     expect(block.fullResult).toBe("Command failed with exit code 1");
+  });
+
+  it("keeps owner-reported business outcome separate from handler completion", async () => {
+    const bindings = createMockBindings();
+    mockGetBinding.mockReturnValue(bindings);
+    const middleware = withToolLogger();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ctx = { toolName: "run_command", input: { command: "exit 1" } } as any;
+
+    await middleware.handler!(ctx, async () => {
+      recordActiveToolOutcome({ outcome: "failed", exitCode: 1, failureKind: "nonzero_exit" });
+      return "exitCode=1 status=failed";
+    });
+
+    expect(bindings.toolBlocks[0]).toMatchObject({
+      ok: true,
+      outcome: "failed",
+      exitCode: 1,
+      failureKind: "nonzero_exit",
+    });
   });
 
   it("stringifies object results before passing to logToolBlock", async () => {
