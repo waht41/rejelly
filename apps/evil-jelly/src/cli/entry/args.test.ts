@@ -62,6 +62,27 @@ describe("parseCliArgs", () => {
     );
   });
 
+  it("shows only options supported by Session inspection", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+
+    expect(() => parseCliArgs(["node", "evil", "inspect", "--help"])).toThrow("exit 0");
+    const help = log.mock.calls.flat().join("\n");
+    expect(help).toContain("$ evil inspect [sessionId] [--json] [--all-workspaces]");
+    expect(help).toContain("--json");
+    expect(help).toContain("--all-workspaces");
+    expect(help).toContain("--workspace <dir>");
+    expect(help).not.toContain("--api-key");
+    expect(help).not.toContain("--env");
+    expect(help).not.toContain("--profile");
+    expect(help).not.toContain("--review");
+    expect(help).not.toContain("--devtool");
+    expect(help).not.toContain("--doc-map");
+  });
+
   it("describes the Skill inspection subcommands", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);

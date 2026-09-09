@@ -66,7 +66,10 @@ export function getCliVersion(): string {
 
 const cli = cac("evil");
 
-const SKILLS_HELP_OPTION_PREFIXES = ["--workspace", "-h, --help"] as const;
+const HELP_OPTION_PREFIXES = {
+  inspect: ["--json", "--all-workspaces", "--workspace", "-h, --help"],
+  skills: ["--workspace", "-h, --help"],
+} as const;
 
 function customizeHelpSections(
   sections: Array<{ readonly title?: string; readonly body: string }>,
@@ -75,11 +78,17 @@ function customizeHelpSections(
   return sections.map((section) => {
     // CAC models --no-* flags as default=true booleans. Hide that parser implementation detail.
     let body = section.body.replace(/^(\s+--no-\S+.*?) \(default: true\)$/gm, "$1");
-    if (commandName === "skills" && section.title === "Options") {
+    const allowedOptionPrefixes =
+      commandName === "inspect"
+        ? HELP_OPTION_PREFIXES.inspect
+        : commandName === "skills"
+          ? HELP_OPTION_PREFIXES.skills
+          : undefined;
+    if (allowedOptionPrefixes && section.title === "Options") {
       body = body
         .split("\n")
         .filter((line) =>
-          SKILLS_HELP_OPTION_PREFIXES.some((prefix) => line.trimStart().startsWith(prefix)),
+          allowedOptionPrefixes.some((prefix) => line.trimStart().startsWith(prefix)),
         )
         .join("\n");
     }
