@@ -15,8 +15,14 @@ function bytes(value: number): string {
   return `${(value / (1_024 * 1_024)).toFixed(1)}MB`;
 }
 
+function percentage(rate: number): string {
+  return `${(rate * 100).toFixed(1)}%`;
+}
+
 function turnLine(turn: TurnInspection): string {
-  const usage = `${integer(turn.promptTokens)} prompt / ${integer(turn.completionTokens)} completion`;
+  const usage =
+    `${integer(turn.promptTokens)} prompt / ${integer(turn.completionTokens)} completion / ` +
+    `${integer(turn.cacheReadTokens)} cache read (${percentage(turn.cacheHitRate)} hit)`;
   const tools = `${turn.toolCalls} tools / ${bytes(turn.toolOutputBytes)}`;
   const failures =
     turn.transportFailures > 0 ? ` / ${turn.transportFailures} transport failures` : "";
@@ -31,7 +37,7 @@ export function renderSessionInspection(inspection: SessionInspection): string {
     `Status: ${inspection.status}`,
     `Workspace: ${inspection.workspaceRoot}`,
     `Turns: ${inspection.completedTurns} completed, ${inspection.inProgressTurns} in progress`,
-    `Model: ${totals.modelCalls} calls, ${integer(totals.promptTokens)} prompt, ${integer(totals.completionTokens)} completion, ${integer(totals.reasoningTokens)} reasoning, ${integer(totals.cacheReadTokens)} cache read, ${duration(totals.modelDurationMs)}`,
+    `Model: ${totals.modelCalls} calls, ${integer(totals.promptTokens)} prompt, ${integer(totals.completionTokens)} completion, ${integer(totals.reasoningTokens)} reasoning, ${integer(totals.cacheReadTokens)} cache read, ${integer(totals.cacheWriteTokens)} cache write, ${percentage(totals.cacheHitRate)} cache hit, ${duration(totals.modelDurationMs)}`,
     `Tools: ${totals.toolCalls} calls, ${bytes(totals.toolOutputBytes)} output, ${bytes(totals.canonicalToolResultBytes)} canonical, ${totals.transportFailures} transport failures, ${duration(totals.toolDurationMs)} summed execution`,
     `Compactions: ${totals.compactions}`,
   ];
@@ -43,8 +49,11 @@ export function renderSessionInspection(inspection: SessionInspection): string {
     );
   }
   if (inspection.budgetCheckpoint) {
+    const budget = inspection.budgetCheckpoint;
+    const budgetCacheHitRate =
+      budget.promptTokens > 0 ? budget.cacheReadTokens / budget.promptTokens : 0;
     lines.push(
-      `Budget checkpoint: ${integer(inspection.budgetCheckpoint.promptTokens)} prompt / ${integer(inspection.budgetCheckpoint.completionTokens)} completion / ${inspection.budgetCheckpoint.callCount} calls`,
+      `Budget checkpoint: ${integer(budget.promptTokens)} prompt / ${integer(budget.completionTokens)} completion / ${integer(budget.cacheReadTokens)} cache read / ${integer(budget.cacheWriteTokens)} cache write / ${percentage(budgetCacheHitRate)} cache hit / ${budget.callCount} calls`,
     );
   }
 

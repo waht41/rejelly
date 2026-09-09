@@ -19,6 +19,9 @@ export interface TurnInspection {
   completionTokens: number;
   reasoningTokens: number;
   cacheReadTokens: number;
+  cacheWriteTokens: number;
+  /** Cached prompt tokens divided by all prompt tokens. */
+  cacheHitRate: number;
   modelDurationMs: number;
   toolDurationMs: number;
   toolOutputBytes: number;
@@ -35,6 +38,9 @@ export interface SessionInspectionTotals {
   completionTokens: number;
   reasoningTokens: number;
   cacheReadTokens: number;
+  cacheWriteTokens: number;
+  /** Cached prompt tokens divided by all prompt tokens. */
+  cacheHitRate: number;
   modelDurationMs: number;
   toolDurationMs: number;
   toolOutputBytes: number;
@@ -70,6 +76,8 @@ function emptyTotals(): SessionInspectionTotals {
     completionTokens: 0,
     reasoningTokens: 0,
     cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    cacheHitRate: 0,
     modelDurationMs: 0,
     toolDurationMs: 0,
     toolOutputBytes: 0,
@@ -92,6 +100,8 @@ function createTurn(turnId: string, seq: number, timestamp: number): TurnInspect
     completionTokens: 0,
     reasoningTokens: 0,
     cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    cacheHitRate: 0,
     modelDurationMs: 0,
     toolDurationMs: 0,
     toolOutputBytes: 0,
@@ -157,6 +167,7 @@ export function projectSessionInspection(
         totals.completionTokens += event.usage?.completionTokens ?? 0;
         totals.reasoningTokens += event.usage?.reasoningTokens ?? 0;
         totals.cacheReadTokens += event.usage?.cacheReadTokens ?? 0;
+        totals.cacheWriteTokens += event.usage?.cacheWriteTokens ?? 0;
         addCosts(totals.costs, event.costs);
         if (!event.turnId) {
           unattributedModelCalls += 1;
@@ -169,6 +180,7 @@ export function projectSessionInspection(
         turn.completionTokens += event.usage?.completionTokens ?? 0;
         turn.reasoningTokens += event.usage?.reasoningTokens ?? 0;
         turn.cacheReadTokens += event.usage?.cacheReadTokens ?? 0;
+        turn.cacheWriteTokens += event.usage?.cacheWriteTokens ?? 0;
         break;
       }
       case "tool_call_completed": {
@@ -216,6 +228,10 @@ export function projectSessionInspection(
   }
 
   const projectedTurns = [...turns.values()].sort((left, right) => left.firstSeq - right.firstSeq);
+  totals.cacheHitRate = totals.promptTokens > 0 ? totals.cacheReadTokens / totals.promptTokens : 0;
+  for (const turn of projectedTurns) {
+    turn.cacheHitRate = turn.promptTokens > 0 ? turn.cacheReadTokens / turn.promptTokens : 0;
+  }
   if (totals.modelCalls === 0) warnings.push("No model_call_completed events were recorded.");
   if (unattributedModelCalls > 0 || unattributedToolCalls > 0) {
     warnings.push(

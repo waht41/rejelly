@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionEvent, SessionMetaLine } from "../../domains/session/model/sessionEvents";
+import { renderSessionInspection } from "./renderSessionInspection";
 import { projectSessionInspection } from "./sessionInspection";
 
 const meta: SessionMetaLine = {
@@ -58,6 +59,7 @@ describe("projectSessionInspection", () => {
             completionTokens: 20,
             totalTokens: 120,
             cacheReadTokens: 40,
+            cacheWriteTokens: 7,
             reasoningTokens: 5,
           },
           costs: { micro_usd: 12 },
@@ -119,6 +121,9 @@ describe("projectSessionInspection", () => {
         modelCalls: 1,
         toolCalls: 1,
         promptTokens: 100,
+        cacheReadTokens: 40,
+        cacheWriteTokens: 7,
+        cacheHitRate: 0.4,
         toolOutputBytes: 200,
         canonicalToolResultBytes: 150,
         transportFailures: 0,
@@ -129,10 +134,16 @@ describe("projectSessionInspection", () => {
     expect(inspection.turns[0]).toMatchObject({
       turnId: "turn-1",
       status: "completed",
+      cacheReadTokens: 40,
+      cacheWriteTokens: 7,
+      cacheHitRate: 0.4,
       outcomes: { failed: 1 },
       transportFailures: 0,
       compactions: 1,
     });
+    expect(renderSessionInspection(inspection)).toContain(
+      "40 cache read, 7 cache write, 40.0% cache hit",
+    );
   });
 
   it("keeps incomplete and maintenance activity explicit", () => {
