@@ -5,11 +5,30 @@ import {
   createOpenAIAdapter,
   type ResponseParams,
 } from "@rejelly/adapter-openai";
-import { augmentModel, type ModelAdapter } from "@rejelly/core";
+import { augmentModel, isContextNotFoundError, type ModelAdapter } from "@rejelly/core";
 import { env } from "../../shared/configuration/env";
+import { getBinding } from "../../shared/host/context";
 import { registerSessionModelConfiguration } from "../../shared/model/observation/modelConfiguration";
 import { withModelInputMetrics } from "../../shared/model/observation/modelInputMetrics";
-import { withRetry } from "./withRetry";
+import { type ConnectionRetryMode, type ModelRetryNotice, withRetry } from "./withRetry";
+
+export interface CreateOpenAIModelOptions {
+  connectionRetry?: ConnectionRetryMode;
+}
+
+function reportModelRetry(notice: ModelRetryNotice): void {
+  try {
+    const binding = getBinding();
+    binding.onPhaseUpdate?.("connecting");
+    binding.onDetailUpdate?.(
+      notice.kind === "connection"
+        ? "Reconnecting… waiting for network"
+        : `Reconnecting… ${notice.retryCount}/${notice.maxRetries ?? "?"}`,
+    );
+  } catch (error) {
+    if (!isContextNotFoundError(error)) throw error;
+  }
+}
 
 function isDeepSeekModelConfig(options: {
   modelId: string;
@@ -38,7 +57,7 @@ function resolveResponseParams(effort: string): ResponseParams | undefined {
   return effort ? ({ reasoning: { effort } } as ResponseParams) : undefined;
 }
 
-export function createOpenAIModelFromEnv(): ModelAdapter {
+export function createOpenAIModelFromEnv(options: CreateOpenAIModelOptions = {}): ModelAdapter {
   const apiKey = env.OPENAI_API_KEY;
   const modelId = env.OPENAI_MODEL_ID;
   const baseURL = env.OPENAI_BASE_URL;
@@ -75,7 +94,11 @@ export function createOpenAIModelFromEnv(): ModelAdapter {
 
   const model = augmentModel(adapter, [
     withModelInputMetrics(),
-    withRetry({ maxAttempts: env.OPENAI_RETRY_MAX_ATTEMPTS }),
+    withRetry({
+      maxAttempts: env.OPENAI_RETRY_MAX_ATTEMPTS,
+      connectionRetry: options.connectionRetry,
+      onRetry: reportModelRetry,
+    }),
   ]);
   return registerSessionModelConfiguration(model, {
     modelId,

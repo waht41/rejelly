@@ -107,7 +107,7 @@ async function main() {
       exitIfMissingOpenAIKey();
       await proxyReady;
       await runAudit({
-        model: createOpenAIModelFromEnv(),
+        model: createOpenAIModelFromEnv({ connectionRetry: "bounded" }),
         bindings: createBackgroundHostBindings(),
         enableReview: args.review || env.REJELLY_ENABLE_REVIEW,
         auditOptions: args.auditOptions,
@@ -198,7 +198,10 @@ async function main() {
           review: args.review,
           appVersion: getCliVersion(),
           devtool: args.devtool,
-          createModel: createOpenAIModelFromEnv,
+          createModel: () =>
+            createOpenAIModelFromEnv({
+              connectionRetry: args.headless ? "bounded" : "unbounded",
+            }),
           createBackgroundBindings: createBackgroundHostBindings,
           createInteractiveBindings: createCliHostBindings,
           proxyReady,
