@@ -860,6 +860,8 @@ describe("clearHistory", () => {
         phase: "working",
         phaseSince: Date.now(),
         turnStartedAt: null,
+        workPausedMs: 0,
+        workPausedAt: null,
         lastOutputAt: Date.now(),
       },
     });

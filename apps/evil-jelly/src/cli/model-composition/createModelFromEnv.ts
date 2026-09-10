@@ -19,11 +19,14 @@ export interface CreateOpenAIModelOptions {
 function reportModelRetry(notice: ModelRetryNotice): void {
   try {
     const binding = getBinding();
-    binding.onPhaseUpdate?.("connecting");
-    binding.onDetailUpdate?.(
+    const attempt = notice.retryCount + 1;
+    const maxAttempts = notice.maxRetries === undefined ? undefined : notice.maxRetries + 1;
+    const attemptLabel = maxAttempts === undefined ? `${attempt}` : `${attempt}/${maxAttempts}`;
+    binding.onPhaseUpdate?.(
+      "reconnecting",
       notice.kind === "connection"
-        ? "Reconnecting… waiting for network"
-        : `Reconnecting… ${notice.retryCount}/${notice.maxRetries ?? "?"}`,
+        ? `reconnecting · attempt ${attemptLabel} · waiting for network`
+        : `reconnecting · attempt ${attemptLabel}`,
     );
   } catch (error) {
     if (!isContextNotFoundError(error)) throw error;

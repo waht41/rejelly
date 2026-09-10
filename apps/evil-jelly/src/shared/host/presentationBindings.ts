@@ -9,6 +9,7 @@ import type {
 export type RuntimePhase =
   | "idle"
   | "connecting"
+  | "reconnecting"
   | "thinking"
   | "streaming"
   | "preparing_tool"
@@ -42,7 +43,7 @@ export interface ConversationPresentationBindings {
   clearScreen?: () => void;
   showSessionBanner?: () => void;
   onDetailUpdate?: (detail: string) => void;
-  onPhaseUpdate?: (phase: RuntimePhase) => void;
+  onPhaseUpdate?: (phase: RuntimePhase, detail?: string) => void;
   /** Live model-side progress while one or more tool calls are still being serialized. */
   onToolCallGenerationUpdate?: (progress: ToolCallGenerationProgress | null) => void;
   /**

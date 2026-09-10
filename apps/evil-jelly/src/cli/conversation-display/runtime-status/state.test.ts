@@ -4,6 +4,7 @@ import {
   finishRuntimeToolBatch,
   idleRuntime,
   resumeRuntimeWork,
+  runtimeWorkElapsedMs,
   transitionRuntimePhase,
 } from "./state";
 
@@ -16,6 +17,16 @@ describe("runtime status state", () => {
   it("anchors a turn once across later calls", () => {
     const runtime = beginRuntimeTurn(idleRuntime(1), 10);
     expect(beginRuntimeTurn(runtime, 20)).toBe(runtime);
+  });
+
+  it("pauses active-work time while reconnecting and resumes without a jump", () => {
+    const started = beginRuntimeTurn(idleRuntime(0), 1_000);
+    const reconnecting = transitionRuntimePhase(started, "reconnecting", undefined, 6_000);
+
+    expect(runtimeWorkElapsedMs(reconnecting, 16_000)).toBe(5_000);
+
+    const resumed = transitionRuntimePhase(reconnecting, "thinking", undefined, 16_000);
+    expect(runtimeWorkElapsedMs(resumed, 18_000)).toBe(7_000);
   });
 
   it("resumes in the phase matching live tool state", () => {

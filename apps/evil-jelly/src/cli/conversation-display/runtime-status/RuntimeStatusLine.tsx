@@ -2,7 +2,7 @@ import { Box, Text } from "ink";
 import { useEffect, useState } from "react";
 import type { RuntimePhase } from "../../../shared/host/presentationBindings";
 import { useOutputStore } from "../useOutputStore";
-import { statusTimerAnchor } from "./state";
+import { runtimeWorkElapsedMs } from "./state";
 
 const STALLED_PHASE_SECONDS = 10;
 const WORKING_DETAIL: Partial<Record<RuntimePhase, string>> = {
@@ -13,7 +13,7 @@ const WORKING_DETAIL: Partial<Record<RuntimePhase, string>> = {
   compacting: "compacting context",
   tool: "running tools",
 };
-const NETWORK_PHASES = new Set<RuntimePhase>(["connecting", "compacting"]);
+const NETWORK_PHASES = new Set<RuntimePhase>(["connecting", "reconnecting", "compacting"]);
 const GENERIC_STATUS_DETAILS = new Set(["Ready", "Waiting for input"]);
 const STARTING_RUNTIME_DETAIL = "Starting runtime…";
 
@@ -56,18 +56,17 @@ function formatChars(chars: number): string {
 
 /** Persistent status bar: runtime activity, whole-turn duration, and stall indication. */
 export function RuntimeStatusLine() {
-  const phase = useOutputStore((state) => state.runtime.phase);
-  const phaseSince = useOutputStore((state) => state.runtime.phaseSince);
-  const turnStartedAt = useOutputStore((state) => state.runtime.turnStartedAt);
+  const runtime = useOutputStore((state) => state.runtime);
+  const { phase, phaseSince } = runtime;
   const lastOutputSecond = useOutputStore((state) =>
     Math.floor(state.runtime.lastOutputAt / 1_000),
   );
-  const detail = useOutputStore((state) => state.runtime.detail);
+  const detail = runtime.detail;
   const toolCallGeneration = useOutputStore((state) => state.toolCallGeneration);
 
   const showsTimer = phase !== "idle" && phase !== "awaiting_user";
   const now = useNowTick(showsTimer);
-  const turnElapsed = elapsedSeconds(now, statusTimerAnchor(turnStartedAt, phaseSince));
+  const turnElapsed = Math.floor(runtimeWorkElapsedMs(runtime, now) / 1_000);
   const phaseElapsed = elapsedSeconds(now, phaseSince);
   const outputIdle = elapsedSeconds(now, lastOutputSecond * 1_000);
   const stalled = NETWORK_PHASES.has(phase)
@@ -101,11 +100,20 @@ export function RuntimeStatusLine() {
     );
   }
 
+  if (phase === "reconnecting") {
+    return (
+      <Box>
+        <Text color="yellow">● </Text>
+        <Text color="yellow" bold>
+          Working {formatElapsedTime(turnElapsed)} (paused)
+        </Text>
+        <Text dimColor> · {detail}</Text>
+      </Box>
+    );
+  }
+
   let detailSuffix =
-    (phase === "tool" && detail.startsWith("Starting MCP ")) ||
-    (phase === "connecting" && detail.startsWith("Reconnecting"))
-      ? detail
-      : WORKING_DETAIL[phase];
+    phase === "tool" && detail.startsWith("Starting MCP ") ? detail : WORKING_DETAIL[phase];
   if (phase === "preparing_tool" && toolCallGeneration) {
     const names = [...new Set(toolCallGeneration.calls.map((call) => call.name).filter(Boolean))];
     const subject =

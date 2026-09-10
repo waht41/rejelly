@@ -6,6 +6,10 @@ export interface RuntimeStatus {
   phase: RuntimePhase;
   phaseSince: number;
   turnStartedAt: number | null;
+  /** Completed reconnect waits excluded from the visible active-work timer. */
+  workPausedMs: number;
+  /** Start of the current reconnect wait, while active. */
+  workPausedAt: number | null;
   lastOutputAt: number;
 }
 
@@ -19,6 +23,8 @@ export function idleRuntime(now = Date.now()): RuntimeStatus {
     phase: "idle",
     phaseSince: now,
     turnStartedAt: null,
+    workPausedMs: 0,
+    workPausedAt: null,
     lastOutputAt: now,
   };
 }
@@ -38,12 +44,7 @@ export function resumeRuntimeWork(
   detail?: string,
   now = Date.now(),
 ): RuntimeStatus {
-  return {
-    ...runtime,
-    phase: hasRunningTools ? "tool" : "working",
-    phaseSince: now,
-    ...(detail === undefined ? {} : { detail }),
-  };
+  return transitionRuntimePhase(runtime, hasRunningTools ? "tool" : "working", detail, now);
 }
 
 export function transitionRuntimePhase(
@@ -55,10 +56,16 @@ export function transitionRuntimePhase(
   if (phase === runtime.phase) {
     return detail === undefined || detail === runtime.detail ? runtime : { ...runtime, detail };
   }
+  const enteringReconnect = phase === "reconnecting";
+  const leavingReconnect = runtime.phase === "reconnecting";
+  const completedPauseMs =
+    leavingReconnect && runtime.workPausedAt !== null ? Math.max(0, now - runtime.workPausedAt) : 0;
   return {
     ...runtime,
     phase,
     phaseSince: now,
+    workPausedMs: runtime.workPausedMs + completedPauseMs,
+    workPausedAt: enteringReconnect ? now : null,
     ...(detail === undefined ? {} : { detail }),
   };
 }
@@ -84,4 +91,11 @@ export function isRuntimeActive(phase: RuntimePhase, streamBuffer: string): bool
 /** Whole-turn anchor when available; phase anchor for maintenance work outside a turn. */
 export function statusTimerAnchor(turnStartedAt: number | null, phaseSince: number): number {
   return turnStartedAt ?? phaseSince;
+}
+
+/** Visible active-work duration, excluding time parked in reconnect backoff/request attempts. */
+export function runtimeWorkElapsedMs(runtime: RuntimeStatus, now = Date.now()): number {
+  const anchor = statusTimerAnchor(runtime.turnStartedAt, runtime.phaseSince);
+  const activePauseMs = runtime.workPausedAt === null ? 0 : Math.max(0, now - runtime.workPausedAt);
+  return Math.max(0, now - anchor - runtime.workPausedMs - activePauseMs);
 }

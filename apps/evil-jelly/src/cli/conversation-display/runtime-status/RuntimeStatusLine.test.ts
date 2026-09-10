@@ -30,6 +30,7 @@ function setRuntime(runtime: {
       phase,
       phaseSince: now - phaseAgeSeconds * 1_000,
       turnStartedAt: turnAgeSeconds === null ? null : now - turnAgeSeconds * 1_000,
+      workPausedAt: phase === "reconnecting" ? now - phaseAgeSeconds * 1_000 : null,
       ...(detail === undefined ? {} : { detail }),
     },
   }));
@@ -119,11 +120,17 @@ describe("RuntimeStatusLine", () => {
     expect(statusLine()).not.toContain("Waiting for input");
   });
 
-  it("shows reconnect progress instead of the generic connection phase", () => {
-    setRuntime({ phase: "connecting", detail: "Reconnecting… waiting for network" });
+  it("pauses the work timer and shows the current reconnect attempt", () => {
+    setRuntime({
+      phase: "reconnecting",
+      detail: "reconnecting · attempt 3 · waiting for network",
+      turnAgeSeconds: 30,
+      phaseAgeSeconds: 20,
+    });
 
-    expect(statusLine()).toContain("Reconnecting… waiting for network");
-    expect(statusLine()).not.toMatch(/ · connecting$/);
+    const line = statusLine();
+    expect(line).toContain("Working 10s (paused)");
+    expect(line).toContain("reconnecting · attempt 3 · waiting for network");
   });
 
   it("names MCP startup instead of showing the generic tool activity", () => {
