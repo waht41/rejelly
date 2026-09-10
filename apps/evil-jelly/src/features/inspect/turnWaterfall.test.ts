@@ -121,8 +121,6 @@ describe("turn waterfall", () => {
       peakInputTokens: 130,
       latestInputTokens: 130,
       uncachedTokens: 230,
-      replayedTokens: 100,
-      replayShare: 100 / 230,
       amplification: 230 / 130,
     });
     expect(inspection.segments[2].children).toMatchObject([
@@ -165,9 +163,8 @@ describe("turn waterfall", () => {
     const rendered = renderTurnWaterfall(inspection);
     expect(rendered).toContain("peak context 150");
     expect(rendered).toContain(
-      "Prompt: 230 cumulative across 2 measured calls / 130 peak model input / 1.8x amplification",
+      "Prompt: 230 cumulative across 2 measured calls / 130 peak model input / 1.8x amplification / 230 uncached",
     );
-    expect(rendered).toContain("Replay: ~100 tokens (43.5%) / 230 uncached");
     expect(rendered).toContain("┬ parallel tools");
     expect(rendered).toContain("├─ grep request [call-1]");
     expect(rendered).toContain("└─ read_file request [call-2]");
@@ -280,8 +277,6 @@ describe("turn waterfall", () => {
         peakInputTokens: 0,
         latestInputTokens: 0,
         uncachedTokens: 0,
-        replayedTokens: 0,
-        replayShare: 0,
         amplification: 0,
       },
       checkpoints: [],

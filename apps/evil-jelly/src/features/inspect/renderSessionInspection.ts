@@ -27,8 +27,8 @@ function multiplier(value: number): string {
 function turnLine(turn: TurnInspection): string {
   const usage =
     `${integer(turn.prompt.cumulativeTokens)} cumulative prompt / ${integer(turn.prompt.peakInputTokens)} peak input / ` +
-    `${multiplier(turn.prompt.amplification)} amplification / ~${integer(turn.prompt.replayedTokens)} replayed / ` +
-    `${integer(turn.prompt.uncachedTokens)} uncached / ${integer(turn.completionTokens)} completion / ` +
+    `${multiplier(turn.prompt.amplification)} amplification / ${integer(turn.prompt.uncachedTokens)} uncached / ` +
+    `${integer(turn.completionTokens)} completion / ` +
     `${integer(turn.cacheReadTokens)} cache read (${percentage(turn.cacheHitRate)} hit)`;
   const tools = `${turn.toolCalls} tools / ${bytes(turn.toolOutputBytes)}`;
   const failures =
@@ -63,7 +63,7 @@ export function renderSessionInspection(
     `Workspace: ${inspection.workspaceRoot}`,
     `Turns: ${inspection.completedTurns} completed, ${inspection.inProgressTurns} in progress`,
     `Model: ${totals.modelCalls} calls, ${integer(totals.completionTokens)} completion, ${integer(totals.reasoningTokens)} reasoning, ${duration(totals.modelDurationMs)}`,
-    `Prompt: ${integer(totals.prompt.cumulativeTokens)} cumulative, ${integer(totals.prompt.peakInputTokens)} peak model input, ${multiplier(totals.prompt.amplification)} amplification, ~${integer(totals.prompt.replayedTokens)} replayed (${percentage(totals.prompt.replayShare)}), ${integer(totals.prompt.uncachedTokens)} uncached`,
+    `Prompt: ${integer(totals.prompt.cumulativeTokens)} cumulative, ${integer(totals.prompt.peakInputTokens)} peak model input, ${multiplier(totals.prompt.amplification)} amplification, ${integer(totals.prompt.uncachedTokens)} uncached`,
     `Cache: ${integer(totals.cacheReadTokens)} read, ${integer(totals.cacheWriteTokens)} write, ${percentage(totals.cacheHitRate)} hit`,
     `Tools: ${totals.toolCalls} calls, ${bytes(totals.toolOutputBytes)} output, ${bytes(totals.canonicalToolResultBytes)} canonical, ${totals.transportFailures} transport failures, ${duration(totals.toolDurationMs)} summed execution`,
     `Compactions: ${totals.compactions}`,

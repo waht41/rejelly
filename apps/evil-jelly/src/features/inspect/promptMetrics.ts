@@ -9,9 +9,6 @@ export interface PromptMetrics {
   peakInputTokens: number;
   latestInputTokens: number;
   uncachedTokens: number;
-  /** Estimated overlap between consecutive model inputs. */
-  replayedTokens: number;
-  replayShare: number;
   /** Cumulative prompt tokens divided by the largest single model input. */
   amplification: number;
 }
@@ -21,8 +18,6 @@ export function projectPromptMetrics(samples: readonly PromptUsageSample[]): Pro
   let peakInputTokens = 0;
   let latestInputTokens = 0;
   let uncachedTokens = 0;
-  let replayedTokens = 0;
-  let previousPromptTokens: number | undefined;
   let measuredCalls = 0;
 
   for (const sample of samples) {
@@ -34,10 +29,6 @@ export function projectPromptMetrics(samples: readonly PromptUsageSample[]): Pro
     peakInputTokens = Math.max(peakInputTokens, promptTokens);
     latestInputTokens = promptTokens;
     uncachedTokens += Math.max(0, promptTokens - cacheReadTokens);
-    if (previousPromptTokens !== undefined) {
-      replayedTokens += Math.min(previousPromptTokens, promptTokens);
-    }
-    previousPromptTokens = promptTokens;
   }
 
   return {
@@ -46,8 +37,6 @@ export function projectPromptMetrics(samples: readonly PromptUsageSample[]): Pro
     peakInputTokens,
     latestInputTokens,
     uncachedTokens,
-    replayedTokens,
-    replayShare: cumulativeTokens > 0 ? replayedTokens / cumulativeTokens : 0,
     amplification: peakInputTokens > 0 ? cumulativeTokens / peakInputTokens : 0,
   };
 }

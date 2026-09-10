@@ -130,8 +130,6 @@ describe("projectSessionInspection", () => {
           cumulativeTokens: 100,
           peakInputTokens: 100,
           uncachedTokens: 60,
-          replayedTokens: 0,
-          replayShare: 0,
           amplification: 1,
         },
         cacheReadTokens: 40,
@@ -152,7 +150,6 @@ describe("projectSessionInspection", () => {
         cumulativeTokens: 100,
         peakInputTokens: 100,
         uncachedTokens: 60,
-        replayedTokens: 0,
         amplification: 1,
       },
       cacheReadTokens: 40,
@@ -184,7 +181,7 @@ describe("projectSessionInspection", () => {
       "Turn number 2 not found in Session session-1; available Turns: 1-1.",
     );
     expect(rendered).toContain(
-      "Prompt: 100 cumulative, 100 peak model input, 1.0x amplification, ~0 replayed (0.0%), 60 uncached",
+      "Prompt: 100 cumulative, 100 peak model input, 1.0x amplification, 60 uncached",
     );
     expect(rendered).toContain("Cache: 40 read, 7 write, 40.0% hit");
     expect(rendered).toContain(
@@ -211,7 +208,7 @@ describe("projectSessionInspection", () => {
     );
   });
 
-  it("projects prompt replay across calls and keeps per-Turn amplification separate", () => {
+  it("projects cumulative Prompt metrics and keeps per-Turn amplification separate", () => {
     const inspection = projectSessionInspection(meta, [
       event(
         {
@@ -281,20 +278,16 @@ describe("projectSessionInspection", () => {
       peakInputTokens: 130,
       latestInputTokens: 120,
       uncachedTokens: 80,
-      replayedTokens: 220,
-      replayShare: 220 / 350,
       amplification: 350 / 130,
     });
     expect(inspection.turns[0]?.prompt).toMatchObject({
       cumulativeTokens: 230,
       peakInputTokens: 130,
-      replayedTokens: 100,
       amplification: 230 / 130,
     });
     expect(inspection.turns[1]?.prompt).toMatchObject({
       cumulativeTokens: 120,
       peakInputTokens: 120,
-      replayedTokens: 0,
       amplification: 1,
     });
   });
