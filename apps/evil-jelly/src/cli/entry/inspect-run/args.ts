@@ -54,7 +54,7 @@ export function registerInspectArgs(cli: CAC): void {
     .option("--call <id>", "Inspect one Tool call directly by ToolCall ID")
     .option(
       "--models [range]",
-      "Inspect Model Calls (Session summary, Turn list, or explicit M80..M100 range)",
+      "Inspect Model Calls (Session summary, Turn list, M16 coordinate, or M80..M100 range)",
     )
     .option(
       "--model <address>",

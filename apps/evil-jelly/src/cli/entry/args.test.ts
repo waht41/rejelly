@@ -279,6 +279,12 @@ describe("parseCliArgs", () => {
       inspectModels: "",
       inspectModelView: "latency",
     });
+    expect(parseCliArgs(["node", "evil", "inspect", "session-1", "--models", "M16"])).toMatchObject(
+      {
+        kind: "inspect",
+        inspectModels: "M16",
+      },
+    );
     expect(
       parseCliArgs(["node", "evil", "inspect", "session-1", "--models", "M80..M100", "--tokens"]),
     ).toMatchObject({

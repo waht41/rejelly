@@ -188,6 +188,13 @@ describe("Model Call inspection", () => {
     expect(renderModelCallList(turn)).toContain("Model calls — Turn turn-1");
     expect(renderModelCallList(turn, { view: "latency" })).toContain("output tok/s");
 
+    const single = projectModelCallList(meta, events, { selector: "M2" });
+    expect(single.calls.map((call) => call.address)).toEqual(["M2"]);
+    expect(renderModelCallList(single)).toContain("Model calls — M2");
+
+    const numericSingle = projectModelCallList(meta, events, { selector: "2" });
+    expect(numericSingle.calls.map((call) => call.address)).toEqual(["M2"]);
+
     const range = projectModelCallList(meta, events, { selector: "M2..3" });
     expect(range.calls.map((call) => call.address)).toEqual(["M2", "M3"]);
     expect(renderModelCallList(range, { view: "transport" })).toContain("retry delay");

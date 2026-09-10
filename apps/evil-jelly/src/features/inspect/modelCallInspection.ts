@@ -256,15 +256,30 @@ function parseAddress(selector: string): number {
   return Number(match[1]);
 }
 
-function selectRange(
+function selectCalls(
   calls: readonly ModelCallInspection[],
   selector: string,
 ): ModelCallInspection[] {
-  const match = /^\s*(M?[1-9]\d*)\.\.(M?[1-9]\d*)\s*$/i.exec(selector);
-  if (!match)
-    throw new Error(`Invalid Model Call range: ${selector}. Expected M80..M100 or 80..100.`);
-  const first = parseAddress(match[1]);
-  const last = parseAddress(match[2]);
+  const single = /^\s*M?([1-9]\d*)\s*$/i.exec(selector);
+  if (single) {
+    const ordinal = Number(single[1]);
+    const call = calls[ordinal - 1];
+    if (!call) {
+      throw new Error(
+        `Model Call M${ordinal} is outside this Session (available: M1..M${calls.length}).`,
+      );
+    }
+    return [call];
+  }
+
+  const range = /^\s*(M?[1-9]\d*)\.\.(M?[1-9]\d*)\s*$/i.exec(selector);
+  if (!range) {
+    throw new Error(
+      `Invalid Model Call selector: ${selector}. Expected M16, 16, M80..M100, or 80..100.`,
+    );
+  }
+  const first = parseAddress(range[1]);
+  const last = parseAddress(range[2]);
   if (first > last)
     throw new Error(`Invalid Model Call range: ${selector}. Start must not exceed end.`);
   const selected = calls.filter((call) => call.ordinal >= first && call.ordinal <= last);
@@ -283,7 +298,7 @@ export function projectModelCallList(
 ): ModelCallListInspection {
   const allCalls = projectModelCalls(meta, events);
   const calls = options.selector
-    ? selectRange(allCalls, options.selector)
+    ? selectCalls(allCalls, options.selector)
     : options.turnId
       ? allCalls.filter((call) => call.turnId === options.turnId)
       : allCalls;
