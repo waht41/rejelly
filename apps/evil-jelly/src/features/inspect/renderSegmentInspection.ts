@@ -56,7 +56,7 @@ export function renderSegmentInspection(
   );
   if (shown < payloadLines.length) {
     lines.push(
-      `  [truncated preview, showing ${shown}/${payloadLines.length} lines; use --full or --dump]`,
+      `  [truncated preview, showing ${shown}/${payloadLines.length} lines; use --full or --payload]`,
     );
   }
   return lines.join("\n");

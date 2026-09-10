@@ -6,7 +6,7 @@ import {
 } from "../../domains/session/model/sessionEvents";
 import { renderToolCallInspection } from "./renderToolCallInspection";
 import {
-  dumpToolCallPayload,
+  extractToolCallPayload,
   findToolCallTurnId,
   projectToolCallBySegment,
   projectToolCallInspection,
@@ -146,13 +146,13 @@ describe("Tool call inspection", () => {
       request: { address: "2", content: '{"pattern":"x","path":"src"}' },
       result: { address: "3", lines: 45 },
     });
-    expect(dumpToolCallPayload(requestSelection)).toBe('{"pattern":"x","path":"src"}');
+    expect(extractToolCallPayload(requestSelection)).toBe('{"pattern":"x","path":"src"}');
 
     const resultSelection = projectToolCallBySegment(meta, events, waterfall, "3");
-    expect(dumpToolCallPayload(resultSelection)).toContain("src/file-45.ts:x");
+    expect(extractToolCallPayload(resultSelection)).toContain("src/file-45.ts:x");
     expect(renderToolCallInspection(resultSelection)).toContain("Tool call #3");
     expect(renderToolCallInspection(resultSelection)).toContain(
-      "[truncated preview, showing 40/45 lines; use --full or --dump]",
+      "[truncated preview, showing 40/45 lines; use --full or --payload]",
     );
     expect(renderToolCallInspection(resultSelection, { full: true })).toContain("src/file-45.ts:x");
     expect(

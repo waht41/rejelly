@@ -77,9 +77,11 @@ describe("parseCliArgs", () => {
     expect(help).toContain("--segment <address>");
     expect(help).toContain("N, N.M, or C1");
     expect(help).toContain("--call <id>");
-    expect(help).toContain("--dump");
-    expect(help).toContain("Dump the complete persisted segment payload");
+    expect(help).toContain("--payload");
+    expect(help).toContain("Print only the complete persisted payload");
     expect(help).toContain("--full");
+    expect(help).toContain("--output <path>");
+    expect(help).toContain("Write output directly to a UTF-8 file instead of stdout");
     expect(help).toContain("--top <number>");
     expect(help).toContain("--all-workspaces");
     expect(help).toContain("--workspace <dir>");
@@ -210,7 +212,7 @@ describe("parseCliArgs", () => {
       inspectTurnId: "1",
       inspectSegment: "4.2",
       inspectFull: true,
-      inspectDump: false,
+      inspectPayload: false,
     });
 
     const call = parseCliArgs([
@@ -220,12 +222,15 @@ describe("parseCliArgs", () => {
       "session-1",
       "--call",
       "call-1",
-      "--dump",
+      "--payload",
+      "--output",
+      "payload.json",
     ]);
     expect(call).toMatchObject({
       kind: "inspect",
       inspectCallId: "call-1",
-      inspectDump: true,
+      inspectPayload: true,
+      inspectOutput: "payload.json",
     });
 
     const turnTop = parseCliArgs([
@@ -247,7 +252,9 @@ describe("parseCliArgs", () => {
   it.each([
     ["segment without turn", ["inspect", "session-1", "--segment", "4"]],
     ["call with turn", ["inspect", "session-1", "--turn", "1", "--call", "call-1"]],
-    ["dump with json", ["inspect", "session-1", "--call", "call-1", "--dump", "--json"]],
+    ["payload with json", ["inspect", "session-1", "--call", "call-1", "--payload", "--json"]],
+    ["full with json", ["inspect", "session-1", "--call", "call-1", "--full", "--json"]],
+    ["full with payload", ["inspect", "session-1", "--call", "call-1", "--full", "--payload"]],
     ["invalid top", ["inspect", "session-1", "--turn", "1", "--top", "0"]],
   ])("rejects invalid inspect drill-down options: %s", (_name, argvTail) => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);

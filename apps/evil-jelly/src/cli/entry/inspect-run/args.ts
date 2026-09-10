@@ -8,8 +8,9 @@ export interface InspectCommandArgs {
   readonly inspectTurnId?: string;
   readonly inspectSegment?: string;
   readonly inspectCallId?: string;
-  readonly inspectDump: boolean;
+  readonly inspectPayload: boolean;
   readonly inspectFull: boolean;
+  readonly inspectOutput?: string;
   readonly inspectTop?: number;
 }
 
@@ -46,15 +47,16 @@ export function registerInspectArgs(cli: CAC): void {
       "Inspect one persisted waterfall segment or Initial context (N, N.M, or C1)",
     )
     .option("--call <id>", "Inspect one Tool call directly by ToolCall ID")
-    .option("--dump", "Dump the complete persisted segment payload")
-    .option("--full", "Show the full segment payload instead of a bounded preview")
+    .option("--payload", "Print only the complete persisted payload")
+    .option("--full", "Show the complete payload in the human-readable inspection report")
+    .option("--output <path>", "Write output directly to a UTF-8 file instead of stdout")
     .option(
       "--top <number>",
       "Append the largest token-contributing segments across the selected scope",
     )
     .option("--all-workspaces", "Find the Session id across all Evil Jelly workspaces")
     .usage(
-      "inspect [sessionId] [--turn <number-or-id>] [--segment <address> | --call <id>] [--dump | --json] [--full] [--top <number>] [--all-workspaces]",
+      "inspect [sessionId] [--turn <number-or-id>] [--segment <address> | --call <id>] [--full | --json | --payload] [--output <path>] [--top <number>] [--all-workspaces]",
     );
 }
 
@@ -69,9 +71,10 @@ export function parseInspectArgs(
   const inspectTurnId = resolveOptionalString(options.turn);
   const inspectSegment = resolveOptionalString(options.segment);
   const inspectCallId = resolveOptionalString(options.call);
-  const inspectDump = Boolean(options.dump);
+  const inspectPayload = Boolean(options.payload);
   const inspectFull = Boolean(options.full);
   const inspectJson = Boolean(options.json);
+  const inspectOutput = resolveOptionalString(options.output);
   const inspectTop = resolvePositiveInteger(options.top, "--top");
   if (inspectAllWorkspaces && !inspectSessionId) {
     failArgs("--all-workspaces requires a sessionId");
@@ -79,9 +82,11 @@ export function parseInspectArgs(
   if (inspectSegment && !inspectTurnId) failArgs("--segment requires --turn");
   if (inspectSegment && inspectCallId) failArgs("--segment cannot be combined with --call");
   if (inspectCallId && inspectTurnId) failArgs("--call cannot be combined with --turn");
-  if (inspectDump && inspectJson) failArgs("--dump cannot be combined with --json");
-  if ((inspectDump || inspectFull) && !inspectSegment && !inspectCallId) {
-    failArgs("--dump and --full require --segment or --call");
+  if ([inspectFull, inspectJson, inspectPayload].filter(Boolean).length > 1) {
+    failArgs("--full, --json, and --payload cannot be combined");
+  }
+  if ((inspectPayload || inspectFull) && !inspectSegment && !inspectCallId) {
+    failArgs("--payload and --full require --segment or --call");
   }
   if (inspectTop !== undefined && (inspectSegment || inspectCallId)) {
     failArgs("--top cannot be combined with --segment or --call");
@@ -94,8 +99,9 @@ export function parseInspectArgs(
     ...(inspectTurnId ? { inspectTurnId } : {}),
     ...(inspectSegment ? { inspectSegment } : {}),
     ...(inspectCallId ? { inspectCallId } : {}),
-    inspectDump,
+    inspectPayload,
     inspectFull,
+    ...(inspectOutput ? { inspectOutput } : {}),
     ...(inspectTop !== undefined ? { inspectTop } : {}),
   };
 }

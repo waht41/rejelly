@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SessionEvent, SessionMetaLine } from "../../domains/session/model/sessionEvents";
 import { renderInitialContextInspection } from "./renderCheckpointInspection";
 import { renderSegmentInspection } from "./renderSegmentInspection";
-import { dumpSegmentPayload, projectSegmentDrilldown } from "./segmentInspection";
+import { extractSegmentPayload, projectSegmentDrilldown } from "./segmentInspection";
 import { projectTurnWaterfall } from "./turnWaterfall";
 
 const meta: SessionMetaLine = {
@@ -97,7 +97,7 @@ describe("Segment inspection", () => {
       payload: { kind: "frozen_user_input" },
     });
     if (user.type !== "segment_inspection_v1") throw new Error("expected Segment inspection");
-    expect(dumpSegmentPayload(user)).toContain('"text": "explain"');
+    expect(extractSegmentPayload(user)).toContain('"text": "explain"');
 
     expect(projectSegmentDrilldown(meta, events, waterfall, "3")).toMatchObject({
       type: "segment_inspection_v1",
@@ -203,7 +203,7 @@ describe("Segment inspection", () => {
       throw new Error("expected Initial context inspection");
     }
     expect(renderInitialContextInspection(inspection)).toContain("Tool definitions");
-    expect(dumpSegmentPayload(inspection)).toContain('"system_instructions"');
+    expect(extractSegmentPayload(inspection)).toContain('"system_instructions"');
   });
 
   it("keeps token-only reasoning inspectable without inventing persisted content", () => {
@@ -219,6 +219,6 @@ describe("Segment inspection", () => {
     });
     if (reasoning.type !== "segment_inspection_v1") throw new Error("expected Segment inspection");
     expect(renderSegmentInspection(reasoning)).toContain("[unavailable:");
-    expect(() => dumpSegmentPayload(reasoning)).toThrow("has no durable payload");
+    expect(() => extractSegmentPayload(reasoning)).toThrow("has no durable payload");
   });
 });

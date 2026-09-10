@@ -95,7 +95,7 @@ export function renderToolCallInspection(
     );
     if (resultPreview.shown < resultPreview.total) {
       lines.push(
-        `  [truncated preview, showing ${resultPreview.shown}/${resultPreview.total} lines; use --full or --dump]`,
+        `  [truncated preview, showing ${resultPreview.shown}/${resultPreview.total} lines; use --full or --payload]`,
       );
     }
     if (inspection.truncated) {

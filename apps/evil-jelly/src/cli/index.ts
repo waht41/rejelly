@@ -43,8 +43,13 @@ async function main() {
       turnId: args.inspectTurnId,
       segment: args.inspectSegment,
       callId: args.inspectCallId,
-      dump: args.inspectDump,
+      payload: args.inspectPayload,
       full: args.inspectFull,
+      outputPath: args.inspectOutput,
+      writeOutputFile: async (filePath, content) => {
+        const { writeFile } = await import("node:fs/promises");
+        await writeFile(filePath, content, "utf8");
+      },
       top: args.inspectTop,
     });
     process.exit(0);

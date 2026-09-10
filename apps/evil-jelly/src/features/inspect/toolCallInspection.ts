@@ -274,7 +274,7 @@ export function projectToolCallBySegment(
   return projectToolCallInspection(meta, events, waterfall, selected.toolCallId, selected.side);
 }
 
-export function dumpToolCallPayload(inspection: ToolCallInspection): string {
+export function extractToolCallPayload(inspection: ToolCallInspection): string {
   const selected = inspection.selectedSide === "request" ? inspection.request : inspection.result;
   const fallback = inspection.result ?? inspection.request;
   if (!selected && !fallback)

@@ -10,7 +10,7 @@ import { renderSessionInspection } from "../../../features/inspect/renderSession
 import { renderToolCallInspection } from "../../../features/inspect/renderToolCallInspection";
 import { renderTurnWaterfall } from "../../../features/inspect/renderTurnWaterfall";
 import {
-  dumpSegmentPayload,
+  extractSegmentPayload,
   projectSegmentDrilldown,
   type SegmentDrilldownInspection,
 } from "../../../features/inspect/segmentInspection";
@@ -19,7 +19,7 @@ import {
   resolveTurnId,
 } from "../../../features/inspect/sessionInspection";
 import {
-  dumpToolCallPayload,
+  extractToolCallPayload,
   findToolCallTurnId,
   projectToolCallInspection,
   type ToolCallInspection,
@@ -38,38 +38,61 @@ export interface RunInspectOptions {
   turnId?: string;
   segment?: string;
   callId?: string;
-  dump: boolean;
+  payload: boolean;
   full: boolean;
+  outputPath?: string;
+  writeOutputFile: (filePath: string, content: string) => Promise<void>;
   top?: number;
 }
 
-function printToolCall(inspection: ToolCallInspection, options: RunInspectOptions): void {
-  if (options.dump) {
-    process.stdout.write(dumpToolCallPayload(inspection));
+async function writeInspectionOutput(
+  content: string,
+  options: RunInspectOptions,
+  preservePayloadExactly = false,
+): Promise<void> {
+  const output = preservePayloadExactly ? content : `${content}\n`;
+  if (options.outputPath) {
+    await options.writeOutputFile(options.outputPath, output);
     return;
   }
-  console.log(
+  process.stdout.write(output);
+}
+
+async function printToolCall(
+  inspection: ToolCallInspection,
+  options: RunInspectOptions,
+): Promise<void> {
+  if (options.payload) {
+    await writeInspectionOutput(extractToolCallPayload(inspection), options, true);
+    return;
+  }
+  await writeInspectionOutput(
     options.json
       ? JSON.stringify(inspection, null, 2)
       : renderToolCallInspection(inspection, { full: options.full }),
+    options,
   );
 }
 
-function printSegment(inspection: SegmentDrilldownInspection, options: RunInspectOptions): void {
+async function printSegment(
+  inspection: SegmentDrilldownInspection,
+  options: RunInspectOptions,
+): Promise<void> {
   if (inspection.type === "tool_call_inspection_v1") {
-    printToolCall(inspection, options);
+    await printToolCall(inspection, options);
     return;
   }
-  if (options.dump) {
-    process.stdout.write(dumpSegmentPayload(inspection));
+  if (options.payload) {
+    await writeInspectionOutput(extractSegmentPayload(inspection), options, true);
     return;
   }
-  console.log(
+  await writeInspectionOutput(
     options.json
       ? JSON.stringify(inspection, null, 2)
       : inspection.type === "initial_context_inspection_v1"
         ? renderInitialContextInspection(inspection)
         : renderSegmentInspection(inspection, { full: options.full }),
+    options,
   );
 }
 
@@ -97,7 +120,7 @@ export async function runInspect(options: RunInspectOptions): Promise<void> {
   if (options.callId) {
     const turnId = findToolCallTurnId(stored.events, options.callId);
     const waterfall = projectTurnWaterfall(stored.meta, stored.events, turnId);
-    printToolCall(
+    await printToolCall(
       projectToolCallInspection(stored.meta, stored.events, waterfall, options.callId),
       options,
     );
@@ -107,7 +130,7 @@ export async function runInspect(options: RunInspectOptions): Promise<void> {
     const turnId = resolveTurnId(inspection, options.turnId);
     const waterfall = projectTurnWaterfall(stored.meta, stored.events, turnId);
     if (options.segment) {
-      printSegment(
+      await printSegment(
         projectSegmentDrilldown(stored.meta, stored.events, waterfall, options.segment),
         options,
       );
@@ -116,11 +139,12 @@ export async function runInspect(options: RunInspectOptions): Promise<void> {
     if (options.json) {
       const largestSegments =
         options.top !== undefined ? projectTopContributors(waterfall, options.top) : undefined;
-      console.log(
+      await writeInspectionOutput(
         JSON.stringify(largestSegments ? { ...waterfall, largestSegments } : waterfall, null, 2),
+        options,
       );
     } else {
-      console.log(renderTurnWaterfall(waterfall, { top: options.top }));
+      await writeInspectionOutput(renderTurnWaterfall(waterfall, { top: options.top }), options);
     }
     return;
   }
@@ -133,9 +157,10 @@ export async function runInspect(options: RunInspectOptions): Promise<void> {
           options.top,
         )
       : undefined;
-  console.log(
+  await writeInspectionOutput(
     options.json
       ? JSON.stringify(largestSegments ? { ...inspection, largestSegments } : inspection, null, 2)
       : renderSessionInspection(inspection, { topContributors: largestSegments }),
+    options,
   );
 }

@@ -146,7 +146,7 @@ export function projectSegmentDrilldown(
   };
 }
 
-export function dumpSegmentPayload(
+export function extractSegmentPayload(
   inspection: SegmentInspection | InitialContextInspection,
 ): string {
   if (inspection.type === "initial_context_inspection_v1") {
