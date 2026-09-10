@@ -4,9 +4,15 @@ import {
   locateInspectSession,
 } from "../../../domains/session/repository/sessionLocator";
 import { listSessions } from "../../../domains/session/repository/sessionStore";
+import { renderSegmentInspection } from "../../../features/inspect/renderSegmentInspection";
 import { renderSessionInspection } from "../../../features/inspect/renderSessionInspection";
 import { renderToolCallInspection } from "../../../features/inspect/renderToolCallInspection";
 import { renderTurnWaterfall } from "../../../features/inspect/renderTurnWaterfall";
+import {
+  dumpSegmentPayload,
+  projectSegmentDrilldown,
+  type SegmentDrilldownInspection,
+} from "../../../features/inspect/segmentInspection";
 import {
   projectSessionInspection,
   resolveTurnId,
@@ -14,7 +20,6 @@ import {
 import {
   dumpToolCallPayload,
   findToolCallTurnId,
-  projectToolCallBySegment,
   projectToolCallInspection,
   type ToolCallInspection,
 } from "../../../features/inspect/toolCallInspection";
@@ -46,6 +51,22 @@ function printToolCall(inspection: ToolCallInspection, options: RunInspectOption
     options.json
       ? JSON.stringify(inspection, null, 2)
       : renderToolCallInspection(inspection, { full: options.full }),
+  );
+}
+
+function printSegment(inspection: SegmentDrilldownInspection, options: RunInspectOptions): void {
+  if (inspection.type === "tool_call_inspection_v1") {
+    printToolCall(inspection, options);
+    return;
+  }
+  if (options.dump) {
+    process.stdout.write(dumpSegmentPayload(inspection));
+    return;
+  }
+  console.log(
+    options.json
+      ? JSON.stringify(inspection, null, 2)
+      : renderSegmentInspection(inspection, { full: options.full }),
   );
 }
 
@@ -83,8 +104,8 @@ export async function runInspect(options: RunInspectOptions): Promise<void> {
     const turnId = resolveTurnId(inspection, options.turnId);
     const waterfall = projectTurnWaterfall(stored.meta, stored.events, turnId);
     if (options.segment) {
-      printToolCall(
-        projectToolCallBySegment(stored.meta, stored.events, waterfall, options.segment),
+      printSegment(
+        projectSegmentDrilldown(stored.meta, stored.events, waterfall, options.segment),
         options,
       );
       return;

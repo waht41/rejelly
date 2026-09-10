@@ -77,7 +77,7 @@ describe("parseCliArgs", () => {
     expect(help).toContain("--segment <address>");
     expect(help).toContain("--call <id>");
     expect(help).toContain("--dump");
-    expect(help).toContain("Dump the complete persisted request or canonical result");
+    expect(help).toContain("Dump the complete persisted segment payload");
     expect(help).toContain("--full");
     expect(help).toContain("--top <number>");
     expect(help).toContain("--all-workspaces");

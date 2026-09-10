@@ -4,10 +4,11 @@ import {
   type SessionMetaLine,
 } from "../../domains/session/model/sessionEvents";
 import { messageContentToText } from "../../shared/model/message/content";
-import type {
-  TurnWaterfallChild,
-  TurnWaterfallInspection,
-  TurnWaterfallSegment,
+import {
+  resolveWaterfallSegment,
+  type TurnWaterfallChild,
+  type TurnWaterfallInspection,
+  type TurnWaterfallSegment,
 } from "./turnWaterfall";
 
 export type ToolCallSelectionSide = "request" | "result";
@@ -100,26 +101,20 @@ export function resolveSegmentToolCall(
   waterfall: TurnWaterfallInspection,
   selector: string,
 ): AddressedCall {
-  const match = /^([1-9]\d*)(?:\.([1-9]\d*))?$/.exec(selector);
-  if (!match) throw new Error(`Invalid segment address: ${selector}. Expected N or N.M.`);
-  const segmentNumber = Number(match[1]);
-  const childNumber = match[2] ? Number(match[2]) : undefined;
-  const segment = waterfall.segments[segmentNumber - 1];
-  if (!segment) throw new Error(`Segment ${segmentNumber} not found in Turn ${waterfall.turnId}.`);
-  if (childNumber !== undefined) {
-    const child = segment.children?.[childNumber - 1];
-    if (!child) throw new Error(`Segment ${selector} not found in Turn ${waterfall.turnId}.`);
-    return segmentCall(child, "request");
-  }
-  if (segment.children?.length) {
+  const resolved = resolveWaterfallSegment(waterfall, selector);
+  if (resolved.childNumber !== undefined) return segmentCall(resolved.segment, "request");
+  if (resolved.parent.children?.length) {
     throw new Error(
-      `Segment ${segmentNumber} contains ${segment.children.length} Tool calls; select ${segmentNumber}.1-${segmentNumber}.${segment.children.length}.`,
+      `Segment ${resolved.segmentNumber} contains ${resolved.parent.children.length} Tool calls; select ${resolved.segmentNumber}.1-${resolved.segmentNumber}.${resolved.parent.children.length}.`,
     );
   }
-  if (segment.kind !== "tool_request" && segment.kind !== "tool_result") {
-    throw new Error(`Segment ${segmentNumber} is not a Tool request or result.`);
+  if (resolved.parent.kind !== "tool_request" && resolved.parent.kind !== "tool_result") {
+    throw new Error(`Segment ${resolved.segmentNumber} is not a Tool request or result.`);
   }
-  return segmentCall(segment, segment.kind === "tool_request" ? "request" : "result");
+  return segmentCall(
+    resolved.segment,
+    resolved.parent.kind === "tool_request" ? "request" : "result",
+  );
 }
 
 function addressesForCall(

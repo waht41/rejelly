@@ -71,6 +71,38 @@ export interface SessionTopContributor extends TurnWaterfallTopContributor {
   turnNumber: number;
 }
 
+export interface ResolvedWaterfallSegment {
+  address: string;
+  segmentNumber: number;
+  childNumber?: number;
+  segment: TurnWaterfallSegment | TurnWaterfallChild;
+  parent: TurnWaterfallSegment;
+}
+
+export function resolveWaterfallSegment(
+  waterfall: TurnWaterfallInspection,
+  selector: string,
+): ResolvedWaterfallSegment {
+  const match = /^([1-9]\d*)(?:\.([1-9]\d*))?$/.exec(selector);
+  if (!match) throw new Error(`Invalid segment address: ${selector}. Expected N or N.M.`);
+  const segmentNumber = Number(match[1]);
+  const childNumber = match[2] ? Number(match[2]) : undefined;
+  const parent = waterfall.segments[segmentNumber - 1];
+  if (!parent) throw new Error(`Segment ${segmentNumber} not found in Turn ${waterfall.turnId}.`);
+  if (childNumber === undefined) {
+    return { address: String(segmentNumber), segmentNumber, segment: parent, parent };
+  }
+  const child = parent.children?.[childNumber - 1];
+  if (!child) throw new Error(`Segment ${selector} not found in Turn ${waterfall.turnId}.`);
+  return {
+    address: `${segmentNumber}.${childNumber}`,
+    segmentNumber,
+    childNumber,
+    segment: child,
+    parent,
+  };
+}
+
 function messageTokens(message: Message): number {
   return estimateMessagesTokens([message]);
 }
