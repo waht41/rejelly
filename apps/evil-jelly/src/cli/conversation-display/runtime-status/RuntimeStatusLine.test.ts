@@ -119,6 +119,13 @@ describe("RuntimeStatusLine", () => {
     expect(statusLine()).not.toContain("Waiting for input");
   });
 
+  it("shows reconnect progress instead of the generic connection phase", () => {
+    setRuntime({ phase: "connecting", detail: "Reconnecting… waiting for network" });
+
+    expect(statusLine()).toContain("Reconnecting… waiting for network");
+    expect(statusLine()).not.toMatch(/ · connecting$/);
+  });
+
   it("names MCP startup instead of showing the generic tool activity", () => {
     setRuntime({ phase: "tool", detail: "Starting MCP typescript…" });
 

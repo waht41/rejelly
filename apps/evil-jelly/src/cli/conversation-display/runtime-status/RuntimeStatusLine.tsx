@@ -102,7 +102,10 @@ export function RuntimeStatusLine() {
   }
 
   let detailSuffix =
-    phase === "tool" && detail.startsWith("Starting MCP ") ? detail : WORKING_DETAIL[phase];
+    (phase === "tool" && detail.startsWith("Starting MCP ")) ||
+    (phase === "connecting" && detail.startsWith("Reconnecting"))
+      ? detail
+      : WORKING_DETAIL[phase];
   if (phase === "preparing_tool" && toolCallGeneration) {
     const names = [...new Set(toolCallGeneration.calls.map((call) => call.name).filter(Boolean))];
     const subject =
