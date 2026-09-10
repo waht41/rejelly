@@ -111,6 +111,14 @@ describe("turn waterfall", () => {
 
     expect(inspection.peakContextTokens).toBe(150);
     expect(inspection.peakContextSource).toBe("provider");
+    expect(inspection.segments[3].children).toMatchObject([
+      { label: "grep request", toolCallId: "call-1" },
+      { label: "read_file request", toolCallId: "call-2" },
+    ]);
+    expect(inspection.segments[4]).toMatchObject({
+      label: "grep result",
+      toolCallId: "call-1",
+    });
     expect(
       inspection.segments.map(({ label, tokens, contextTokens }) => ({
         label,
@@ -129,9 +137,9 @@ describe("turn waterfall", () => {
     const rendered = renderTurnWaterfall(inspection);
     expect(rendered).toContain("peak context 150");
     expect(rendered).toContain("┬ parallel tools");
-    expect(rendered).toContain("├─ grep request");
-    expect(rendered).toContain("└─ read_file request");
-    expect(rendered).toContain("grep result");
+    expect(rendered).toContain("├─ grep request [call-1]");
+    expect(rendered).toContain("└─ read_file request [call-2]");
+    expect(rendered).toContain("grep result [call-1]");
     expect(rendered).toContain("compact [auto]");
     expect(rendered).not.toContain("█");
     expect(rendered).toContain("~ estimated from canonical message content");

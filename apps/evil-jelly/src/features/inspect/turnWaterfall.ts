@@ -20,6 +20,7 @@ export type TurnWaterfallSegmentKind =
 
 export interface TurnWaterfallChild {
   label: string;
+  toolCallId?: string;
   tokens: number;
   tokenSource: "estimated";
   contextTokens: number;
@@ -30,6 +31,7 @@ export interface TurnWaterfallSegment {
   seq: number;
   kind: TurnWaterfallSegmentKind;
   label: string;
+  toolCallId?: string;
   tokens: number;
   tokenSource: "provider" | "estimated";
   contextTokens: number;
@@ -72,6 +74,7 @@ function allocateParallelToolTokens(
     childContextTokens += tokens;
     return {
       label: `${call.name} request`,
+      toolCallId: call.id,
       tokens,
       tokenSource: "estimated",
       contextTokens: childContextTokens,
@@ -120,6 +123,7 @@ export function projectTurnWaterfall(
     label: string,
     tokens: number,
     tokenSource: TurnWaterfallSegment["tokenSource"],
+    toolCallId?: string,
   ) => {
     contextTokens = Math.max(0, contextTokens + tokens);
     if (tokenSource === "estimated") contextSource = "estimated";
@@ -129,7 +133,16 @@ export function projectTurnWaterfall(
     } else if (contextTokens === peakContextTokens && contextSource === "estimated") {
       peakContextSource = "estimated";
     }
-    segments.push({ seq, kind, label, tokens, tokenSource, contextTokens, contextSource });
+    segments.push({
+      seq,
+      kind,
+      label,
+      ...(toolCallId ? { toolCallId } : {}),
+      tokens,
+      tokenSource,
+      contextTokens,
+      contextSource,
+    });
   };
 
   for (const event of turnEvents) {
@@ -185,6 +198,7 @@ export function projectTurnWaterfall(
                 : "assistant answer",
             visibleTokens,
             "provider",
+            calls.length === 1 ? calls[0].id : undefined,
           );
           if (calls.length > 1) {
             segments.at(-1)!.children = allocateParallelToolTokens(
@@ -206,6 +220,7 @@ export function projectTurnWaterfall(
             `${toolNames.get(event.message.tool_call_id ?? "") ?? event.message.name ?? "tool"} result`,
             messageTokens(event.message),
             "estimated",
+            event.message.tool_call_id,
           );
         } else {
           append(

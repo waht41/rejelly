@@ -1,7 +1,7 @@
 import type { TurnWaterfallChild, TurnWaterfallInspection } from "./turnWaterfall";
 
 const BAR_WIDTH = 12;
-const LABEL_WIDTH = 38;
+const LABEL_WIDTH = 64;
 
 function integer(value: number): string {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
@@ -18,6 +18,10 @@ function compactTokens(value: number): string {
 
 function label(value: string, width = LABEL_WIDTH): string {
   return value.length <= width ? value.padEnd(width) : `${value.slice(0, width - 1)}…`;
+}
+
+function toolLabel(value: string, toolCallId?: string): string {
+  return toolCallId ? `${value} [${toolCallId}]` : value;
 }
 
 function bar(tokens: number, positiveLargest: number, negativeLargest: number): string {
@@ -44,7 +48,7 @@ function childLine(
   positiveLargest: number,
   negativeLargest: number,
 ): string {
-  return `     ${last ? "└─" : "├─"} ${label(child.label, LABEL_WIDTH - 3)} ${values(child.tokens, child.tokenSource, child.contextTokens, child.contextSource)}   ${bar(child.tokens, positiveLargest, negativeLargest)}`;
+  return `     ${last ? "└─" : "├─"} ${label(toolLabel(child.label, child.toolCallId), LABEL_WIDTH - 3)} ${values(child.tokens, child.tokenSource, child.contextTokens, child.contextSource)}   ${bar(child.tokens, positiveLargest, negativeLargest)}`;
 }
 
 export function renderTurnWaterfall(inspection: TurnWaterfallInspection): string {
@@ -65,8 +69,8 @@ export function renderTurnWaterfall(inspection: TurnWaterfallInspection): string
     `Turn ${inspection.turnId}                     peak context ${peakEstimated}${compactTokens(inspection.peakContextTokens).slice(1)}`,
     `Session ${inspection.sessionId}  [${inspection.status}]`,
     "",
-    " #   segment                                  tokens     context   size",
-    " -------------------------------------------------------------------------------",
+    " #   segment                                                            tokens     context   size",
+    " ---------------------------------------------------------------------------------------------------------",
   ];
   inspection.segments.forEach((segment, index) => {
     if (segment.children?.length) {
@@ -88,7 +92,7 @@ export function renderTurnWaterfall(inspection: TurnWaterfallInspection): string
         ? ""
         : bar(segment.tokens, positiveLargest, negativeLargest);
     lines.push(
-      `${String(index + 1).padStart(2)}   ${label(segment.label)} ${values(segment.tokens, segment.tokenSource, segment.contextTokens, segment.contextSource)}   ${size}`,
+      `${String(index + 1).padStart(2)}   ${label(toolLabel(segment.label, segment.toolCallId))} ${values(segment.tokens, segment.tokenSource, segment.contextTokens, segment.contextSource)}   ${size}`,
     );
   });
   lines.push(
