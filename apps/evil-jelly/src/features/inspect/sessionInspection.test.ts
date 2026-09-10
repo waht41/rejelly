@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SessionEvent, SessionMetaLine } from "../../domains/session/model/sessionEvents";
 import { renderSessionInspection } from "./renderSessionInspection";
-import { projectSessionInspection } from "./sessionInspection";
+import { projectSessionInspection, resolveTurnId } from "./sessionInspection";
 
 const meta: SessionMetaLine = {
   type: "session_meta",
@@ -160,6 +160,12 @@ describe("projectSessionInspection", () => {
       },
     ]);
     const rendered = renderSessionInspection(inspection);
+    expect(rendered).toContain("- 1. turn-1 [completed]");
+    expect(resolveTurnId(inspection, "1")).toBe("turn-1");
+    expect(resolveTurnId(inspection, "turn-1")).toBe("turn-1");
+    expect(() => resolveTurnId(inspection, "2")).toThrow(
+      "Turn number 2 not found in Session session-1; available Turns: 1-1.",
+    );
     expect(rendered).toContain("40 cache read, 7 cache write, 40.0% cache hit");
     expect(rendered).toContain(
       "  - Compact [auto] 12,000 -> 3,000 tokens (-9,000, 75.0% reduction), 10 -> 2 messages, 1.5s",

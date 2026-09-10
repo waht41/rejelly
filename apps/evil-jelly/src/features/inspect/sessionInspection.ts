@@ -133,6 +133,18 @@ function addCosts(target: Record<string, number>, costs: Record<string, number> 
   }
 }
 
+export function resolveTurnId(inspection: SessionInspection, selector: string): string {
+  if (!/^[1-9]\d*$/.test(selector)) return selector;
+  const turnNumber = Number(selector);
+  const turn = Number.isSafeInteger(turnNumber) ? inspection.turns[turnNumber - 1] : undefined;
+  if (!turn) {
+    throw new Error(
+      `Turn number ${selector} not found in Session ${inspection.sessionId}; available Turns: 1-${inspection.turns.length}.`,
+    );
+  }
+  return turn.turnId;
+}
+
 export function projectSessionInspection(
   meta: SessionMetaLine,
   events: readonly SessionEvent[],

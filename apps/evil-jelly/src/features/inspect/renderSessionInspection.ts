@@ -26,7 +26,7 @@ function turnLine(turn: TurnInspection): string {
   const tools = `${turn.toolCalls} tools / ${bytes(turn.toolOutputBytes)}`;
   const failures =
     turn.transportFailures > 0 ? ` / ${turn.transportFailures} transport failures` : "";
-  return `- ${turn.turnId} [${turn.status}] ${turn.modelCalls} models, ${usage}, ${tools}, ${duration(turn.modelDurationMs)} model${failures}`;
+  return `${turn.turnId} [${turn.status}] ${turn.modelCalls} models, ${usage}, ${tools}, ${duration(turn.modelDurationMs)} model${failures}`;
 }
 
 function compactionLine(compaction: CompactionInspection): string {
@@ -74,7 +74,10 @@ export function renderSessionInspection(inspection: SessionInspection): string {
 
   lines.push("", "Turns");
   const timeline = [
-    ...inspection.turns.map((turn) => ({ seq: turn.firstSeq, line: turnLine(turn) })),
+    ...inspection.turns.map((turn, index) => ({
+      seq: turn.firstSeq,
+      line: `- ${index + 1}. ${turnLine(turn)}`,
+    })),
     ...inspection.compactions.map((compaction) => ({
       seq: compaction.seq,
       line: compactionLine(compaction),

@@ -23,9 +23,12 @@ export function registerInspectArgs(cli: CAC): void {
   cli
     .command("inspect [sessionId]", "Inspect durable Session and Turn usage")
     .option("--json", "Print the versioned inspection projection as JSON")
-    .option("--turn <id>", "Show the chronological token waterfall for one Turn")
+    .option(
+      "--turn <number|id>",
+      "Show one Turn's chronological token waterfall by displayed number or id",
+    )
     .option("--all-workspaces", "Find the Session id across all Evil Jelly workspaces")
-    .usage("inspect [sessionId] [--turn <id>] [--json] [--all-workspaces]");
+    .usage("inspect [sessionId] [--turn <number|id>] [--json] [--all-workspaces]");
 }
 
 export function parseInspectArgs(

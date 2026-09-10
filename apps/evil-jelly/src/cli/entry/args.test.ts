@@ -71,9 +71,11 @@ describe("parseCliArgs", () => {
 
     expect(() => parseCliArgs(["node", "evil", "inspect", "--help"])).toThrow("exit 0");
     const help = log.mock.calls.flat().join("\n");
-    expect(help).toContain("$ evil inspect [sessionId] [--turn <id>] [--json] [--all-workspaces]");
+    expect(help).toContain(
+      "$ evil inspect [sessionId] [--turn <number|id>] [--json] [--all-workspaces]",
+    );
     expect(help).toContain("--json");
-    expect(help).toContain("--turn <id>");
+    expect(help).toContain("--turn <number|id>");
     expect(help).toContain("--all-workspaces");
     expect(help).toContain("--workspace <dir>");
     expect(help).not.toContain("--api-key");
@@ -175,7 +177,7 @@ describe("parseCliArgs", () => {
       "session-1",
       "--json",
       "--turn",
-      "turn-1",
+      "1",
       "--all-workspaces",
     ]);
     expect(selected.kind).toBe("inspect");
@@ -183,7 +185,7 @@ describe("parseCliArgs", () => {
     expect(selected.inspectSessionId).toBe("session-1");
     expect(selected.inspectJson).toBe(true);
     expect(selected.inspectAllWorkspaces).toBe(true);
-    expect(selected.inspectTurnId).toBe("turn-1");
+    expect(selected.inspectTurnId).toBe("1");
   });
 
   it("requires a Session id for cross-workspace inspection", () => {
