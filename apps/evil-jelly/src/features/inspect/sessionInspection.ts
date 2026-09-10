@@ -4,6 +4,7 @@ import {
   type SessionEvent,
   type SessionMetaLine,
 } from "../../domains/session/model/sessionEvents";
+import { type PromptMetrics, type PromptUsageSample, projectPromptMetrics } from "./promptMetrics";
 
 export type InspectedTurnStatus = "in_progress" | "completed" | "interrupted" | "error";
 
@@ -16,6 +17,7 @@ export interface TurnInspection {
   modelCalls: number;
   toolCalls: number;
   promptTokens: number;
+  prompt: PromptMetrics;
   completionTokens: number;
   reasoningTokens: number;
   cacheReadTokens: number;
@@ -35,6 +37,7 @@ export interface SessionInspectionTotals {
   modelCalls: number;
   toolCalls: number;
   promptTokens: number;
+  prompt: PromptMetrics;
   completionTokens: number;
   reasoningTokens: number;
   cacheReadTokens: number;
@@ -87,6 +90,7 @@ function emptyTotals(): SessionInspectionTotals {
     modelCalls: 0,
     toolCalls: 0,
     promptTokens: 0,
+    prompt: projectPromptMetrics([]),
     completionTokens: 0,
     reasoningTokens: 0,
     cacheReadTokens: 0,
@@ -111,6 +115,7 @@ function createTurn(turnId: string, seq: number, timestamp: number): TurnInspect
     modelCalls: 0,
     toolCalls: 0,
     promptTokens: 0,
+    prompt: projectPromptMetrics([]),
     completionTokens: 0,
     reasoningTokens: 0,
     cacheReadTokens: 0,
@@ -159,6 +164,8 @@ export function projectSessionInspection(
   let budgetCheckpoint: SessionBudgetData | undefined;
   let unattributedModelCalls = 0;
   let unattributedToolCalls = 0;
+  const promptSamples: PromptUsageSample[] = [];
+  const turnPromptSamples = new Map<string, PromptUsageSample[]>();
 
   const turnFor = (turnId: string, seq: number, timestamp: number): TurnInspection => {
     const existing = turns.get(turnId);
@@ -190,6 +197,10 @@ export function projectSessionInspection(
       case "model_call_completed": {
         totals.modelCalls += 1;
         totals.modelDurationMs += event.durationMs;
+        promptSamples.push({
+          promptTokens: event.usage?.promptTokens,
+          cacheReadTokens: event.usage?.cacheReadTokens,
+        });
         totals.promptTokens += event.usage?.promptTokens ?? 0;
         totals.completionTokens += event.usage?.completionTokens ?? 0;
         totals.reasoningTokens += event.usage?.reasoningTokens ?? 0;
@@ -201,6 +212,12 @@ export function projectSessionInspection(
           break;
         }
         const turn = turnFor(event.turnId, event.seq, event.timestamp);
+        const samples = turnPromptSamples.get(event.turnId) ?? [];
+        samples.push({
+          promptTokens: event.usage?.promptTokens,
+          cacheReadTokens: event.usage?.cacheReadTokens,
+        });
+        turnPromptSamples.set(event.turnId, samples);
         turn.modelCalls += 1;
         turn.modelDurationMs += event.durationMs;
         turn.promptTokens += event.usage?.promptTokens ?? 0;
@@ -270,8 +287,10 @@ export function projectSessionInspection(
 
   const projectedTurns = [...turns.values()].sort((left, right) => left.firstSeq - right.firstSeq);
   totals.cacheHitRate = totals.promptTokens > 0 ? totals.cacheReadTokens / totals.promptTokens : 0;
+  totals.prompt = projectPromptMetrics(promptSamples);
   for (const turn of projectedTurns) {
     turn.cacheHitRate = turn.promptTokens > 0 ? turn.cacheReadTokens / turn.promptTokens : 0;
+    turn.prompt = projectPromptMetrics(turnPromptSamples.get(turn.turnId) ?? []);
   }
   if (totals.modelCalls === 0) warnings.push("No model_call_completed events were recorded.");
   if (unattributedModelCalls > 0 || unattributedToolCalls > 0) {

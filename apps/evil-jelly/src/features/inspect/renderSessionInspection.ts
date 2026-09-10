@@ -20,9 +20,15 @@ function percentage(rate: number): string {
   return `${(rate * 100).toFixed(1)}%`;
 }
 
+function multiplier(value: number): string {
+  return `${value.toFixed(1)}x`;
+}
+
 function turnLine(turn: TurnInspection): string {
   const usage =
-    `${integer(turn.promptTokens)} prompt / ${integer(turn.completionTokens)} completion / ` +
+    `${integer(turn.prompt.cumulativeTokens)} cumulative prompt / ${integer(turn.prompt.peakInputTokens)} peak input / ` +
+    `${multiplier(turn.prompt.amplification)} amplification / ~${integer(turn.prompt.replayedTokens)} replayed / ` +
+    `${integer(turn.prompt.uncachedTokens)} uncached / ${integer(turn.completionTokens)} completion / ` +
     `${integer(turn.cacheReadTokens)} cache read (${percentage(turn.cacheHitRate)} hit)`;
   const tools = `${turn.toolCalls} tools / ${bytes(turn.toolOutputBytes)}`;
   const failures =
@@ -56,7 +62,9 @@ export function renderSessionInspection(
     `Status: ${inspection.status}`,
     `Workspace: ${inspection.workspaceRoot}`,
     `Turns: ${inspection.completedTurns} completed, ${inspection.inProgressTurns} in progress`,
-    `Model: ${totals.modelCalls} calls, ${integer(totals.promptTokens)} prompt, ${integer(totals.completionTokens)} completion, ${integer(totals.reasoningTokens)} reasoning, ${integer(totals.cacheReadTokens)} cache read, ${integer(totals.cacheWriteTokens)} cache write, ${percentage(totals.cacheHitRate)} cache hit, ${duration(totals.modelDurationMs)}`,
+    `Model: ${totals.modelCalls} calls, ${integer(totals.completionTokens)} completion, ${integer(totals.reasoningTokens)} reasoning, ${duration(totals.modelDurationMs)}`,
+    `Prompt: ${integer(totals.prompt.cumulativeTokens)} cumulative, ${integer(totals.prompt.peakInputTokens)} peak model input, ${multiplier(totals.prompt.amplification)} amplification, ~${integer(totals.prompt.replayedTokens)} replayed (${percentage(totals.prompt.replayShare)}), ${integer(totals.prompt.uncachedTokens)} uncached`,
+    `Cache: ${integer(totals.cacheReadTokens)} read, ${integer(totals.cacheWriteTokens)} write, ${percentage(totals.cacheHitRate)} hit`,
     `Tools: ${totals.toolCalls} calls, ${bytes(totals.toolOutputBytes)} output, ${bytes(totals.canonicalToolResultBytes)} canonical, ${totals.transportFailures} transport failures, ${duration(totals.toolDurationMs)} summed execution`,
     `Compactions: ${totals.compactions}`,
   ];

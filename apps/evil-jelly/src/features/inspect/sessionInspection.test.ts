@@ -125,6 +125,15 @@ describe("projectSessionInspection", () => {
         modelCalls: 1,
         toolCalls: 1,
         promptTokens: 100,
+        prompt: {
+          measuredCalls: 1,
+          cumulativeTokens: 100,
+          peakInputTokens: 100,
+          uncachedTokens: 60,
+          replayedTokens: 0,
+          replayShare: 0,
+          amplification: 1,
+        },
         cacheReadTokens: 40,
         cacheWriteTokens: 7,
         cacheHitRate: 0.4,
@@ -138,6 +147,14 @@ describe("projectSessionInspection", () => {
     expect(inspection.turns[0]).toMatchObject({
       turnId: "turn-1",
       status: "completed",
+      prompt: {
+        measuredCalls: 1,
+        cumulativeTokens: 100,
+        peakInputTokens: 100,
+        uncachedTokens: 60,
+        replayedTokens: 0,
+        amplification: 1,
+      },
       cacheReadTokens: 40,
       cacheWriteTokens: 7,
       cacheHitRate: 0.4,
@@ -166,7 +183,10 @@ describe("projectSessionInspection", () => {
     expect(() => resolveTurnId(inspection, "2")).toThrow(
       "Turn number 2 not found in Session session-1; available Turns: 1-1.",
     );
-    expect(rendered).toContain("40 cache read, 7 cache write, 40.0% cache hit");
+    expect(rendered).toContain(
+      "Prompt: 100 cumulative, 100 peak model input, 1.0x amplification, ~0 replayed (0.0%), 60 uncached",
+    );
+    expect(rendered).toContain("Cache: 40 read, 7 write, 40.0% hit");
     expect(rendered).toContain(
       "  - Compact [auto] 12,000 -> 3,000 tokens (-9,000, 75.0% reduction), 10 -> 2 messages, 1.5s",
     );
@@ -189,6 +209,94 @@ describe("projectSessionInspection", () => {
     expect(renderedWithTop).toContain(
       "- Turn 1 #3 run_command result [call-1]: ~50 tokens (50.0%)",
     );
+  });
+
+  it("projects prompt replay across calls and keeps per-Turn amplification separate", () => {
+    const inspection = projectSessionInspection(meta, [
+      event(
+        {
+          type: "model_call_completed",
+          turnId: "turn-1",
+          traceId: "trace",
+          spanId: "model-1",
+          model: { adapterId: "a", modelId: "m" },
+          messageCount: 1,
+          usedTools: true,
+          durationMs: 10,
+          success: true,
+          usage: {
+            promptTokens: 100,
+            completionTokens: 10,
+            totalTokens: 110,
+            cacheReadTokens: 40,
+          },
+        },
+        1,
+      ),
+      event(
+        {
+          type: "model_call_completed",
+          turnId: "turn-1",
+          traceId: "trace",
+          spanId: "model-2",
+          model: { adapterId: "a", modelId: "m" },
+          messageCount: 2,
+          usedTools: false,
+          durationMs: 10,
+          success: true,
+          usage: {
+            promptTokens: 130,
+            completionTokens: 10,
+            totalTokens: 140,
+            cacheReadTokens: 120,
+          },
+        },
+        2,
+      ),
+      event(
+        {
+          type: "model_call_completed",
+          turnId: "turn-2",
+          traceId: "trace",
+          spanId: "model-3",
+          model: { adapterId: "a", modelId: "m" },
+          messageCount: 3,
+          usedTools: false,
+          durationMs: 10,
+          success: true,
+          usage: {
+            promptTokens: 120,
+            completionTokens: 10,
+            totalTokens: 130,
+            cacheReadTokens: 110,
+          },
+        },
+        3,
+      ),
+    ]);
+
+    expect(inspection.totals.prompt).toMatchObject({
+      measuredCalls: 3,
+      cumulativeTokens: 350,
+      peakInputTokens: 130,
+      latestInputTokens: 120,
+      uncachedTokens: 80,
+      replayedTokens: 220,
+      replayShare: 220 / 350,
+      amplification: 350 / 130,
+    });
+    expect(inspection.turns[0]?.prompt).toMatchObject({
+      cumulativeTokens: 230,
+      peakInputTokens: 130,
+      replayedTokens: 100,
+      amplification: 230 / 130,
+    });
+    expect(inspection.turns[1]?.prompt).toMatchObject({
+      cumulativeTokens: 120,
+      peakInputTokens: 120,
+      replayedTokens: 0,
+      amplification: 1,
+    });
   });
 
   it("keeps incomplete and maintenance activity explicit", () => {

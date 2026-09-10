@@ -176,7 +176,7 @@ describe("Segment inspection", () => {
           usedTools: true,
           durationMs: 10,
           success: true,
-          usage: { promptTokens: 401, completionTokens: 0, totalTokens: 401 },
+          usage: { promptTokens: 201, completionTokens: 0, totalTokens: 201 },
         },
         5,
       ),
@@ -187,22 +187,32 @@ describe("Segment inspection", () => {
     expect(inspection).toMatchObject({
       type: "initial_context_inspection_v1",
       address: "C1",
-      tokens: 400,
+      tokens: 200,
+      providerPromptTokens: 201,
+      estimatedTurnInputTokens: 1,
+      estimatedNamedComponentTokens: 304,
+      reconciliationDeltaTokens: -104,
       components: [
-        { kind: "system_instructions", tokens: 100, share: 0.25 },
-        { kind: "tool_definitions", tokens: 200, share: 0.5 },
-        { kind: "prior_conversation", tokens: 4, share: 0.01 },
-        { kind: "other", tokens: 96, share: 0.24 },
+        { kind: "system_instructions", tokens: 66, estimatedTokens: 100, share: 0.33 },
+        { kind: "tool_definitions", tokens: 131, estimatedTokens: 200, share: 0.655 },
+        { kind: "prior_conversation", tokens: 3, estimatedTokens: 4, share: 0.015 },
       ],
       toolDefinitions: [
-        { name: "edit_file", tokens: 125 },
-        { name: "read_file", tokens: 75 },
+        { name: "edit_file", tokens: 82 },
+        { name: "read_file", tokens: 49 },
       ],
     });
     if (inspection.type !== "initial_context_inspection_v1") {
       throw new Error("expected Initial context inspection");
     }
-    expect(renderInitialContextInspection(inspection)).toContain("Tool definitions");
+    const rendered = renderInitialContextInspection(inspection);
+    expect(rendered).toContain("Tool definitions (share of reconciled Tool definitions)");
+    expect(rendered).toContain("Reconciliation delta: -104 tokens");
+    expect(rendered).not.toMatch(/-\d+\.\d+%/);
+    expect(inspection.components.reduce((sum, component) => sum + component.tokens, 0)).toBe(200);
+    expect(inspection.warnings).toContain(
+      "Estimated named components (304 tokens) exceed reconciled Initial context (200 tokens); displayed component tokens were proportionally scaled to fit.",
+    );
     expect(extractSegmentPayload(inspection)).toContain('"system_instructions"');
   });
 

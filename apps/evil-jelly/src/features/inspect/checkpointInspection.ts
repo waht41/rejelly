@@ -12,7 +12,10 @@ import type { TurnWaterfallInspection } from "./turnWaterfall";
 export interface InitialContextComponentInspection {
   kind: "system_instructions" | "tool_definitions" | "prior_conversation" | "other";
   label: string;
+  /** Non-negative allocation reconciled to the first provider input. */
   tokens: number;
+  /** Independent local estimate before reconciliation. */
+  estimatedTokens: number;
   share: number;
 }
 
@@ -27,8 +30,13 @@ export interface InitialContextInspection {
   sessionId: string;
   turnId: string;
   address: "C1";
+  /** Provider prompt minus estimated current-turn input before the first call. */
   tokens: number;
   tokenSource: "estimated";
+  providerPromptTokens: number;
+  estimatedTurnInputTokens: number;
+  estimatedNamedComponentTokens: number;
+  reconciliationDeltaTokens: number;
   components: InitialContextComponentInspection[];
   toolDefinitions?: ToolDefinitionInspection[];
   warnings: string[];
@@ -79,6 +87,35 @@ function modelCallForCheckpoint(
   );
 }
 
+function reconcileNamedComponents(
+  estimates: readonly Omit<InitialContextComponentInspection, "tokens" | "share">[],
+  totalTokens: number,
+): InitialContextComponentInspection[] {
+  const estimatedTotal = estimates.reduce((sum, component) => sum + component.estimatedTokens, 0);
+  if (estimatedTotal <= totalTokens) {
+    return estimates.map((component) => ({
+      ...component,
+      tokens: component.estimatedTokens,
+      share: share(component.estimatedTokens, totalTokens),
+    }));
+  }
+
+  let remainingTokens = totalTokens;
+  let remainingEstimate = estimatedTotal;
+  return estimates.map((component, index) => {
+    const tokens =
+      index === estimates.length - 1
+        ? remainingTokens
+        : Math.min(
+            remainingTokens,
+            Math.round((remainingTokens * component.estimatedTokens) / remainingEstimate),
+          );
+    remainingTokens -= tokens;
+    remainingEstimate -= component.estimatedTokens;
+    return { ...component, tokens, share: share(tokens, totalTokens) };
+  });
+}
+
 function projectToolDefinitions(
   input: ModelCallCompletedEvent["input"],
   totalTokens: number,
@@ -121,52 +158,55 @@ export function projectInitialContextInspection(
   const modelCall = modelCallForCheckpoint(events, waterfall.turnId, checkpoint.seq);
   const input = modelCall?.input;
   const totalTokens = Math.max(0, checkpoint.adjustmentTokens);
-  const systemTokens = estimateAsciiTokens(input?.systemPromptChars ?? 0);
-  const toolTokens = estimateAsciiTokens(input?.toolSchemaBytes ?? 0);
-  const priorConversationTokens = estimateMessagesTokens(
-    activeHistoryBeforeTurn(events, waterfall.turnId),
+  const namedEstimates = [
+    {
+      kind: "system_instructions" as const,
+      label: "system instructions",
+      estimatedTokens: estimateAsciiTokens(input?.systemPromptChars ?? 0),
+    },
+    {
+      kind: "tool_definitions" as const,
+      label: "tool definitions",
+      estimatedTokens: estimateAsciiTokens(input?.toolSchemaBytes ?? 0),
+    },
+    {
+      kind: "prior_conversation" as const,
+      label: "prior conversation",
+      estimatedTokens: estimateMessagesTokens(activeHistoryBeforeTurn(events, waterfall.turnId)),
+    },
+  ];
+  const estimatedNamedComponentTokens = namedEstimates.reduce(
+    (sum, component) => sum + component.estimatedTokens,
+    0,
   );
-  const otherTokens = totalTokens - systemTokens - toolTokens - priorConversationTokens;
+  const reconciliationDeltaTokens = totalTokens - estimatedNamedComponentTokens;
+  const components = reconcileNamedComponents(namedEstimates, totalTokens);
+  if (reconciliationDeltaTokens > 0) {
+    components.push({
+      kind: "other",
+      label: "unattributed / reconciliation",
+      tokens: reconciliationDeltaTokens,
+      estimatedTokens: reconciliationDeltaTokens,
+      share: share(reconciliationDeltaTokens, totalTokens),
+    });
+  }
+
   const warnings: string[] = [];
   if (!input) {
     warnings.push("The first model call has no persisted input composition metrics.");
   }
   if (checkpoint.adjustmentTokens < 0) {
     warnings.push(
-      "The initial local estimate exceeded the provider input; Initial context was clamped to zero.",
+      "The estimated current-turn input exceeded the first provider prompt; Initial context was clamped to zero.",
     );
   }
-  if (otherTokens < 0) {
+  if (reconciliationDeltaTokens < 0) {
     warnings.push(
-      "Estimated components exceed Initial context; other / reconciliation is negative.",
+      `Estimated named components (${estimatedNamedComponentTokens} tokens) exceed reconciled Initial context (${totalTokens} tokens); displayed component tokens were proportionally scaled to fit.`,
     );
   }
-  const components: InitialContextComponentInspection[] = [
-    {
-      kind: "system_instructions",
-      label: "system instructions",
-      tokens: systemTokens,
-      share: share(systemTokens, totalTokens),
-    },
-    {
-      kind: "tool_definitions",
-      label: "tool definitions",
-      tokens: toolTokens,
-      share: share(toolTokens, totalTokens),
-    },
-    {
-      kind: "prior_conversation",
-      label: "prior conversation",
-      tokens: priorConversationTokens,
-      share: share(priorConversationTokens, totalTokens),
-    },
-    {
-      kind: "other",
-      label: "other / reconciliation",
-      tokens: otherTokens,
-      share: share(otherTokens, totalTokens),
-    },
-  ];
+  const toolTokens =
+    components.find((component) => component.kind === "tool_definitions")?.tokens ?? 0;
   const toolDefinitions = projectToolDefinitions(input, toolTokens);
   if (toolTokens > 0 && !toolDefinitions) {
     warnings.push("Per-Tool definition sizes were not persisted for this Session.");
@@ -178,6 +218,10 @@ export function projectInitialContextInspection(
     address: "C1",
     tokens: totalTokens,
     tokenSource: "estimated",
+    providerPromptTokens: checkpoint.promptTokens,
+    estimatedTurnInputTokens: checkpoint.estimatedContextTokens,
+    estimatedNamedComponentTokens,
+    reconciliationDeltaTokens,
     components,
     ...(toolDefinitions ? { toolDefinitions } : {}),
     warnings,

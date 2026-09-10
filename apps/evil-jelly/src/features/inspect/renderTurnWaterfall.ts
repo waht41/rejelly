@@ -11,6 +11,14 @@ function integer(value: number): string {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
 }
 
+function multiplier(value: number): string {
+  return `${value.toFixed(1)}x`;
+}
+
+function percentage(value: number): string {
+  return `${(value * 100).toFixed(1)}%`;
+}
+
 function compactTokens(value: number): string {
   const absolute = Math.abs(value);
   const formatted =
@@ -71,6 +79,8 @@ export function renderTurnWaterfall(
   const lines = [
     `Turn ${inspection.turnId}                     peak context ${peakEstimated}${compactTokens(inspection.peakContextTokens).slice(1)}`,
     `Session ${inspection.sessionId}  [${inspection.status}]`,
+    `Prompt: ${integer(inspection.prompt.cumulativeTokens)} cumulative across ${inspection.prompt.measuredCalls} measured calls / ${integer(inspection.prompt.peakInputTokens)} peak model input / ${multiplier(inspection.prompt.amplification)} amplification`,
+    `Replay: ~${integer(inspection.prompt.replayedTokens)} tokens (${percentage(inspection.prompt.replayShare)}) / ${integer(inspection.prompt.uncachedTokens)} uncached`,
     "",
     " #   segment                                                            tokens     context   size",
     " ---------------------------------------------------------------------------------------------------------",

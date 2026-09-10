@@ -6,6 +6,7 @@ import {
 } from "../../domains/session/model/sessionEvents";
 import { estimateMessagesTokens } from "../../shared/model/budget/tokenEstimate";
 import { projectFrozenUserInputMessage } from "../../shared/model/prompt/frozenUserInput";
+import { type PromptMetrics, projectPromptMetrics } from "./promptMetrics";
 
 export type TurnWaterfallSegmentKind =
   | "user"
@@ -52,6 +53,7 @@ export interface TurnWaterfallInspection {
   status: "in_progress" | "completed" | "interrupted" | "error";
   peakContextTokens: number;
   peakContextSource: "provider" | "estimated";
+  prompt: PromptMetrics;
   checkpoints: TurnWaterfallCheckpoint[];
   segments: TurnWaterfallSegment[];
   warnings: string[];
@@ -328,6 +330,18 @@ export function projectTurnWaterfall(
     status,
     peakContextTokens,
     peakContextSource,
+    prompt: projectPromptMetrics(
+      turnEvents.flatMap((event) =>
+        event.type === "model_call_completed"
+          ? [
+              {
+                promptTokens: event.usage?.promptTokens,
+                cacheReadTokens: event.usage?.cacheReadTokens,
+              },
+            ]
+          : [],
+      ),
+    ),
     checkpoints,
     segments,
     warnings,
