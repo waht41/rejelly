@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SessionEvent, SessionMetaLine } from "../../domains/session/model/sessionEvents";
 import { renderInitialContextInspection } from "./renderCheckpointInspection";
+import { renderParallelToolBatchInspection } from "./renderParallelToolBatchInspection";
 import { renderSegmentInspection } from "./renderSegmentInspection";
 import { extractSegmentPayload, projectSegmentDrilldown } from "./segmentInspection";
 import { projectTurnWaterfall } from "./turnWaterfall";
@@ -214,6 +215,133 @@ describe("Segment inspection", () => {
       "Estimated named components (304 tokens) exceed reconciled Initial context (200 tokens); displayed component tokens were proportionally scaled to fit.",
     );
     expect(extractSegmentPayload(inspection)).toContain('"system_instructions"');
+  });
+
+  it("inspects a parallel parent as one aggregate batch while keeping --payload child-only", () => {
+    const events: SessionEvent[] = [
+      event(
+        {
+          type: "model_call_completed",
+          turnId: "turn-1",
+          traceId: "trace",
+          spanId: "model",
+          model: { adapterId: "a", modelId: "m" },
+          messageCount: 1,
+          usedTools: true,
+          durationMs: 10,
+          success: true,
+          usage: { promptTokens: 100, completionTokens: 20, totalTokens: 120 },
+        },
+        1,
+      ),
+      event(
+        {
+          type: "message_recorded",
+          turnId: "turn-1",
+          source: { kind: "model" },
+          message: {
+            role: "assistant",
+            content: null,
+            tool_calls: [
+              { id: "call-1", name: "grep", arguments: '{"query":"one"}' },
+              { id: "call-2", name: "run_command", arguments: '{"command":"pnpm test"}' },
+            ],
+          },
+        },
+        2,
+      ),
+      event(
+        {
+          type: "tool_call_completed",
+          turnId: "turn-1",
+          traceId: "trace",
+          spanId: "tools",
+          toolCallId: "call-1",
+          toolName: "grep",
+          durationMs: 200,
+          transportOk: true,
+          outcome: "succeeded",
+          fromCache: false,
+          inputBytes: 10,
+          outputBytes: 20,
+          outputChars: 20,
+        },
+        3,
+      ),
+      event(
+        {
+          type: "tool_call_completed",
+          turnId: "turn-1",
+          traceId: "trace",
+          spanId: "tools",
+          toolCallId: "call-2",
+          toolName: "run_command",
+          durationMs: 700,
+          transportOk: true,
+          outcome: "succeeded",
+          fromCache: false,
+          inputBytes: 20,
+          outputBytes: 40,
+          outputChars: 40,
+        },
+        4,
+      ),
+      event(
+        {
+          type: "message_recorded",
+          turnId: "turn-1",
+          source: { kind: "tool" },
+          message: { role: "tool", tool_call_id: "call-1", content: "one match" },
+        },
+        5,
+      ),
+      event(
+        {
+          type: "message_recorded",
+          turnId: "turn-1",
+          source: { kind: "tool" },
+          message: { role: "tool", tool_call_id: "call-2", content: "tests passed" },
+        },
+        6,
+      ),
+    ];
+    const waterfall = projectTurnWaterfall(meta, events, "turn-1");
+    const requests = projectSegmentDrilldown(meta, events, waterfall, "1");
+    const results = projectSegmentDrilldown(meta, events, waterfall, "2");
+
+    expect(requests).toMatchObject({
+      type: "parallel_tool_batch_inspection_v1",
+      selectedAddress: "1",
+      selectedSide: "requests",
+      requestGroupAddress: "1",
+      resultGroupAddress: "2",
+      calls: [
+        { address: "1.1", requestAddress: "1.1", resultAddress: "2.1", toolName: "grep" },
+        {
+          address: "1.2",
+          requestAddress: "1.2",
+          resultAddress: "2.2",
+          toolName: "run_command",
+        },
+      ],
+      estimatedWallDurationMs: 700,
+      summedDurationMs: 900,
+    });
+    expect(results).toMatchObject({
+      type: "parallel_tool_batch_inspection_v1",
+      selectedAddress: "2",
+      selectedSide: "results",
+      calls: [{ address: "2.1" }, { address: "2.2" }],
+    });
+    if (results.type !== "parallel_tool_batch_inspection_v1") {
+      throw new Error("expected parallel Tool batch inspection");
+    }
+    const rendered = renderParallelToolBatchInspection(results);
+    expect(rendered).toContain("Parallel tool batch #1 / #2");
+    expect(rendered).toContain("~700ms wall (max call) / 900ms summed");
+    expect(rendered).toContain("2.1");
+    expect(rendered).toContain("one match");
+    expect(() => extractSegmentPayload(results)).toThrow("Select 2.1-2.2 to extract one --payload");
   });
 
   it("keeps token-only reasoning inspectable without inventing persisted content", () => {

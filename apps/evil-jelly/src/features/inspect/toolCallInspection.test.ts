@@ -208,5 +208,14 @@ describe("Tool call inspection", () => {
       toolCallId: "call-2",
       side: "request",
     });
+    expect(resolveSegmentToolCall(waterfall, "3.1")).toEqual({
+      toolCallId: "call-1",
+      side: "result",
+    });
+    expect(projectToolCallBySegment(meta, events, waterfall, "3.1")).toMatchObject({
+      selectedSide: "result",
+      request: { address: "2.1" },
+      result: { address: "3.1" },
+    });
   });
 });

@@ -13,6 +13,7 @@ import { projectToolCallBySegment, type ToolCallInspection } from "./toolCallIns
 import {
   resolveWaterfallSegment,
   type TurnWaterfallInspection,
+  type TurnWaterfallSegment,
   type TurnWaterfallSegmentKind,
 } from "./turnWaterfall";
 
@@ -36,10 +37,45 @@ export interface SegmentInspection {
   unavailableReason?: string;
 }
 
+export interface ParallelToolBatchCallInspection {
+  address: string;
+  requestAddress?: string;
+  resultAddress?: string;
+  toolCallId: string;
+  toolName: string;
+  status: ToolCallInspection["status"];
+  requestTokens: number;
+  resultTokens: number;
+  totalTokens: number;
+  durationMs?: number;
+  requestPreview?: string;
+  resultPreview?: string;
+  resultLines?: number;
+}
+
+export interface ParallelToolBatchInspection {
+  type: "parallel_tool_batch_inspection_v1";
+  sessionId: string;
+  turnId: string;
+  selectedAddress: string;
+  selectedSide: "requests" | "results";
+  requestGroupAddress?: string;
+  resultGroupAddress?: string;
+  calls: ParallelToolBatchCallInspection[];
+  totalTokens: number;
+  estimatedWallDurationMs?: number;
+  summedDurationMs?: number;
+  contextBeforeRequests?: number;
+  contextAfterRequests?: number;
+  contextAfterResults?: number;
+  contextGrowth?: number;
+}
+
 export type SegmentDrilldownInspection =
   | InitialContextInspection
   | SegmentInspection
-  | ToolCallInspection;
+  | ToolCallInspection
+  | ParallelToolBatchInspection;
 
 function knownTurnEvents(events: readonly SessionEvent[], turnId: string): KnownSessionEvent[] {
   return events.filter((event): event is KnownSessionEvent => {
@@ -49,6 +85,154 @@ function knownTurnEvents(events: readonly SessionEvent[], turnId: string): Known
       (event.type === "context_compacted" && event.activeTurnId === turnId)
     );
   });
+}
+
+function compactPreview(value: string, maxLength = 120): string {
+  const compacted = value.replace(/\s+/g, " ").trim();
+  return compacted.length <= maxLength ? compacted : `${compacted.slice(0, maxLength - 1)}…`;
+}
+
+function groupToolCallIds(segment: TurnWaterfallSegment): string[] {
+  return segment.children?.flatMap((child) => (child.toolCallId ? [child.toolCallId] : [])) ?? [];
+}
+
+function pairedParallelGroup(
+  waterfall: TurnWaterfallInspection,
+  selectedIndex: number,
+): { requestIndex?: number; resultIndex?: number } {
+  const selected = waterfall.segments[selectedIndex];
+  const selectedIds = new Set(groupToolCallIds(selected));
+  const selectedSide = selected.kind === "tool_result" ? "result" : "request";
+  let bestIndex: number | undefined;
+  let bestOverlap = 0;
+  waterfall.segments.forEach((candidate, candidateIndex) => {
+    if (
+      candidateIndex === selectedIndex ||
+      !candidate.children?.length ||
+      (candidate.kind === "tool_result" ? "result" : "request") === selectedSide
+    ) {
+      return;
+    }
+    const overlap = groupToolCallIds(candidate).filter((id) => selectedIds.has(id)).length;
+    if (overlap > bestOverlap) {
+      bestOverlap = overlap;
+      bestIndex = candidateIndex;
+    }
+  });
+  return selectedSide === "request"
+    ? {
+        requestIndex: selectedIndex,
+        ...(bestIndex !== undefined ? { resultIndex: bestIndex } : {}),
+      }
+    : {
+        resultIndex: selectedIndex,
+        ...(bestIndex !== undefined ? { requestIndex: bestIndex } : {}),
+      };
+}
+
+function childAddressForCall(
+  segment: TurnWaterfallSegment | undefined,
+  segmentIndex: number | undefined,
+  toolCallId: string,
+): string | undefined {
+  if (!segment || segmentIndex === undefined) return undefined;
+  const childIndex = segment.children?.findIndex((child) => child.toolCallId === toolCallId) ?? -1;
+  return childIndex >= 0 ? `${segmentIndex + 1}.${childIndex + 1}` : undefined;
+}
+
+function contextBoundary(
+  segment: TurnWaterfallSegment | undefined,
+  boundary: "before" | "after",
+): number | undefined {
+  const children = segment?.children;
+  if (!children?.length) return undefined;
+  return boundary === "before"
+    ? children[0].contextTokens - children[0].tokens
+    : children.at(-1)!.contextTokens;
+}
+
+function projectParallelToolBatch(
+  meta: SessionMetaLine,
+  events: readonly SessionEvent[],
+  waterfall: TurnWaterfallInspection,
+  segmentIndex: number,
+): ParallelToolBatchInspection {
+  const selected = waterfall.segments[segmentIndex];
+  const pair = pairedParallelGroup(waterfall, segmentIndex);
+  const requestGroup =
+    pair.requestIndex === undefined ? undefined : waterfall.segments[pair.requestIndex];
+  const resultGroup =
+    pair.resultIndex === undefined ? undefined : waterfall.segments[pair.resultIndex];
+  const toolCallIds = [
+    ...new Set([
+      ...groupToolCallIds(requestGroup ?? selected),
+      ...groupToolCallIds(resultGroup ?? selected),
+    ]),
+  ];
+  const calls = toolCallIds.map((toolCallId) => {
+    const inspection = projectToolCallBySegment(
+      meta,
+      events,
+      waterfall,
+      childAddressForCall(selected, segmentIndex, toolCallId) ??
+        childAddressForCall(requestGroup, pair.requestIndex, toolCallId)!,
+    );
+    const requestAddress = childAddressForCall(requestGroup, pair.requestIndex, toolCallId);
+    const resultAddress = childAddressForCall(resultGroup, pair.resultIndex, toolCallId);
+    const address = selected.kind === "tool_result" ? resultAddress : requestAddress;
+    return {
+      address: address ?? requestAddress ?? resultAddress ?? toolCallId,
+      ...(requestAddress ? { requestAddress } : {}),
+      ...(resultAddress ? { resultAddress } : {}),
+      toolCallId,
+      toolName: inspection.toolName,
+      status: inspection.status,
+      requestTokens: inspection.request?.tokens ?? 0,
+      resultTokens: inspection.result?.tokens ?? 0,
+      totalTokens: inspection.totalTokens,
+      ...(inspection.durationMs !== undefined ? { durationMs: inspection.durationMs } : {}),
+      ...(inspection.request?.content
+        ? { requestPreview: compactPreview(inspection.request.content) }
+        : {}),
+      ...(inspection.result?.content
+        ? {
+            resultPreview: compactPreview(inspection.result.content.split(/\r?\n/)[0] ?? ""),
+            resultLines: inspection.result.lines,
+          }
+        : {}),
+    };
+  });
+  const durations = calls.flatMap((call) =>
+    call.durationMs === undefined ? [] : [call.durationMs],
+  );
+  const contextBeforeRequests = contextBoundary(requestGroup, "before");
+  const contextAfterRequests = contextBoundary(requestGroup, "after");
+  const contextAfterResults = contextBoundary(resultGroup, "after");
+  return {
+    type: "parallel_tool_batch_inspection_v1",
+    sessionId: meta.sessionId,
+    turnId: waterfall.turnId,
+    selectedAddress: String(segmentIndex + 1),
+    selectedSide: selected.kind === "tool_result" ? "results" : "requests",
+    ...(pair.requestIndex !== undefined
+      ? { requestGroupAddress: String(pair.requestIndex + 1) }
+      : {}),
+    ...(pair.resultIndex !== undefined ? { resultGroupAddress: String(pair.resultIndex + 1) } : {}),
+    calls,
+    totalTokens: calls.reduce((sum, call) => sum + call.totalTokens, 0),
+    ...(durations.length > 0
+      ? {
+          estimatedWallDurationMs: Math.max(...durations),
+          summedDurationMs: durations.reduce((sum, value) => sum + value, 0),
+        }
+      : {}),
+    ...(contextBeforeRequests !== undefined ? { contextBeforeRequests } : {}),
+    ...(contextAfterRequests !== undefined ? { contextAfterRequests } : {}),
+    ...(contextAfterResults !== undefined ? { contextAfterResults } : {}),
+    ...(contextBeforeRequests !== undefined && contextAfterResults !== undefined
+      ? { contextGrowth: contextAfterResults - contextBeforeRequests }
+      : {}),
+  };
 }
 
 function payloadForSegment(
@@ -113,9 +297,7 @@ export function projectSegmentDrilldown(
   }
   const resolved = resolveWaterfallSegment(waterfall, selector);
   if (resolved.childNumber === undefined && resolved.parent.children?.length) {
-    throw new Error(
-      `Segment ${resolved.segmentNumber} contains ${resolved.parent.children.length} Tool calls; select ${resolved.segmentNumber}.1-${resolved.segmentNumber}.${resolved.parent.children.length}.`,
-    );
+    return projectParallelToolBatch(meta, events, waterfall, resolved.segmentNumber - 1);
   }
   if (
     resolved.childNumber !== undefined ||
@@ -147,10 +329,17 @@ export function projectSegmentDrilldown(
 }
 
 export function extractSegmentPayload(
-  inspection: SegmentInspection | InitialContextInspection,
+  inspection: SegmentInspection | InitialContextInspection | ParallelToolBatchInspection,
 ): string {
   if (inspection.type === "initial_context_inspection_v1") {
     return dumpInitialContextInspection(inspection);
+  }
+  if (inspection.type === "parallel_tool_batch_inspection_v1") {
+    const first = inspection.calls[0]?.address ?? `${inspection.selectedAddress}.1`;
+    const last = inspection.calls.at(-1)?.address ?? first;
+    throw new Error(
+      `Segment ${inspection.selectedAddress} is a parallel group with ${inspection.calls.length} Tool calls. Select ${first}-${last} to extract one --payload.`,
+    );
   }
   if (!inspection.payload) {
     throw new Error(

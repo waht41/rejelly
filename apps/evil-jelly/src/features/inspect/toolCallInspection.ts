@@ -102,7 +102,10 @@ export function resolveSegmentToolCall(
   selector: string,
 ): AddressedCall {
   const resolved = resolveWaterfallSegment(waterfall, selector);
-  if (resolved.childNumber !== undefined) return segmentCall(resolved.segment, "request");
+  if (resolved.childNumber !== undefined) {
+    const side = resolved.parent.kind === "tool_result" ? "result" : "request";
+    return segmentCall(resolved.segment, side);
+  }
   if (resolved.parent.children?.length) {
     throw new Error(
       `Segment ${resolved.segmentNumber} contains ${resolved.parent.children.length} Tool calls; select ${resolved.segmentNumber}.1-${resolved.segmentNumber}.${resolved.parent.children.length}.`,
@@ -126,9 +129,10 @@ function addressesForCall(
     if (segment.children?.length) {
       segment.children.forEach((child, childIndex) => {
         if (child.toolCallId !== toolCallId) return;
-        addresses.request = {
+        const side = segment.kind === "tool_result" ? "result" : "request";
+        addresses[side] = {
           address: `${segmentIndex + 1}.${childIndex + 1}`,
-          side: "request",
+          side,
           tokens: child.tokens,
           tokenSource: child.tokenSource,
           contextBefore: child.contextTokens - child.tokens,

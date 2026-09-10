@@ -14,6 +14,7 @@ import {
   renderModelCallInspection,
   renderModelCallList,
 } from "../../../features/inspect/renderModelCallInspection";
+import { renderParallelToolBatchInspection } from "../../../features/inspect/renderParallelToolBatchInspection";
 import { renderSegmentInspection } from "../../../features/inspect/renderSegmentInspection";
 import { renderSessionInspection } from "../../../features/inspect/renderSessionInspection";
 import { renderToolCallInspection } from "../../../features/inspect/renderToolCallInspection";
@@ -105,7 +106,9 @@ async function printSegment(
       ? JSON.stringify(inspection, null, 2)
       : inspection.type === "initial_context_inspection_v1"
         ? renderInitialContextInspection(inspection)
-        : renderSegmentInspection(inspection, { full: options.full }),
+        : inspection.type === "parallel_tool_batch_inspection_v1"
+          ? renderParallelToolBatchInspection(inspection)
+          : renderSegmentInspection(inspection, { full: options.full }),
     options,
   );
 }
