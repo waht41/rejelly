@@ -1,6 +1,6 @@
-import type { TurnWaterfallInspection, TurnWaterfallSegment } from "./turnWaterfall";
+import type { TurnWaterfallChild, TurnWaterfallInspection } from "./turnWaterfall";
 
-const BAR_WIDTH = 20;
+const BAR_WIDTH = 12;
 const LABEL_WIDTH = 38;
 
 function integer(value: number): string {
@@ -16,20 +16,50 @@ function compactTokens(value: number): string {
   return `${value >= 0 ? "+" : "-"}${formatted}`;
 }
 
-function label(value: string): string {
-  return value.length <= LABEL_WIDTH
-    ? value.padEnd(LABEL_WIDTH)
-    : `${value.slice(0, LABEL_WIDTH - 1)}…`;
+function label(value: string, width = LABEL_WIDTH): string {
+  return value.length <= width ? value.padEnd(width) : `${value.slice(0, width - 1)}…`;
 }
 
-function bar(segment: TurnWaterfallSegment, largest: number): string {
-  if (segment.kind === "reconciliation" || segment.tokens === 0 || largest === 0) return "";
-  const width = Math.max(1, Math.round((Math.abs(segment.tokens) / largest) * BAR_WIDTH));
-  return (segment.tokens < 0 ? "░" : "█").repeat(width);
+function bar(tokens: number, positiveLargest: number, negativeLargest: number): string {
+  const largest = tokens < 0 ? negativeLargest : positiveLargest;
+  if (tokens === 0 || largest === 0) return "";
+  const width = Math.max(1, Math.round((Math.abs(tokens) / largest) * BAR_WIDTH));
+  return (tokens < 0 ? "<" : "#").repeat(width);
+}
+
+function values(
+  tokens: number,
+  tokenSource: "provider" | "estimated",
+  contextTokens: number,
+  contextSource: "provider" | "estimated",
+): string {
+  const estimated = tokenSource === "estimated" ? "~" : " ";
+  const contextEstimated = contextSource === "estimated" ? "~" : " ";
+  return `${estimated}${compactTokens(tokens).padStart(8)}  ${contextEstimated}${integer(contextTokens).padStart(9)}`;
+}
+
+function childLine(
+  child: TurnWaterfallChild,
+  last: boolean,
+  positiveLargest: number,
+  negativeLargest: number,
+): string {
+  return `     ${last ? "└─" : "├─"} ${label(child.label, LABEL_WIDTH - 3)} ${values(child.tokens, child.tokenSource, child.contextTokens, child.contextSource)}   ${bar(child.tokens, positiveLargest, negativeLargest)}`;
 }
 
 export function renderTurnWaterfall(inspection: TurnWaterfallInspection): string {
-  const largest = Math.max(0, ...inspection.segments.map((segment) => Math.abs(segment.tokens)));
+  const renderedTokens = inspection.segments.flatMap((segment) =>
+    segment.children?.length
+      ? segment.children.map((child) => child.tokens)
+      : segment.kind === "reconciliation"
+        ? []
+        : [segment.tokens],
+  );
+  const positiveLargest = Math.max(0, ...renderedTokens.filter((tokens) => tokens > 0));
+  const negativeLargest = Math.max(
+    0,
+    ...renderedTokens.filter((tokens) => tokens < 0).map(Math.abs),
+  );
   const peakEstimated = inspection.peakContextSource === "estimated" ? "~" : "";
   const lines = [
     `Turn ${inspection.turnId}                     peak context ${peakEstimated}${compactTokens(inspection.peakContextTokens).slice(1)}`,
@@ -39,10 +69,26 @@ export function renderTurnWaterfall(inspection: TurnWaterfallInspection): string
     " -------------------------------------------------------------------------------",
   ];
   inspection.segments.forEach((segment, index) => {
-    const estimated = segment.tokenSource === "estimated" ? "~" : " ";
-    const contextEstimated = segment.contextSource === "estimated" ? "~" : " ";
+    if (segment.children?.length) {
+      lines.push(`${String(index + 1).padStart(2)}   ┬ ${segment.label}`);
+      segment.children.forEach((child, childIndex) => {
+        lines.push(
+          childLine(
+            child,
+            childIndex === segment.children!.length - 1,
+            positiveLargest,
+            negativeLargest,
+          ),
+        );
+      });
+      return;
+    }
+    const size =
+      segment.kind === "reconciliation"
+        ? ""
+        : bar(segment.tokens, positiveLargest, negativeLargest);
     lines.push(
-      `${String(index + 1).padStart(2)}   ${label(segment.label)} ${estimated}${compactTokens(segment.tokens).padStart(8)}  ${contextEstimated}${integer(segment.contextTokens).padStart(9)}   ${bar(segment, largest)}`,
+      `${String(index + 1).padStart(2)}   ${label(segment.label)} ${values(segment.tokens, segment.tokenSource, segment.contextTokens, segment.contextSource)}   ${size}`,
     );
   });
   lines.push(

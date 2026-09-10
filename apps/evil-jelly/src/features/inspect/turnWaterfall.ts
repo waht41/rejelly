@@ -18,6 +18,14 @@ export type TurnWaterfallSegmentKind =
   | "compaction"
   | "runtime";
 
+export interface TurnWaterfallChild {
+  label: string;
+  tokens: number;
+  tokenSource: "estimated";
+  contextTokens: number;
+  contextSource: "estimated";
+}
+
 export interface TurnWaterfallSegment {
   seq: number;
   kind: TurnWaterfallSegmentKind;
@@ -26,6 +34,7 @@ export interface TurnWaterfallSegment {
   tokenSource: "provider" | "estimated";
   contextTokens: number;
   contextSource: "provider" | "estimated";
+  children?: TurnWaterfallChild[];
 }
 
 export interface TurnWaterfallInspection {
@@ -43,12 +52,32 @@ function messageTokens(message: Message): number {
   return estimateMessagesTokens([message]);
 }
 
-function compactToolNames(names: readonly string[]): string {
-  const counts = new Map<string, number>();
-  for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1);
-  return [...counts.entries()]
-    .map(([name, count]) => (count > 1 ? `${name} x${count}` : name))
-    .join(", ");
+function allocateParallelToolTokens(
+  totalTokens: number,
+  calls: NonNullable<Message["tool_calls"]>,
+  initialContextTokens: number,
+): TurnWaterfallChild[] {
+  const weights = calls.map((call) =>
+    Math.max(1, messageTokens({ role: "assistant", content: null, tool_calls: [call] })),
+  );
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  let allocatedTokens = 0;
+  let childContextTokens = initialContextTokens;
+  return calls.map((call, index) => {
+    const tokens =
+      index === calls.length - 1
+        ? totalTokens - allocatedTokens
+        : Math.round((totalTokens * weights[index]) / totalWeight);
+    allocatedTokens += tokens;
+    childContextTokens += tokens;
+    return {
+      label: `${call.name} request`,
+      tokens,
+      tokenSource: "estimated",
+      contextTokens: childContextTokens,
+      contextSource: "estimated",
+    };
+  });
 }
 
 export function projectTurnWaterfall(
@@ -144,18 +173,26 @@ export function projectTurnWaterfall(
           append(event.seq, "reasoning", "reasoning", reasoningTokens, "provider");
         const visibleTokens = Math.max(0, (usage?.completionTokens ?? 0) - reasoningTokens);
         if (visibleTokens > 0) {
-          const names = modelMessage?.tool_calls?.map((call) => call.name) ?? [];
+          const calls = modelMessage?.tool_calls ?? [];
+          const initialContextTokens = contextTokens;
           append(
             event.seq,
-            names.length > 0 ? "tool_request" : "assistant",
-            names.length > 1
-              ? `parallel tool requests (${compactToolNames(names)})`
-              : names.length === 1
-                ? `${names[0]} request`
+            calls.length > 0 ? "tool_request" : "assistant",
+            calls.length > 1
+              ? "parallel tools"
+              : calls.length === 1
+                ? `${calls[0].name} request`
                 : "assistant answer",
             visibleTokens,
             "provider",
           );
+          if (calls.length > 1) {
+            segments.at(-1)!.children = allocateParallelToolTokens(
+              visibleTokens,
+              calls,
+              initialContextTokens,
+            );
+          }
         }
         modelIndex += 1;
         break;

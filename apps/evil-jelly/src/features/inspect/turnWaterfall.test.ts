@@ -59,7 +59,10 @@ describe("turn waterfall", () => {
             message: {
               role: "assistant",
               content: null,
-              tool_calls: [{ id: "call-1", name: "grep", arguments: "{}" }],
+              tool_calls: [
+                { id: "call-1", name: "grep", arguments: "{}" },
+                { id: "call-2", name: "read_file", arguments: '{"path":"a.ts"}' },
+              ],
             },
           },
           3,
@@ -118,15 +121,19 @@ describe("turn waterfall", () => {
       { label: "user input", tokens: 2, contextTokens: 2 },
       { label: "prior context + system/tools", tokens: 98, contextTokens: 100 },
       { label: "reasoning", tokens: 5, contextTokens: 105 },
-      { label: "grep request", tokens: 15, contextTokens: 120 },
+      { label: "parallel tools", tokens: 15, contextTokens: 120 },
       { label: "grep result", tokens: 2, contextTokens: 122 },
       { label: "provider input #2 reconciliation", tokens: 8, contextTokens: 130 },
       { label: "compact [auto]", tokens: -110, contextTokens: 40 },
     ]);
     const rendered = renderTurnWaterfall(inspection);
     expect(rendered).toContain("peak context 150");
+    expect(rendered).toContain("┬ parallel tools");
+    expect(rendered).toContain("├─ grep request");
+    expect(rendered).toContain("└─ read_file request");
     expect(rendered).toContain("grep result");
     expect(rendered).toContain("compact [auto]");
+    expect(rendered).not.toContain("█");
     expect(rendered).toContain("~ estimated from canonical message content");
     expect(rendered).toContain("Provider reconciliation rows");
   });
