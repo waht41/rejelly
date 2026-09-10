@@ -54,7 +54,12 @@ export function transitionRuntimePhase(
   now = Date.now(),
 ): RuntimeStatus {
   if (phase === runtime.phase) {
-    return detail === undefined || detail === runtime.detail ? runtime : { ...runtime, detail };
+    if (detail === undefined || detail === runtime.detail) return runtime;
+    // A reconnecting detail change denotes the next physical attempt. Rebase only its timer while
+    // preserving workPausedAt, which owns the whole outage pause.
+    return phase === "reconnecting"
+      ? { ...runtime, detail, phaseSince: now }
+      : { ...runtime, detail };
   }
   const enteringReconnect = phase === "reconnecting";
   const leavingReconnect = runtime.phase === "reconnecting";

@@ -123,14 +123,14 @@ describe("RuntimeStatusLine", () => {
   it("pauses the work timer and shows the current reconnect attempt", () => {
     setRuntime({
       phase: "reconnecting",
-      detail: "reconnecting · attempt 3 · waiting for network",
+      detail: "attempt 3 · waiting for network",
       turnAgeSeconds: 30,
       phaseAgeSeconds: 20,
     });
 
     const line = statusLine();
     expect(line).toContain("Working 10s (paused)");
-    expect(line).toContain("reconnecting · attempt 3 · waiting for network");
+    expect(line).toContain("reconnecting · attempt 3 · waiting for network · 20s");
   });
 
   it("names MCP startup instead of showing the generic tool activity", () => {

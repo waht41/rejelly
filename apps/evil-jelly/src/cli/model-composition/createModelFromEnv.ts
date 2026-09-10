@@ -25,8 +25,8 @@ function reportModelRetry(notice: ModelRetryNotice): void {
     binding.onPhaseUpdate?.(
       "reconnecting",
       notice.kind === "connection"
-        ? `reconnecting · attempt ${attemptLabel} · waiting for network`
-        : `reconnecting · attempt ${attemptLabel}`,
+        ? `attempt ${attemptLabel} · waiting for network`
+        : `attempt ${attemptLabel}`,
     );
   } catch (error) {
     if (!isContextNotFoundError(error)) throw error;

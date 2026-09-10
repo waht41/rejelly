@@ -107,7 +107,10 @@ export function RuntimeStatusLine() {
         <Text color="yellow" bold>
           Working {formatElapsedTime(turnElapsed)} (paused)
         </Text>
-        <Text dimColor> · {detail}</Text>
+        <Text dimColor>
+          {" "}
+          · reconnecting · {detail} · {formatElapsedTime(phaseElapsed)}
+        </Text>
       </Box>
     );
   }

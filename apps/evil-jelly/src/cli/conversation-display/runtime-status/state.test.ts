@@ -29,6 +29,19 @@ describe("runtime status state", () => {
     expect(runtimeWorkElapsedMs(resumed, 18_000)).toBe(7_000);
   });
 
+  it("restarts only the attempt timer when reconnect advances", () => {
+    const started = beginRuntimeTurn(idleRuntime(0), 1_000);
+    const firstAttempt = transitionRuntimePhase(started, "reconnecting", "attempt 2", 6_000);
+    const nextAttempt = transitionRuntimePhase(firstAttempt, "reconnecting", "attempt 3", 16_000);
+
+    expect(nextAttempt).toMatchObject({
+      phaseSince: 16_000,
+      workPausedAt: 6_000,
+      workPausedMs: 0,
+    });
+    expect(runtimeWorkElapsedMs(nextAttempt, 20_000)).toBe(5_000);
+  });
+
   it("resumes in the phase matching live tool state", () => {
     const runtime = idleRuntime(1);
     expect(resumeRuntimeWork(runtime, true, undefined, 10).phase).toBe("tool");
