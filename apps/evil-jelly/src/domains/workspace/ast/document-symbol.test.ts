@@ -62,26 +62,48 @@ describe("heuristic AST document symbol extensions", () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it("ast_document_symbols includes signature and description details", async () => {
+  it("ast_document_symbols returns a compact source-order outline", async () => {
     const raw = await astDocumentSymbolsService({ filePath: relFile });
-    const parsed = JSON.parse(raw) as {
-      symbols: Array<{
-        name: string;
-        exported?: boolean;
-        signature?: string | null;
-        description?: string | null;
-        inlineComment?: string;
-      }>;
-    };
-    const equip = parsed.symbols.find((s) => s.name === "equipSystem");
-    const mergeKey = parsed.symbols.find((s) => s.name === "itemMergeKey");
-    expect(parsed.symbols[0]?.name).toBe("equipSystem");
-    expect(parsed.symbols[1]?.name).toBe("itemMergeKey");
-    expect(equip?.exported).toBe(true);
-    expect(equip?.signature).toContain("equipSystem(amount: number): string");
-    expect(equip?.description).toContain("Equip the budget system");
-    expect(mergeKey?.signature).toContain("itemMergeKey");
-    expect(mergeKey?.inlineComment).toContain("Merge by item id");
+    const privateIndex = raw.indexOf("fn _parseAndValidate(input) → boolean");
+    const equipIndex = raw.indexOf(
+      "export fn equipSystem(amount) → string — Equip the budget system for runtime checks.",
+    );
+    const mergeIndex = raw.indexOf("export const itemMergeKey — Merge by item id");
+
+    expect(raw.startsWith(`${relFile}\n\n`)).toBe(true);
+    expect(privateIndex).toBeGreaterThan(0);
+    expect(equipIndex).toBeGreaterThan(privateIndex);
+    expect(mergeIndex).toBeGreaterThan(equipIndex);
+    expect(raw).not.toContain('"description": null');
+    expect(raw).not.toContain('"signature"');
+  });
+
+  it("ast_document_symbols can filter to exported declarations", async () => {
+    const raw = await astDocumentSymbolsService({ filePath: relFile, include: "exported" });
+
+    expect(raw).not.toContain("_parseAndValidate");
+    expect(raw).toContain("export fn equipSystem(amount) → string");
+    expect(raw).toContain("export const itemMergeKey");
+  });
+
+  it("ast_document_symbols indents class members and compacts parameters", async () => {
+    const classFile = "packages/core/src/box.ts";
+    await fs.writeFile(
+      path.join(tmpDir, classFile),
+      [
+        "export class Box {",
+        "  constructor(value: string, enabled = true) {}",
+        "  async run(input: number): Promise<boolean> { return true }",
+        "}",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const raw = await astDocumentSymbolsService({ filePath: classFile });
+
+    expect(raw).toContain("1  export class Box");
+    expect(raw).toContain("2    constructor(value, enabled?)");
+    expect(raw).toContain("3    async run(input) → boolean");
   });
 
   it("ast_read_symbol_code returns declaration source blocks", async () => {
@@ -111,11 +133,10 @@ describe("heuristic AST document symbol extensions", () => {
 
     try {
       const raw = await astDocumentSymbolsService({ filePath: outsideFile });
-      const parsed = JSON.parse(raw) as { file: string; symbols: Array<{ name: string }> };
 
       expect(outsideAccessRequests).toHaveLength(1);
-      expect(parsed.file).toBe(outsideFile.replace(/\\/g, "/"));
-      expect(parsed.symbols.map((symbol) => symbol.name)).toContain("outsideSymbol");
+      expect(raw).toContain(outsideFile.replace(/\\/g, "/"));
+      expect(raw).toContain("export fn outsideSymbol()");
     } finally {
       await fs.rm(outsideDir, { recursive: true, force: true });
     }

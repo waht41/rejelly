@@ -132,9 +132,11 @@ export function collectOutlineDeclarations(root: SgNode, lang: Lang): OutlineDec
     push("variable", n, nameNode.text());
   }
 
-  rows.sort(
-    (a, b) => a.node.range().start.line - b.node.range().start.line || a.name.localeCompare(b.name),
-  );
+  rows.sort((a, b) => {
+    const aStart = a.node.range().start;
+    const bStart = b.node.range().start;
+    return aStart.line - bStart.line || aStart.column - bStart.column;
+  });
   return rows;
 }
 
