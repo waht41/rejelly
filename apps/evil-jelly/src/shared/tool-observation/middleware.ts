@@ -6,6 +6,7 @@ import {
   runWithToolDetailSlot,
   setActiveToolCall,
   takeActiveToolDetail,
+  takeActiveToolOutcome,
 } from "./invocationContext";
 import type { ToolObservationBlock } from "./model";
 import { getToolObservationRecorder } from "./persistence";
@@ -43,6 +44,7 @@ export function withToolLogger(): ToolMiddleware {
         try {
           const result = await next();
           const fullResult = stringifyToolResult(result);
+          const outcome = takeActiveToolOutcome();
           await emitCompletedTool(ctx, {
             id: call?.id,
             ordinal: call?.ordinal,
@@ -53,6 +55,7 @@ export function withToolLogger(): ToolMiddleware {
             preview: previewToolResult(fullResult),
             fullResult,
             ok: true,
+            ...outcome,
           });
           return result;
         } catch (error) {
@@ -67,6 +70,8 @@ export function withToolLogger(): ToolMiddleware {
             preview: message.slice(0, 400),
             fullResult: message,
             ok: false,
+            outcome: "failed",
+            failureKind: "handler_error",
           });
           throw error;
         }

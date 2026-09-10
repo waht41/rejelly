@@ -21,6 +21,7 @@ vi.mock("../../shared/configuration/env", () => ({
 }));
 
 import { env } from "../../shared/configuration/env";
+import { getSessionModelConfiguration } from "../../shared/model/observation/modelConfiguration";
 import { createOpenAIModelFromEnv } from "./createModelFromEnv";
 
 describe("createOpenAIModelFromEnv", () => {
@@ -31,8 +32,8 @@ describe("createOpenAIModelFromEnv", () => {
     mockedEnv.OPENAI_REASONING_EFFORT = "";
   });
 
-  it("keeps Chat Completions explicit and bounds SDK requests without nested retries", () => {
-    createOpenAIModelFromEnv();
+  it("keeps Chat Completions explicit and exposes its non-secret Session identity", () => {
+    const model = createOpenAIModelFromEnv();
 
     expect(createOpenAIAdapter).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -40,6 +41,12 @@ describe("createOpenAIModelFromEnv", () => {
         requestOption: { maxRetries: 0, timeout: 30_000 },
       }),
     );
+    expect(getSessionModelConfiguration(model)).toMatchObject({
+      modelId: "test-model",
+      provider: "openai",
+      protocol: "chat_completions",
+      endpoint: "https://gateway.test/v1",
+    });
   });
 
   it("maps reasoning effort to Responses parameters", () => {

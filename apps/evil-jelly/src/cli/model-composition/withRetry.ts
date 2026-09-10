@@ -6,6 +6,10 @@ import {
   type ModelStreamOptions,
   type StreamEvent,
 } from "@rejelly/core";
+import {
+  type ModelAttemptMetrics,
+  recordModelRetryMetrics,
+} from "../../shared/model/observation/modelRetryMetrics";
 
 /** Retry policy applied by Evil Jelly's model composition boundary. */
 export interface WithRetryOptions {
@@ -46,6 +50,12 @@ function sleep(delayMs: number, options: { signal?: AbortSignal } = {}): Promise
 
     options.signal?.addEventListener("abort", onAbort, { once: true });
   });
+}
+
+function errorCode(error: unknown): string {
+  if (isModelCallError(error)) return error.code;
+  if (isLocalRateLimitError(error)) return "rate_limit";
+  return error instanceof Error ? error.name : "unknown";
 }
 
 function shouldRetry(error: unknown): boolean {
@@ -166,18 +176,37 @@ export function withRetry(options: WithRetryOptions = {}): ModelMiddleware {
           streamOptions?: ModelStreamOptions,
         ): AsyncGenerator<StreamEvent> {
           let nextBackoffMs = initialDelayMs;
+          let totalRetryDelayMs = 0;
+          const attempts: ModelAttemptMetrics[] = [];
+          const publishMetrics = (): void =>
+            recordModelRetryMetrics({ attempts: [...attempts], totalRetryDelayMs });
 
           for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             let yielded = false;
+            const attemptStartedAt = Date.now();
             try {
               for await (const event of inner.stream(messages, streamOptions)) {
                 yielded = true;
                 yield event;
               }
+              attempts.push({
+                attempt,
+                status: "succeeded",
+                durationMs: Date.now() - attemptStartedAt,
+              });
+              publishMetrics();
               return;
             } catch (error) {
+              const failedAttempt: ModelAttemptMetrics = {
+                attempt,
+                status: "failed",
+                durationMs: Date.now() - attemptStartedAt,
+                errorCode: errorCode(error),
+              };
+              attempts.push(failedAttempt);
               const canRetry = !yielded && attempt < maxAttempts && shouldRetry(error);
               if (!canRetry) {
+                publishMetrics();
                 throw error;
               }
 
@@ -187,7 +216,14 @@ export function withRetry(options: WithRetryOptions = {}): ModelMiddleware {
                 maxDelayMs,
                 jitterRatio,
               );
-              await sleep(delayMs, { signal: streamOptions?.signal });
+              const delayStartedAt = Date.now();
+              try {
+                await sleep(delayMs, { signal: streamOptions?.signal });
+              } finally {
+                failedAttempt.retryDelayMs = Date.now() - delayStartedAt;
+                totalRetryDelayMs += failedAttempt.retryDelayMs;
+                publishMetrics();
+              }
               nextBackoffMs = clampDelay(nextBackoffMs * backoffMultiplier, maxDelayMs);
             }
           }

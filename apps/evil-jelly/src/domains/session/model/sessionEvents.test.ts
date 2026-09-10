@@ -150,6 +150,64 @@ describe("sessionEvents", () => {
     );
   });
 
+  it("validates call-level observability facts only in V3", () => {
+    const modelCall = {
+      type: "model_call_completed" as const,
+      turnId: "turn-1",
+      traceId: "trace-1",
+      spanId: "span-1",
+      model: {
+        adapterId: "adapter-a",
+        modelId: "model-a",
+        protocol: "responses" as const,
+        endpoint: "https://gateway.test/v1",
+      },
+      messageCount: 3,
+      usedTools: true,
+      durationMs: 42,
+      success: true,
+      usage: { promptTokens: 10, completionTokens: 2, totalTokens: 12 },
+      costs: {},
+      attemptCount: 2,
+      retryCount: 1,
+      totalRetryDelayMs: 100,
+      attempts: [
+        {
+          attempt: 1,
+          status: "failed" as const,
+          durationMs: 5,
+          errorCode: "rate_limit",
+          retryDelayMs: 100,
+        },
+        { attempt: 2, status: "succeeded" as const, durationMs: 37 },
+      ],
+    };
+    expect(parseNewSessionEvent(modelCall)).toMatchObject(modelCall);
+    expect(() => parseSessionEvent({ ...modelCall, seq: 1, timestamp: 2 }, 2)).toThrow(
+      "Session V2 cannot contain model_call_completed events",
+    );
+
+    expect(
+      parseNewSessionEvent({
+        type: "tool_call_completed",
+        turnId: "turn-1",
+        traceId: "trace-1",
+        spanId: "span-2",
+        toolCallId: "call-1",
+        toolName: "grep",
+        durationMs: 5,
+        transportOk: true,
+        outcome: "failed",
+        exitCode: 1,
+        failureKind: "nonzero_exit",
+        fromCache: false,
+        inputBytes: 10,
+        outputBytes: 20,
+        outputChars: 20,
+      }),
+    ).toMatchObject({ type: "tool_call_completed", toolCallId: "call-1" });
+  });
+
   it("records a complete session MCP selection set only in V3", () => {
     expect(
       parseNewSessionEvent({

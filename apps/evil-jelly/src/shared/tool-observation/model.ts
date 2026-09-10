@@ -21,6 +21,14 @@ export type ToolObservationDetail = {
   presentation?: "inline" | "expanded";
 };
 
+export type ToolExecutionOutcome = "succeeded" | "failed" | "denied" | "aborted" | "timed_out";
+
+export interface ToolExecutionOutcomeRecord {
+  outcome: ToolExecutionOutcome;
+  exitCode?: number | null;
+  failureKind?: string;
+}
+
 export interface ToolObservationBlock extends ToolObservationStart {
   /** The handle issued when observation started, when the sink supports live calls. */
   id?: string;
@@ -29,5 +37,9 @@ export interface ToolObservationBlock extends ToolObservationStart {
   detail?: ToolObservationDetail;
   preview: string;
   fullResult: string;
+  /** Transport/handler completion only; business success is represented by `outcome`. */
   ok: boolean;
+  outcome?: ToolExecutionOutcome;
+  exitCode?: number | null;
+  failureKind?: string;
 }
