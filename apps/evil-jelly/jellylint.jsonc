@@ -237,7 +237,7 @@
           "@domain:mcp"
         ],
         "@feature:audit": ["@domain:workspace", "@domain:mcp"],
-        "@feature:inspect": ["@domain:session:model"],
+        "@feature:inspect": ["@domain:session:model", "@shared:model"],
         "@cli:message-composer": [
           "@domain:workspace",
           "@domain:skills:agent",

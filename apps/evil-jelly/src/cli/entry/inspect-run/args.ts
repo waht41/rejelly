@@ -5,6 +5,7 @@ export interface InspectCommandArgs {
   readonly inspectSessionId?: string;
   readonly inspectJson: boolean;
   readonly inspectAllWorkspaces: boolean;
+  readonly inspectTurnId?: string;
 }
 
 function failArgs(message: string): never {
@@ -22,8 +23,9 @@ export function registerInspectArgs(cli: CAC): void {
   cli
     .command("inspect [sessionId]", "Inspect durable Session and Turn usage")
     .option("--json", "Print the versioned inspection projection as JSON")
+    .option("--turn <id>", "Show the chronological token waterfall for one Turn")
     .option("--all-workspaces", "Find the Session id across all Evil Jelly workspaces")
-    .usage("inspect [sessionId] [--json] [--all-workspaces]");
+    .usage("inspect [sessionId] [--turn <id>] [--json] [--all-workspaces]");
 }
 
 export function parseInspectArgs(
@@ -34,6 +36,7 @@ export function parseInspectArgs(
   if (rest.length > 0) failArgs(`Unknown inspect argument: ${rest[0]}`);
   const inspectSessionId = resolveOptionalString(rawSessionId);
   const inspectAllWorkspaces = Boolean(options.allWorkspaces);
+  const inspectTurnId = resolveOptionalString(options.turn);
   if (inspectAllWorkspaces && !inspectSessionId) {
     failArgs("--all-workspaces requires a sessionId");
   }
@@ -42,5 +45,6 @@ export function parseInspectArgs(
     ...(inspectSessionId ? { inspectSessionId } : {}),
     inspectJson: Boolean(options.json),
     inspectAllWorkspaces,
+    ...(inspectTurnId ? { inspectTurnId } : {}),
   };
 }

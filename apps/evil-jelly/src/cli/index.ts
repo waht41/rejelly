@@ -40,6 +40,7 @@ async function main() {
       sessionId: args.inspectSessionId,
       json: args.inspectJson,
       allWorkspaces: args.inspectAllWorkspaces,
+      turnId: args.inspectTurnId,
     });
     process.exit(0);
   }

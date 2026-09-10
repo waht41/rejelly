@@ -5,13 +5,16 @@ import {
 } from "../../../domains/session/repository/sessionLocator";
 import { listSessions } from "../../../domains/session/repository/sessionStore";
 import { renderSessionInspection } from "../../../features/inspect/renderSessionInspection";
+import { renderTurnWaterfall } from "../../../features/inspect/renderTurnWaterfall";
 import { projectSessionInspection } from "../../../features/inspect/sessionInspection";
+import { projectTurnWaterfall } from "../../../features/inspect/turnWaterfall";
 import { getWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
 
 export interface RunInspectOptions {
   sessionId?: string;
   json: boolean;
   allWorkspaces: boolean;
+  turnId?: string;
 }
 
 export async function runInspect(options: RunInspectOptions): Promise<void> {
@@ -27,6 +30,11 @@ export async function runInspect(options: RunInspectOptions): Promise<void> {
   const stored = await readSessionEvents(location.workspaceRoot, location.sessionId, {
     journalVersion: location.journalVersion,
   });
+  if (options.turnId) {
+    const waterfall = projectTurnWaterfall(stored.meta, stored.events, options.turnId);
+    console.log(options.json ? JSON.stringify(waterfall, null, 2) : renderTurnWaterfall(waterfall));
+    return;
+  }
   const inspection = projectSessionInspection(
     stored.meta,
     stored.events,
