@@ -175,6 +175,7 @@ describe("projectSessionInspection", () => {
     ]);
     const rendered = renderSessionInspection(inspection);
     expect(rendered).toContain("#    turn");
+    expect(rendered).toContain("prompt     peak    avg");
     expect(rendered).toContain("1    turn-1");
     expect(rendered).toContain("completed");
     expect(resolveTurnId(inspection, "1")).toBe("turn-1");
