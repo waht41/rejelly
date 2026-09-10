@@ -51,12 +51,13 @@ function values(
 }
 
 function childLine(
+  address: string,
   child: TurnWaterfallChild,
   last: boolean,
   positiveLargest: number,
   negativeLargest: number,
 ): string {
-  return `     ${last ? "└─" : "├─"} ${label(toolLabel(child.label, child.toolCallId), LABEL_WIDTH - 3)} ${values(child.tokens, child.tokenSource, child.contextTokens, child.contextSource)}   ${bar(child.tokens, positiveLargest, negativeLargest)}`;
+  return `${address.padStart(4)} ${last ? "└─" : "├─"} ${label(toolLabel(child.label, child.toolCallId), LABEL_WIDTH - 3)} ${values(child.tokens, child.tokenSource, child.contextTokens, child.contextSource)}   ${bar(child.tokens, positiveLargest, negativeLargest)}`;
 }
 
 export function renderTurnWaterfall(
@@ -119,10 +120,11 @@ export function renderTurnWaterfall(
   inspection.segments.forEach((segment, index) => {
     appendCheckpointsThrough(segment.seq);
     if (segment.children?.length) {
-      lines.push(`${String(index + 1).padStart(2)}   ┬ ${segment.label}`);
+      lines.push(`${String(index + 1).padStart(4)} ┬ ${segment.label}`);
       segment.children.forEach((child, childIndex) => {
         lines.push(
           childLine(
+            `${index + 1}.${childIndex + 1}`,
             child,
             childIndex === segment.children!.length - 1,
             positiveLargest,
@@ -133,7 +135,7 @@ export function renderTurnWaterfall(
       return;
     }
     lines.push(
-      `${String(index + 1).padStart(2)}   ${label(toolLabel(segment.label, segment.toolCallId))} ${values(segment.tokens, segment.tokenSource, segment.contextTokens, segment.contextSource)}   ${bar(segment.tokens, positiveLargest, negativeLargest)}`,
+      `${String(index + 1).padStart(4)}   ${label(toolLabel(segment.label, segment.toolCallId))} ${values(segment.tokens, segment.tokenSource, segment.contextTokens, segment.contextSource)}   ${bar(segment.tokens, positiveLargest, negativeLargest)}`,
     );
   });
   appendCheckpointsThrough(Number.POSITIVE_INFINITY);
@@ -155,6 +157,7 @@ export function renderTurnWaterfall(
     "",
     "~ estimated from canonical message content; unmarked token counts are provider-reported.",
     "Model input checkpoints align the running estimate to provider-reported input; M-addresses are Session-global Model Call addresses.",
+    "Parallel Tool Results are grouped by request batch and ordered by conversation admission, not necessarily completion time.",
   );
   if (inspection.warnings.length > 0)
     lines.push("", "Warnings", ...inspection.warnings.map((warning) => `- ${warning}`));

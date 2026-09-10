@@ -175,6 +175,10 @@ export function projectTurnWaterfall(
   const checkpoints: TurnWaterfallCheckpoint[] = [];
   const segments: TurnWaterfallSegment[] = [];
   const warnings: string[] = [];
+  const parallelToolBatchByCall = new Map<string, string>();
+  let activeToolResultBatch:
+    | { modelCallAddress: string; segment: TurnWaterfallSegment }
+    | undefined;
   let contextTokens = 0;
   let contextSource: TurnWaterfallSegment["contextSource"] = "estimated";
   let peakContextTokens = 0;
@@ -190,6 +194,7 @@ export function projectTurnWaterfall(
     tokenSource: TurnWaterfallSegment["tokenSource"],
     toolCallId?: string,
   ) => {
+    activeToolResultBatch = undefined;
     contextTokens = Math.max(0, contextTokens + tokens);
     if (tokenSource === "estimated") contextSource = "estimated";
     if (contextTokens > peakContextTokens) {
@@ -210,6 +215,46 @@ export function projectTurnWaterfall(
     });
   };
 
+  const appendParallelToolResult = (
+    seq: number,
+    modelCallAddress: string,
+    label: string,
+    toolCallId: string,
+    tokens: number,
+  ): void => {
+    contextTokens = Math.max(0, contextTokens + tokens);
+    contextSource = "estimated";
+    if (contextTokens >= peakContextTokens) {
+      peakContextTokens = contextTokens;
+      peakContextSource = "estimated";
+    }
+    if (activeToolResultBatch?.modelCallAddress !== modelCallAddress) {
+      const segment: TurnWaterfallSegment = {
+        seq,
+        kind: "tool_result",
+        label: "parallel tool results",
+        tokens: 0,
+        tokenSource: "estimated",
+        contextTokens,
+        contextSource: "estimated",
+        children: [],
+      };
+      segments.push(segment);
+      activeToolResultBatch = { modelCallAddress, segment };
+    }
+    const segment = activeToolResultBatch.segment;
+    segment.tokens += tokens;
+    segment.contextTokens = contextTokens;
+    segment.children!.push({
+      label,
+      toolCallId,
+      tokens,
+      tokenSource: "estimated",
+      contextTokens,
+      contextSource: "estimated",
+    });
+  };
+
   for (const event of turnEvents) {
     switch (event.type) {
       case "user_input_recorded":
@@ -222,6 +267,7 @@ export function projectTurnWaterfall(
         );
         break;
       case "model_call_completed": {
+        activeToolResultBatch = undefined;
         const promptTokens = event.usage?.promptTokens;
         if (promptTokens !== undefined) {
           const estimatedContextTokens = contextTokens;
@@ -253,6 +299,11 @@ export function projectTurnWaterfall(
         }
         const usage = event.usage;
         const modelMessage = modelMessages[modelIndex];
+        const modelCallAddress = modelCallAddresses.get(event.seq)!;
+        const modelToolCalls = modelMessage?.tool_calls ?? [];
+        if (modelToolCalls.length > 1) {
+          for (const call of modelToolCalls) parallelToolBatchByCall.set(call.id, modelCallAddress);
+        }
         const reasoningTokens = usage?.reasoningTokens ?? 0;
         if (reasoningTokens > 0)
           append(event.seq, "reasoning", "reasoning", reasoningTokens, "provider");
@@ -264,7 +315,7 @@ export function projectTurnWaterfall(
             event.seq,
             calls.length > 0 ? "tool_request" : "assistant",
             calls.length > 1
-              ? "parallel tools"
+              ? "parallel tool requests"
               : calls.length === 1
                 ? `${calls[0].name} request`
                 : "assistant answer",
@@ -284,16 +335,33 @@ export function projectTurnWaterfall(
         break;
       }
       case "message_recorded":
-        if (event.source.kind === "model") break;
+        if (event.source.kind === "model") {
+          activeToolResultBatch = undefined;
+          break;
+        }
         if (event.message.role === "tool") {
-          append(
-            event.seq,
-            "tool_result",
-            `${toolNames.get(event.message.tool_call_id ?? "") ?? event.message.name ?? "tool"} result`,
-            messageTokens(event.message),
-            "estimated",
-            event.message.tool_call_id,
-          );
+          const toolCallId = event.message.tool_call_id ?? "";
+          const resultLabel = `${toolNames.get(toolCallId) ?? event.message.name ?? "tool"} result`;
+          const resultTokens = messageTokens(event.message);
+          const batchAddress = parallelToolBatchByCall.get(toolCallId);
+          if (batchAddress && toolCallId) {
+            appendParallelToolResult(
+              event.seq,
+              batchAddress,
+              resultLabel,
+              toolCallId,
+              resultTokens,
+            );
+          } else {
+            append(
+              event.seq,
+              "tool_result",
+              resultLabel,
+              resultTokens,
+              "estimated",
+              event.message.tool_call_id,
+            );
+          }
         } else {
           append(
             event.seq,
@@ -305,6 +373,7 @@ export function projectTurnWaterfall(
         }
         break;
       case "context_compacted":
+        activeToolResultBatch = undefined;
         if (event.beforeTokens !== undefined && event.afterTokens !== undefined) {
           if (event.beforeTokens > peakContextTokens) {
             peakContextTokens = event.beforeTokens;

@@ -128,8 +128,8 @@ describe("turn waterfall", () => {
       { label: "read_file request", toolCallId: "call-2" },
     ]);
     expect(inspection.segments[3]).toMatchObject({
-      label: "grep result",
-      toolCallId: "call-1",
+      label: "parallel tool results",
+      children: [{ label: "grep result", toolCallId: "call-1" }],
     });
     expect(
       inspection.segments.map(({ label, tokens, contextTokens }) => ({
@@ -140,8 +140,8 @@ describe("turn waterfall", () => {
     ).toEqual([
       { label: "user input", tokens: 2, contextTokens: 100 },
       { label: "reasoning", tokens: 5, contextTokens: 105 },
-      { label: "parallel tools", tokens: 15, contextTokens: 120 },
-      { label: "grep result", tokens: 2, contextTokens: 122 },
+      { label: "parallel tool requests", tokens: 15, contextTokens: 120 },
+      { label: "parallel tool results", tokens: 2, contextTokens: 122 },
       { label: "compact [auto]", tokens: -110, contextTokens: 40 },
     ]);
     expect(inspection.checkpoints).toEqual([
@@ -167,10 +167,12 @@ describe("turn waterfall", () => {
     expect(rendered).toContain(
       "Prompt: 230 cumulative across 2 measured calls / 130 peak model input / 1.8x amplification / 230 uncached",
     );
-    expect(rendered).toContain("┬ parallel tools");
+    expect(rendered).toContain("┬ parallel tool requests");
+    expect(rendered).not.toContain("parallel tool requests — M1");
+    expect(rendered).not.toContain("parallel tool results — M1");
     expect(rendered).toContain("├─ grep request [call-1]");
     expect(rendered).toContain("└─ read_file request [call-2]");
-    expect(rendered).toContain("grep result [call-1]");
+    expect(rendered).toContain("4.1 └─ grep result [call-1]");
     expect(rendered).toContain("compact [auto]");
     expect(rendered).not.toContain("█");
     expect(rendered).toContain("~ estimated from canonical message content");
@@ -179,6 +181,87 @@ describe("turn waterfall", () => {
       rendered.indexOf("user input"),
     );
     expect(rendered).toContain("model input M2 (adjust +8)");
+  });
+
+  it("groups parallel Tool Results under child addresses matching the request group", () => {
+    const inspection = projectTurnWaterfall(
+      meta,
+      [
+        event(
+          {
+            type: "model_call_completed",
+            turnId: "turn-1",
+            traceId: "trace",
+            spanId: "model-1",
+            model: { adapterId: "a", modelId: "m" },
+            messageCount: 1,
+            usedTools: true,
+            durationMs: 10,
+            success: true,
+            usage: { promptTokens: 10, completionTokens: 10, totalTokens: 20 },
+          },
+          1,
+        ),
+        event(
+          {
+            type: "message_recorded",
+            turnId: "turn-1",
+            source: { kind: "model" },
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                { id: "call-1", name: "grep", arguments: "{}" },
+                { id: "call-2", name: "read_file", arguments: "{}" },
+              ],
+            },
+          },
+          2,
+        ),
+        event(
+          {
+            type: "message_recorded",
+            turnId: "turn-1",
+            source: { kind: "tool" },
+            message: { role: "tool", tool_call_id: "call-1", content: "first" },
+          },
+          3,
+        ),
+        event(
+          {
+            type: "message_recorded",
+            turnId: "turn-1",
+            source: { kind: "tool" },
+            message: { role: "tool", tool_call_id: "call-2", content: "second" },
+          },
+          4,
+        ),
+      ],
+      "turn-1",
+    );
+
+    expect(inspection.segments).toMatchObject([
+      {
+        label: "parallel tool requests",
+        children: [
+          { label: "grep request", toolCallId: "call-1" },
+          { label: "read_file request", toolCallId: "call-2" },
+        ],
+      },
+      {
+        label: "parallel tool results",
+        children: [
+          { label: "grep result", toolCallId: "call-1" },
+          { label: "read_file result", toolCallId: "call-2" },
+        ],
+      },
+    ]);
+    const rendered = renderTurnWaterfall(inspection);
+    expect(rendered).toContain("1.1 ├─ grep request [call-1]");
+    expect(rendered).toContain("1.2 └─ read_file request [call-2]");
+    expect(rendered).toContain("2.1 ├─ grep result [call-1]");
+    expect(rendered).toContain("2.2 └─ read_file result [call-2]");
+    expect(rendered).toContain("ordered by conversation admission");
   });
 
   it("marks an estimated peak and renders negative provider adjustment as a checkpoint", () => {
