@@ -1,6 +1,7 @@
 import type { JsonObject, Message } from "@rejelly/core";
+import { APIConnectionError, APIConnectionTimeoutError, APIError } from "openai";
 import { describe, expect, it } from "vitest";
-import { toOpenAIMessages, wrapAsModelCallError } from "../utils";
+import { classifyOpenAIError, toOpenAIMessages, wrapAsModelCallError } from "../utils";
 
 describe("OpenAI message conversion", () => {
   it("splits multimodal tool result into a text tool message and a follow-up user message", () => {
@@ -192,6 +193,23 @@ describe("OpenAI message conversion", () => {
 });
 
 describe("OpenAI error conversion", () => {
+  it("classifies connection, timeout, and 5xx failures as retryable transport errors", () => {
+    expect(classifyOpenAIError(new APIConnectionError({ cause: new Error("offline") }))).toBe(
+      "connection_error",
+    );
+    expect(classifyOpenAIError(new APIConnectionTimeoutError())).toBe("timeout");
+    expect(classifyOpenAIError(new APIError(504, {}, "gateway timeout", new Headers()))).toBe(
+      "server_error",
+    );
+  });
+
+  it("classifies nested Node transport codes when an SDK wrapper is unavailable", () => {
+    const cause = Object.assign(new Error("socket reset"), { code: "ECONNRESET" });
+    expect(classifyOpenAIError(Object.assign(new Error("fetch failed"), { cause }))).toBe(
+      "connection_error",
+    );
+  });
+
   it("normalizes SDK abort-like errors to AbortError", () => {
     expect(() =>
       wrapAsModelCallError(
