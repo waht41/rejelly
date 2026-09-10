@@ -168,6 +168,19 @@ describe("sessionEvents", () => {
       success: true,
       usage: { promptTokens: 10, completionTokens: 2, totalTokens: 12 },
       costs: {},
+      attemptCount: 2,
+      retryCount: 1,
+      totalRetryDelayMs: 100,
+      attempts: [
+        {
+          attempt: 1,
+          status: "failed" as const,
+          durationMs: 5,
+          errorCode: "rate_limit",
+          retryDelayMs: 100,
+        },
+        { attempt: 2, status: "succeeded" as const, durationMs: 37 },
+      ],
     };
     expect(parseNewSessionEvent(modelCall)).toMatchObject(modelCall);
     expect(() => parseSessionEvent({ ...modelCall, seq: 1, timestamp: 2 }, 2)).toThrow(

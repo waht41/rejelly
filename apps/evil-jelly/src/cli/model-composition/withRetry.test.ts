@@ -1,5 +1,16 @@
-import { augmentModel, type ModelAdapter, ModelCallError, type StreamEvent } from "@rejelly/core";
+import {
+  augmentModel,
+  createAgent,
+  createEventBus,
+  EVENTS,
+  type ModelAdapter,
+  ModelCallError,
+  promptChat,
+  runWith,
+  type StreamEvent,
+} from "@rejelly/core";
 import { describe, expect, it } from "vitest";
+import { readModelRetryMetrics } from "../../shared/model/observation/modelRetryMetrics";
 import { addRetryJitter, withRetry } from "./withRetry";
 
 async function collect(stream: AsyncGenerator<StreamEvent>): Promise<StreamEvent[]> {
@@ -48,6 +59,38 @@ describe("model composition withRetry", () => {
 
     await expect(collect(model.stream([]))).resolves.toEqual([{ type: "text", content: "ok" }]);
     expect(calls).toBe(2);
+  });
+
+  it("attaches physical attempt metrics to the logical Model Call span", async () => {
+    let calls = 0;
+    const eventBus = createEventBus();
+    const modelEnds: Array<{ trace: { attributes?: Readonly<Record<string, unknown>> } }> = [];
+    eventBus.subscribe(EVENTS.MODEL_CALL_END, (event) => modelEnds.push(event));
+    const adapter: ModelAdapter = {
+      id: "test-model",
+      stream: async function* () {
+        calls += 1;
+        if (calls === 1) throw transientError("rate_limit");
+        yield { type: "text", content: "ok" };
+        yield { type: "finish", finishReason: "stop" };
+      },
+    };
+    const model = augmentModel(adapter, [withRetry({ maxAttempts: 2, initialDelayMs: 0 })]);
+    const agent = createAgent({
+      id: "retry-metrics-agent",
+      model,
+      handler: async () => promptChat({ message: { role: "user", content: "hello" } }),
+    });
+
+    await runWith(() => agent({}), { eventBus });
+
+    expect(readModelRetryMetrics(modelEnds[0]?.trace.attributes)).toMatchObject({
+      attempts: [
+        { attempt: 1, status: "failed", errorCode: "rate_limit" },
+        { attempt: 2, status: "succeeded" },
+      ],
+      totalRetryDelayMs: expect.any(Number),
+    });
   });
 
   it("does not retry non-retryable ModelCallError", async () => {

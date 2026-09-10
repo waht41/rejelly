@@ -8,6 +8,7 @@ import {
 } from "@rejelly/core";
 import type { SessionModelConfiguration } from "../../../shared/model/observation/modelConfiguration";
 import { readModelInputMetrics } from "../../../shared/model/observation/modelInputMetrics";
+import { readModelRetryMetrics } from "../../../shared/model/observation/modelRetryMetrics";
 import type { SessionToolObservation } from "../../../shared/session/recorderPort";
 import type { SessionRecorder } from "./sessionRecorder";
 
@@ -109,6 +110,7 @@ class ObservedSessionRecorder implements SessionRecorder {
   async #recordModelCall(event: ModelCallEndEvent, turnId: string | undefined): Promise<void> {
     const config = this.options.modelConfiguration;
     const input = readModelInputMetrics(event.trace.attributes);
+    const retry = readModelRetryMetrics(event.trace.attributes);
     const usage = event.usage;
     await this.recorder.recordModelCall({
       ...(turnId ? { turnId } : {}),
@@ -156,6 +158,14 @@ class ObservedSessionRecorder implements SessionRecorder {
           }
         : {}),
       ...(event.costs ? { costs: event.costs } : {}),
+      ...(retry
+        ? {
+            attemptCount: retry.attempts.length,
+            retryCount: Math.max(0, retry.attempts.length - 1),
+            totalRetryDelayMs: retry.totalRetryDelayMs,
+            attempts: retry.attempts,
+          }
+        : {}),
     });
   }
 

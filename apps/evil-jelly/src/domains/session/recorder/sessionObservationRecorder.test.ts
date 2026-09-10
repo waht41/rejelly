@@ -4,6 +4,7 @@ import path from "node:path";
 import { createEventBus, EVENTS, TRACE_EVENT_SCHEMA_VERSION } from "@rejelly/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MODEL_INPUT_METRICS_TRACE_ATTRIBUTE } from "../../../shared/model/observation/modelInputMetrics";
+import { MODEL_RETRY_METRICS_TRACE_ATTRIBUTE } from "../../../shared/model/observation/modelRetryMetrics";
 import { recordInitialTextInput } from "../__tests__/sessionTestInput";
 import { readSessionEvents } from "../journal/sessionJsonlStore";
 import { observeSessionRecorder } from "./sessionObservationRecorder";
@@ -63,6 +64,19 @@ describe("sessionObservationRecorder", () => {
             toolResultChars: 30,
             toolDefinitionCount: 2,
             toolSchemaBytes: 400,
+          },
+          [MODEL_RETRY_METRICS_TRACE_ATTRIBUTE]: {
+            attempts: [
+              {
+                attempt: 1,
+                status: "failed",
+                durationMs: 25,
+                errorCode: "rate_limit",
+                retryDelayMs: 100,
+              },
+              { attempt: 2, status: "succeeded", durationMs: 125 },
+            ],
+            totalRetryDelayMs: 100,
           },
         },
       },
@@ -171,6 +185,19 @@ describe("sessionObservationRecorder", () => {
       },
       usage: { totalTokens: 45, cacheReadTokens: 12, reasoningTokens: 2 },
       costs: {},
+      attemptCount: 2,
+      retryCount: 1,
+      totalRetryDelayMs: 100,
+      attempts: [
+        {
+          attempt: 1,
+          status: "failed",
+          durationMs: 25,
+          errorCode: "rate_limit",
+          retryDelayMs: 100,
+        },
+        { attempt: 2, status: "succeeded", durationMs: 125 },
+      ],
     });
     expect(modelCalls[0]).not.toHaveProperty("rawText");
     expect(modelCalls[0]).not.toHaveProperty("reasoning");

@@ -228,6 +228,17 @@ export const modelCallCompletedEventSchema = z
     attemptCount: z.number().int().positive().optional(),
     retryCount: nonNegativeIntSchema.optional(),
     totalRetryDelayMs: z.number().nonnegative().optional(),
+    attempts: z
+      .array(
+        z.object({
+          attempt: z.number().int().positive(),
+          status: z.enum(["succeeded", "failed"]),
+          durationMs: z.number().nonnegative(),
+          errorCode: z.string().min(1).optional(),
+          retryDelayMs: z.number().nonnegative().optional(),
+        }),
+      )
+      .optional(),
   })
   .passthrough();
 
@@ -473,6 +484,13 @@ export interface ModelCallCompletedInput {
   attemptCount?: number;
   retryCount?: number;
   totalRetryDelayMs?: number;
+  attempts?: Array<{
+    attempt: number;
+    status: "succeeded" | "failed";
+    durationMs: number;
+    errorCode?: string;
+    retryDelayMs?: number;
+  }>;
 }
 export interface ToolCallCompletedInput {
   turnId?: string;
