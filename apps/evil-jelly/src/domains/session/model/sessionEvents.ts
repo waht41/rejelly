@@ -215,6 +215,14 @@ export const modelCallCompletedEventSchema = z
         toolResultChars: nonNegativeIntSchema,
         toolDefinitionCount: nonNegativeIntSchema,
         toolSchemaBytes: nonNegativeIntSchema,
+        toolDefinitions: z
+          .array(
+            z.object({
+              name: z.string().min(1),
+              schemaBytes: nonNegativeIntSchema,
+            }),
+          )
+          .optional(),
       })
       .optional(),
     usedTools: z.boolean(),
@@ -465,6 +473,7 @@ export interface ModelCallCompletedInput {
     toolResultChars: number;
     toolDefinitionCount: number;
     toolSchemaBytes: number;
+    toolDefinitions?: Array<{ name: string; schemaBytes: number }>;
   };
   usedTools: boolean;
   durationMs: number;

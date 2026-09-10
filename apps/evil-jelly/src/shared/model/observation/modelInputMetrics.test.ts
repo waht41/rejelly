@@ -9,6 +9,7 @@ import {
   runWith,
 } from "@rejelly/core";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   MODEL_INPUT_METRICS_TRACE_ATTRIBUTE,
   projectModelInputMetrics,
@@ -45,6 +46,24 @@ describe("modelInputMetrics", () => {
     });
     expect(JSON.stringify(metrics)).not.toContain("rules");
     expect(JSON.stringify(metrics)).not.toContain("result");
+  });
+
+  it("records per-Tool schema sizes without retaining Tool schemas", () => {
+    const metrics = projectModelInputMetrics([], {
+      tools: [
+        {
+          name: "grep",
+          description: "Search files",
+          parameters: z.object({ query: z.string() }),
+          handler: async () => "ok",
+        },
+      ],
+    });
+
+    expect(metrics.toolDefinitions).toEqual([{ name: "grep", schemaBytes: expect.any(Number) }]);
+    expect(metrics.toolSchemaBytes).toBeGreaterThan(metrics.toolDefinitions?.[0].schemaBytes ?? 0);
+    expect(JSON.stringify(metrics)).not.toContain("Search files");
+    expect(JSON.stringify(metrics)).not.toContain("query");
   });
 
   it("attaches metrics to the matching model-call end span", async () => {

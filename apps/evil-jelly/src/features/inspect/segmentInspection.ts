@@ -4,6 +4,11 @@ import {
   type SessionEvent,
   type SessionMetaLine,
 } from "../../domains/session/model/sessionEvents";
+import {
+  dumpInitialContextInspection,
+  type InitialContextInspection,
+  projectInitialContextInspection,
+} from "./checkpointInspection";
 import { projectToolCallBySegment, type ToolCallInspection } from "./toolCallInspection";
 import {
   resolveWaterfallSegment,
@@ -31,7 +36,10 @@ export interface SegmentInspection {
   unavailableReason?: string;
 }
 
-export type SegmentDrilldownInspection = SegmentInspection | ToolCallInspection;
+export type SegmentDrilldownInspection =
+  | InitialContextInspection
+  | SegmentInspection
+  | ToolCallInspection;
 
 function knownTurnEvents(events: readonly SessionEvent[], turnId: string): KnownSessionEvent[] {
   return events.filter((event): event is KnownSessionEvent => {
@@ -100,6 +108,9 @@ export function projectSegmentDrilldown(
   waterfall: TurnWaterfallInspection,
   selector: string,
 ): SegmentDrilldownInspection {
+  if (/^C[1-9]\d*$/i.test(selector)) {
+    return projectInitialContextInspection(meta, events, waterfall, selector);
+  }
   const resolved = resolveWaterfallSegment(waterfall, selector);
   if (resolved.childNumber === undefined && resolved.parent.children?.length) {
     throw new Error(
@@ -135,7 +146,12 @@ export function projectSegmentDrilldown(
   };
 }
 
-export function dumpSegmentPayload(inspection: SegmentInspection): string {
+export function dumpSegmentPayload(
+  inspection: SegmentInspection | InitialContextInspection,
+): string {
+  if (inspection.type === "initial_context_inspection_v1") {
+    return dumpInitialContextInspection(inspection);
+  }
   if (!inspection.payload) {
     throw new Error(
       `Segment ${inspection.address} has no durable payload: ${inspection.unavailableReason ?? "unavailable"}`,

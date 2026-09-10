@@ -82,7 +82,7 @@ export function renderTurnWaterfall(
         ? "prior context + system/tools"
         : "provider input #1 checkpoint adjustment";
     lines.push(
-      `     ${label(initialLabel)} ${values(
+      ` C1  ${label(initialLabel)} ${values(
         initialCheckpoint.adjustmentTokens,
         "estimated",
         Math.max(0, initialCheckpoint.adjustmentTokens),

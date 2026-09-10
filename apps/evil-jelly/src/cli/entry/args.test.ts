@@ -75,6 +75,7 @@ describe("parseCliArgs", () => {
     expect(help).toContain("--json");
     expect(help).toContain("--turn <selector>");
     expect(help).toContain("--segment <address>");
+    expect(help).toContain("N, N.M, or C1");
     expect(help).toContain("--call <id>");
     expect(help).toContain("--dump");
     expect(help).toContain("Dump the complete persisted segment payload");

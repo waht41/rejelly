@@ -41,7 +41,10 @@ export function registerInspectArgs(cli: CAC): void {
       "--turn <selector>",
       "Show one Turn's chronological token waterfall by displayed number or id",
     )
-    .option("--segment <address>", "Inspect one persisted waterfall segment (N or N.M)")
+    .option(
+      "--segment <address>",
+      "Inspect one persisted waterfall segment or Initial context (N, N.M, or C1)",
+    )
     .option("--call <id>", "Inspect one Tool call directly by ToolCall ID")
     .option("--dump", "Dump the complete persisted segment payload")
     .option("--full", "Show the full segment payload instead of a bounded preview")

@@ -19,6 +19,7 @@ export interface ModelInputMetrics {
   toolResultChars: number;
   toolDefinitionCount: number;
   toolSchemaBytes: number;
+  toolDefinitions?: Array<{ name: string; schemaBytes: number }>;
 }
 
 function contentChars(content: Message["content"]): number {
@@ -81,6 +82,10 @@ export function projectModelInputMetrics(
   }
 
   const toolSchemas = projectToolSchemas(options);
+  const toolDefinitions = toolSchemas.map((schema) => ({
+    name: schema.name,
+    schemaBytes: new TextEncoder().encode(JSON.stringify(schema)).byteLength,
+  }));
   return {
     messagesByRole,
     messageChars,
@@ -91,6 +96,7 @@ export function projectModelInputMetrics(
       toolSchemas.length === 0
         ? 0
         : new TextEncoder().encode(JSON.stringify(toolSchemas)).byteLength,
+    ...(toolDefinitions.length > 0 ? { toolDefinitions } : {}),
   };
 }
 
@@ -105,6 +111,7 @@ export function readModelInputMetrics(
   if (typeof value !== "object" || value === null) return undefined;
   const metrics = value as Partial<ModelInputMetrics>;
   const roles = metrics.messagesByRole;
+  const toolDefinitions = metrics.toolDefinitions;
   if (
     typeof roles !== "object" ||
     roles === null ||
@@ -116,7 +123,17 @@ export function readModelInputMetrics(
     !isNonNegativeInteger(metrics.systemPromptChars) ||
     !isNonNegativeInteger(metrics.toolResultChars) ||
     !isNonNegativeInteger(metrics.toolDefinitionCount) ||
-    !isNonNegativeInteger(metrics.toolSchemaBytes)
+    !isNonNegativeInteger(metrics.toolSchemaBytes) ||
+    (toolDefinitions !== undefined &&
+      (!Array.isArray(toolDefinitions) ||
+        toolDefinitions.some(
+          (tool) =>
+            typeof tool !== "object" ||
+            tool === null ||
+            typeof tool.name !== "string" ||
+            tool.name.length === 0 ||
+            !isNonNegativeInteger(tool.schemaBytes),
+        )))
   ) {
     return undefined;
   }

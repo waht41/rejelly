@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionEvent, SessionMetaLine } from "../../domains/session/model/sessionEvents";
+import { renderInitialContextInspection } from "./renderCheckpointInspection";
 import { renderSegmentInspection } from "./renderSegmentInspection";
 import { dumpSegmentPayload, projectSegmentDrilldown } from "./segmentInspection";
 import { projectTurnWaterfall } from "./turnWaterfall";
@@ -116,6 +117,93 @@ describe("Segment inspection", () => {
         value: { replacementHistory: [{ content: "summary bridge" }] },
       },
     });
+  });
+
+  it("drills into Initial context composition through C1", () => {
+    const events: SessionEvent[] = [
+      event(
+        {
+          type: "user_input_recorded",
+          turnId: "turn-prior",
+          inputKind: "initial",
+          input: {
+            version: 1,
+            kind: "resolved",
+            nodes: [{ kind: "text", text: "history" }],
+          },
+        },
+        1,
+      ),
+      event(
+        {
+          type: "message_recorded",
+          turnId: "turn-prior",
+          source: { kind: "model" },
+          message: { role: "assistant", content: "answer" },
+        },
+        2,
+      ),
+      event({ type: "turn_completed", turnId: "turn-prior", status: "completed" }, 3),
+      event(
+        {
+          type: "user_input_recorded",
+          turnId: "turn-current",
+          inputKind: "initial",
+          input: { version: 1, kind: "resolved", nodes: [{ kind: "text", text: "next" }] },
+        },
+        4,
+      ),
+      event(
+        {
+          type: "model_call_completed",
+          turnId: "turn-current",
+          traceId: "trace",
+          spanId: "model-current",
+          model: { adapterId: "a", modelId: "m" },
+          messageCount: 3,
+          input: {
+            messagesByRole: { system: 1, user: 2, assistant: 1, tool: 0 },
+            messageChars: 417,
+            systemPromptChars: 400,
+            toolResultChars: 0,
+            toolDefinitionCount: 2,
+            toolSchemaBytes: 800,
+            toolDefinitions: [
+              { name: "edit_file", schemaBytes: 500 },
+              { name: "read_file", schemaBytes: 300 },
+            ],
+          },
+          usedTools: true,
+          durationMs: 10,
+          success: true,
+          usage: { promptTokens: 401, completionTokens: 0, totalTokens: 401 },
+        },
+        5,
+      ),
+    ];
+    const waterfall = projectTurnWaterfall(meta, events, "turn-current");
+    const inspection = projectSegmentDrilldown(meta, events, waterfall, "C1");
+
+    expect(inspection).toMatchObject({
+      type: "initial_context_inspection_v1",
+      address: "C1",
+      tokens: 400,
+      components: [
+        { kind: "system_instructions", tokens: 100, share: 0.25 },
+        { kind: "tool_definitions", tokens: 200, share: 0.5 },
+        { kind: "prior_conversation", tokens: 4, share: 0.01 },
+        { kind: "other", tokens: 96, share: 0.24 },
+      ],
+      toolDefinitions: [
+        { name: "edit_file", tokens: 125 },
+        { name: "read_file", tokens: 75 },
+      ],
+    });
+    if (inspection.type !== "initial_context_inspection_v1") {
+      throw new Error("expected Initial context inspection");
+    }
+    expect(renderInitialContextInspection(inspection)).toContain("Tool definitions");
+    expect(dumpSegmentPayload(inspection)).toContain('"system_instructions"');
   });
 
   it("keeps token-only reasoning inspectable without inventing persisted content", () => {

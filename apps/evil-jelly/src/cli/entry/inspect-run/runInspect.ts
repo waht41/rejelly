@@ -4,6 +4,7 @@ import {
   locateInspectSession,
 } from "../../../domains/session/repository/sessionLocator";
 import { listSessions } from "../../../domains/session/repository/sessionStore";
+import { renderInitialContextInspection } from "../../../features/inspect/renderCheckpointInspection";
 import { renderSegmentInspection } from "../../../features/inspect/renderSegmentInspection";
 import { renderSessionInspection } from "../../../features/inspect/renderSessionInspection";
 import { renderToolCallInspection } from "../../../features/inspect/renderToolCallInspection";
@@ -66,7 +67,9 @@ function printSegment(inspection: SegmentDrilldownInspection, options: RunInspec
   console.log(
     options.json
       ? JSON.stringify(inspection, null, 2)
-      : renderSegmentInspection(inspection, { full: options.full }),
+      : inspection.type === "initial_context_inspection_v1"
+        ? renderInitialContextInspection(inspection)
+        : renderSegmentInspection(inspection, { full: options.full }),
   );
 }
 
