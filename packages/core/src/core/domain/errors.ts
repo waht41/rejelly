@@ -921,7 +921,9 @@ export type ModelErrorCode =
   | "rate_limit" // Rate limit hit (429) -> typically retryable with exponential backoff
   | "context_length" // Context window exceeded (400) -> not retryable, need to truncate memory
   | "auth_error" // Invalid API key (401/403) -> not retryable
-  | "server_error" // Provider server failure (500/502/503) -> retryable
+  | "server_error" // Provider server failure (5xx) -> retryable
+  | "connection_error" // Network path unavailable -> reconnect without consuming transient retry budget
+  | "timeout" // Request or stream timed out -> bounded retry
   | "unknown"; // Other unclassified errors
 
 /**
