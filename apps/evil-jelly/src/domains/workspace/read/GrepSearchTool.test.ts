@@ -53,7 +53,7 @@ describe("GrepSearchTool contextLines", () => {
     });
     const out = await GrepSearchTool.handler(parsed);
 
-    expect(out).toContain("src/file.ts:1:needle");
+    expect(out).toContain("src/file.ts\n> 1 | needle");
     expect(execFileSyncMock).toHaveBeenCalledOnce();
     expect(execFileSyncMock).toHaveBeenCalledWith(
       "rg",
@@ -94,12 +94,32 @@ describe("GrepSearchTool contextLines", () => {
 
     const out = await executeGrepSearch("needle", "*.ts", 0);
 
-    expect(out).toContain("src/file.ts:1:Needle");
+    expect(out).toContain("src/file.ts\n> 1 | Needle");
     expect(execFileSyncMock).toHaveBeenCalledWith(
       "rg",
       expect.arrayContaining(["-i"]),
       expect.any(Object),
     );
+  });
+
+  it("groups native context by file and renders each path once", async () => {
+    execFileSyncMock.mockReturnValue(
+      [
+        "src/a.ts-1-before",
+        "src/a.ts:2:inspect sessionId latest",
+        "src/a.ts-3-after",
+        "src/a.ts:4:second",
+        "src/a.ts-5-after",
+        "src/b.ts:1:other",
+      ].join("\n"),
+    );
+
+    const out = await executeGrepSearch("inspect|sessionId|latest", "*.ts", 1);
+
+    expect(out.split("src/a.ts")).toHaveLength(2);
+    expect(out).toContain("src/a.ts\n  1 | before");
+    expect(out).toContain("> 2 | inspect sessionId latest");
+    expect(out).toContain("src/b.ts\n> 1 | other");
   });
 
   it("asks ripgrep to preview rather than emit unbounded source lines", async () => {
@@ -124,8 +144,12 @@ describe("GrepSearchTool contextLines", () => {
 
     const out = await executeGrepSearch("needle", "*.js", 0);
 
-    expect(Buffer.byteLength(out, "utf8")).toBeLessThanOrEqual(MAX_GREP_OUTPUT_LINE_BYTES);
-    expect(out).toContain("src/bundle.js:1:needle-");
+    const renderedLine = out.split("\n").find((line) => line.startsWith("> 1 |"));
+    expect(renderedLine).toBeDefined();
+    expect(Buffer.byteLength(renderedLine ?? "", "utf8")).toBeLessThanOrEqual(
+      MAX_GREP_OUTPUT_LINE_BYTES,
+    );
+    expect(out).toContain("bundle.js\n> 1 | needle-");
     expect(out).toContain("[grep line truncated:");
     expect(out).toContain("-tail");
   });
@@ -153,7 +177,7 @@ describe("GrepSearchTool contextLines", () => {
     });
     const out = await GrepSearchTool.handler(parsed);
 
-    expect(out).toContain("src/file.ts:1:needle");
+    expect(out).toContain("src/file.ts\n> 1 | needle");
     expect(execFileSyncMock).toHaveBeenCalledWith(
       "rg",
       expect.arrayContaining(["-C", "12"]),
@@ -166,7 +190,7 @@ describe("GrepSearchTool contextLines", () => {
 
     const out = await executeGrepSearch("needle", "*.ts", 99);
 
-    expect(out).toContain("src/file.ts:1:needle");
+    expect(out).toContain("src/file.ts\n> 1 | needle");
     expect(execFileSyncMock).toHaveBeenCalledWith(
       "rg",
       expect.arrayContaining(["-C", "12"]),
@@ -209,7 +233,8 @@ describe("GrepSearchTool Node fallback context merge", () => {
         "middle",
         "needle",
         "around-b",
-        "break",
+        "break-1",
+        "break-2",
         "around-c",
         "needle",
         "around-d",
@@ -219,15 +244,31 @@ describe("GrepSearchTool Node fallback context merge", () => {
 
     const out = await executeGrepSearch("needle", "*.ts", 1);
 
-    expect(out).toContain("sample.ts-2-around-a");
-    expect(out).toContain("sample.ts:3:needle");
-    expect(out).toContain("sample.ts-4-middle");
-    expect(out).toContain("sample.ts:5:needle");
-    expect(out).toContain("sample.ts-6-around-b");
+    expect(out).toContain("sample.ts\n  2 | around-a");
+    expect(out).toContain("> 3 | needle");
+    expect(out).toContain("  4 | middle");
+    expect(out).toContain("> 5 | needle");
+    expect(out).toContain("  6 | around-b");
     expect(out).toContain("\n--\n");
-    expect(out).toContain("sample.ts-8-around-c");
-    expect(out).toContain("sample.ts:9:needle");
-    expect(out).toContain("sample.ts-10-around-d");
+    expect(out).toContain("  9 | around-c");
+    expect(out).toContain("> 10 | needle");
+    expect(out).toContain("  11 | around-d");
+  });
+
+  it("renders a same-line multi-alternative match once", async () => {
+    const missingBinaryError = () =>
+      Object.assign(new Error("missing binary"), {
+        code: "ENOENT",
+      });
+    execFileSyncMock.mockImplementation(() => {
+      throw missingBinaryError();
+    });
+    await fs.writeFile(path.join(tmpDir, "same-line.ts"), "inspect sessionId latest\n", "utf8");
+
+    const out = await executeGrepSearch("inspect|sessionId|latest", "*.ts", 0);
+
+    expect(out.split("> 1 |")).toHaveLength(2);
+    expect(out).toContain("same-line.ts\n> 1 | inspect sessionId latest");
   });
 
   it("bounds oversized matching lines in the Node fallback", async () => {
@@ -246,8 +287,12 @@ describe("GrepSearchTool Node fallback context merge", () => {
 
     const out = await executeGrepSearch("needle", "*.ts", 0);
 
-    expect(Buffer.byteLength(out, "utf8")).toBeLessThanOrEqual(MAX_GREP_OUTPUT_LINE_BYTES);
-    expect(out).toContain("bundle.ts:1:needle-");
+    const renderedLine = out.split("\n").find((line) => line.startsWith("> 1 |"));
+    expect(renderedLine).toBeDefined();
+    expect(Buffer.byteLength(renderedLine ?? "", "utf8")).toBeLessThanOrEqual(
+      MAX_GREP_OUTPUT_LINE_BYTES,
+    );
+    expect(out).toContain("bundle.ts\n> 1 | needle-");
     expect(out).toContain("[grep line truncated:");
     expect(out).toContain("-tail");
     expect(out).not.toContain("�");
@@ -269,7 +314,7 @@ describe("GrepSearchTool Node fallback context merge", () => {
     });
 
     expect(out).toContain(
-      `${path.join("local", "nested", "settings.ts")}:1:export const ignoredNeedle = true;`,
+      `${path.join("local", "nested", "settings.ts")}\n> 1 | export const ignoredNeedle = true`,
     );
   });
 
@@ -287,7 +332,7 @@ describe("GrepSearchTool Node fallback context merge", () => {
 
       expect(outsideAccessRequests).toHaveLength(1);
       expect(outsideAccessRequests[0]?.access).toBe("scan");
-      expect(out).toContain(`${outsideFile}:1:export const externalNeedle = true;`);
+      expect(out).toContain(`${outsideFile}\n> 1 | export const externalNeedle = true`);
     } finally {
       await fs.rm(outsideDir, { recursive: true, force: true });
     }

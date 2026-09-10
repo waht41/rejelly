@@ -194,6 +194,144 @@ function clampContextLines(contextLines?: number): number {
   return Math.max(0, Math.min(MAX_CONTEXT_LINES, Math.trunc(contextLines as number)));
 }
 
+type SearchLine = {
+  lineNumber: number;
+  text: string;
+  matched: boolean;
+};
+
+type SearchFileResult = {
+  displayPath: string;
+  lines: Map<number, SearchLine>;
+  matchedLineNumbers: Set<number>;
+};
+
+function createSearchFileResult(displayPath: string): SearchFileResult {
+  return {
+    displayPath,
+    lines: new Map(),
+    matchedLineNumbers: new Set(),
+  };
+}
+
+function addSearchLine(
+  result: SearchFileResult,
+  lineNumber: number,
+  text: string,
+  matched: boolean,
+): void {
+  const existing = result.lines.get(lineNumber);
+  result.lines.set(lineNumber, {
+    lineNumber,
+    text: existing?.text ?? text,
+    matched: Boolean(existing?.matched || matched),
+  });
+  if (matched) {
+    result.matchedLineNumbers.add(lineNumber);
+  }
+}
+
+function mergeContextIntervals(
+  matchedLineNumbers: Iterable<number>,
+  contextLines: number,
+): Array<[number, number]> {
+  const intervals: Array<[number, number]> = [];
+  const normalizedContextLines = clampContextLines(contextLines);
+  const sortedMatches = [...new Set(matchedLineNumbers)].sort((a, b) => a - b);
+
+  for (const lineNumber of sortedMatches) {
+    const start = Math.max(1, lineNumber - normalizedContextLines);
+    const end = lineNumber + normalizedContextLines;
+    const previous = intervals.at(-1);
+    // Merge overlapping windows and a one-line gap. The latter avoids emitting
+    // two nearly identical snippets for matches separated by one line.
+    if (previous && start <= previous[1] + 2) {
+      previous[1] = Math.max(previous[1], end);
+    } else {
+      intervals.push([start, end]);
+    }
+  }
+  return intervals;
+}
+
+function parseNativeSearchOutput(text: string): SearchFileResult[] {
+  const files = new Map<string, SearchFileResult>();
+
+  for (const rawLine of text.trimEnd().split("\n")) {
+    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+    if (line.length === 0 || line === "--") {
+      continue;
+    }
+
+    // Native context uses path-line-text while a match uses path:line:text.
+    // Choose the delimiter that occurs first so a context line containing
+    // another colon (for example, a URL) is not mistaken for a match.
+    const matchingDelimiter = line.match(/:(\d+):/);
+    const contextDelimiter = line.match(/-(\d+)-/);
+    const matchingIndex = matchingDelimiter?.index ?? Number.POSITIVE_INFINITY;
+    const contextIndex = contextDelimiter?.index ?? Number.POSITIVE_INFINITY;
+    const isMatch = matchingIndex < contextIndex;
+    const delimiter = isMatch ? matchingDelimiter : contextDelimiter;
+    const delimiterIndex = isMatch ? matchingIndex : contextIndex;
+    if (!delimiter || !Number.isFinite(delimiterIndex)) {
+      continue;
+    }
+
+    const displayPath = line.slice(0, delimiterIndex);
+    const lineNumber = Number(delimiter[1]);
+    const lineText = line.slice(delimiterIndex + delimiter[0].length);
+    if (!displayPath || !Number.isSafeInteger(lineNumber) || lineNumber < 1) {
+      continue;
+    }
+
+    let result = files.get(displayPath);
+    if (!result) {
+      result = createSearchFileResult(displayPath);
+      files.set(displayPath, result);
+    }
+    addSearchLine(result, lineNumber, lineText, isMatch);
+  }
+
+  return [...files.values()];
+}
+
+function renderSearchResults(results: SearchFileResult[], contextLines: number): string {
+  const outputLines: string[] = [];
+  let renderedAnyFile = false;
+
+  for (const result of results) {
+    const intervals = mergeContextIntervals(result.matchedLineNumbers, contextLines);
+    let renderedFile = false;
+
+    for (const [start, end] of intervals) {
+      const lines = [...result.lines.values()]
+        .filter((line) => line.lineNumber >= start && line.lineNumber <= end)
+        .sort((a, b) => a.lineNumber - b.lineNumber);
+      if (lines.length === 0) {
+        continue;
+      }
+
+      if (!renderedFile) {
+        if (renderedAnyFile) {
+          outputLines.push("--");
+        }
+        outputLines.push(result.displayPath);
+        renderedFile = true;
+        renderedAnyFile = true;
+      } else {
+        outputLines.push("--");
+      }
+
+      for (const line of lines) {
+        const marker = line.matched ? ">" : " ";
+        outputLines.push(`${marker} ${line.lineNumber} | ${line.text}`);
+      }
+    }
+  }
+
+  return outputLines.length > 0 ? truncateOutput(outputLines.join("\n")) : "";
+}
+
 function rgExcludeGlobs(): string[] {
   return [...TOOL_ALWAYS_IGNORED_DIR_NAMES].flatMap((name) => ["--glob", `!${name}/**`]);
 }
@@ -228,7 +366,10 @@ function runRipgrep(
   if (!result.ok) {
     return { kind: "unavailable" };
   }
-  const out = truncateOutput(result.stdout);
+  const out = renderSearchResults(
+    parseNativeSearchOutput(result.stdout),
+    clampContextLines(contextLines),
+  );
   return out.trim().length > 0 ? { kind: "hits", text: out } : { kind: "empty" };
 }
 
@@ -259,7 +400,10 @@ function runGitGrep(
   if (!result.ok) {
     return { kind: "unavailable" };
   }
-  const out = truncateOutput(result.stdout);
+  const out = renderSearchResults(
+    parseNativeSearchOutput(result.stdout),
+    clampContextLines(contextLines),
+  );
   return out.trim().length > 0 ? { kind: "hits", text: out } : { kind: "empty" };
 }
 
@@ -366,7 +510,7 @@ async function fallbackNodeSearch(
   }
 
   const allFiles = await collectFiles(policy, resolved, includeIgnored);
-  const linesOut: string[] = [];
+  const searchResults: SearchFileResult[] = [];
   const normalizedContextLines = clampContextLines(contextLines);
 
   for (const file of allFiles) {
@@ -383,50 +527,38 @@ async function fallbackNodeSearch(
     } catch {
       continue;
     }
-    const displayPath = file.displayPath;
     const lines = content.split(/\r?\n/);
-    const matchedLineIndexes = new Set<number>();
-    const contextLineIndexes = new Set<number>();
+    const matchedLineNumbers = new Set<number>();
 
     for (let i = 0; i < lines.length; i++) {
       if (re.test(lines[i])) {
-        matchedLineIndexes.add(i);
-        const start = Math.max(0, i - normalizedContextLines);
-        const end = Math.min(lines.length - 1, i + normalizedContextLines);
-        for (let idx = start; idx <= end; idx++) {
-          contextLineIndexes.add(idx);
-        }
+        matchedLineNumbers.add(i + 1);
       }
     }
 
-    if (contextLineIndexes.size === 0) {
+    if (matchedLineNumbers.size === 0) {
       continue;
     }
 
-    const selectedIndexes = Array.from(contextLineIndexes).sort((a, b) => a - b);
-    let prev = -2;
-    for (const idx of selectedIndexes) {
-      if (prev !== -2 && idx > prev + 1) {
-        linesOut.push("--");
-      }
-      if (matchedLineIndexes.has(idx)) {
-        linesOut.push(`${displayPath}:${idx + 1}:${lines[idx]}`);
-      } else {
-        linesOut.push(`${displayPath}-${idx + 1}-${lines[idx]}`);
-      }
-      prev = idx;
-      if (linesOut.length >= TRUNCATE_MAX_LINES) {
-        return truncateOutput(linesOut.join("\n"));
+    const result = createSearchFileResult(file.displayPath);
+    for (const [start, end] of mergeContextIntervals(matchedLineNumbers, normalizedContextLines)) {
+      for (let lineNumber = start; lineNumber <= end; lineNumber++) {
+        const lineText = lines[lineNumber - 1];
+        if (lineText !== undefined) {
+          addSearchLine(result, lineNumber, lineText, matchedLineNumbers.has(lineNumber));
+        }
       }
     }
+    searchResults.push(result);
   }
 
-  if (linesOut.length === 0) {
+  const rendered = renderSearchResults(searchResults, normalizedContextLines);
+  if (rendered.length === 0) {
     return includeIgnored
       ? "No matches for pattern (bounded ignored-subtree scan; skipped nested tool dirs and oversized files)."
       : "No matches for pattern (Node fallback; skipped by .gitignore, tool dirs, and oversized files).";
   }
-  return truncateOutput(linesOut.join("\n"));
+  return rendered;
 }
 
 /** Shared ripgrep / git grep / Node fallback pipeline (also used by planner-scoped grep). */

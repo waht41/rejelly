@@ -8,16 +8,27 @@ import { z } from "zod";
 import { MAX_HEURISTIC_RESULTS } from "../source/heuristicAstLimits";
 import { extractJsDocAbove, extractLeadingFileJsDoc } from "./jsdoc";
 import {
-  collectDocumentSymbols,
+  collectOutlineDeclarations,
   findNamedDeclarationAstNodes,
+  type HeuristicSymbolKind,
   sliceDeclarationSignature,
 } from "./queries";
-import { collectMatchingDeclarations, getParsedAst, MAX_JSDOC_CHARS, truncateJson } from "./shared";
+import {
+  collectMatchingDeclarations,
+  getParsedAst,
+  MAX_OUTPUT_CHARS,
+  truncateJson,
+} from "./shared";
 
 export const astDocumentSymbolsParameters = z.object({
   filePath: z
     .union([z.string().min(1), z.array(z.string().min(1)).min(1)])
     .describe("Path to one JS/TS file, or a non-empty array of paths."),
+  include: z
+    .enum(["all", "exported"])
+    .optional()
+    .default("all")
+    .describe("Whether to include all outline declarations or only exported declarations."),
 });
 
 export const astReadSymbolParameters = z.object({
@@ -62,7 +73,7 @@ export const astModuleExportsParameters = z.object({
   filePath: z.string().min(1).describe("Path to a JS/TS module."),
 });
 
-type AstDocumentSymbolsArgs = z.infer<typeof astDocumentSymbolsParameters>;
+type AstDocumentSymbolsArgs = z.input<typeof astDocumentSymbolsParameters>;
 type AstReadSymbolArgs = z.infer<typeof astReadSymbolParameters>;
 type AstWorkspaceSymbolsArgs = z.infer<typeof astWorkspaceSymbolsParameters>;
 type AstReadSymbolCodeArgs = z.infer<typeof astReadSymbolCodeParameters>;
@@ -153,88 +164,199 @@ function isDeclarationExported(node: SgNode): boolean {
   return false;
 }
 
-function pickNodeForSymbolLine(
-  nodes: ReturnType<typeof findNamedDeclarationAstNodes>,
-  targetLine: number,
-): ReturnType<typeof findNamedDeclarationAstNodes>[number] | undefined {
-  if (nodes.length === 0) {
-    return undefined;
+const MAX_OUTLINE_DESCRIPTION_CHARS = 180;
+
+type OutlineSymbol = {
+  kind: HeuristicSymbolKind;
+  name: string;
+  line: number;
+  depth: number;
+  exported: boolean;
+  compactSignature: string;
+  description?: string;
+};
+
+type DocumentSymbolsFileOk = {
+  file: string;
+  moduleDoc?: string;
+  symbols: OutlineSymbol[];
+};
+
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function truncateOneLine(text: string, max = MAX_OUTLINE_DESCRIPTION_CHARS): string {
+  const compact = oneLine(text);
+  return compact.length > max ? `${compact.slice(0, max)}…` : compact;
+}
+
+function findTopLevelChar(text: string, target: string): number {
+  const openers: Record<string, string> = { "(": ")", "[": "]", "{": "}", "<": ">" };
+  const closers = new Set(Object.values(openers));
+  const stack: string[] = [];
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i]!;
+    if (openers[char]) {
+      stack.push(openers[char]);
+    } else if (closers.has(char)) {
+      if (stack.at(-1) === char) {
+        stack.pop();
+      }
+    } else if (char === target && stack.length === 0) {
+      return i;
+    }
   }
-  const exact = nodes.find((n) => n.range().start.line + 1 === targetLine);
-  if (exact) {
-    return exact;
+  return -1;
+}
+
+function splitTopLevel(text: string): string[] {
+  const parts: string[] = [];
+  let rest = text;
+  while (rest.length > 0) {
+    const comma = findTopLevelChar(rest, ",");
+    if (comma < 0) {
+      parts.push(rest);
+      break;
+    }
+    parts.push(rest.slice(0, comma));
+    rest = rest.slice(comma + 1);
   }
-  return [...nodes].sort(
-    (a, b) =>
-      Math.abs(a.range().start.line + 1 - targetLine) -
-      Math.abs(b.range().start.line + 1 - targetLine),
-  )[0];
+  return parts;
+}
+
+function compactParameter(raw: string): string {
+  let parameter = oneLine(raw).replace(/^(?:public|protected|private|readonly|override)\s+/, "");
+  const equals = findTopLevelChar(parameter, "=");
+  const hasDefault = equals >= 0;
+  if (hasDefault) {
+    parameter = parameter.slice(0, equals).trim();
+  }
+  const colon = findTopLevelChar(parameter, ":");
+  if (colon >= 0) {
+    parameter = parameter.slice(0, colon).trim();
+  }
+  if (hasDefault && !parameter.endsWith("?")) {
+    parameter += "?";
+  }
+  return parameter;
+}
+
+function compactParameters(node: SgNode): string {
+  const raw = node.field("parameters")?.text() ?? "()";
+  const inner = raw.startsWith("(") && raw.endsWith(")") ? raw.slice(1, -1) : raw;
+  return splitTopLevel(inner).map(compactParameter).filter(Boolean).join(", ");
+}
+
+function compactReturnType(node: SgNode): string {
+  let returnType = oneLine(node.field("return_type")?.text() ?? "").replace(/^:\s*/, "");
+  if (/^Promise<.*>$/.test(returnType)) {
+    returnType = returnType.slice("Promise<".length, -1);
+  }
+  return returnType ? ` → ${returnType}` : "";
+}
+
+function variableKeyword(node: SgNode): string {
+  const declaration = node.parent()?.text().trimStart() ?? "";
+  return declaration.match(/^(const|let|var)\b/)?.[1] ?? "const";
+}
+
+function compactDeclarationSignature(
+  kind: HeuristicSymbolKind,
+  name: string,
+  node: SgNode,
+  sourceText: string,
+): string {
+  if (kind === "function" || kind === "method") {
+    const head = oneLine(sliceDeclarationSignature(sourceText, node) || node.text());
+    const asyncPrefix = /\basync\b/.test(head) ? "async " : "";
+    const staticPrefix = kind === "method" && /\bstatic\b/.test(head) ? "static " : "";
+    const callableName = kind === "function" ? `fn ${name}` : name;
+    return `${staticPrefix}${asyncPrefix}${callableName}(${compactParameters(node)})${compactReturnType(node)}`;
+  }
+  if (kind === "variable") {
+    return `${variableKeyword(node)} ${name}`;
+  }
+  if (kind === "type") {
+    const typeParameters = oneLine(node.field("type_parameters")?.text() ?? "");
+    return `type ${name}${typeParameters}`;
+  }
+  const raw = oneLine(sliceDeclarationSignature(sourceText, node) || node.text())
+    .replace(/^(?:export\s+)?(?:default\s+)?/, "")
+    .replace(/\s*\{$/, "")
+    .trim();
+  if (raw.startsWith(`${kind} `)) {
+    return raw;
+  }
+  return `${kind} ${name}`;
+}
+
+function outlineDepth(node: SgNode): number {
+  return node.kind() === "method_definition" && node.parent()?.kind() === "class_body" ? 1 : 0;
 }
 
 function buildSymbolsForParsedFile(
   rel: string,
   text: string,
-  root: Parameters<typeof collectDocumentSymbols>[0],
-  lang: Parameters<typeof collectDocumentSymbols>[1],
-) {
+  root: Parameters<typeof collectOutlineDeclarations>[0],
+  lang: Parameters<typeof collectOutlineDeclarations>[1],
+): DocumentSymbolsFileOk {
   const lines = text.split(/\r?\n/);
   const moduleDocRaw = extractLeadingFileJsDoc(lines);
-  const moduleDoc =
-    moduleDocRaw === undefined
-      ? undefined
-      : (() => {
-          const stripped = stripJsDocBlock(moduleDocRaw);
-          return stripped.length > MAX_JSDOC_CHARS
-            ? `${stripped.slice(0, MAX_JSDOC_CHARS)}…`
-            : stripped;
-        })();
-  const symbols = collectDocumentSymbols(root, lang)
-    .map((sym) => {
-      const declarationNodes = findNamedDeclarationAstNodes(root, sym.name, false, lang);
-      const pickedNode = pickNodeForSymbolLine(declarationNodes, sym.line);
-      const targetLine = pickedNode ? pickedNode.range().start.line + 1 : sym.line;
-      const raw = extractCommentBlockAbove(lines, targetLine);
-      const signature = pickedNode ? sliceDeclarationSignature(text, pickedNode) : undefined;
-      const inlineComment = extractInlineComment(lines[sym.line - 1]);
-      const jsDocSummary =
-        !raw || raw.length === 0
-          ? undefined
-          : (() => {
-              const stripped = stripJsDocBlock(raw);
-              return stripped.length > MAX_JSDOC_CHARS
-                ? `${stripped.slice(0, MAX_JSDOC_CHARS)}…`
-                : stripped;
-            })();
-      return {
-        ...sym,
-        exported: pickedNode ? isDeclarationExported(pickedNode) : false,
-        signature: signature ?? null,
-        description: jsDocSummary ?? inlineComment ?? null,
-        ...(inlineComment ? { inlineComment } : {}),
-      };
-    })
-    .sort((a, b) => {
-      if (a.exported !== b.exported) {
-        return a.exported ? -1 : 1;
-      }
-      if (a.line !== b.line) {
-        return a.line - b.line;
-      }
-      return a.name.localeCompare(b.name);
-    });
-  const relOut = rel.replace(/\\/g, "/");
+  const moduleDoc = moduleDocRaw ? truncateOneLine(stripJsDocBlock(moduleDocRaw)) : undefined;
+  const symbols = collectOutlineDeclarations(root, lang).map(({ kind, name, node }) => {
+    const line = node.range().start.line + 1;
+    const rawDescription = extractCommentBlockAbove(lines, line);
+    const inlineComment = extractInlineComment(lines[line - 1]);
+    const description = rawDescription
+      ? truncateOneLine(stripJsDocBlock(rawDescription))
+      : inlineComment
+        ? truncateOneLine(inlineComment)
+        : undefined;
+    return {
+      kind,
+      name,
+      line,
+      depth: outlineDepth(node),
+      exported: isDeclarationExported(node),
+      compactSignature: compactDeclarationSignature(kind, name, node, text),
+      ...(description ? { description } : {}),
+    };
+  });
   return {
-    file: relOut,
-    ...(moduleDoc !== undefined ? { moduleDoc } : {}),
+    file: rel.replace(/\\/g, "/"),
+    ...(moduleDoc ? { moduleDoc } : {}),
     symbols,
   };
 }
 
-type DocumentSymbolsFileOk = ReturnType<typeof buildSymbolsForParsedFile>;
+function formatDocumentOutline(file: DocumentSymbolsFileOk, include: "all" | "exported"): string {
+  const symbols = file.symbols.filter((symbol) => include === "all" || symbol.exported);
+  const width = Math.max(1, ...symbols.map((symbol) => String(symbol.line).length));
+  const output = [file.file, ""];
+  if (file.moduleDoc) {
+    output.push(`  # ${file.moduleDoc}`, "");
+  }
+  for (const symbol of symbols) {
+    const exportPrefix = symbol.exported && symbol.depth === 0 ? "export " : "";
+    const indent = "  ".repeat(symbol.depth);
+    const description = symbol.description ? ` — ${symbol.description}` : "";
+    output.push(
+      `  ${String(symbol.line).padStart(width)}  ${indent}${exportPrefix}${symbol.compactSignature}${description}`,
+    );
+  }
+  if (symbols.length === 0) {
+    output.push("  (no matching symbols)");
+  }
+  return output.join("\n").trimEnd();
+}
 
-type DocumentSymbolsBatchEntry = DocumentSymbolsFileOk | { file: string; error: string };
+function truncateOutline(raw: string): string {
+  return raw.length <= MAX_OUTPUT_CHARS
+    ? raw
+    : `${raw.slice(0, MAX_OUTPUT_CHARS)}\n... (truncated, max ${MAX_OUTPUT_CHARS} chars)`;
+}
 
-/** One file: same JSON payload as before on success, or a plain error string on failure. */
 async function documentSymbolsForOneFile(
   filePath: string,
 ): Promise<string | DocumentSymbolsFileOk> {
@@ -246,27 +368,15 @@ async function documentSymbolsForOneFile(
 }
 
 export async function astDocumentSymbolsService(args: AstDocumentSymbolsArgs): Promise<string> {
-  const raw = args.filePath;
-  const paths = Array.isArray(raw) ? raw : [raw];
-  if (paths.length === 1) {
-    const r = await documentSymbolsForOneFile(paths[0]!);
-    if (typeof r === "string") {
-      return r;
+  const paths = Array.isArray(args.filePath) ? args.filePath : [args.filePath];
+  const results = await Promise.all(paths.map((path) => documentSymbolsForOneFile(path)));
+  const sections = results.map((result, index) => {
+    if (typeof result === "string") {
+      return `${paths[index]!.replace(/\\/g, "/")}\n\n  error: ${result}`;
     }
-    return truncateJson(r);
-  }
-  const results = await Promise.all(paths.map((p) => documentSymbolsForOneFile(p)));
-  const files: DocumentSymbolsBatchEntry[] = [];
-  for (let i = 0; i < results.length; i += 1) {
-    const r = results[i]!;
-    const inputPath = paths[i]!.replace(/\\/g, "/");
-    if (typeof r === "string") {
-      files.push({ file: inputPath, error: r });
-    } else {
-      files.push(r);
-    }
-  }
-  return truncateJson({ files });
+    return formatDocumentOutline(result, args.include ?? "all");
+  });
+  return truncateOutline(sections.join("\n\n"));
 }
 
 export async function astReadSymbolService(args: AstReadSymbolArgs): Promise<string> {
@@ -373,29 +483,19 @@ export async function astModuleExportsService(args: AstModuleExportsArgs): Promi
     return parsed.error;
   }
   const sourceLines = parsed.text.split(/\r?\n/);
-  const base = JSON.parse(await astDocumentSymbolsService({ filePath: args.filePath })) as {
-    file: string;
-    symbols: Array<{
-      kind: string;
-      name: string;
-      line: number;
-      exported?: boolean;
-      signature?: string | null;
-      description?: string | null;
-    }>;
-  };
-  const declarationExports: ModuleExportEntry[] = (base.symbols ?? [])
-    .filter((sym) => sym.exported === true)
-    .map((sym) => ({
-      kind: sym.kind,
-      name: sym.name,
-      line: sym.line,
-      signature: sym.signature ?? null,
-      description: sym.description ?? null,
+  const base = buildSymbolsForParsedFile(parsed.rel, parsed.text, parsed.root, parsed.lang);
+  const declarationExports: ModuleExportEntry[] = base.symbols
+    .filter((symbol) => symbol.exported)
+    .map((symbol) => ({
+      kind: symbol.kind,
+      name: symbol.name,
+      line: symbol.line,
+      signature: symbol.compactSignature,
+      description: symbol.description ?? null,
       source: null,
-      isTypeOnly: sym.kind === "type" || sym.kind === "interface",
+      isTypeOnly: symbol.kind === "type" || symbol.kind === "interface",
       importedName: null,
-      exportedName: sym.name,
+      exportedName: symbol.name,
     }));
 
   const reExports: ModuleExportEntry[] = [];
@@ -461,10 +561,10 @@ export async function astModuleExportsService(args: AstModuleExportsArgs): Promi
 export const AstDocumentSymbolsTool: ToolDefinition<typeof astDocumentSymbolsParameters> = {
   name: "ast_document_symbols",
   description:
-    "Outline-style list: top-level (module-scope) classes, interfaces, types, enums, functions, class methods, and module-level const/let. " +
-    "Pass a single filePath string or a non-empty array to batch several files; multi-file results are wrapped in { files: [...] } with the same per-file fields as a single call. " +
-    "Ignores locals inside functions, arrows, and object-literal methods (same idea as IDE Outline). " +
-    "Includes optional leading file JSDoc (moduleDoc) and per-symbol JSDoc when adjacent to the declaration.",
+    "Compact source-order outline of top-level classes, interfaces, types, enums, functions, class methods, and module-level const/let. " +
+    "Pass one filePath or batch several files; use include to keep all declarations or only exports. " +
+    "Returns one symbol per line with compact signatures and indented class members, omitting empty metadata. " +
+    "Ignores locals inside functions, arrows, and object-literal methods.",
   parameters: astDocumentSymbolsParameters,
   handler: async (args) => astDocumentSymbolsService(args),
 };
