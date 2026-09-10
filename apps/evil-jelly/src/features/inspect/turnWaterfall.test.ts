@@ -178,7 +178,7 @@ describe("turn waterfall", () => {
     expect(rendered.indexOf("prior context + system/tools")).toBeLessThan(
       rendered.indexOf("user input"),
     );
-    expect(rendered).toContain("model input M2 (Turn #2, adjust +8)");
+    expect(rendered).toContain("model input M2 (adjust +8)");
   });
 
   it("marks an estimated peak and renders negative provider adjustment as a checkpoint", () => {
@@ -254,7 +254,7 @@ describe("turn waterfall", () => {
     });
     const checkpointLine = renderTurnWaterfall(inspection)
       .split("\n")
-      .find((line) => line.includes("model input M2 (Turn #2"));
+      .find((line) => line.includes("model input M2 (adjust"));
     expect(checkpointLine).toBeDefined();
     expect(checkpointLine).toContain("adjust -30");
     expect(checkpointLine?.trimEnd().endsWith("120")).toBe(true);

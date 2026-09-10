@@ -105,7 +105,7 @@ export function renderTurnWaterfall(
       const checkpoint = laterCheckpoints[checkpointIndex];
       const direction = checkpoint.adjustmentTokens >= 0 ? "+" : "";
       lines.push(
-        `     ${label(`model input ${checkpoint.modelCallAddress} (Turn #${checkpoint.modelCallNumber}, adjust ${direction}${integer(checkpoint.adjustmentTokens)})`)} ${values(
+        `     ${label(`model input ${checkpoint.modelCallAddress} (adjust ${direction}${integer(checkpoint.adjustmentTokens)})`)} ${values(
           checkpoint.adjustmentTokens,
           "provider",
           checkpoint.promptTokens,

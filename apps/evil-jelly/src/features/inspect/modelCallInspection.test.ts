@@ -191,6 +191,8 @@ describe("Model Call inspection", () => {
     const single = projectModelCallList(meta, events, { selector: "M2" });
     expect(single.calls.map((call) => call.address)).toEqual(["M2"]);
     expect(renderModelCallList(single)).toContain("Model calls — M2");
+    expect(renderModelCallList(single)).toContain("turn");
+    expect(renderModelCallList(single)).toContain("T1");
 
     const numericSingle = projectModelCallList(meta, events, { selector: "2" });
     expect(numericSingle.calls.map((call) => call.address)).toEqual(["M2"]);

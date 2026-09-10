@@ -35,30 +35,32 @@ function modelIdentity(call: ModelCallInspection): string {
   return [call.model.modelId, call.model.provider, call.model.protocol].filter(Boolean).join(" · ");
 }
 
-function renderTable(calls: readonly ModelCallInspection[], view: ModelCallView): string[] {
+function renderTable(
+  calls: readonly ModelCallInspection[],
+  view: ModelCallView,
+  options: { includeTurn?: boolean } = {},
+): string[] {
   const identities = new Set(calls.map(modelIdentity));
   const includeModel = identities.size > 1;
-  const modelHeader = includeModel ? ["model"] : [];
-  const modelWidth = includeModel
-    ? Math.max(5, ...calls.map((call) => modelIdentity(call).length))
-    : 0;
+  const includeTurn = options.includeTurn ?? false;
+  const prefixHeaders = ["#", ...(includeTurn ? ["turn"] : []), ...(includeModel ? ["model"] : [])];
+  const prefixWidths = [
+    5,
+    ...(includeTurn ? [5] : []),
+    ...(includeModel ? [Math.max(5, ...calls.map((call) => modelIdentity(call).length))] : []),
+  ];
+  const prefixValues = (call: ModelCallInspection): string[] => [
+    call.address,
+    ...(includeTurn ? [call.turnNumber ? `T${call.turnNumber}` : "-"] : []),
+    ...(includeModel ? [modelIdentity(call)] : []),
+  ];
   const definitions =
     view === "tokens"
       ? {
-          headers: [
-            "#",
-            ...modelHeader,
-            "input",
-            "cache",
-            "hit",
-            "uncached",
-            "output",
-            "reasoning",
-          ],
-          widths: [5, ...(includeModel ? [modelWidth] : []), 8, 8, 7, 9, 8, 9],
+          headers: [...prefixHeaders, "input", "cache", "hit", "uncached", "output", "reasoning"],
+          widths: [...prefixWidths, 8, 8, 7, 9, 8, 9],
           values: (call: ModelCallInspection) => [
-            call.address,
-            ...(includeModel ? [modelIdentity(call)] : []),
+            ...prefixValues(call),
             compact(call.usage?.promptTokens),
             compact(call.usage?.cacheReadTokens),
             percentage(call.cacheHitRate),
@@ -69,16 +71,15 @@ function renderTable(calls: readonly ModelCallInspection[], view: ModelCallView)
         }
       : view === "latency"
         ? {
-            headers: ["#", ...modelHeader, "TTFT", "generation", "total", "output tok/s"],
-            widths: [5, ...(includeModel ? [modelWidth] : []), 8, 11, 8, 12],
+            headers: [...prefixHeaders, "TTFT", "generation", "total", "output tok/s"],
+            widths: [...prefixWidths, 8, 11, 8, 12],
             values: (call: ModelCallInspection) => {
               const rate =
                 call.generationMs && call.usage?.completionTokens !== undefined
                   ? ((call.usage.completionTokens * 1_000) / call.generationMs).toFixed(1)
                   : "-";
               return [
-                call.address,
-                ...(includeModel ? [modelIdentity(call)] : []),
+                ...prefixValues(call),
                 duration(call.ttftMs),
                 duration(call.generationMs),
                 duration(call.durationMs),
@@ -89,8 +90,7 @@ function renderTable(calls: readonly ModelCallInspection[], view: ModelCallView)
         : view === "transport"
           ? {
               headers: [
-                "#",
-                ...modelHeader,
+                ...prefixHeaders,
                 "provider",
                 "protocol",
                 "attempts",
@@ -98,10 +98,9 @@ function renderTable(calls: readonly ModelCallInspection[], view: ModelCallView)
                 "finish",
                 "status",
               ],
-              widths: [5, ...(includeModel ? [modelWidth] : []), 10, 16, 8, 11, 12, 8],
+              widths: [...prefixWidths, 10, 16, 8, 11, 12, 8],
               values: (call: ModelCallInspection) => [
-                call.address,
-                ...(includeModel ? [modelIdentity(call)] : []),
+                ...prefixValues(call),
                 call.model.provider ?? "-",
                 call.model.protocol ?? "-",
                 String(call.attemptCount),
@@ -112,8 +111,7 @@ function renderTable(calls: readonly ModelCallInspection[], view: ModelCallView)
             }
           : {
               headers: [
-                "#",
-                ...modelHeader,
+                ...prefixHeaders,
                 "input",
                 "cache",
                 "uncached",
@@ -123,10 +121,9 @@ function renderTable(calls: readonly ModelCallInspection[], view: ModelCallView)
                 "duration",
                 "status",
               ],
-              widths: [5, ...(includeModel ? [modelWidth] : []), 8, 8, 9, 8, 9, 8, 9, 8],
+              widths: [...prefixWidths, 8, 8, 9, 8, 9, 8, 9, 8],
               values: (call: ModelCallInspection) => [
-                call.address,
-                ...(includeModel ? [modelIdentity(call)] : []),
+                ...prefixValues(call),
                 compact(call.usage?.promptTokens),
                 compact(call.usage?.cacheReadTokens),
                 compact(call.uncachedTokens),
@@ -202,7 +199,12 @@ export function renderModelCallList(
   if (calls.length === 0) return [...lines, "", "(none)"].join("\n");
   const identities = new Set(calls.map(modelIdentity));
   if (identities.size === 1) lines.push(`Model: ${modelIdentity(calls[0])}`);
-  lines.push("", ...renderTable(calls, options.view ?? "balanced"));
+  lines.push(
+    "",
+    ...renderTable(calls, options.view ?? "balanced", {
+      includeTurn: inspection.scope === "range",
+    }),
+  );
   return lines.join("\n");
 }
 
