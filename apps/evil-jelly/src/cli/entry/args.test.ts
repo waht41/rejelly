@@ -71,11 +71,15 @@ describe("parseCliArgs", () => {
 
     expect(() => parseCliArgs(["node", "evil", "inspect", "--help"])).toThrow("exit 0");
     const help = log.mock.calls.flat().join("\n");
-    expect(help).toContain(
-      "$ evil inspect [sessionId] [--turn <number|id>] [--json] [--all-workspaces]",
-    );
+    expect(help).toContain("$ evil inspect [sessionId] [--turn <number-or-id>]");
     expect(help).toContain("--json");
-    expect(help).toContain("--turn <number|id>");
+    expect(help).toContain("--turn <selector>");
+    expect(help).toContain("--segment <address>");
+    expect(help).toContain("--call <id>");
+    expect(help).toContain("--dump");
+    expect(help).toContain("Dump the complete persisted request or canonical result");
+    expect(help).toContain("--full");
+    expect(help).toContain("--top <number>");
     expect(help).toContain("--all-workspaces");
     expect(help).toContain("--workspace <dir>");
     expect(help).not.toContain("--api-key");
@@ -186,6 +190,68 @@ describe("parseCliArgs", () => {
     expect(selected.inspectJson).toBe(true);
     expect(selected.inspectAllWorkspaces).toBe(true);
     expect(selected.inspectTurnId).toBe("1");
+  });
+
+  it("parses Tool drill-down and top-contributor inspection options", () => {
+    const segment = parseCliArgs([
+      "node",
+      "evil",
+      "inspect",
+      "session-1",
+      "--turn",
+      "1",
+      "--segment",
+      "4.2",
+      "--full",
+    ]);
+    expect(segment).toMatchObject({
+      kind: "inspect",
+      inspectTurnId: "1",
+      inspectSegment: "4.2",
+      inspectFull: true,
+      inspectDump: false,
+    });
+
+    const call = parseCliArgs([
+      "node",
+      "evil",
+      "inspect",
+      "session-1",
+      "--call",
+      "call-1",
+      "--dump",
+    ]);
+    expect(call).toMatchObject({
+      kind: "inspect",
+      inspectCallId: "call-1",
+      inspectDump: true,
+    });
+
+    const top = parseCliArgs([
+      "node",
+      "evil",
+      "inspect",
+      "session-1",
+      "--turn",
+      "1",
+      "--top",
+      "10",
+    ]);
+    expect(top).toMatchObject({ kind: "inspect", inspectTurnId: "1", inspectTop: 10 });
+  });
+
+  it.each([
+    ["segment without turn", ["inspect", "session-1", "--segment", "4"]],
+    ["call with turn", ["inspect", "session-1", "--turn", "1", "--call", "call-1"]],
+    ["dump with json", ["inspect", "session-1", "--call", "call-1", "--dump", "--json"]],
+    ["top without turn", ["inspect", "session-1", "--top", "10"]],
+    ["invalid top", ["inspect", "session-1", "--turn", "1", "--top", "0"]],
+  ])("rejects invalid inspect drill-down options: %s", (_name, argvTail) => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+    expect(() => parseCliArgs(["node", "evil", ...argvTail])).toThrow("exit 1");
   });
 
   it("requires a Session id for cross-workspace inspection", () => {

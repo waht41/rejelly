@@ -67,7 +67,18 @@ export function getCliVersion(): string {
 const cli = cac("evil");
 
 const HELP_OPTION_PREFIXES = {
-  inspect: ["--json", "--turn", "--all-workspaces", "--workspace", "-h, --help"],
+  inspect: [
+    "--json",
+    "--turn",
+    "--segment",
+    "--call",
+    "--dump",
+    "--full",
+    "--top",
+    "--all-workspaces",
+    "--workspace",
+    "-h, --help",
+  ],
   skills: ["--workspace", "-h, --help"],
 } as const;
 

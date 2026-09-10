@@ -50,6 +50,15 @@ export interface TurnWaterfallInspection {
   warnings: string[];
 }
 
+export interface TurnWaterfallTopContributor {
+  address: string;
+  label: string;
+  toolCallId?: string;
+  tokens: number;
+  tokenSource: "provider" | "estimated";
+  share: number;
+}
+
 function messageTokens(message: Message): number {
   return estimateMessagesTokens([message]);
 }
@@ -271,4 +280,45 @@ export function projectTurnWaterfall(
     segments,
     warnings,
   };
+}
+
+export function projectTopContributors(
+  inspection: TurnWaterfallInspection,
+  limit: number,
+): TurnWaterfallTopContributor[] {
+  const contributors = inspection.segments.flatMap((segment, segmentIndex) => {
+    if (segment.children?.length) {
+      return segment.children.map((child, childIndex) => ({
+        address: `${segmentIndex + 1}.${childIndex + 1}`,
+        label: child.label,
+        ...(child.toolCallId ? { toolCallId: child.toolCallId } : {}),
+        tokens: child.tokens,
+        tokenSource: child.tokenSource,
+      }));
+    }
+    if (
+      segment.kind === "context_checkpoint" ||
+      segment.kind === "reconciliation" ||
+      segment.tokens <= 0
+    ) {
+      return [];
+    }
+    return [
+      {
+        address: String(segmentIndex + 1),
+        label: segment.label,
+        ...(segment.toolCallId ? { toolCallId: segment.toolCallId } : {}),
+        tokens: segment.tokens,
+        tokenSource: segment.tokenSource,
+      },
+    ];
+  });
+  const totalTokens = contributors.reduce((sum, contributor) => sum + contributor.tokens, 0);
+  return contributors
+    .sort((left, right) => right.tokens - left.tokens)
+    .slice(0, limit)
+    .map((contributor) => ({
+      ...contributor,
+      share: totalTokens > 0 ? contributor.tokens / totalTokens : 0,
+    }));
 }

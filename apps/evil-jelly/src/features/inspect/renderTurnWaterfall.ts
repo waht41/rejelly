@@ -1,4 +1,8 @@
-import type { TurnWaterfallChild, TurnWaterfallInspection } from "./turnWaterfall";
+import {
+  projectTopContributors,
+  type TurnWaterfallChild,
+  type TurnWaterfallInspection,
+} from "./turnWaterfall";
 
 const BAR_WIDTH = 12;
 const LABEL_WIDTH = 64;
@@ -51,7 +55,10 @@ function childLine(
   return `     ${last ? "└─" : "├─"} ${label(toolLabel(child.label, child.toolCallId), LABEL_WIDTH - 3)} ${values(child.tokens, child.tokenSource, child.contextTokens, child.contextSource)}   ${bar(child.tokens, positiveLargest, negativeLargest)}`;
 }
 
-export function renderTurnWaterfall(inspection: TurnWaterfallInspection): string {
+export function renderTurnWaterfall(
+  inspection: TurnWaterfallInspection,
+  options: { top?: number } = {},
+): string {
   const renderedTokens = inspection.segments.flatMap((segment) =>
     segment.children?.length
       ? segment.children.map((child) => child.tokens)
@@ -95,6 +102,20 @@ export function renderTurnWaterfall(inspection: TurnWaterfallInspection): string
       `${String(index + 1).padStart(2)}   ${label(toolLabel(segment.label, segment.toolCallId))} ${values(segment.tokens, segment.tokenSource, segment.contextTokens, segment.contextSource)}   ${size}`,
     );
   });
+  if (options.top !== undefined) {
+    const contributors = projectTopContributors(inspection, options.top);
+    lines.push("", "Largest segments", "");
+    if (contributors.length === 0) lines.push("(none)");
+    else {
+      for (const contributor of contributors) {
+        const estimated = contributor.tokenSource === "estimated" ? "~" : " ";
+        const name = toolLabel(contributor.label, contributor.toolCallId);
+        lines.push(
+          ` #${contributor.address.padEnd(5)} ${label(name, 50)} ${estimated}${compactTokens(contributor.tokens).slice(1).padStart(8)}  ${(contributor.share * 100).toFixed(1).padStart(5)}%`,
+        );
+      }
+    }
+  }
   lines.push(
     "",
     "~ estimated from canonical message content; unmarked token counts are provider-reported.",

@@ -41,6 +41,11 @@ async function main() {
       json: args.inspectJson,
       allWorkspaces: args.inspectAllWorkspaces,
       turnId: args.inspectTurnId,
+      segment: args.inspectSegment,
+      callId: args.inspectCallId,
+      dump: args.inspectDump,
+      full: args.inspectFull,
+      top: args.inspectTop,
     });
     process.exit(0);
   }

@@ -5,12 +5,23 @@ import {
 } from "../../../domains/session/repository/sessionLocator";
 import { listSessions } from "../../../domains/session/repository/sessionStore";
 import { renderSessionInspection } from "../../../features/inspect/renderSessionInspection";
+import { renderToolCallInspection } from "../../../features/inspect/renderToolCallInspection";
 import { renderTurnWaterfall } from "../../../features/inspect/renderTurnWaterfall";
 import {
   projectSessionInspection,
   resolveTurnId,
 } from "../../../features/inspect/sessionInspection";
-import { projectTurnWaterfall } from "../../../features/inspect/turnWaterfall";
+import {
+  dumpToolCallPayload,
+  findToolCallTurnId,
+  projectToolCallBySegment,
+  projectToolCallInspection,
+  type ToolCallInspection,
+} from "../../../features/inspect/toolCallInspection";
+import {
+  projectTopContributors,
+  projectTurnWaterfall,
+} from "../../../features/inspect/turnWaterfall";
 import { getWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
 
 export interface RunInspectOptions {
@@ -18,6 +29,23 @@ export interface RunInspectOptions {
   json: boolean;
   allWorkspaces: boolean;
   turnId?: string;
+  segment?: string;
+  callId?: string;
+  dump: boolean;
+  full: boolean;
+  top?: number;
+}
+
+function printToolCall(inspection: ToolCallInspection, options: RunInspectOptions): void {
+  if (options.dump) {
+    process.stdout.write(dumpToolCallPayload(inspection));
+    return;
+  }
+  console.log(
+    options.json
+      ? JSON.stringify(inspection, null, 2)
+      : renderToolCallInspection(inspection, { full: options.full }),
+  );
 }
 
 export async function runInspect(options: RunInspectOptions): Promise<void> {
@@ -41,10 +69,34 @@ export async function runInspect(options: RunInspectOptions): Promise<void> {
         `Ignored ${warning.byteLength} trailing byte(s) from an incomplete Session event at offset ${warning.offset}.`,
     ),
   );
+  if (options.callId) {
+    const turnId = findToolCallTurnId(stored.events, options.callId);
+    const waterfall = projectTurnWaterfall(stored.meta, stored.events, turnId);
+    printToolCall(
+      projectToolCallInspection(stored.meta, stored.events, waterfall, options.callId),
+      options,
+    );
+    return;
+  }
   if (options.turnId) {
     const turnId = resolveTurnId(inspection, options.turnId);
     const waterfall = projectTurnWaterfall(stored.meta, stored.events, turnId);
-    console.log(options.json ? JSON.stringify(waterfall, null, 2) : renderTurnWaterfall(waterfall));
+    if (options.segment) {
+      printToolCall(
+        projectToolCallBySegment(stored.meta, stored.events, waterfall, options.segment),
+        options,
+      );
+      return;
+    }
+    if (options.json) {
+      const largestSegments =
+        options.top !== undefined ? projectTopContributors(waterfall, options.top) : undefined;
+      console.log(
+        JSON.stringify(largestSegments ? { ...waterfall, largestSegments } : waterfall, null, 2),
+      );
+    } else {
+      console.log(renderTurnWaterfall(waterfall, { top: options.top }));
+    }
     return;
   }
   console.log(
