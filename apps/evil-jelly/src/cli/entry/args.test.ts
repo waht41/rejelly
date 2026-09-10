@@ -77,6 +77,13 @@ describe("parseCliArgs", () => {
     expect(help).toContain("--segment <address>");
     expect(help).toContain("N, N.M, or C1");
     expect(help).toContain("--call <id>");
+    expect(help).toContain("--models [range]");
+    expect(help).toContain("--model <address>");
+    expect(help).toContain("--tokens");
+    expect(help).toContain("--latency");
+    expect(help).toContain("--transport");
+    expect(help).toContain("--input");
+    expect(help).toContain("--attempts");
     expect(help).toContain("--payload");
     expect(help).toContain("Print only the complete persisted payload");
     expect(help).toContain("--full");
@@ -249,6 +256,55 @@ describe("parseCliArgs", () => {
     expect(sessionTop).toMatchObject({ kind: "inspect", inspectTop: 10 });
   });
 
+  it("parses Session, Turn, range, and single Model Call inspection options", () => {
+    expect(parseCliArgs(["node", "evil", "inspect", "session-1", "--models"])).toMatchObject({
+      kind: "inspect",
+      inspectModels: "",
+      inspectModelView: "balanced",
+    });
+    expect(
+      parseCliArgs([
+        "node",
+        "evil",
+        "inspect",
+        "session-1",
+        "--turn",
+        "7",
+        "--models",
+        "--latency",
+      ]),
+    ).toMatchObject({
+      kind: "inspect",
+      inspectTurnId: "7",
+      inspectModels: "",
+      inspectModelView: "latency",
+    });
+    expect(
+      parseCliArgs(["node", "evil", "inspect", "session-1", "--models", "M80..M100", "--tokens"]),
+    ).toMatchObject({
+      kind: "inspect",
+      inspectModels: "M80..M100",
+      inspectModelView: "tokens",
+    });
+    expect(
+      parseCliArgs([
+        "node",
+        "evil",
+        "inspect",
+        "session-1",
+        "--model",
+        "M85",
+        "--input",
+        "--attempts",
+      ]),
+    ).toMatchObject({
+      kind: "inspect",
+      inspectModelId: "M85",
+      inspectInput: true,
+      inspectAttempts: true,
+    });
+  });
+
   it.each([
     ["segment without turn", ["inspect", "session-1", "--segment", "4"]],
     ["call with turn", ["inspect", "session-1", "--turn", "1", "--call", "call-1"]],
@@ -256,6 +312,11 @@ describe("parseCliArgs", () => {
     ["full with json", ["inspect", "session-1", "--call", "call-1", "--full", "--json"]],
     ["full with payload", ["inspect", "session-1", "--call", "call-1", "--full", "--payload"]],
     ["invalid top", ["inspect", "session-1", "--turn", "1", "--top", "0"]],
+    ["model with turn", ["inspect", "session-1", "--turn", "1", "--model", "M1"]],
+    ["range with turn", ["inspect", "session-1", "--turn", "1", "--models", "M1..M2"]],
+    ["profile without models", ["inspect", "session-1", "--latency"]],
+    ["input without model", ["inspect", "session-1", "--input"]],
+    ["model list with top", ["inspect", "session-1", "--models", "--top", "3"]],
   ])("rejects invalid inspect drill-down options: %s", (_name, argvTail) => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.spyOn(process, "exit").mockImplementation((code) => {

@@ -84,8 +84,8 @@ export function renderTurnWaterfall(
   if (initialCheckpoint) {
     const initialLabel =
       initialCheckpoint.adjustmentTokens >= 0
-        ? "prior context + system/tools"
-        : "provider input #1 checkpoint adjustment";
+        ? `prior context + system/tools (model input ${initialCheckpoint.modelCallAddress})`
+        : `model input ${initialCheckpoint.modelCallAddress} checkpoint adjustment`;
     lines.push(
       ` C1  ${label(initialLabel)} ${values(
         initialCheckpoint.adjustmentTokens,
@@ -105,7 +105,7 @@ export function renderTurnWaterfall(
       const checkpoint = laterCheckpoints[checkpointIndex];
       const direction = checkpoint.adjustmentTokens >= 0 ? "+" : "";
       lines.push(
-        `     ${label(`provider input #${checkpoint.modelCallNumber} checkpoint (estimate adjustment ${direction}${integer(checkpoint.adjustmentTokens)})`)} ${values(
+        `     ${label(`model input ${checkpoint.modelCallAddress} (Turn #${checkpoint.modelCallNumber}, adjust ${direction}${integer(checkpoint.adjustmentTokens)})`)} ${values(
           checkpoint.adjustmentTokens,
           "provider",
           checkpoint.promptTokens,
@@ -154,7 +154,7 @@ export function renderTurnWaterfall(
   lines.push(
     "",
     "~ estimated from canonical message content; unmarked token counts are provider-reported.",
-    "Provider checkpoints align the running estimate to reported model input; they are not addressable context mutations.",
+    "Model input checkpoints align the running estimate to provider-reported input; M-addresses are Session-global Model Call addresses.",
   );
   if (inspection.warnings.length > 0)
     lines.push("", "Warnings", ...inspection.warnings.map((warning) => `- ${warning}`));

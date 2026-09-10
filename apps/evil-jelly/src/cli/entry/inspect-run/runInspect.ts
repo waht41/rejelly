@@ -4,7 +4,16 @@ import {
   locateInspectSession,
 } from "../../../domains/session/repository/sessionLocator";
 import { listSessions } from "../../../domains/session/repository/sessionStore";
+import {
+  type ModelCallView,
+  projectModelCallInspection,
+  projectModelCallList,
+} from "../../../features/inspect/modelCallInspection";
 import { renderInitialContextInspection } from "../../../features/inspect/renderCheckpointInspection";
+import {
+  renderModelCallInspection,
+  renderModelCallList,
+} from "../../../features/inspect/renderModelCallInspection";
 import { renderSegmentInspection } from "../../../features/inspect/renderSegmentInspection";
 import { renderSessionInspection } from "../../../features/inspect/renderSessionInspection";
 import { renderToolCallInspection } from "../../../features/inspect/renderToolCallInspection";
@@ -38,6 +47,11 @@ export interface RunInspectOptions {
   turnId?: string;
   segment?: string;
   callId?: string;
+  models?: string;
+  modelId?: string;
+  modelView: ModelCallView;
+  input: boolean;
+  attempts: boolean;
   payload: boolean;
   full: boolean;
   outputPath?: string;
@@ -117,6 +131,19 @@ export async function runInspect(options: RunInspectOptions): Promise<void> {
         `Ignored ${warning.byteLength} trailing byte(s) from an incomplete Session event at offset ${warning.offset}.`,
     ),
   );
+  if (options.modelId) {
+    const modelCall = projectModelCallInspection(stored.meta, stored.events, options.modelId);
+    await writeInspectionOutput(
+      options.json
+        ? JSON.stringify(modelCall, null, 2)
+        : renderModelCallInspection(modelCall, {
+            input: options.input,
+            attempts: options.attempts,
+          }),
+      options,
+    );
+    return;
+  }
   if (options.callId) {
     const turnId = findToolCallTurnId(stored.events, options.callId);
     const waterfall = projectTurnWaterfall(stored.meta, stored.events, turnId);
@@ -128,6 +155,16 @@ export async function runInspect(options: RunInspectOptions): Promise<void> {
   }
   if (options.turnId) {
     const turnId = resolveTurnId(inspection, options.turnId);
+    if (options.models !== undefined) {
+      const modelCalls = projectModelCallList(stored.meta, stored.events, { turnId });
+      await writeInspectionOutput(
+        options.json
+          ? JSON.stringify(modelCalls, null, 2)
+          : renderModelCallList(modelCalls, { view: options.modelView }),
+        options,
+      );
+      return;
+    }
     const waterfall = projectTurnWaterfall(stored.meta, stored.events, turnId);
     if (options.segment) {
       await printSegment(
@@ -146,6 +183,18 @@ export async function runInspect(options: RunInspectOptions): Promise<void> {
     } else {
       await writeInspectionOutput(renderTurnWaterfall(waterfall, { top: options.top }), options);
     }
+    return;
+  }
+  if (options.models !== undefined) {
+    const modelCalls = projectModelCallList(stored.meta, stored.events, {
+      ...(options.models ? { selector: options.models } : {}),
+    });
+    await writeInspectionOutput(
+      options.json
+        ? JSON.stringify(modelCalls, null, 2)
+        : renderModelCallList(modelCalls, { view: options.modelView }),
+      options,
+    );
     return;
   }
   const largestSegments =

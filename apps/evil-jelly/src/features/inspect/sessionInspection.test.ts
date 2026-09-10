@@ -174,7 +174,9 @@ describe("projectSessionInspection", () => {
       },
     ]);
     const rendered = renderSessionInspection(inspection);
-    expect(rendered).toContain("- 1. turn-1 [completed]");
+    expect(rendered).toContain("#    turn");
+    expect(rendered).toContain("1    turn-1");
+    expect(rendered).toContain("completed");
     expect(resolveTurnId(inspection, "1")).toBe("turn-1");
     expect(resolveTurnId(inspection, "turn-1")).toBe("turn-1");
     expect(() => resolveTurnId(inspection, "2")).toThrow(
@@ -184,8 +186,9 @@ describe("projectSessionInspection", () => {
       "Prompt: 100 cumulative, 100 peak model input, 1.0x amplification, 60 uncached",
     );
     expect(rendered).toContain("Cache: 40 read, 7 write, 40.0% hit");
+    expect(rendered).toContain("Compactions");
     expect(rendered).toContain(
-      "  - Compact [auto] 12,000 -> 3,000 tokens (-9,000, 75.0% reduction), 10 -> 2 messages, 1.5s",
+      "- Compact [auto] 12,000 -> 3,000 tokens (-9,000, 75.0% reduction), 10 -> 2 messages, 1.5s",
     );
 
     const renderedWithTop = renderSessionInspection(inspection, {

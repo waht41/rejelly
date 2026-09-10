@@ -148,6 +148,7 @@ describe("turn waterfall", () => {
       {
         seq: 2,
         modelCallNumber: 1,
+        modelCallAddress: "M1",
         promptTokens: 100,
         estimatedContextTokens: 2,
         adjustmentTokens: 98,
@@ -155,6 +156,7 @@ describe("turn waterfall", () => {
       {
         seq: 5,
         modelCallNumber: 2,
+        modelCallAddress: "M2",
         promptTokens: 130,
         estimatedContextTokens: 122,
         adjustmentTokens: 8,
@@ -172,11 +174,11 @@ describe("turn waterfall", () => {
     expect(rendered).toContain("compact [auto]");
     expect(rendered).not.toContain("█");
     expect(rendered).toContain("~ estimated from canonical message content");
-    expect(rendered).toContain("Provider checkpoints");
+    expect(rendered).toContain("Model input checkpoints");
     expect(rendered.indexOf("prior context + system/tools")).toBeLessThan(
       rendered.indexOf("user input"),
     );
-    expect(rendered).toContain("provider input #2 checkpoint (estimate adjustment +8)");
+    expect(rendered).toContain("model input M2 (Turn #2, adjust +8)");
   });
 
   it("marks an estimated peak and renders negative provider adjustment as a checkpoint", () => {
@@ -252,9 +254,9 @@ describe("turn waterfall", () => {
     });
     const checkpointLine = renderTurnWaterfall(inspection)
       .split("\n")
-      .find((line) => line.includes("provider input #2 checkpoint"));
+      .find((line) => line.includes("model input M2 (Turn #2"));
     expect(checkpointLine).toBeDefined();
-    expect(checkpointLine).toContain("estimate adjustment -30");
+    expect(checkpointLine).toContain("adjust -30");
     expect(checkpointLine?.trimEnd().endsWith("120")).toBe(true);
     expect(renderTurnWaterfall(inspection)).toContain("peak context ~150");
   });

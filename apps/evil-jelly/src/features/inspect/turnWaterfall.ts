@@ -41,6 +41,7 @@ export interface TurnWaterfallSegment {
 export interface TurnWaterfallCheckpoint {
   seq: number;
   modelCallNumber: number;
+  modelCallAddress: string;
   promptTokens: number;
   estimatedContextTokens: number;
   adjustmentTokens: number;
@@ -144,6 +145,14 @@ export function projectTurnWaterfall(
   turnId: string,
 ): TurnWaterfallInspection {
   const known = events.filter(isKnownSessionEvent);
+  const modelCallAddresses = new Map<number, string>();
+  let globalModelCallNumber = 0;
+  for (const event of known) {
+    if (event.type === "model_call_completed") {
+      globalModelCallNumber += 1;
+      modelCallAddresses.set(event.seq, `M${globalModelCallNumber}`);
+    }
+  }
   const turnEvents = known.filter(
     (event) =>
       ("turnId" in event && event.turnId === turnId) ||
@@ -220,6 +229,7 @@ export function projectTurnWaterfall(
           checkpoints.push({
             seq: event.seq,
             modelCallNumber: modelIndex + 1,
+            modelCallAddress: modelCallAddresses.get(event.seq)!,
             promptTokens,
             estimatedContextTokens,
             adjustmentTokens,

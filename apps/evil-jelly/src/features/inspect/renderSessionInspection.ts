@@ -7,7 +7,18 @@ function integer(value: number): string {
 
 function duration(value: number): string {
   if (value < 1_000) return `${integer(value)}ms`;
-  return `${(value / 1_000).toFixed(value < 10_000 ? 1 : 0)}s`;
+  if (value < 60_000) return `${(value / 1_000).toFixed(value < 10_000 ? 1 : 0)}s`;
+  const minutes = Math.floor(value / 60_000);
+  const seconds = Math.round((value % 60_000) / 1_000);
+  return seconds === 0 ? `${minutes}m` : `${minutes}m${seconds}s`;
+}
+
+function compactInteger(value: number): string {
+  if (Math.abs(value) < 1_000) return integer(value);
+  if (Math.abs(value) < 1_000_000) {
+    return `${(value / 1_000).toFixed(value >= 100_000 ? 0 : 1)}k`;
+  }
+  return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`;
 }
 
 function bytes(value: number): string {
@@ -24,16 +35,33 @@ function multiplier(value: number): string {
   return `${value.toFixed(1)}x`;
 }
 
-function turnLine(turn: TurnInspection): string {
-  const usage =
-    `${integer(turn.prompt.cumulativeTokens)} cumulative prompt / ${integer(turn.prompt.peakInputTokens)} peak input / ` +
-    `${multiplier(turn.prompt.amplification)} amplification / ${integer(turn.prompt.uncachedTokens)} uncached / ` +
-    `${integer(turn.completionTokens)} completion / ` +
-    `${integer(turn.cacheReadTokens)} cache read (${percentage(turn.cacheHitRate)} hit)`;
-  const tools = `${turn.toolCalls} tools / ${bytes(turn.toolOutputBytes)}`;
-  const failures =
-    turn.transportFailures > 0 ? ` / ${turn.transportFailures} transport failures` : "";
-  return `${turn.turnId} [${turn.status}] ${turn.modelCalls} models, ${usage}, ${tools}, ${duration(turn.modelDurationMs)} model${failures}`;
+const TURN_COLUMNS = [3, 16, 9, 5, 8, 7, 5, 8, 7, 6, 5, 8] as const;
+
+function tableRow(values: readonly string[]): string {
+  return values
+    .map((value, index) => {
+      const width = TURN_COLUMNS[index];
+      const clipped = value.length <= width ? value : `${value.slice(0, width - 1)}…`;
+      return index <= 2 ? clipped.padEnd(width) : clipped.padStart(width);
+    })
+    .join("  ");
+}
+
+function turnLine(turn: TurnInspection, turnNumber: number): string {
+  return tableRow([
+    String(turnNumber),
+    turn.turnId,
+    turn.status,
+    String(turn.modelCalls),
+    compactInteger(turn.prompt.cumulativeTokens),
+    compactInteger(turn.prompt.peakInputTokens),
+    multiplier(turn.prompt.amplification),
+    compactInteger(turn.prompt.uncachedTokens),
+    compactInteger(turn.completionTokens),
+    percentage(turn.cacheHitRate),
+    String(turn.toolCalls),
+    duration(turn.modelDurationMs),
+  ]);
 }
 
 function compactionLine(compaction: CompactionInspection): string {
@@ -85,18 +113,32 @@ export function renderSessionInspection(
   }
 
   lines.push("", "Turns");
-  const timeline = [
-    ...inspection.turns.map((turn, index) => ({
-      seq: turn.firstSeq,
-      line: `- ${index + 1}. ${turnLine(turn)}`,
-    })),
-    ...inspection.compactions.map((compaction) => ({
-      seq: compaction.seq,
-      line: compactionLine(compaction),
-    })),
-  ].sort((left, right) => left.seq - right.seq);
-  if (timeline.length === 0) lines.push("(none)");
-  else lines.push(...timeline.map((entry) => entry.line));
+  if (inspection.turns.length === 0) lines.push("(none)");
+  else {
+    const header = tableRow([
+      "#",
+      "turn",
+      "status",
+      "calls",
+      "prompt",
+      "peak",
+      "amp",
+      "uncached",
+      "output",
+      "hit",
+      "tools",
+      "time",
+    ]);
+    lines.push(
+      header,
+      "-".repeat(header.length),
+      ...inspection.turns.map((turn, index) => turnLine(turn, index + 1)),
+    );
+  }
+
+  if (inspection.compactions.length > 0) {
+    lines.push("", "Compactions", ...inspection.compactions.map(compactionLine));
+  }
 
   if (options.topContributors) {
     lines.push("", "Largest segments");
