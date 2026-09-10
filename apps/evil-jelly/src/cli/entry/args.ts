@@ -17,6 +17,7 @@ import {
   registerAuditArgs,
 } from "./audit-run/args";
 import { type InitCommandArgs, parseInitArgs, registerInitArgs } from "./init-run/args";
+import { type InspectCommandArgs, parseInspectArgs, registerInspectArgs } from "./inspect-run/args";
 import {
   extractMcpAddCommand,
   type McpCommandArgs,
@@ -35,9 +36,11 @@ export type ParsedAuditArgs = CommonParsedArgs & AuditCommandArgs;
 export type ParsedUnifiedArgs = CommonParsedArgs & UnifiedRunCommandArgs;
 export type ParsedMcpArgs = CommonParsedArgs & McpCommandArgs;
 export type ParsedSkillsArgs = CommonParsedArgs & SkillsCommandArgs;
+export type ParsedInspectArgs = CommonParsedArgs & InspectCommandArgs;
 export type ParsedEvilJellyArgs =
   | ParsedInitArgs
   | ParsedAuditArgs
+  | ParsedInspectArgs
   | ParsedMcpArgs
   | ParsedSkillsArgs
   | ParsedUnifiedArgs;
@@ -63,7 +66,29 @@ export function getCliVersion(): string {
 
 const cli = cac("evil");
 
-const SKILLS_HELP_OPTION_PREFIXES = ["--workspace", "-h, --help"] as const;
+const HELP_OPTION_PREFIXES = {
+  inspect: [
+    "--json",
+    "--turn",
+    "--segment",
+    "--call",
+    "--models",
+    "--model",
+    "--tokens",
+    "--latency",
+    "--transport",
+    "--input",
+    "--attempts",
+    "--payload",
+    "--full",
+    "--output",
+    "--top",
+    "--all-workspaces",
+    "--workspace",
+    "-h, --help",
+  ],
+  skills: ["--workspace", "-h, --help"],
+} as const;
 
 function customizeHelpSections(
   sections: Array<{ readonly title?: string; readonly body: string }>,
@@ -72,11 +97,17 @@ function customizeHelpSections(
   return sections.map((section) => {
     // CAC models --no-* flags as default=true booleans. Hide that parser implementation detail.
     let body = section.body.replace(/^(\s+--no-\S+.*?) \(default: true\)$/gm, "$1");
-    if (commandName === "skills" && section.title === "Options") {
+    const allowedOptionPrefixes =
+      commandName === "inspect"
+        ? HELP_OPTION_PREFIXES.inspect
+        : commandName === "skills"
+          ? HELP_OPTION_PREFIXES.skills
+          : undefined;
+    if (allowedOptionPrefixes && section.title === "Options") {
       body = body
         .split("\n")
         .filter((line) =>
-          SKILLS_HELP_OPTION_PREFIXES.some((prefix) => line.trimStart().startsWith(prefix)),
+          allowedOptionPrefixes.some((prefix) => line.trimStart().startsWith(prefix)),
         )
         .join("\n");
     }
@@ -104,6 +135,7 @@ cli
 registerUnifiedRunArgs(cli);
 registerInitArgs(cli);
 registerAuditArgs(cli);
+registerInspectArgs(cli);
 registerMcpArgs(cli);
 registerSkillsArgs(cli);
 
@@ -162,6 +194,13 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
       );
     }
     return { ...common, ...parseAuditArgs(args, options) };
+  }
+  if (commandName === "inspect") {
+    const inspect = parseInspectArgs(args, options);
+    if (inspect.inspectAllWorkspaces && common.workspace) {
+      failArgs("--all-workspaces cannot be combined with --workspace");
+    }
+    return { ...common, ...inspect };
   }
   if (commandName === "mcp") {
     return { ...common, ...parseMcpArgs(args, options, extractMcpAddCommand(argv)) };

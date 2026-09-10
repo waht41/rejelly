@@ -62,6 +62,44 @@ describe("parseCliArgs", () => {
     );
   });
 
+  it("shows only options supported by Session inspection", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+
+    expect(() => parseCliArgs(["node", "evil", "inspect", "--help"])).toThrow("exit 0");
+    const help = log.mock.calls.flat().join("\n");
+    expect(help).toContain("$ evil inspect [sessionId] [--turn <number-or-id>]");
+    expect(help).toContain("--json");
+    expect(help).toContain("--turn <selector>");
+    expect(help).toContain("--segment <address>");
+    expect(help).toContain("N, N.M, or C1");
+    expect(help).toContain("--call <id>");
+    expect(help).toContain("--models [range]");
+    expect(help).toContain("--model <address>");
+    expect(help).toContain("--tokens");
+    expect(help).toContain("--latency");
+    expect(help).toContain("--transport");
+    expect(help).toContain("--input");
+    expect(help).toContain("--attempts");
+    expect(help).toContain("--payload");
+    expect(help).toContain("Print only the complete persisted payload");
+    expect(help).toContain("--full");
+    expect(help).toContain("--output <path>");
+    expect(help).toContain("Write output directly to a UTF-8 file instead of stdout");
+    expect(help).toContain("--top <number>");
+    expect(help).toContain("--all-workspaces");
+    expect(help).toContain("--workspace <dir>");
+    expect(help).not.toContain("--api-key");
+    expect(help).not.toContain("--env");
+    expect(help).not.toContain("--profile");
+    expect(help).not.toContain("--review");
+    expect(help).not.toContain("--devtool");
+    expect(help).not.toContain("--doc-map");
+  });
+
   it("describes the Skill inspection subcommands", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
@@ -136,6 +174,193 @@ describe("parseCliArgs", () => {
     expect(args.initBaseUrl).toBe("https://api.deepseek.com");
     expect(args.initModelId).toBe("deepseek-chat");
     expect(args.initProtocol).toBe("responses");
+  });
+
+  it("parses Session inspection with an optional id and JSON output", () => {
+    const latest = parseCliArgs(["node", "evil", "inspect"]);
+    expect(latest.kind).toBe("inspect");
+    if (latest.kind !== "inspect") throw new Error("expected inspect args");
+    expect(latest.inspectSessionId).toBeUndefined();
+    expect(latest.inspectJson).toBe(false);
+    expect(latest.inspectAllWorkspaces).toBe(false);
+
+    const selected = parseCliArgs([
+      "node",
+      "evil",
+      "inspect",
+      "session-1",
+      "--json",
+      "--turn",
+      "1",
+      "--all-workspaces",
+    ]);
+    expect(selected.kind).toBe("inspect");
+    if (selected.kind !== "inspect") throw new Error("expected inspect args");
+    expect(selected.inspectSessionId).toBe("session-1");
+    expect(selected.inspectJson).toBe(true);
+    expect(selected.inspectAllWorkspaces).toBe(true);
+    expect(selected.inspectTurnId).toBe("1");
+  });
+
+  it("parses Tool drill-down and top-contributor inspection options", () => {
+    const segment = parseCliArgs([
+      "node",
+      "evil",
+      "inspect",
+      "session-1",
+      "--turn",
+      "1",
+      "--segment",
+      "4.2",
+      "--full",
+    ]);
+    expect(segment).toMatchObject({
+      kind: "inspect",
+      inspectTurnId: "1",
+      inspectSegment: "4.2",
+      inspectFull: true,
+      inspectPayload: false,
+    });
+
+    const call = parseCliArgs([
+      "node",
+      "evil",
+      "inspect",
+      "session-1",
+      "--call",
+      "call-1",
+      "--payload",
+      "--output",
+      "payload.json",
+    ]);
+    expect(call).toMatchObject({
+      kind: "inspect",
+      inspectCallId: "call-1",
+      inspectPayload: true,
+      inspectOutput: "payload.json",
+    });
+
+    const turnTop = parseCliArgs([
+      "node",
+      "evil",
+      "inspect",
+      "session-1",
+      "--turn",
+      "1",
+      "--top",
+      "10",
+    ]);
+    expect(turnTop).toMatchObject({ kind: "inspect", inspectTurnId: "1", inspectTop: 10 });
+
+    const sessionTop = parseCliArgs(["node", "evil", "inspect", "session-1", "--top", "10"]);
+    expect(sessionTop).toMatchObject({ kind: "inspect", inspectTop: 10 });
+  });
+
+  it("parses Session, Turn, range, and single Model Call inspection options", () => {
+    expect(parseCliArgs(["node", "evil", "inspect", "session-1", "--models"])).toMatchObject({
+      kind: "inspect",
+      inspectModels: "",
+      inspectModelView: "balanced",
+    });
+    expect(
+      parseCliArgs([
+        "node",
+        "evil",
+        "inspect",
+        "session-1",
+        "--turn",
+        "7",
+        "--models",
+        "--latency",
+      ]),
+    ).toMatchObject({
+      kind: "inspect",
+      inspectTurnId: "7",
+      inspectModels: "",
+      inspectModelView: "latency",
+    });
+    expect(parseCliArgs(["node", "evil", "inspect", "session-1", "--models", "M16"])).toMatchObject(
+      {
+        kind: "inspect",
+        inspectModels: "M16",
+      },
+    );
+    expect(
+      parseCliArgs(["node", "evil", "inspect", "session-1", "--models", "M80..M100", "--tokens"]),
+    ).toMatchObject({
+      kind: "inspect",
+      inspectModels: "M80..M100",
+      inspectModelView: "tokens",
+    });
+    expect(
+      parseCliArgs([
+        "node",
+        "evil",
+        "inspect",
+        "session-1",
+        "--model",
+        "M85",
+        "--input",
+        "--attempts",
+      ]),
+    ).toMatchObject({
+      kind: "inspect",
+      inspectModelId: "M85",
+      inspectInput: true,
+      inspectAttempts: true,
+    });
+  });
+
+  it.each([
+    ["segment without turn", ["inspect", "session-1", "--segment", "4"]],
+    ["call with turn", ["inspect", "session-1", "--turn", "1", "--call", "call-1"]],
+    ["payload with json", ["inspect", "session-1", "--call", "call-1", "--payload", "--json"]],
+    ["full with json", ["inspect", "session-1", "--call", "call-1", "--full", "--json"]],
+    ["full with payload", ["inspect", "session-1", "--call", "call-1", "--full", "--payload"]],
+    ["invalid top", ["inspect", "session-1", "--turn", "1", "--top", "0"]],
+    ["model with turn", ["inspect", "session-1", "--turn", "1", "--model", "M1"]],
+    ["range with turn", ["inspect", "session-1", "--turn", "1", "--models", "M1..M2"]],
+    ["profile without models", ["inspect", "session-1", "--latency"]],
+    ["input without model", ["inspect", "session-1", "--input"]],
+    ["model list with top", ["inspect", "session-1", "--models", "--top", "3"]],
+  ])("rejects invalid inspect drill-down options: %s", (_name, argvTail) => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+    expect(() => parseCliArgs(["node", "evil", ...argvTail])).toThrow("exit 1");
+  });
+
+  it("requires a Session id for cross-workspace inspection", () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+
+    expect(() => parseCliArgs(["node", "evil", "inspect", "--all-workspaces"])).toThrow("exit 1");
+    expect(console.error).toHaveBeenCalledWith("--all-workspaces requires a sessionId");
+  });
+
+  it("does not combine explicit workspace and cross-workspace inspection", () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+
+    expect(() =>
+      parseCliArgs([
+        "node",
+        "evil",
+        "inspect",
+        "session-1",
+        "--all-workspaces",
+        "--workspace",
+        ".",
+      ]),
+    ).toThrow("exit 1");
+    expect(console.error).toHaveBeenCalledWith(
+      "--all-workspaces cannot be combined with --workspace",
+    );
   });
 
   it("parses MCP read commands without requiring model configuration", () => {

@@ -34,6 +34,31 @@ async function main() {
   applyWorkspaceRootFromArgs(args.workspace);
   initSettings(args.settings);
   startupTimeline.mark("workspace_ready");
+  if (args.kind === "inspect") {
+    const { runInspect } = await import("./entry/inspect-run/runInspect");
+    await runInspect({
+      sessionId: args.inspectSessionId,
+      json: args.inspectJson,
+      allWorkspaces: args.inspectAllWorkspaces,
+      turnId: args.inspectTurnId,
+      segment: args.inspectSegment,
+      callId: args.inspectCallId,
+      models: args.inspectModels,
+      modelId: args.inspectModelId,
+      modelView: args.inspectModelView,
+      input: args.inspectInput,
+      attempts: args.inspectAttempts,
+      payload: args.inspectPayload,
+      full: args.inspectFull,
+      outputPath: args.inspectOutput,
+      writeOutputFile: async (filePath, content) => {
+        const { writeFile } = await import("node:fs/promises");
+        await writeFile(filePath, content, "utf8");
+      },
+      top: args.inspectTop,
+    });
+    process.exit(0);
+  }
   if (args.kind === "mcp") {
     const { runMcpCommand } = await import("./entry/mcp-run/runMcp");
     await runMcpCommand(args.mcpCommand);
