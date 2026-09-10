@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { SessionEvent, SessionMetaLine } from "../../domains/session/model/sessionEvents";
 import { renderTurnWaterfall } from "./renderTurnWaterfall";
-import { projectTurnWaterfall } from "./turnWaterfall";
+import {
+  projectSessionTopContributors,
+  projectTurnWaterfall,
+  type TurnWaterfallInspection,
+} from "./turnWaterfall";
 
 const meta: SessionMetaLine = {
   type: "session_meta",
@@ -223,5 +227,58 @@ describe("turn waterfall", () => {
     expect(reconciliationLine).toBeDefined();
     expect(reconciliationLine?.trimEnd().endsWith("120")).toBe(true);
     expect(renderTurnWaterfall(inspection)).toContain("peak context ~150");
+  });
+
+  it("ranks token contributors across all Turns in a Session", () => {
+    const waterfall = (
+      turnId: string,
+      tokens: number,
+      tokenSource: "provider" | "estimated",
+    ): TurnWaterfallInspection => ({
+      type: "turn_waterfall_v1",
+      sessionId: "session-1",
+      turnId,
+      status: "completed",
+      peakContextTokens: tokens,
+      peakContextSource: tokenSource,
+      segments: [
+        {
+          seq: 1,
+          kind: "assistant",
+          label: `${turnId} answer`,
+          tokens,
+          tokenSource,
+          contextTokens: tokens,
+          contextSource: tokenSource,
+        },
+      ],
+      warnings: [],
+    });
+
+    expect(
+      projectSessionTopContributors(
+        [waterfall("turn-1", 10, "estimated"), waterfall("turn-2", 30, "provider")],
+        2,
+      ),
+    ).toEqual([
+      {
+        turnId: "turn-2",
+        turnNumber: 2,
+        address: "1",
+        label: "turn-2 answer",
+        tokens: 30,
+        tokenSource: "provider",
+        share: 0.75,
+      },
+      {
+        turnId: "turn-1",
+        turnNumber: 1,
+        address: "1",
+        label: "turn-1 answer",
+        tokens: 10,
+        tokenSource: "estimated",
+        share: 0.25,
+      },
+    ]);
   });
 });

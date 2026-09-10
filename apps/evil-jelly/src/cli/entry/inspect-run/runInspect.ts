@@ -19,6 +19,7 @@ import {
   type ToolCallInspection,
 } from "../../../features/inspect/toolCallInspection";
 import {
+  projectSessionTopContributors,
   projectTopContributors,
   projectTurnWaterfall,
 } from "../../../features/inspect/turnWaterfall";
@@ -99,7 +100,18 @@ export async function runInspect(options: RunInspectOptions): Promise<void> {
     }
     return;
   }
+  const largestSegments =
+    options.top !== undefined
+      ? projectSessionTopContributors(
+          inspection.turns.map((turn) =>
+            projectTurnWaterfall(stored.meta, stored.events, turn.turnId),
+          ),
+          options.top,
+        )
+      : undefined;
   console.log(
-    options.json ? JSON.stringify(inspection, null, 2) : renderSessionInspection(inspection),
+    options.json
+      ? JSON.stringify(largestSegments ? { ...inspection, largestSegments } : inspection, null, 2)
+      : renderSessionInspection(inspection, { topContributors: largestSegments }),
   );
 }

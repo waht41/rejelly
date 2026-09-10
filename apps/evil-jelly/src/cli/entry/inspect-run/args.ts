@@ -45,7 +45,10 @@ export function registerInspectArgs(cli: CAC): void {
     .option("--call <id>", "Inspect one Tool call directly by ToolCall ID")
     .option("--dump", "Dump the complete persisted request or canonical result")
     .option("--full", "Show the full Tool result instead of a bounded preview")
-    .option("--top <number>", "Append the largest token-contributing segments")
+    .option(
+      "--top <number>",
+      "Append the largest token-contributing segments across the selected scope",
+    )
     .option("--all-workspaces", "Find the Session id across all Evil Jelly workspaces")
     .usage(
       "inspect [sessionId] [--turn <number-or-id>] [--segment <address> | --call <id>] [--dump | --json] [--full] [--top <number>] [--all-workspaces]",
@@ -77,7 +80,6 @@ export function parseInspectArgs(
   if ((inspectDump || inspectFull) && !inspectSegment && !inspectCallId) {
     failArgs("--dump and --full require --segment or --call");
   }
-  if (inspectTop !== undefined && !inspectTurnId) failArgs("--top requires --turn");
   if (inspectTop !== undefined && (inspectSegment || inspectCallId)) {
     failArgs("--top cannot be combined with --segment or --call");
   }

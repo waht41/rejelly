@@ -1,4 +1,5 @@
 import type { CompactionInspection, SessionInspection, TurnInspection } from "./sessionInspection";
+import type { SessionTopContributor } from "./turnWaterfall";
 
 function integer(value: number): string {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
@@ -44,7 +45,10 @@ function compactionLine(compaction: CompactionInspection): string {
   return `${prefix} Compact [${compaction.trigger}] ${tokenChange}, ${messageChange}${elapsed}`;
 }
 
-export function renderSessionInspection(inspection: SessionInspection): string {
+export function renderSessionInspection(
+  inspection: SessionInspection,
+  options: { topContributors?: readonly SessionTopContributor[] } = {},
+): string {
   const totals = inspection.totals;
   const lines = [
     `Session ${inspection.sessionId}`,
@@ -85,6 +89,20 @@ export function renderSessionInspection(inspection: SessionInspection): string {
   ].sort((left, right) => left.seq - right.seq);
   if (timeline.length === 0) lines.push("(none)");
   else lines.push(...timeline.map((entry) => entry.line));
+
+  if (options.topContributors) {
+    lines.push("", "Largest segments");
+    if (options.topContributors.length === 0) lines.push("(none)");
+    else {
+      for (const contributor of options.topContributors) {
+        const estimated = contributor.tokenSource === "estimated" ? "~" : "";
+        const toolCall = contributor.toolCallId ? ` [${contributor.toolCallId}]` : "";
+        lines.push(
+          `- Turn ${contributor.turnNumber} #${contributor.address} ${contributor.label}${toolCall}: ${estimated}${integer(contributor.tokens)} tokens (${percentage(contributor.share)})`,
+        );
+      }
+    }
+  }
 
   if (inspection.warnings.length > 0) {
     lines.push("", "Warnings", ...inspection.warnings.map((warning) => `- ${warning}`));

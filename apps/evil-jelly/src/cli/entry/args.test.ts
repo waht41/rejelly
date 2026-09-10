@@ -227,7 +227,7 @@ describe("parseCliArgs", () => {
       inspectDump: true,
     });
 
-    const top = parseCliArgs([
+    const turnTop = parseCliArgs([
       "node",
       "evil",
       "inspect",
@@ -237,14 +237,16 @@ describe("parseCliArgs", () => {
       "--top",
       "10",
     ]);
-    expect(top).toMatchObject({ kind: "inspect", inspectTurnId: "1", inspectTop: 10 });
+    expect(turnTop).toMatchObject({ kind: "inspect", inspectTurnId: "1", inspectTop: 10 });
+
+    const sessionTop = parseCliArgs(["node", "evil", "inspect", "session-1", "--top", "10"]);
+    expect(sessionTop).toMatchObject({ kind: "inspect", inspectTop: 10 });
   });
 
   it.each([
     ["segment without turn", ["inspect", "session-1", "--segment", "4"]],
     ["call with turn", ["inspect", "session-1", "--turn", "1", "--call", "call-1"]],
     ["dump with json", ["inspect", "session-1", "--call", "call-1", "--dump", "--json"]],
-    ["top without turn", ["inspect", "session-1", "--top", "10"]],
     ["invalid top", ["inspect", "session-1", "--turn", "1", "--top", "0"]],
   ])("rejects invalid inspect drill-down options: %s", (_name, argvTail) => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);

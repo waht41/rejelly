@@ -59,6 +59,11 @@ export interface TurnWaterfallTopContributor {
   share: number;
 }
 
+export interface SessionTopContributor extends TurnWaterfallTopContributor {
+  turnId: string;
+  turnNumber: number;
+}
+
 function messageTokens(message: Message): number {
   return estimateMessagesTokens([message]);
 }
@@ -282,11 +287,12 @@ export function projectTurnWaterfall(
   };
 }
 
-export function projectTopContributors(
+type TopContributorCandidate = Omit<TurnWaterfallTopContributor, "share">;
+
+function projectTopContributorCandidates(
   inspection: TurnWaterfallInspection,
-  limit: number,
-): TurnWaterfallTopContributor[] {
-  const contributors = inspection.segments.flatMap((segment, segmentIndex) => {
+): TopContributorCandidate[] {
+  return inspection.segments.flatMap((segment, segmentIndex) => {
     if (segment.children?.length) {
       return segment.children.map((child, childIndex) => ({
         address: `${segmentIndex + 1}.${childIndex + 1}`,
@@ -313,6 +319,34 @@ export function projectTopContributors(
       },
     ];
   });
+}
+
+export function projectTopContributors(
+  inspection: TurnWaterfallInspection,
+  limit: number,
+): TurnWaterfallTopContributor[] {
+  const contributors = projectTopContributorCandidates(inspection);
+  const totalTokens = contributors.reduce((sum, contributor) => sum + contributor.tokens, 0);
+  return contributors
+    .sort((left, right) => right.tokens - left.tokens)
+    .slice(0, limit)
+    .map((contributor) => ({
+      ...contributor,
+      share: totalTokens > 0 ? contributor.tokens / totalTokens : 0,
+    }));
+}
+
+export function projectSessionTopContributors(
+  inspections: readonly TurnWaterfallInspection[],
+  limit: number,
+): SessionTopContributor[] {
+  const contributors = inspections.flatMap((inspection, turnIndex) =>
+    projectTopContributorCandidates(inspection).map((contributor) => ({
+      ...contributor,
+      turnId: inspection.turnId,
+      turnNumber: turnIndex + 1,
+    })),
+  );
   const totalTokens = contributors.reduce((sum, contributor) => sum + contributor.tokens, 0);
   return contributors
     .sort((left, right) => right.tokens - left.tokens)

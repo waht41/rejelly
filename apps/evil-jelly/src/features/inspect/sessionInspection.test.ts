@@ -170,6 +170,25 @@ describe("projectSessionInspection", () => {
     expect(rendered).toContain(
       "  - Compact [auto] 12,000 -> 3,000 tokens (-9,000, 75.0% reduction), 10 -> 2 messages, 1.5s",
     );
+
+    const renderedWithTop = renderSessionInspection(inspection, {
+      topContributors: [
+        {
+          turnId: "turn-1",
+          turnNumber: 1,
+          address: "3",
+          label: "run_command result",
+          toolCallId: "call-1",
+          tokens: 50,
+          tokenSource: "estimated",
+          share: 0.5,
+        },
+      ],
+    });
+    expect(renderedWithTop).toContain("Largest segments");
+    expect(renderedWithTop).toContain(
+      "- Turn 1 #3 run_command result [call-1]: ~50 tokens (50.0%)",
+    );
   });
 
   it("keeps incomplete and maintenance activity explicit", () => {
