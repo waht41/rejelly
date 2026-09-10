@@ -115,11 +115,11 @@ describe("turn waterfall", () => {
 
     expect(inspection.peakContextTokens).toBe(150);
     expect(inspection.peakContextSource).toBe("provider");
-    expect(inspection.segments[3].children).toMatchObject([
+    expect(inspection.segments[2].children).toMatchObject([
       { label: "grep request", toolCallId: "call-1" },
       { label: "read_file request", toolCallId: "call-2" },
     ]);
-    expect(inspection.segments[4]).toMatchObject({
+    expect(inspection.segments[3]).toMatchObject({
       label: "grep result",
       toolCallId: "call-1",
     });
@@ -130,13 +130,27 @@ describe("turn waterfall", () => {
         contextTokens,
       })),
     ).toEqual([
-      { label: "user input", tokens: 2, contextTokens: 2 },
-      { label: "prior context + system/tools", tokens: 98, contextTokens: 100 },
+      { label: "user input", tokens: 2, contextTokens: 100 },
       { label: "reasoning", tokens: 5, contextTokens: 105 },
       { label: "parallel tools", tokens: 15, contextTokens: 120 },
       { label: "grep result", tokens: 2, contextTokens: 122 },
-      { label: "provider input #2 reconciliation", tokens: 8, contextTokens: 130 },
       { label: "compact [auto]", tokens: -110, contextTokens: 40 },
+    ]);
+    expect(inspection.checkpoints).toEqual([
+      {
+        seq: 2,
+        modelCallNumber: 1,
+        promptTokens: 100,
+        estimatedContextTokens: 2,
+        adjustmentTokens: 98,
+      },
+      {
+        seq: 5,
+        modelCallNumber: 2,
+        promptTokens: 130,
+        estimatedContextTokens: 122,
+        adjustmentTokens: 8,
+      },
     ]);
     const rendered = renderTurnWaterfall(inspection);
     expect(rendered).toContain("peak context 150");
@@ -147,10 +161,14 @@ describe("turn waterfall", () => {
     expect(rendered).toContain("compact [auto]");
     expect(rendered).not.toContain("█");
     expect(rendered).toContain("~ estimated from canonical message content");
-    expect(rendered).toContain("Provider reconciliation rows");
+    expect(rendered).toContain("Provider checkpoints");
+    expect(rendered.indexOf("prior context + system/tools")).toBeLessThan(
+      rendered.indexOf("user input"),
+    );
+    expect(rendered).toContain("provider input #2 checkpoint (estimate adjustment +8)");
   });
 
-  it("marks an estimated peak and renders negative provider reconciliation without a size bar", () => {
+  it("marks an estimated peak and renders negative provider adjustment as a checkpoint", () => {
     const inspection = projectTurnWaterfall(
       meta,
       [
@@ -216,16 +234,17 @@ describe("turn waterfall", () => {
 
     expect(inspection.peakContextTokens).toBe(150);
     expect(inspection.peakContextSource).toBe("estimated");
-    expect(inspection.segments.at(-1)).toMatchObject({
-      kind: "reconciliation",
-      tokens: -30,
-      contextTokens: 120,
+    expect(inspection.checkpoints.at(-1)).toMatchObject({
+      modelCallNumber: 2,
+      adjustmentTokens: -30,
+      promptTokens: 120,
     });
-    const reconciliationLine = renderTurnWaterfall(inspection)
+    const checkpointLine = renderTurnWaterfall(inspection)
       .split("\n")
-      .find((line) => line.includes("provider input #2 reconciliation"));
-    expect(reconciliationLine).toBeDefined();
-    expect(reconciliationLine?.trimEnd().endsWith("120")).toBe(true);
+      .find((line) => line.includes("provider input #2 checkpoint"));
+    expect(checkpointLine).toBeDefined();
+    expect(checkpointLine).toContain("estimate adjustment -30");
+    expect(checkpointLine?.trimEnd().endsWith("120")).toBe(true);
     expect(renderTurnWaterfall(inspection)).toContain("peak context ~150");
   });
 
@@ -235,12 +254,13 @@ describe("turn waterfall", () => {
       tokens: number,
       tokenSource: "provider" | "estimated",
     ): TurnWaterfallInspection => ({
-      type: "turn_waterfall_v1",
+      type: "turn_waterfall_v2",
       sessionId: "session-1",
       turnId,
       status: "completed",
       peakContextTokens: tokens,
       peakContextSource: tokenSource,
+      checkpoints: [],
       segments: [
         {
           seq: 1,

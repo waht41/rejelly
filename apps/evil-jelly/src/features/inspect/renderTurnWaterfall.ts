@@ -60,11 +60,7 @@ export function renderTurnWaterfall(
   options: { top?: number } = {},
 ): string {
   const renderedTokens = inspection.segments.flatMap((segment) =>
-    segment.children?.length
-      ? segment.children.map((child) => child.tokens)
-      : segment.kind === "reconciliation"
-        ? []
-        : [segment.tokens],
+    segment.children?.length ? segment.children.map((child) => child.tokens) : [segment.tokens],
   );
   const positiveLargest = Math.max(0, ...renderedTokens.filter((tokens) => tokens > 0));
   const negativeLargest = Math.max(
@@ -79,7 +75,44 @@ export function renderTurnWaterfall(
     " #   segment                                                            tokens     context   size",
     " ---------------------------------------------------------------------------------------------------------",
   ];
+  const [initialCheckpoint, ...laterCheckpoints] = inspection.checkpoints;
+  if (initialCheckpoint) {
+    const initialLabel =
+      initialCheckpoint.adjustmentTokens >= 0
+        ? "prior context + system/tools"
+        : "provider input #1 checkpoint adjustment";
+    lines.push(
+      `     ${label(initialLabel)} ${values(
+        initialCheckpoint.adjustmentTokens,
+        "estimated",
+        Math.max(0, initialCheckpoint.adjustmentTokens),
+        "estimated",
+      )}`,
+    );
+  }
+
+  let checkpointIndex = 0;
+  const appendCheckpointsThrough = (seq: number): void => {
+    while (
+      checkpointIndex < laterCheckpoints.length &&
+      laterCheckpoints[checkpointIndex].seq <= seq
+    ) {
+      const checkpoint = laterCheckpoints[checkpointIndex];
+      const direction = checkpoint.adjustmentTokens >= 0 ? "+" : "";
+      lines.push(
+        `     ${label(`provider input #${checkpoint.modelCallNumber} checkpoint (estimate adjustment ${direction}${integer(checkpoint.adjustmentTokens)})`)} ${values(
+          checkpoint.adjustmentTokens,
+          "provider",
+          checkpoint.promptTokens,
+          "provider",
+        )}`,
+      );
+      checkpointIndex += 1;
+    }
+  };
+
   inspection.segments.forEach((segment, index) => {
+    appendCheckpointsThrough(segment.seq);
     if (segment.children?.length) {
       lines.push(`${String(index + 1).padStart(2)}   ┬ ${segment.label}`);
       segment.children.forEach((child, childIndex) => {
@@ -94,14 +127,11 @@ export function renderTurnWaterfall(
       });
       return;
     }
-    const size =
-      segment.kind === "reconciliation"
-        ? ""
-        : bar(segment.tokens, positiveLargest, negativeLargest);
     lines.push(
-      `${String(index + 1).padStart(2)}   ${label(toolLabel(segment.label, segment.toolCallId))} ${values(segment.tokens, segment.tokenSource, segment.contextTokens, segment.contextSource)}   ${size}`,
+      `${String(index + 1).padStart(2)}   ${label(toolLabel(segment.label, segment.toolCallId))} ${values(segment.tokens, segment.tokenSource, segment.contextTokens, segment.contextSource)}   ${bar(segment.tokens, positiveLargest, negativeLargest)}`,
     );
   });
+  appendCheckpointsThrough(Number.POSITIVE_INFINITY);
   if (options.top !== undefined) {
     const contributors = projectTopContributors(inspection, options.top);
     lines.push("", "Largest segments", "");
@@ -119,7 +149,7 @@ export function renderTurnWaterfall(
   lines.push(
     "",
     "~ estimated from canonical message content; unmarked token counts are provider-reported.",
-    "Provider reconciliation rows align the running estimate to reported model input; they are not context mutations.",
+    "Provider checkpoints align the running estimate to reported model input; they are not addressable context mutations.",
   );
   if (inspection.warnings.length > 0)
     lines.push("", "Warnings", ...inspection.warnings.map((warning) => `- ${warning}`));

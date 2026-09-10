@@ -125,16 +125,16 @@ describe("Tool call inspection", () => {
     const events = fixture();
     const waterfall = projectTurnWaterfall(meta, events, "turn-1");
 
-    expect(resolveSegmentToolCall(waterfall, "3")).toEqual({
+    expect(resolveSegmentToolCall(waterfall, "2")).toEqual({
       toolCallId: "call-1",
       side: "request",
     });
-    expect(resolveSegmentToolCall(waterfall, "4")).toEqual({
+    expect(resolveSegmentToolCall(waterfall, "3")).toEqual({
       toolCallId: "call-1",
       side: "result",
     });
 
-    const requestSelection = projectToolCallBySegment(meta, events, waterfall, "3");
+    const requestSelection = projectToolCallBySegment(meta, events, waterfall, "2");
     expect(requestSelection).toMatchObject({
       type: "tool_call_inspection_v1",
       turnId: "turn-1",
@@ -143,14 +143,14 @@ describe("Tool call inspection", () => {
       selectedSide: "request",
       status: "succeeded",
       durationMs: 182,
-      request: { address: "3", content: '{"pattern":"x","path":"src"}' },
-      result: { address: "4", lines: 45 },
+      request: { address: "2", content: '{"pattern":"x","path":"src"}' },
+      result: { address: "3", lines: 45 },
     });
     expect(dumpToolCallPayload(requestSelection)).toBe('{"pattern":"x","path":"src"}');
 
-    const resultSelection = projectToolCallBySegment(meta, events, waterfall, "4");
+    const resultSelection = projectToolCallBySegment(meta, events, waterfall, "3");
     expect(dumpToolCallPayload(resultSelection)).toContain("src/file-45.ts:x");
-    expect(renderToolCallInspection(resultSelection)).toContain("Tool call #4");
+    expect(renderToolCallInspection(resultSelection)).toContain("Tool call #3");
     expect(renderToolCallInspection(resultSelection)).toContain(
       "[truncated preview, showing 40/45 lines; use --full or --dump]",
     );
@@ -175,8 +175,8 @@ describe("Tool call inspection", () => {
       "result",
     );
     expect(projectTopContributors(waterfall, 2)).toMatchObject([
-      { address: "4", label: "grep result", toolCallId: "call-1" },
-      { address: "3", label: "grep request", toolCallId: "call-1" },
+      { address: "3", label: "grep result", toolCallId: "call-1" },
+      { address: "2", label: "grep request", toolCallId: "call-1" },
     ]);
   });
 
@@ -201,10 +201,10 @@ describe("Tool call inspection", () => {
     });
     const waterfall = projectTurnWaterfall(meta, events, "turn-1");
 
-    expect(() => resolveSegmentToolCall(waterfall, "3")).toThrow(
-      "Segment 3 contains 2 Tool calls; select 3.1-3.2.",
+    expect(() => resolveSegmentToolCall(waterfall, "2")).toThrow(
+      "Segment 2 contains 2 Tool calls; select 2.1-2.2.",
     );
-    expect(resolveSegmentToolCall(waterfall, "3.2")).toEqual({
+    expect(resolveSegmentToolCall(waterfall, "2.2")).toEqual({
       toolCallId: "call-2",
       side: "request",
     });

@@ -8,8 +8,6 @@ import { estimateMessagesTokens } from "../../shared/model/budget/tokenEstimate"
 import { projectFrozenUserInputMessage } from "../../shared/model/prompt/frozenUserInput";
 
 export type TurnWaterfallSegmentKind =
-  | "context_checkpoint"
-  | "reconciliation"
   | "user"
   | "reasoning"
   | "assistant"
@@ -39,13 +37,22 @@ export interface TurnWaterfallSegment {
   children?: TurnWaterfallChild[];
 }
 
+export interface TurnWaterfallCheckpoint {
+  seq: number;
+  modelCallNumber: number;
+  promptTokens: number;
+  estimatedContextTokens: number;
+  adjustmentTokens: number;
+}
+
 export interface TurnWaterfallInspection {
-  type: "turn_waterfall_v1";
+  type: "turn_waterfall_v2";
   sessionId: string;
   turnId: string;
   status: "in_progress" | "completed" | "interrupted" | "error";
   peakContextTokens: number;
   peakContextSource: "provider" | "estimated";
+  checkpoints: TurnWaterfallCheckpoint[];
   segments: TurnWaterfallSegment[];
   warnings: string[];
 }
@@ -122,6 +129,7 @@ export function projectTurnWaterfall(
     }
   }
 
+  const checkpoints: TurnWaterfallCheckpoint[] = [];
   const segments: TurnWaterfallSegment[] = [];
   const warnings: string[] = [];
   let contextTokens = 0;
@@ -173,25 +181,31 @@ export function projectTurnWaterfall(
       case "model_call_completed": {
         const promptTokens = event.usage?.promptTokens;
         if (promptTokens !== undefined) {
-          const delta = promptTokens - contextTokens;
+          const estimatedContextTokens = contextTokens;
+          const adjustmentTokens = promptTokens - estimatedContextTokens;
+          checkpoints.push({
+            seq: event.seq,
+            modelCallNumber: modelIndex + 1,
+            promptTokens,
+            estimatedContextTokens,
+            adjustmentTokens,
+          });
+          if (modelIndex === 0) {
+            for (const segment of segments) {
+              segment.contextTokens = Math.max(0, segment.contextTokens + adjustmentTokens);
+              segment.contextSource = "estimated";
+              for (const child of segment.children ?? []) {
+                child.contextTokens = Math.max(0, child.contextTokens + adjustmentTokens);
+                child.contextSource = "estimated";
+              }
+            }
+          }
           contextTokens = promptTokens;
           contextSource = "provider";
           if (contextTokens > peakContextTokens) {
             peakContextTokens = contextTokens;
             peakContextSource = "provider";
           }
-          segments.push({
-            seq: event.seq,
-            kind: modelIndex === 0 ? "context_checkpoint" : "reconciliation",
-            label:
-              modelIndex === 0
-                ? "prior context + system/tools"
-                : `provider input #${modelIndex + 1} reconciliation`,
-            tokens: delta,
-            tokenSource: "provider",
-            contextTokens,
-            contextSource,
-          });
         }
         const usage = event.usage;
         const modelMessage = modelMessages[modelIndex];
@@ -276,12 +290,13 @@ export function projectTurnWaterfall(
   }
 
   return {
-    type: "turn_waterfall_v1",
+    type: "turn_waterfall_v2",
     sessionId: meta.sessionId,
     turnId,
     status,
     peakContextTokens,
     peakContextSource,
+    checkpoints,
     segments,
     warnings,
   };
@@ -302,13 +317,7 @@ function projectTopContributorCandidates(
         tokenSource: child.tokenSource,
       }));
     }
-    if (
-      segment.kind === "context_checkpoint" ||
-      segment.kind === "reconciliation" ||
-      segment.tokens <= 0
-    ) {
-      return [];
-    }
+    if (segment.tokens <= 0) return [];
     return [
       {
         address: String(segmentIndex + 1),
