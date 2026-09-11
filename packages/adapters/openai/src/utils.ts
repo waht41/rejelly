@@ -335,12 +335,54 @@ export function toOpenAIToolChoice(
 
 // ── Error handling ─────────────────────────────────────────
 
+const CONNECTION_ERROR_CODES = new Set([
+  "ECONNABORTED",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EAI_AGAIN",
+  "ENETDOWN",
+  "ENETUNREACH",
+  "ENOTFOUND",
+  "EPIPE",
+]);
+const TIMEOUT_ERROR_CODES = new Set([
+  "ETIMEDOUT",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+]);
+
+function errorChainHasCode(error: unknown, codes: ReadonlySet<string>): boolean {
+  let current = error;
+  const seen = new Set<object>();
+  while (typeof current === "object" && current !== null && !seen.has(current)) {
+    seen.add(current);
+    const record = current as Record<string, unknown>;
+    if (typeof record.code === "string" && codes.has(record.code.toUpperCase())) return true;
+    current = record.cause;
+  }
+  return false;
+}
+
+function errorClassName(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const errorConstructor = (error as { constructor?: unknown }).constructor;
+  if (typeof errorConstructor !== "function") return undefined;
+  return errorConstructor.name;
+}
+
 export function classifyOpenAIError(error: unknown): ModelErrorCode {
+  const className = errorClassName(error);
+  if (className === "APIConnectionTimeoutError" || errorChainHasCode(error, TIMEOUT_ERROR_CODES)) {
+    return "timeout";
+  }
+  if (className === "APIConnectionError" || errorChainHasCode(error, CONNECTION_ERROR_CODES)) {
+    return "connection_error";
+  }
   if (error instanceof APIError) {
     const status = error.status;
     if (status === 429) return "rate_limit";
     if (status === 401 || status === 403) return "auth_error";
-    if (status === 500 || status === 502 || status === 503) return "server_error";
+    if (status !== undefined && status >= 500 && status <= 599) return "server_error";
     if (
       status === 400 &&
       typeof error.message === "string" &&
