@@ -3,7 +3,7 @@ import { createElement } from "react";
 import stringWidth from "string-width";
 import stripAnsi from "strip-ansi";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { RuntimePhase } from "../../../shared/host/presentationBindings";
+import type { ReconnectProgress, RuntimePhase } from "../../../shared/host/presentationBindings";
 import { resetOutputSession, useOutputStore } from "../useOutputStore";
 import { classifyRuntimeHealth, formatElapsedTime, RuntimeStatusLine } from "./RuntimeStatusLine";
 
@@ -21,9 +21,20 @@ function setRuntime(runtime: {
   detail?: string;
   turnAgeSeconds?: number | null;
   phaseAgeSeconds?: number;
+  outputIdleSeconds?: number;
+  reconnect?: Omit<ReconnectProgress, "stageStartedAt" | "retryAt"> & {
+    retryInSeconds?: number;
+  };
 }): void {
   const now = Date.now();
-  const { phase, detail, turnAgeSeconds = null, phaseAgeSeconds = 0 } = runtime;
+  const {
+    phase,
+    detail,
+    turnAgeSeconds = null,
+    phaseAgeSeconds = 0,
+    outputIdleSeconds = 0,
+    reconnect,
+  } = runtime;
   useOutputStore.setState((state) => ({
     runtime: {
       ...state.runtime,
@@ -31,6 +42,17 @@ function setRuntime(runtime: {
       phaseSince: now - phaseAgeSeconds * 1_000,
       turnStartedAt: turnAgeSeconds === null ? null : now - turnAgeSeconds * 1_000,
       workPausedAt: phase === "reconnecting" ? now - phaseAgeSeconds * 1_000 : null,
+      lastOutputAt: now - outputIdleSeconds * 1_000,
+      reconnect:
+        reconnect === undefined
+          ? null
+          : {
+              ...reconnect,
+              stageStartedAt: now - phaseAgeSeconds * 1_000,
+              ...(reconnect.retryInSeconds === undefined
+                ? {}
+                : { retryAt: now + reconnect.retryInSeconds * 1_000 }),
+            },
       ...(detail === undefined ? {} : { detail }),
     },
   }));
@@ -141,17 +163,58 @@ describe("RuntimeStatusLine", () => {
     expect(statusLine()).not.toContain("Waiting for input");
   });
 
-  it("pauses the work timer and shows the current reconnect attempt", () => {
+  it("shows the health metric that made an ordinary phase slow", () => {
+    setRuntime({ phase: "connecting", turnAgeSeconds: 20, phaseAgeSeconds: 18 });
+    expect(statusLine()).toContain("waiting for first response 18s");
+
+    setRuntime({
+      phase: "streaming",
+      turnAgeSeconds: 40,
+      phaseAgeSeconds: 35,
+      outputIdleSeconds: 12,
+    });
+    const streaming = statusLine();
+    expect(streaming).toContain("no output 12s");
+    expect(streaming).not.toContain("no output 35s");
+
+    setRuntime({ phase: "compacting", turnAgeSeconds: 50, phaseAgeSeconds: 46 });
+    expect(statusLine()).toContain("compacting context 46s");
+  });
+
+  it("shows a countdown during intentional retry backoff", () => {
     setRuntime({
       phase: "reconnecting",
-      detail: "attempt 3 · waiting for network",
       turnAgeSeconds: 30,
       phaseAgeSeconds: 20,
+      reconnect: {
+        stage: "backoff",
+        kind: "connection",
+        attempt: 2,
+        errorCode: "connection_error",
+        retryInSeconds: 4,
+      },
     });
 
     const line = statusLine();
     expect(line).toContain("Working 10s (paused)");
-    expect(line).toContain("reconnecting · attempt 3 · waiting for network · 20s");
+    expect(line).toContain("retry 2 · network unavailable · next attempt in 4s");
+  });
+
+  it("shows the active reconnect attempt timer and stable retry reason", () => {
+    setRuntime({
+      phase: "reconnecting",
+      turnAgeSeconds: 30,
+      phaseAgeSeconds: 8,
+      reconnect: {
+        stage: "attempt",
+        kind: "transient",
+        attempt: 3,
+        maxAttempts: 3,
+        errorCode: "timeout",
+      },
+    });
+
+    expect(statusLine()).toContain("reconnecting · attempt 3/3 · request timed out · 8s");
   });
 
   it("names MCP startup instead of showing the generic tool activity", () => {

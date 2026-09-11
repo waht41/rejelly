@@ -23,9 +23,13 @@ export function classifyRuntimeHealth(input: {
   phase: RuntimePhase;
   phaseElapsedSeconds: number;
   outputIdleSeconds: number;
+  reconnectStage?: "backoff" | "attempt";
 }): RuntimeHealth {
-  if (input.phase === "reconnecting") return "recovering";
-  const policy = RUNTIME_HEALTH_POLICY[input.phase];
+  if (input.phase === "reconnecting" && input.reconnectStage !== "attempt") return "recovering";
+  const policy =
+    input.phase === "reconnecting"
+      ? RUNTIME_HEALTH_POLICY.connecting
+      : RUNTIME_HEALTH_POLICY[input.phase];
   if (!policy) return "normal";
   const elapsed = policy.clock === "phase" ? input.phaseElapsedSeconds : input.outputIdleSeconds;
   if (elapsed >= policy.stalledAfterSeconds) return "stalled";
@@ -81,6 +85,42 @@ function formatChars(chars: number): string {
   return `${(chars / 1_000_000).toFixed(1)}m`;
 }
 
+function retryReason(errorCode: string): string {
+  switch (errorCode) {
+    case "connection_error":
+      return "network unavailable";
+    case "timeout":
+      return "request timed out";
+    case "rate_limit":
+      return "rate limited";
+    case "server_error":
+      return "server unavailable";
+    default:
+      return "temporary failure";
+  }
+}
+
+function healthDetail(
+  phase: RuntimePhase,
+  health: RuntimeHealth,
+  phaseElapsed: number,
+  outputIdle: number,
+): string | undefined {
+  if (health !== "slow" && health !== "stalled") return undefined;
+  switch (phase) {
+    case "connecting":
+      return `waiting for first response ${formatElapsedTime(phaseElapsed)}`;
+    case "streaming":
+      return `no output ${formatElapsedTime(outputIdle)}`;
+    case "thinking":
+      return `thinking ${formatElapsedTime(phaseElapsed)}`;
+    case "compacting":
+      return `compacting context ${formatElapsedTime(phaseElapsed)}`;
+    default:
+      return undefined;
+  }
+}
+
 /** Persistent status bar: runtime activity, whole-turn duration, and stall indication. */
 export function RuntimeStatusLine() {
   const runtime = useOutputStore((state) => state.runtime);
@@ -100,6 +140,7 @@ export function RuntimeStatusLine() {
     phase,
     phaseElapsedSeconds: phaseElapsed,
     outputIdleSeconds: outputIdle,
+    reconnectStage: runtime.reconnect?.stage,
   });
 
   if (phase === "idle") {
@@ -129,21 +170,33 @@ export function RuntimeStatusLine() {
     );
   }
 
-  if (phase === "reconnecting") {
+  if (phase === "reconnecting" && runtime.reconnect) {
+    const reconnect = runtime.reconnect;
+    const attemptLabel =
+      reconnect.maxAttempts === undefined
+        ? `${reconnect.attempt}`
+        : `${reconnect.attempt}/${reconnect.maxAttempts}`;
+    const reason = retryReason(reconnect.errorCode);
+    const reconnectDetail =
+      reconnect.stage === "backoff"
+        ? `retry ${attemptLabel} · ${reason} · next attempt in ${formatElapsedTime(
+            Math.ceil(Math.max(0, (reconnect.retryAt ?? now) - now) / 1_000),
+          )}`
+        : `reconnecting · attempt ${attemptLabel} · ${reason} · ${formatElapsedTime(phaseElapsed)}`;
     return (
       <Box>
         <Text color="yellow">● </Text>
-        <Text color="yellow">Working {formatElapsedTime(turnElapsed)} (paused)</Text>
-        <Text dimColor>
-          {" "}
-          · reconnecting · {detail} · {formatElapsedTime(phaseElapsed)}
+        <Text color="yellow" bold={health === "stalled"}>
+          Working {formatElapsedTime(turnElapsed)} (paused)
         </Text>
+        <Text dimColor> · {reconnectDetail}</Text>
       </Box>
     );
   }
 
   let detailSuffix =
-    phase === "tool" && detail.startsWith("Starting MCP ") ? detail : WORKING_DETAIL[phase];
+    healthDetail(phase, health, phaseElapsed, outputIdle) ??
+    (phase === "tool" && detail.startsWith("Starting MCP ") ? detail : WORKING_DETAIL[phase]);
   if (phase === "preparing_tool" && toolCallGeneration) {
     const names = [...new Set(toolCallGeneration.calls.map((call) => call.name).filter(Boolean))];
     const subject =

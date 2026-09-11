@@ -89,6 +89,32 @@ describe("setPhase", () => {
     expect(useOutputStore.getState().runtime.phase).toBe("awaiting_user");
   });
 
+  it("stores retry substages and clears them on the next normal phase", () => {
+    const store = useOutputStore.getState();
+    store.setReconnectProgress({
+      stage: "backoff",
+      kind: "connection",
+      attempt: 2,
+      errorCode: "connection_error",
+      stageStartedAt: Date.now(),
+      retryAt: Date.now() + 5_000,
+    });
+    const pausedAt = useOutputStore.getState().runtime.workPausedAt;
+
+    store.setReconnectProgress({
+      stage: "attempt",
+      kind: "connection",
+      attempt: 2,
+      errorCode: "connection_error",
+      stageStartedAt: Date.now(),
+    });
+    expect(useOutputStore.getState().runtime.workPausedAt).toBe(pausedAt);
+    expect(useOutputStore.getState().runtime.reconnect?.stage).toBe("attempt");
+
+    store.setPhase("thinking");
+    expect(useOutputStore.getState().runtime.reconnect).toBeNull();
+  });
+
   it("returns to idle at a turn boundary", () => {
     useOutputStore.getState().setPhase("streaming");
     useOutputStore.getState().logAssistant("done");
@@ -862,6 +888,7 @@ describe("clearHistory", () => {
         turnStartedAt: null,
         workPausedMs: 0,
         workPausedAt: null,
+        reconnect: null,
         lastOutputAt: Date.now(),
       },
     });

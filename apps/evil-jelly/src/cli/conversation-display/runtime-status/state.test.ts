@@ -6,6 +6,7 @@ import {
   resumeRuntimeWork,
   runtimeWorkElapsedMs,
   transitionRuntimePhase,
+  updateRuntimeReconnect,
 } from "./state";
 
 describe("runtime status state", () => {
@@ -29,17 +30,51 @@ describe("runtime status state", () => {
     expect(runtimeWorkElapsedMs(resumed, 18_000)).toBe(7_000);
   });
 
-  it("restarts only the attempt timer when reconnect advances", () => {
+  it("restarts only the retry substage timer while preserving the whole outage pause", () => {
     const started = beginRuntimeTurn(idleRuntime(0), 1_000);
-    const firstAttempt = transitionRuntimePhase(started, "reconnecting", "attempt 2", 6_000);
-    const nextAttempt = transitionRuntimePhase(firstAttempt, "reconnecting", "attempt 3", 16_000);
+    const backoff = updateRuntimeReconnect(
+      started,
+      {
+        stage: "backoff",
+        kind: "connection",
+        attempt: 2,
+        errorCode: "connection_error",
+        stageStartedAt: 6_000,
+        retryAt: 16_000,
+      },
+      6_000,
+    );
+    const attempt = updateRuntimeReconnect(
+      backoff,
+      {
+        stage: "attempt",
+        kind: "connection",
+        attempt: 2,
+        errorCode: "connection_error",
+        stageStartedAt: 16_000,
+      },
+      16_000,
+    );
 
-    expect(nextAttempt).toMatchObject({
+    expect(attempt).toMatchObject({
       phaseSince: 16_000,
       workPausedAt: 6_000,
       workPausedMs: 0,
+      reconnect: { stage: "attempt", attempt: 2 },
     });
-    expect(runtimeWorkElapsedMs(nextAttempt, 20_000)).toBe(5_000);
+    expect(runtimeWorkElapsedMs(attempt, 20_000)).toBe(5_000);
+  });
+
+  it("clears reconnect progress when normal work resumes", () => {
+    const reconnecting = updateRuntimeReconnect(idleRuntime(0), {
+      stage: "attempt",
+      kind: "transient",
+      attempt: 2,
+      errorCode: "timeout",
+      stageStartedAt: 10,
+    });
+
+    expect(transitionRuntimePhase(reconnecting, "thinking", undefined, 20).reconnect).toBeNull();
   });
 
   it("resumes in the phase matching live tool state", () => {

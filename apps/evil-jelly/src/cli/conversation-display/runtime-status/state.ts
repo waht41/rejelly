@@ -1,4 +1,4 @@
-import type { RuntimePhase } from "../../../shared/host/presentationBindings";
+import type { ReconnectProgress, RuntimePhase } from "../../../shared/host/presentationBindings";
 
 /** The status-line state: current activity, stall anchor, and whole-turn timer. */
 export interface RuntimeStatus {
@@ -8,8 +8,9 @@ export interface RuntimeStatus {
   turnStartedAt: number | null;
   /** Completed reconnect waits excluded from the visible active-work timer. */
   workPausedMs: number;
-  /** Start of the current reconnect wait, while active. */
+  /** Start of the current reconnect episode, while active. */
   workPausedAt: number | null;
+  reconnect: ReconnectProgress | null;
   lastOutputAt: number;
 }
 
@@ -25,6 +26,7 @@ export function idleRuntime(now = Date.now()): RuntimeStatus {
     turnStartedAt: null,
     workPausedMs: 0,
     workPausedAt: null,
+    reconnect: null,
     lastOutputAt: now,
   };
 }
@@ -55,11 +57,7 @@ export function transitionRuntimePhase(
 ): RuntimeStatus {
   if (phase === runtime.phase) {
     if (detail === undefined || detail === runtime.detail) return runtime;
-    // A reconnecting detail change denotes the next physical attempt. Rebase only its timer while
-    // preserving workPausedAt, which owns the whole outage pause.
-    return phase === "reconnecting"
-      ? { ...runtime, detail, phaseSince: now }
-      : { ...runtime, detail };
+    return { ...runtime, detail };
   }
   const enteringReconnect = phase === "reconnecting";
   const leavingReconnect = runtime.phase === "reconnecting";
@@ -71,7 +69,22 @@ export function transitionRuntimePhase(
     phaseSince: now,
     workPausedMs: runtime.workPausedMs + completedPauseMs,
     workPausedAt: enteringReconnect ? now : null,
+    reconnect: null,
     ...(detail === undefined ? {} : { detail }),
+  };
+}
+
+export function updateRuntimeReconnect(
+  runtime: RuntimeStatus,
+  reconnect: ReconnectProgress,
+  now = Date.now(),
+): RuntimeStatus {
+  return {
+    ...runtime,
+    phase: "reconnecting",
+    phaseSince: reconnect.stageStartedAt,
+    workPausedAt: runtime.workPausedAt ?? now,
+    reconnect,
   };
 }
 

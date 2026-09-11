@@ -27,6 +27,17 @@ export interface ToolCallGenerationProgress {
   totalArgumentChars: number;
 }
 
+/** Structured progress for a model retry, kept separate from free-form phase detail. */
+export interface ReconnectProgress {
+  stage: "backoff" | "attempt";
+  kind: "connection" | "transient";
+  attempt: number;
+  maxAttempts?: number;
+  errorCode: string;
+  stageStartedAt: number;
+  retryAt?: number;
+}
+
 /** Complete host-facing presentation port for a conversation, including its tool activity. */
 export interface ConversationPresentationBindings {
   /** Stream assistant text for the current turn into the transient surface. */
@@ -44,6 +55,8 @@ export interface ConversationPresentationBindings {
   showSessionBanner?: () => void;
   onDetailUpdate?: (detail: string) => void;
   onPhaseUpdate?: (phase: RuntimePhase, detail?: string) => void;
+  /** Retry backoff/attempt lifecycle for the persistent runtime status line. */
+  onReconnectUpdate?: (progress: ReconnectProgress) => void;
   /** Live model-side progress while one or more tool calls are still being serialized. */
   onToolCallGenerationUpdate?: (progress: ToolCallGenerationProgress | null) => void;
   /**

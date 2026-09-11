@@ -11,7 +11,7 @@ import {
 } from "@rejelly/core";
 import { describe, expect, it } from "vitest";
 import { readModelRetryMetrics } from "../../shared/model/observation/modelRetryMetrics";
-import { addRetryJitter, withRetry } from "./withRetry";
+import { addRetryJitter, type ModelRetryNotice, withRetry } from "./withRetry";
 
 async function collect(stream: AsyncGenerator<StreamEvent>): Promise<StreamEvent[]> {
   const events: StreamEvent[] = [];
@@ -114,7 +114,7 @@ describe("model composition withRetry", () => {
         initialDelayMs: 0,
         connectionRetry: "unbounded",
         connectionInitialDelayMs: 0,
-        onRetry: (notice) => notices.push(notice.kind),
+        onRetry: (notice) => notices.push(`${notice.type}:${notice.kind}`),
       }),
     ]);
 
@@ -122,7 +122,54 @@ describe("model composition withRetry", () => {
       { type: "text", content: "recovered" },
     ]);
     expect(calls).toBe(4);
-    expect(notices).toEqual(["connection", "connection", "transient"]);
+    expect(notices).toEqual([
+      "retry_wait:connection",
+      "attempt_start:connection",
+      "retry_wait:connection",
+      "attempt_start:connection",
+      "retry_wait:transient",
+      "attempt_start:transient",
+    ]);
+  });
+
+  it("reports retry wait before the next physical attempt starts", async () => {
+    let calls = 0;
+    const notices: ModelRetryNotice[] = [];
+    const adapter: ModelAdapter = {
+      id: "test-model",
+      stream: async function* () {
+        calls += 1;
+        if (calls === 1) throw transientError("server_error");
+        yield { type: "text", content: "ok" };
+      },
+    };
+    const model = augmentModel(adapter, [
+      withRetry({
+        maxAttempts: 3,
+        initialDelayMs: 0,
+        onRetry: (notice) => notices.push(notice),
+      }),
+    ]);
+
+    await collect(model.stream([]));
+
+    expect(notices).toEqual([
+      {
+        type: "retry_wait",
+        kind: "transient",
+        attempt: 2,
+        maxAttempts: 3,
+        delayMs: 0,
+        errorCode: "server_error",
+      },
+      {
+        type: "attempt_start",
+        kind: "transient",
+        attempt: 2,
+        maxAttempts: 3,
+        errorCode: "server_error",
+      },
+    ]);
   });
 
   it("bounds connection retries for non-interactive callers", async () => {
@@ -144,17 +191,23 @@ describe("model composition withRetry", () => {
 
   it("cancels an unbounded connection wait through the model signal", async () => {
     const controller = new AbortController();
+    const notices: string[] = [];
     const adapter: ModelAdapter = {
       id: "test-model",
       stream: () => throwBeforeYield(transientError("connection_error")),
     };
     const model = augmentModel(adapter, [
-      withRetry({ connectionRetry: "unbounded", connectionInitialDelayMs: 60_000 }),
+      withRetry({
+        connectionRetry: "unbounded",
+        connectionInitialDelayMs: 60_000,
+        onRetry: (notice) => notices.push(notice.type),
+      }),
     ]);
     const pending = collect(model.stream([], { signal: controller.signal }));
     controller.abort(new Error("stop reconnecting"));
 
     await expect(pending).rejects.toThrow("stop reconnecting");
+    expect(notices).toEqual(["retry_wait"]);
   });
 
   it("retries bounded request timeouts", async () => {
