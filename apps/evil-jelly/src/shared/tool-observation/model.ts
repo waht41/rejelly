@@ -27,11 +27,10 @@ export interface GrepSearchToolMetrics {
   type: "grep_search";
   matches: number;
   files: number;
-  snippets: number;
   emittedLines: number;
   contextLines: number;
-  mergedRanges: number;
   omittedMatches: number;
+  maxLines: number;
   truncated: boolean;
 }
 

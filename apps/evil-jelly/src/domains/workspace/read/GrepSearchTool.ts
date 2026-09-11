@@ -296,17 +296,6 @@ function parseNativeSearchOutput(text: string): SearchFileResult[] {
   return [...files.values()];
 }
 
-function countMatchClusters(matchedLineNumbers: Iterable<number>): number {
-  const sorted = [...new Set(matchedLineNumbers)].sort((left, right) => left - right);
-  let clusters = 0;
-  let previous: number | undefined;
-  for (const lineNumber of sorted) {
-    if (previous === undefined || lineNumber > previous + 1) clusters += 1;
-    previous = lineNumber;
-  }
-  return clusters;
-}
-
 function renderSearchResults(results: SearchFileResult[], contextLines: number): string {
   const outputLines: string[] = [];
   let renderedAnyFile = false;
@@ -344,24 +333,15 @@ function renderSearchResults(results: SearchFileResult[], contextLines: number):
   const rawOutput = outputLines.join("\n");
   const output = rawOutput.length > 0 ? truncateOutput(rawOutput) : "";
   const matches = results.reduce((sum, result) => sum + result.matchedLineNumbers.size, 0);
-  const snippets = results.reduce(
-    (sum, result) => sum + countMatchClusters(result.matchedLineNumbers),
-    0,
-  );
-  const mergedRanges = results.reduce(
-    (sum, result) => sum + mergeContextIntervals(result.matchedLineNumbers, contextLines).length,
-    0,
-  );
   const emittedMatches = output.split("\n").filter((line) => /^> \d+ \|/.test(line)).length;
   recordActiveToolMetrics({
     type: "grep_search",
     matches,
     files: results.filter((result) => result.matchedLineNumbers.size > 0).length,
-    snippets,
     emittedLines: output.length === 0 ? 0 : output.split("\n").length,
     contextLines: clampContextLines(contextLines),
-    mergedRanges,
     omittedMatches: Math.max(0, matches - emittedMatches),
+    maxLines: TRUNCATE_MAX_LINES,
     truncated: output !== rawOutput,
   });
   return output;

@@ -29,12 +29,10 @@ export interface ToolCallPayloadInspection {
 export interface GrepSearchOutputInspection {
   matches: number;
   files: number;
-  fileNames: string[];
-  snippets: number;
   emittedLines: number;
   contextLines: number;
-  mergedRanges: number;
   omittedMatches?: number;
+  maxLines?: number;
   truncated?: boolean;
   source: "recorded" | "derived";
 }
@@ -43,6 +41,7 @@ export interface ToolCallInspection {
   type: "tool_call_inspection_v1";
   sessionId: string;
   turnId: string;
+  turnNumber?: number;
   toolCallId: string;
   toolName: string;
   selectedSide: ToolCallSelectionSide;
@@ -86,6 +85,25 @@ function lineCount(value: string): number {
   return value.length === 0 ? 0 : value.split(/\r?\n/).length;
 }
 
+function turnNumbers(events: readonly SessionEvent[]): Map<string, number> {
+  const firstSeq = new Map<string, number>();
+  for (const event of events) {
+    if (!isKnownSessionEvent(event)) continue;
+    const turnId =
+      "turnId" in event && typeof event.turnId === "string"
+        ? event.turnId
+        : event.type === "context_compacted"
+          ? event.activeTurnId
+          : undefined;
+    if (turnId && !firstSeq.has(turnId)) firstSeq.set(turnId, event.seq);
+  }
+  return new Map(
+    [...firstSeq.entries()]
+      .sort((left, right) => left[1] - right[1])
+      .map(([turnId], index) => [turnId, index + 1]),
+  );
+}
+
 function payload(content: string, address?: ToolCallAddress): ToolCallPayloadInspection {
   return {
     ...(address
@@ -122,25 +140,14 @@ function deriveGrepSearchOutput(
   }
   const lines = result.content.split(/\r?\n/);
   const files = new Set<string>();
-  const previousMatchByFile = new Map<string, number>();
   let matches = 0;
-  let snippets = 0;
-  let mergedRanges = 0;
   let currentFile: string | undefined;
-  let currentRangeFile: string | undefined;
-  let rangeOpen = false;
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
     const next = lines[index + 1] ?? "";
-    if (line === "--") {
-      rangeOpen = false;
-      currentRangeFile = undefined;
-      continue;
-    }
+    if (line === "--") continue;
     if (!/^[ >] \d+ \|/.test(line) && /^[ >] \d+ \|/.test(next)) {
       currentFile = line;
-      rangeOpen = false;
-      currentRangeFile = undefined;
       continue;
     }
 
@@ -167,17 +174,7 @@ function deriveGrepSearchOutput(
     if (!file || lineNumber === undefined) continue;
 
     files.add(file);
-    if (!rangeOpen || currentRangeFile !== file) {
-      mergedRanges += 1;
-      rangeOpen = true;
-      currentRangeFile = file;
-    }
-    if (matched) {
-      matches += 1;
-      const previousMatch = previousMatchByFile.get(file);
-      if (previousMatch === undefined || lineNumber > previousMatch + 1) snippets += 1;
-      previousMatchByFile.set(file, lineNumber);
-    }
+    if (matched) matches += 1;
   }
   const explicitTruncation =
     /\[grep (?:line truncated:|output truncated at)|more matches truncated\)/.test(result.content);
@@ -185,11 +182,8 @@ function deriveGrepSearchOutput(
   return {
     matches,
     files: files.size,
-    fileNames: [...files].sort((left, right) => left.localeCompare(right)),
-    snippets,
     emittedLines: result.lines,
     contextLines,
-    mergedRanges,
     ...(truncated === false ? { omittedMatches: 0 } : {}),
     ...(truncated !== undefined ? { truncated } : {}),
     source: "derived",
@@ -198,11 +192,8 @@ function deriveGrepSearchOutput(
 
 function recordedGrepSearchOutput(
   metrics: GrepSearchToolMetrics | undefined,
-  derived: GrepSearchOutputInspection | undefined,
 ): GrepSearchOutputInspection | undefined {
-  return metrics
-    ? { ...metrics, fileNames: derived?.fileNames ?? [], source: "recorded" }
-    : undefined;
+  return metrics ? { ...metrics, source: "recorded" } : undefined;
 }
 
 function segmentCall(
@@ -363,13 +354,12 @@ export function projectToolCallInspection(
   const derivedGrepSearch =
     toolName === "grep" ? deriveGrepSearchOutput(argumentsText, result) : undefined;
   const grepSearch =
-    toolName === "grep"
-      ? (recordedGrepSearchOutput(grepMetrics, derivedGrepSearch) ?? derivedGrepSearch)
-      : undefined;
+    toolName === "grep" ? (recordedGrepSearchOutput(grepMetrics) ?? derivedGrepSearch) : undefined;
   return {
     type: "tool_call_inspection_v1",
     sessionId: meta.sessionId,
     turnId: waterfall.turnId,
+    turnNumber: turnNumbers(events).get(waterfall.turnId),
     toolCallId,
     toolName,
     selectedSide: side,

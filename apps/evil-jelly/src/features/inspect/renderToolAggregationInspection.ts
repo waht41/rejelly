@@ -22,6 +22,10 @@ function decimal(value: number | undefined): string {
   return value === undefined ? "-" : value.toFixed(1);
 }
 
+function precisePercentage(value: number | undefined): string {
+  return value === undefined ? "-" : `${(value * 100).toFixed(1)}%`;
+}
+
 function duration(value: number): string {
   if (value < 1_000) return `${integer(value)}ms`;
   if (value < 60_000) return `${(value / 1_000).toFixed(1)}s`;
@@ -116,10 +120,13 @@ function renderCalls(
 function renderGrepCalls(title: string, calls: readonly AggregatedToolCall[]): string[] {
   if (calls.length === 0) return [];
   const labelWidth = Math.max(4, ...calls.map((call) => callLabel(call, false).length));
-  const widths = [labelWidth, 9, 8, 7, 7, 5, 9, 10];
+  const widths = [labelWidth, 9, 8, 7, 7, 5, 7, 9, 10];
   return [
     title,
-    row(["call", "result", "matches", "files", "lines", "ctx", "duration", "status"], widths),
+    row(
+      ["call", "result", "matches", "files", "lines", "ctx", "trunc", "duration", "status"],
+      widths,
+    ),
     "-".repeat(widths.reduce((sum, width) => sum + width, 0) + (widths.length - 1) * 2),
     ...calls.map((call) =>
       row(
@@ -130,6 +137,7 @@ function renderGrepCalls(title: string, calls: readonly AggregatedToolCall[]): s
           call.grepSearch ? integer(call.grepSearch.files) : "-",
           call.grepSearch ? integer(call.grepSearch.emittedLines) : integer(call.resultLines),
           call.grepSearch ? integer(call.grepSearch.contextLines) : "-",
+          call.grepSearch?.truncated ? "yes" : "-",
           call.durationMs === undefined ? "-" : duration(call.durationMs),
           call.status,
         ],
@@ -142,27 +150,28 @@ function renderGrepCalls(title: string, calls: readonly AggregatedToolCall[]): s
 function renderGrepSummary(summary: GrepAggregateSummary, calls: number): string[] {
   const measuredHint =
     summary.measuredCalls < calls ? ` across ${summary.measuredCalls} measured calls` : "";
-  const omittedHint =
-    summary.omittedMatchesMeasuredCalls < summary.measuredCalls
-      ? ` / ${summary.omittedMatchesMeasuredCalls} measured`
-      : "";
-  return [
+  const canonicalTruncated = calls - summary.canonicalComplete;
+  const lines = [
+    "Truncation",
+    `  ${"tool output".padEnd(21)} ${integer(summary.toolTruncated)} / ${integer(summary.toolTruncationMeasuredCalls)} known   ${precisePercentage(summary.toolTruncationMeasuredCalls === 0 ? undefined : summary.toolTruncated / summary.toolTruncationMeasuredCalls)}`,
+    `  ${"canonical admission".padEnd(21)} ${integer(canonicalTruncated)} / ${integer(calls)}   ${precisePercentage(calls === 0 ? undefined : canonicalTruncated / calls)}`,
+    "",
     "Search output",
     `  matches              ${integer(summary.matches)} total / ${decimal(summary.averageMatches)} avg / ${integer(summary.p95Matches)} p95${measuredHint}`,
-    `  files                ${integer(summary.files)} summed / ${integer(summary.uniqueFiles)} unique emitted`,
-    `  snippets             ${integer(summary.snippets)} total`,
+    `  files                ${integer(summary.files)} summed`,
     `  emitted lines        ${integer(summary.emittedLines)} total / ${decimal(summary.averageEmittedLines)} avg`,
     `  context lines        ${integer(summary.p50ContextLines)} p50 / ${integer(summary.p95ContextLines)} p95`,
-    `  omitted matches      ${integer(summary.omittedMatches)}${omittedHint}`,
-    `  tool truncated       ${integer(summary.toolTruncated)} / ${integer(summary.toolTruncationMeasuredCalls)}`,
-    `  canonical complete  ${integer(summary.canonicalComplete)} / ${integer(calls)}`,
-    "",
-    "Output density",
-    `  tokens / match       ${decimal(summary.tokensPerMatch)}`,
-    `  lines / match        ${decimal(summary.linesPerMatch)}`,
-    `  tokens / line        ${decimal(summary.tokensPerLine)}`,
-    `  window merge         ${integer(summary.rawWindows)} raw -> ${integer(summary.finalRanges)} ranges${summary.mergeReduction === undefined ? "" : ` / ${percentage(summary.mergeReduction)} reduction`}`,
   ];
+  if (summary.omittedMatches > 0) {
+    lines.push(`  omitted matches      ${integer(summary.omittedMatches)} known`);
+  }
+  if (summary.omittedMatchesMeasuredCalls < calls) {
+    lines.push(
+      `  metadata             ${integer(summary.omittedMatchesMeasuredCalls)} / ${integer(calls)} calls`,
+    );
+  }
+  lines.push("", "Output expansion", `  lines / match        ${decimal(summary.linesPerMatch)}`);
+  return lines;
 }
 
 function summaryLines(summary: ToolAggregateSummary): string[] {
@@ -189,8 +198,6 @@ function summaryLines(summary: ToolAggregateSummary): string[] {
     `  average              ${summary.durationSamples === 0 ? "-" : duration(summary.averageDurationMs)}`,
     `  p50                  ${summary.durationSamples === 0 ? "-" : duration(summary.p50DurationMs)}`,
     `  p95                  ${summary.durationSamples === 0 ? "-" : duration(summary.p95DurationMs)}`,
-    "",
-    `Canonical truncation  ${percentage(summary.truncationRate)}`,
   ];
 }
 
@@ -228,6 +235,8 @@ export function renderToolAggregation(inspection: ToolAggregationInspection): st
   ];
   if (inspection.grepSearch) {
     lines.push("", ...renderGrepSummary(inspection.grepSearch, inspection.summary.calls));
+  } else {
+    lines.push("", `Canonical truncation  ${percentage(inspection.summary.truncationRate)}`);
   }
   if (inspection.scope === "turn_tool") {
     const calls =

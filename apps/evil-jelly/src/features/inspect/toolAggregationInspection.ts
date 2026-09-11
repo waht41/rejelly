@@ -54,8 +54,6 @@ export interface GrepAggregateSummary {
   averageMatches: number;
   p95Matches: number;
   files: number;
-  uniqueFiles: number;
-  snippets: number;
   emittedLines: number;
   averageEmittedLines: number;
   p50ContextLines: number;
@@ -65,12 +63,7 @@ export interface GrepAggregateSummary {
   toolTruncated: number;
   toolTruncationMeasuredCalls: number;
   canonicalComplete: number;
-  rawWindows: number;
-  finalRanges: number;
-  mergeReduction?: number;
-  tokensPerMatch?: number;
   linesPerMatch?: number;
-  tokensPerLine?: number;
 }
 
 export interface ToolAggregationInspection {
@@ -169,9 +162,6 @@ function summarizeGrep(calls: readonly AggregatedToolCall[]): GrepAggregateSumma
   const contextByCall = measured.map((search) => search.contextLines);
   const matches = matchesByCall.reduce((sum, value) => sum + value, 0);
   const emittedLines = measured.reduce((sum, search) => sum + search.emittedLines, 0);
-  const finalRanges = measured.reduce((sum, search) => sum + search.mergedRanges, 0);
-  const fileNames = new Set(measured.flatMap((search) => search.fileNames));
-  const resultTokens = calls.reduce((sum, call) => sum + call.resultTokens, 0);
   const omittedMeasured = measured.filter((search) => search.omittedMatches !== undefined);
   const truncationMeasured = measured.filter((search) => search.truncated !== undefined);
   return {
@@ -180,8 +170,6 @@ function summarizeGrep(calls: readonly AggregatedToolCall[]): GrepAggregateSumma
     averageMatches: matches / measured.length,
     p95Matches: percentile(matchesByCall, 0.95),
     files: measured.reduce((sum, search) => sum + search.files, 0),
-    uniqueFiles: fileNames.size,
-    snippets: measured.reduce((sum, search) => sum + search.snippets, 0),
     emittedLines,
     averageEmittedLines: emittedLines / measured.length,
     p50ContextLines: percentile(contextByCall, 0.5),
@@ -191,16 +179,7 @@ function summarizeGrep(calls: readonly AggregatedToolCall[]): GrepAggregateSumma
     toolTruncated: truncationMeasured.filter((search) => search.truncated).length,
     toolTruncationMeasuredCalls: truncationMeasured.length,
     canonicalComplete: calls.filter((call) => !call.truncated).length,
-    rawWindows: matches,
-    finalRanges,
-    ...(matches > 0
-      ? {
-          mergeReduction: 1 - finalRanges / matches,
-          tokensPerMatch: resultTokens / matches,
-          linesPerMatch: emittedLines / matches,
-        }
-      : {}),
-    ...(emittedLines > 0 ? { tokensPerLine: resultTokens / emittedLines } : {}),
+    ...(matches > 0 ? { linesPerMatch: emittedLines / matches } : {}),
   };
 }
 
@@ -368,7 +347,7 @@ export function projectToolAggregation(
       (left, right) =>
         right.resultTokens - left.resultTokens || left.toolName.localeCompare(right.toolName),
     );
-  const largestLimit = options.top ?? (options.turnId ? 5 : 10);
+  const largestLimit = options.top ?? (options.toolName === "grep" || options.turnId ? 5 : 10);
   return {
     type: "tool_aggregation_v1",
     sessionId: meta.sessionId,

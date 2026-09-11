@@ -130,11 +130,10 @@ describe("GrepSearchTool contextLines", () => {
       type: "grep_search",
       matches: 3,
       files: 1,
-      snippets: 2,
       emittedLines: 9,
       contextLines: 1,
-      mergedRanges: 2,
       omittedMatches: 0,
+      maxLines: 300,
       truncated: false,
     });
   });

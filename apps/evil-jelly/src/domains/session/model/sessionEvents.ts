@@ -143,11 +143,10 @@ const toolObservationMetricsSchema = z.object({
   type: z.literal("grep_search"),
   matches: nonNegativeIntSchema,
   files: nonNegativeIntSchema,
-  snippets: nonNegativeIntSchema,
   emittedLines: nonNegativeIntSchema,
   contextLines: nonNegativeIntSchema,
-  mergedRanges: nonNegativeIntSchema,
   omittedMatches: nonNegativeIntSchema,
+  maxLines: nonNegativeIntSchema,
   truncated: z.boolean(),
 });
 

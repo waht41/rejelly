@@ -67,6 +67,8 @@ export function renderToolCallInspection(
   const fallbackAddress = inspection.result?.address ?? inspection.request?.address;
   const lines = [
     `Tool call ${(selectedAddress ?? fallbackAddress) ? `#${selectedAddress ?? fallbackAddress}` : ""}`.trimEnd(),
+    `Session: ${inspection.sessionId}`,
+    `Turn: ${inspection.turnNumber ?? "-"} (${inspection.turnId})`,
     `Tool: ${inspection.toolName}`,
     `Call: ${inspection.toolCallId}`,
     `Status: ${inspection.status}`,
@@ -91,15 +93,34 @@ export function renderToolCallInspection(
       "Search output",
       `  ${"matches".padEnd(20)} ${integer(search.matches)}`,
       `  ${"files".padEnd(20)} ${integer(search.files)}`,
-      `  ${"snippets".padEnd(20)} ${integer(search.snippets)}`,
       `  ${"emitted lines".padEnd(20)} ${integer(search.emittedLines)}`,
       `  ${"context lines".padEnd(20)} ${integer(search.contextLines)}`,
-      `  ${"merged ranges".padEnd(20)} ${integer(search.mergedRanges)}`,
-      `  ${"omitted matches".padEnd(20)} ${search.omittedMatches === undefined ? "-" : integer(search.omittedMatches)}`,
+    );
+    if (search.omittedMatches !== undefined && search.omittedMatches > 0) {
+      lines.push(`  ${"omitted matches".padEnd(20)} ${integer(search.omittedMatches)}`);
+    }
+    lines.push(
       `  ${"tool truncation".padEnd(20)} ${search.truncated === undefined ? "unknown" : search.truncated ? "yes" : "no"}`,
       `  ${"canonical admission".padEnd(20)} ${inspection.truncated ? "truncated" : "complete"}`,
       `  ${"inspect preview".padEnd(20)} ${resultPreview ? `${integer(resultPreview.shown)} / ${integer(resultPreview.total)} lines` : "-"}`,
     );
+  }
+
+  if (inspection.grepSearch?.truncated && inspection.grepSearch.maxLines !== undefined) {
+    lines.push(
+      "",
+      "Output limit",
+      `  ${"max lines".padEnd(20)} ${integer(inspection.grepSearch.maxLines)}`,
+      `  ${"emitted lines".padEnd(20)} ${integer(inspection.grepSearch.emittedLines)}`,
+    );
+    if (
+      inspection.grepSearch.omittedMatches !== undefined &&
+      inspection.grepSearch.omittedMatches > 0
+    ) {
+      lines.push(
+        `  ${"omitted matches".padEnd(20)} ${integer(inspection.grepSearch.omittedMatches)}`,
+      );
+    }
   }
 
   if (inspection.request) {

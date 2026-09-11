@@ -80,11 +80,10 @@ function fixture(): SessionEvent[] {
           type: "grep_search",
           matches: 47,
           files: 6,
-          snippets: 18,
           emittedLines: 45,
           contextLines: 5,
-          mergedRanges: 9,
           omittedMatches: 2,
+          maxLines: 300,
           truncated: true,
         },
         ok: true,
@@ -149,7 +148,9 @@ describe("Tool call inspection", () => {
     const requestSelection = projectToolCallBySegment(meta, events, waterfall, "2");
     expect(requestSelection).toMatchObject({
       type: "tool_call_inspection_v1",
+      sessionId: "session-1",
       turnId: "turn-1",
+      turnNumber: 1,
       toolCallId: "call-1",
       toolName: "grep",
       selectedSide: "request",
@@ -164,13 +165,16 @@ describe("Tool call inspection", () => {
     expect(extractToolCallPayload(resultSelection)).toContain("src/file-45.ts:x");
     expect(resultSelection.grepSearch).toMatchObject({
       matches: 47,
-      snippets: 18,
-      mergedRanges: 9,
+      files: 6,
+      emittedLines: 45,
       source: "recorded",
     });
     expect(renderToolCallInspection(resultSelection)).toContain("Tool call #3");
+    expect(renderToolCallInspection(resultSelection)).toContain("Session: session-1");
+    expect(renderToolCallInspection(resultSelection)).toContain("Turn: 1 (turn-1)");
     expect(renderToolCallInspection(resultSelection)).toContain("Search output");
     expect(renderToolCallInspection(resultSelection)).toContain("tool truncation      yes");
+    expect(renderToolCallInspection(resultSelection)).toContain("Output limit");
     expect(renderToolCallInspection(resultSelection)).toContain(
       "[inspect preview, showing 40/45 lines; use --full or --payload]",
     );
@@ -221,15 +225,13 @@ describe("Tool call inspection", () => {
     expect(inspection.grepSearch).toEqual({
       matches: 4,
       files: 2,
-      fileNames: ["src/a.ts", "src/b.ts"],
-      snippets: 3,
       emittedLines: 7,
       contextLines: 3,
-      mergedRanges: 3,
       omittedMatches: 0,
       truncated: false,
       source: "derived",
     });
+    expect(renderToolCallInspection(inspection)).not.toContain("omitted matches");
   });
 
   it("locates a call across the Session and ranks addressable token contributors", () => {
