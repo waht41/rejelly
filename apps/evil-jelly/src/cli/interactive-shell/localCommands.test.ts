@@ -48,6 +48,35 @@ describe("interactive commands", () => {
     expect(ports.logSystem).toHaveBeenCalledWith(expect.stringContaining("#2 read_file"));
   });
 
+  it("prints the current output of a running tool", () => {
+    const ports = createPorts({
+      listTools: () => [
+        {
+          ordinal: 3,
+          status: "running",
+          toolName: "run_command",
+          summary: "Run tests",
+          args: '{"command":"pnpm test"}',
+          fullResult: "compiling\ntesting",
+          lineCount: 40,
+          retainedLineCount: 2,
+          droppedLineCount: 38,
+        },
+      ],
+    });
+
+    expect(createInteractiveCommandHandler(ports)("/expand-tool #3")).toBe(true);
+    expect(ports.logSystem).toHaveBeenCalledWith(
+      expect.stringContaining("#3 run_command (running)"),
+    );
+    expect(ports.logSystem).toHaveBeenCalledWith(
+      expect.stringContaining("Live output · 40 lines seen · retaining latest 2"),
+    );
+    expect(ports.logSystem).toHaveBeenCalledWith(
+      expect.stringContaining("… 38 earlier lines omitted"),
+    );
+  });
+
   it("labels an expanded proposal that was not applied", () => {
     const ports = createPorts({
       listTools: () => [

@@ -280,7 +280,8 @@ describe("withToolLogger", () => {
 
   it("hands the call handle to the running handler and back on the block", async () => {
     const bindings = createMockBindings();
-    bindings.logToolStart = () => ({ id: "tc_1", ordinal: 7 });
+    const logToolStart = vi.fn(() => ({ id: "tc_1", ordinal: 7 }));
+    bindings.logToolStart = logToolStart;
     mockGetBinding.mockReturnValue(bindings);
 
     const middleware = withToolLogger();
@@ -295,6 +296,12 @@ describe("withToolLogger", () => {
 
     await middleware.handler!(ctx, next);
 
+    expect(logToolStart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolName: "run_command",
+        args: expect.stringContaining('"command": "pnpm build"'),
+      }),
+    );
     // A streaming handler reads this to attribute its output to the right tool.
     expect(seen).toEqual({ id: "tc_1", ordinal: 7 });
     expect(bindings.toolBlocks[0]).toMatchObject({ id: "tc_1", ordinal: 7 });

@@ -140,7 +140,8 @@ export const useOutputStore = create<OutputState>((set) => ({
     assistantStream.append(text);
   },
 
-  beginTool: ({ toolName, summary }) => {
+  beginTool: (start) => {
+    const { toolName } = start;
     assistantSegmentActive = false;
     // Numbered here, when the call starts, so parallel tools read in the order
     // the model issued them rather than the order they happen to finish in.
@@ -151,7 +152,7 @@ export const useOutputStore = create<OutputState>((set) => ({
     };
     set((state) => {
       const patch: Partial<OutputState> = {
-        runningTools: startRunningTool(state.runningTools, handle, summary),
+        runningTools: startRunningTool(state.runningTools, handle, start),
       };
       if (state.runtime.phase !== "tool") {
         // The first concurrent call owns the timer; later ones join the same phase,

@@ -1,19 +1,29 @@
-import type { ToolCallHandle } from "../../../shared/tool-observation/model";
+import type { ToolCallHandle, ToolObservationStart } from "../../../shared/tool-observation/model";
 import type { ToolOutputDrain } from "./tailWindow";
 
-const TOOL_TAIL_CAP = 32;
+export const RUNNING_TOOL_TRANSCRIPT_CAP_BYTES = 96_000;
+
+function outputLineBytes(line: string): number {
+  return Buffer.byteLength(line, "utf8") + 1;
+}
 
 /** A tool call between begin and completion, with whatever it has printed so far. */
 export interface RunningTool {
   id: string;
   ordinal: number;
+  toolName: string;
   summary: string;
-  /** Complete output lines, oldest first. */
-  tail: string[];
+  args?: string;
+  /** Retained complete output lines, oldest first; the dashboard derives its tail from these. */
+  outputLines: string[];
   /** Raw unterminated remainder of the newest line. */
   partial: string;
-  /** Complete lines seen in total, even after old rows leave the tail. */
+  /** Complete lines seen in total, including lines evicted from the retained transcript. */
   lineCount: number;
+  /** Complete lines removed from the front after the transcript byte cap was reached. */
+  droppedLineCount: number;
+  /** UTF-8 bytes retained by outputLines, including one newline byte per line. */
+  retainedBytes: number;
 }
 
 export interface RunningToolsState {
@@ -23,11 +33,22 @@ export interface RunningToolsState {
 export function startRunningTool(
   tools: RunningTool[],
   handle: ToolCallHandle,
-  summary: string,
+  start: ToolObservationStart,
 ): RunningTool[] {
   return [
     ...tools,
-    { id: handle.id, ordinal: handle.ordinal, summary, tail: [], partial: "", lineCount: 0 },
+    {
+      id: handle.id,
+      ordinal: handle.ordinal,
+      toolName: start.toolName,
+      summary: start.summary,
+      args: start.args,
+      outputLines: [],
+      partial: "",
+      lineCount: 0,
+      droppedLineCount: 0,
+      retainedBytes: 0,
+    },
   ];
 }
 
@@ -40,12 +61,21 @@ export function applyRunningToolOutput(
     if (!result) {
       return tool;
     }
-    const tail = [...tool.tail, ...result.lines];
+    const outputLines = [...tool.outputLines, ...result.lines];
+    let retainedBytes =
+      tool.retainedBytes + result.lines.reduce((total, line) => total + outputLineBytes(line), 0);
+    let dropCount = 0;
+    while (dropCount < outputLines.length && retainedBytes > RUNNING_TOOL_TRANSCRIPT_CAP_BYTES) {
+      retainedBytes -= outputLineBytes(outputLines[dropCount]!);
+      dropCount++;
+    }
     return {
       ...tool,
-      tail: tail.length > TOOL_TAIL_CAP ? tail.slice(-TOOL_TAIL_CAP) : tail,
+      outputLines: dropCount > 0 ? outputLines.slice(dropCount) : outputLines,
       partial: result.rest,
       lineCount: tool.lineCount + result.lines.length,
+      droppedLineCount: tool.droppedLineCount + dropCount,
+      retainedBytes,
     };
   });
 }

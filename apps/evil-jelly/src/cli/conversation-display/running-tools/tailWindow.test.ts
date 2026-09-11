@@ -6,9 +6,9 @@ import {
   toDisplayLine,
 } from "./tailWindow";
 
-const tool = (ordinal: number, tail: string[], partial = ""): RunningToolTail => ({
+const tool = (ordinal: number, outputLines: string[], partial = ""): RunningToolTail => ({
   ordinal,
-  tail,
+  outputLines,
   partial,
 });
 const texts = (rows: ReturnType<typeof composeToolTailWindow>) => rows.map((row) => row.text);

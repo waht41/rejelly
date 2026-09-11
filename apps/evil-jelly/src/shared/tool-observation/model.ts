@@ -8,6 +8,8 @@ export interface ToolCallHandle {
 export interface ToolObservationStart {
   toolName: string;
   summary: string;
+  /** Projected at invocation time so live transcript views can inspect the call before it finishes. */
+  args?: string;
 }
 
 export type ToolObservationDetail = {
