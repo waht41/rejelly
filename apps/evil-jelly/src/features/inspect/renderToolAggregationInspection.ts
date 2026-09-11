@@ -133,7 +133,7 @@ function summaryLines(summary: ToolAggregateSummary): string[] {
     `  p50                  ${summary.durationSamples === 0 ? "-" : duration(summary.p50DurationMs)}`,
     `  p95                  ${summary.durationSamples === 0 ? "-" : duration(summary.p95DurationMs)}`,
     "",
-    `Truncation rate        ${percentage(summary.truncationRate)}`,
+    `Canonical truncation  ${percentage(summary.truncationRate)}`,
   ];
 }
 

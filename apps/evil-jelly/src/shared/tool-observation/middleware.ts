@@ -6,6 +6,7 @@ import {
   runWithToolDetailSlot,
   setActiveToolCall,
   takeActiveToolDetail,
+  takeActiveToolMetrics,
   takeActiveToolOutcome,
 } from "./invocationContext";
 import type { ToolObservationBlock } from "./model";
@@ -52,6 +53,7 @@ export function withToolLogger(): ToolMiddleware {
             summary,
             args,
             detail: takeActiveToolDetail(),
+            metrics: takeActiveToolMetrics(),
             preview: previewToolResult(fullResult),
             fullResult,
             ok: true,
@@ -67,6 +69,7 @@ export function withToolLogger(): ToolMiddleware {
             summary,
             args,
             detail: takeActiveToolDetail(),
+            metrics: takeActiveToolMetrics(),
             preview: message.slice(0, 400),
             fullResult: message,
             ok: false,

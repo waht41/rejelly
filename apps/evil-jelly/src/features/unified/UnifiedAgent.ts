@@ -221,6 +221,7 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
                 summary: block.summary,
                 args: block.args,
                 detail: block.detail,
+                metrics: block.metrics,
                 ok: block.ok,
                 ...(block.outcome ? { outcome: block.outcome } : {}),
                 ...(block.exitCode !== undefined ? { exitCode: block.exitCode } : {}),

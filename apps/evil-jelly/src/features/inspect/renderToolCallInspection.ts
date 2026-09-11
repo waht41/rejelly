@@ -81,11 +81,31 @@ export function renderToolCallInspection(
     lines.push(`  context  ${integer(contextStart)} -> ${integer(contextEnd)}`);
   }
 
+  const resultPreview = inspection.result
+    ? preview(inspection.result.content, options.full ?? false)
+    : undefined;
+  if (inspection.grepSearch) {
+    const search = inspection.grepSearch;
+    lines.push(
+      "",
+      "Search output",
+      `  ${"matches".padEnd(20)} ${integer(search.matches)}`,
+      `  ${"files".padEnd(20)} ${integer(search.files)}`,
+      `  ${"snippets".padEnd(20)} ${integer(search.snippets)}`,
+      `  ${"emitted lines".padEnd(20)} ${integer(search.emittedLines)}`,
+      `  ${"context lines".padEnd(20)} ${integer(search.contextLines)}`,
+      `  ${"merged ranges".padEnd(20)} ${integer(search.mergedRanges)}`,
+      `  ${"omitted matches".padEnd(20)} ${search.omittedMatches === undefined ? "-" : integer(search.omittedMatches)}`,
+      `  ${"tool truncation".padEnd(20)} ${search.truncated === undefined ? "unknown" : search.truncated ? "yes" : "no"}`,
+      `  ${"canonical admission".padEnd(20)} ${inspection.truncated ? "truncated" : "complete"}`,
+      `  ${"inspect preview".padEnd(20)} ${resultPreview ? `${integer(resultPreview.shown)} / ${integer(resultPreview.total)} lines` : "-"}`,
+    );
+  }
+
   if (inspection.request) {
     lines.push("", "Request", indent(prettyArguments(inspection.request.content)));
   }
-  if (inspection.result) {
-    const resultPreview = preview(inspection.result.content, options.full ?? false);
+  if (inspection.result && resultPreview) {
     lines.push(
       "",
       "Result",
@@ -95,12 +115,12 @@ export function renderToolCallInspection(
     );
     if (resultPreview.shown < resultPreview.total) {
       lines.push(
-        `  [truncated preview, showing ${resultPreview.shown}/${resultPreview.total} lines; use --full or --payload]`,
+        `  [inspect preview, showing ${resultPreview.shown}/${resultPreview.total} lines; use --full or --payload]`,
       );
     }
     if (inspection.truncated) {
       lines.push(
-        `  [tool output was reduced before canonical admission${inspection.truncationReason ? `: ${inspection.truncationReason}` : ""}; the displayed result is complete as persisted]`,
+        `  [canonical admission truncated the Tool result${inspection.truncationReason ? `: ${inspection.truncationReason}` : ""}; the displayed result is complete as persisted]`,
       );
     }
   }

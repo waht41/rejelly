@@ -3,18 +3,24 @@
  * wrapped it, carried in `AsyncLocalStorage` so parallel tool calls each get
  * their own slot without threading an argument through every handler.
  *
- * Three things travel through it: the handle identifying this call (so a handler
+ * Four things travel through it: the handle identifying this call (so a handler
  * streaming live output can say which tool the bytes belong to), an observation
- * detail produced along the way (currently a reviewed diff), and an optional
- * owner-reported business outcome distinct from handler/transport completion.
+ * detail produced along the way (currently a reviewed diff), structured metrics,
+ * and an optional owner-reported business outcome distinct from transport completion.
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { ToolCallHandle, ToolExecutionOutcomeRecord, ToolObservationDetail } from "./model";
+import type {
+  ToolCallHandle,
+  ToolExecutionOutcomeRecord,
+  ToolObservationDetail,
+  ToolObservationMetrics,
+} from "./model";
 
 type ToolCallSlot = {
   call?: ToolCallHandle;
   detail?: ToolObservationDetail;
+  metrics?: ToolObservationMetrics;
   outcome?: ToolExecutionOutcomeRecord;
 };
 
@@ -73,6 +79,20 @@ export function takeActiveToolDetail(): ToolObservationDetail | undefined {
   const detail = slot.detail;
   slot.detail = undefined;
   return detail;
+}
+
+export function recordActiveToolMetrics(metrics: ToolObservationMetrics): void {
+  const slot = callStorage.getStore();
+  if (!slot) return;
+  slot.metrics = metrics;
+}
+
+export function takeActiveToolMetrics(): ToolObservationMetrics | undefined {
+  const slot = callStorage.getStore();
+  if (!slot) return undefined;
+  const metrics = slot.metrics;
+  slot.metrics = undefined;
+  return metrics;
 }
 
 export function recordActiveToolOutcome(outcome: ToolExecutionOutcomeRecord): void {

@@ -6,6 +6,10 @@ import { getWorkspaceRoot, setWorkspaceRoot } from "../../../shared/fs-policy/wo
 import { TOOL_ALWAYS_IGNORED_DIR_NAMES } from "../../../shared/fs-policy/workspace-scan";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import type { FsOutsideAccessPayload } from "../../../shared/host/toolConfirmationBindings";
+import {
+  runWithToolDetailSlot,
+  takeActiveToolMetrics,
+} from "../../../shared/tool-observation/invocationContext";
 import { createTestHostBindings } from "../__tests__/testHostBindings";
 
 const { execFileSyncMock } = vi.hoisted(() => ({
@@ -100,6 +104,39 @@ describe("GrepSearchTool contextLines", () => {
       expect.arrayContaining(["-i"]),
       expect.any(Object),
     );
+  });
+
+  it("records exact search-output metrics before inspection previewing", async () => {
+    execFileSyncMock.mockReturnValue(
+      [
+        "src/a.ts-1-before",
+        "src/a.ts:2:needle",
+        "src/a.ts:3:needle",
+        "src/a.ts-4-after",
+        "--",
+        "src/a.ts-9-before",
+        "src/a.ts:10:needle",
+        "src/a.ts-11-after",
+      ].join("\n"),
+    );
+
+    let metrics: ReturnType<typeof takeActiveToolMetrics>;
+    await runWithToolDetailSlot(async () => {
+      await executeGrepSearch("needle", "*.ts", 1);
+      metrics = takeActiveToolMetrics();
+    });
+
+    expect(metrics).toEqual({
+      type: "grep_search",
+      matches: 3,
+      files: 1,
+      snippets: 2,
+      emittedLines: 9,
+      contextLines: 1,
+      mergedRanges: 2,
+      omittedMatches: 0,
+      truncated: false,
+    });
   });
 
   it("groups native context by file and renders each path once", async () => {

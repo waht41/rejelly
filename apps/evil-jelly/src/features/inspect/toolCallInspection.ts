@@ -4,6 +4,7 @@ import {
   type SessionMetaLine,
 } from "../../domains/session/model/sessionEvents";
 import { messageContentToText } from "../../shared/model/message/content";
+import type { GrepSearchToolMetrics } from "../../shared/tool-observation/model";
 import {
   resolveWaterfallSegment,
   type TurnWaterfallChild,
@@ -25,6 +26,18 @@ export interface ToolCallPayloadInspection {
   lines: number;
 }
 
+export interface GrepSearchOutputInspection {
+  matches: number;
+  files: number;
+  snippets: number;
+  emittedLines: number;
+  contextLines: number;
+  mergedRanges: number;
+  omittedMatches?: number;
+  truncated?: boolean;
+  source: "recorded" | "derived";
+}
+
 export interface ToolCallInspection {
   type: "tool_call_inspection_v1";
   sessionId: string;
@@ -44,6 +57,7 @@ export interface ToolCallInspection {
   admittedResultChars?: number;
   truncated?: boolean;
   truncationReason?: "size_limit" | "line_limit" | "host_summary";
+  grepSearch?: GrepSearchOutputInspection;
   request?: ToolCallPayloadInspection;
   result?: ToolCallPayloadInspection;
   totalTokens: number;
@@ -87,6 +101,103 @@ function payload(content: string, address?: ToolCallAddress): ToolCallPayloadIns
     bytes: utf8Bytes(content),
     lines: lineCount(content),
   };
+}
+
+function deriveGrepSearchOutput(
+  argumentsText: string | undefined,
+  result: ToolCallPayloadInspection | undefined,
+): GrepSearchOutputInspection | undefined {
+  if (!result) return undefined;
+  let contextLines = 3;
+  if (argumentsText) {
+    try {
+      const parsed = JSON.parse(argumentsText) as { contextLines?: unknown };
+      if (typeof parsed.contextLines === "number" && Number.isFinite(parsed.contextLines)) {
+        contextLines = Math.max(0, Math.min(12, Math.trunc(parsed.contextLines)));
+      }
+    } catch {
+      // Persisted arguments from custom adapters need not be JSON.
+    }
+  }
+  const lines = result.content.split(/\r?\n/);
+  const files = new Set<string>();
+  const previousMatchByFile = new Map<string, number>();
+  let matches = 0;
+  let snippets = 0;
+  let mergedRanges = 0;
+  let currentFile: string | undefined;
+  let currentRangeFile: string | undefined;
+  let rangeOpen = false;
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    const next = lines[index + 1] ?? "";
+    if (line === "--") {
+      rangeOpen = false;
+      currentRangeFile = undefined;
+      continue;
+    }
+    if (!/^[ >] \d+ \|/.test(line) && /^[ >] \d+ \|/.test(next)) {
+      currentFile = line;
+      rangeOpen = false;
+      currentRangeFile = undefined;
+      continue;
+    }
+
+    let file = currentFile;
+    let lineNumber: number | undefined;
+    let matched = false;
+    const formatted = line.match(/^([ >]) (\d+) \|/);
+    if (formatted && file) {
+      matched = formatted[1] === ">";
+      lineNumber = Number(formatted[2]);
+    } else {
+      const matchingDelimiter = line.match(/:(\d+):/);
+      const contextDelimiter = line.match(/-(\d+)-/);
+      const matchingIndex = matchingDelimiter?.index ?? Number.POSITIVE_INFINITY;
+      const contextIndex = contextDelimiter?.index ?? Number.POSITIVE_INFINITY;
+      const delimiter = matchingIndex < contextIndex ? matchingDelimiter : contextDelimiter;
+      const delimiterIndex = Math.min(matchingIndex, contextIndex);
+      if (delimiter && Number.isFinite(delimiterIndex)) {
+        file = line.slice(0, delimiterIndex);
+        lineNumber = Number(delimiter[1]);
+        matched = matchingIndex < contextIndex;
+      }
+    }
+    if (!file || lineNumber === undefined) continue;
+
+    files.add(file);
+    if (!rangeOpen || currentRangeFile !== file) {
+      mergedRanges += 1;
+      rangeOpen = true;
+      currentRangeFile = file;
+    }
+    if (matched) {
+      matches += 1;
+      const previousMatch = previousMatchByFile.get(file);
+      if (previousMatch === undefined || lineNumber > previousMatch + 1) snippets += 1;
+      previousMatchByFile.set(file, lineNumber);
+    }
+  }
+  const explicitTruncation =
+    /\[grep (?:line truncated:|output truncated at)|more matches truncated\)/.test(result.content);
+  const truncated = explicitTruncation ? true : result.lines >= 300 ? undefined : false;
+  return {
+    matches,
+    files: files.size,
+    snippets,
+    emittedLines: result.lines,
+    contextLines,
+    mergedRanges,
+    ...(truncated === false ? { omittedMatches: 0 } : {}),
+    ...(truncated !== undefined ? { truncated } : {}),
+    source: "derived",
+  };
+}
+
+function recordedGrepSearchOutput(
+  metrics: GrepSearchToolMetrics | undefined,
+): GrepSearchOutputInspection | undefined {
+  return metrics ? { ...metrics, source: "recorded" } : undefined;
 }
 
 function segmentCall(
@@ -196,6 +307,7 @@ export function projectToolCallInspection(
   let toolName: string | undefined;
   let argumentsText: string | undefined;
   let resultText: string | undefined;
+  let grepMetrics: GrepSearchToolMetrics | undefined;
   let completion:
     | {
         durationMs: number;
@@ -229,6 +341,7 @@ export function projectToolCallInspection(
     if (event.type === "tool_observation_recorded" && event.toolCallId === toolCallId) {
       toolName = event.toolName;
       argumentsText ??= event.args;
+      if (event.metrics?.type === "grep_search") grepMetrics = event.metrics;
     }
     if (event.type === "tool_call_completed" && event.toolCallId === toolCallId) {
       toolName = event.toolName;
@@ -242,6 +355,10 @@ export function projectToolCallInspection(
     argumentsText !== undefined ? payload(argumentsText, addresses.request) : undefined;
   const result = resultText !== undefined ? payload(resultText, addresses.result) : undefined;
   const side = selectedSide ?? (result ? "result" : "request");
+  const grepSearch =
+    toolName === "grep"
+      ? (recordedGrepSearchOutput(grepMetrics) ?? deriveGrepSearchOutput(argumentsText, result))
+      : undefined;
   return {
     type: "tool_call_inspection_v1",
     sessionId: meta.sessionId,
@@ -271,6 +388,7 @@ export function projectToolCallInspection(
           ...(completion.truncationReason ? { truncationReason: completion.truncationReason } : {}),
         }
       : {}),
+    ...(grepSearch ? { grepSearch } : {}),
     ...(request ? { request } : {}),
     ...(result ? { result } : {}),
     totalTokens: (request?.tokens ?? 0) + (result?.tokens ?? 0),

@@ -10,7 +10,11 @@
  */
 
 import type { Message } from "@rejelly/core";
-import type { ToolExecutionOutcome, ToolObservationDetail } from "../tool-observation/model";
+import type {
+  ToolExecutionOutcome,
+  ToolObservationDetail,
+  ToolObservationMetrics,
+} from "../tool-observation/model";
 import type { NonUserMessageSource } from "./messageSource";
 
 export interface SessionToolObservation {
@@ -18,6 +22,7 @@ export interface SessionToolObservation {
   summary: string;
   args?: string;
   detail?: ToolObservationDetail;
+  metrics?: ToolObservationMetrics;
   /** Transport/handler completion only. */
   ok: boolean;
   outcome?: ToolExecutionOutcome;
