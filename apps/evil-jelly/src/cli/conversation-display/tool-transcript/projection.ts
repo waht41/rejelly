@@ -18,10 +18,14 @@ export interface ToolTranscriptEntry {
   detail?: ToolObservationDetail;
   fullResult: string;
   ok?: boolean;
-  /** Complete output lines observed so far; only present while the tool is running. */
+  /** Output lines observed so far; only present while the tool is running. */
   lineCount?: number;
-  /** Lines retained in the bounded live tail, including a visible partial line. */
-  visibleLineCount?: number;
+  /** Lines retained in the bounded live transcript, including a visible partial line. */
+  retainedLineCount?: number;
+  /** Earlier complete lines evicted from the running transcript's byte-bounded window. */
+  droppedLineCount?: number;
+  /** Absolute source line number represented by the first line in fullResult. */
+  outputStartLine: number;
 }
 
 /** One viewport line plus how to color it. Each entry is exactly one visual row. */
@@ -33,6 +37,8 @@ export interface ToolTranscriptRenderLine {
   marker?: string;
   content?: string;
   continuation?: boolean;
+  /** Stable semantic row identity used to preserve scroll position while live output changes. */
+  anchor?: string;
 }
 
 function completedEntry(
@@ -51,12 +57,13 @@ function completedEntry(
     detail: tool.detail,
     fullResult: tool.fullResult,
     ok: tool.ok,
+    outputStartLine: 1,
   };
 }
 
 function runningEntry(tool: RunningTool): ToolTranscriptEntry {
   const partial = toDisplayLine(tool.partial);
-  const outputLines = partial.length > 0 ? [...tool.tail, partial] : tool.tail;
+  const outputLines = partial.length > 0 ? [...tool.outputLines, partial] : tool.outputLines;
   return {
     id: tool.id,
     ordinal: tool.ordinal,
@@ -66,7 +73,9 @@ function runningEntry(tool: RunningTool): ToolTranscriptEntry {
     args: tool.args,
     fullResult: outputLines.join("\n"),
     lineCount: tool.lineCount + (partial.length > 0 ? 1 : 0),
-    visibleLineCount: outputLines.length,
+    retainedLineCount: outputLines.length,
+    droppedLineCount: tool.droppedLineCount,
+    outputStartLine: tool.droppedLineCount + 1,
   };
 }
 
@@ -103,17 +112,28 @@ function appendVisualLines(
   text: string,
   columns: number,
   style: Pick<ToolTranscriptRenderLine, "color" | "dim"> = {},
+  anchorBase?: string,
 ): void {
   const width = Math.max(1, columns);
   const rawLines = text.split("\n");
-  for (const rawLine of rawLines) {
+  for (const [rawLineIndex, rawLine] of rawLines.entries()) {
     const line = rawLine || " ";
     if (line.length <= width) {
-      target.push({ text: line, ...style });
+      target.push({
+        text: line,
+        ...style,
+        anchor: anchorBase === undefined ? undefined : `${anchorBase}:${rawLineIndex}:0`,
+      });
       continue;
     }
+    let segment = 0;
     for (let offset = 0; offset < line.length; offset += width) {
-      target.push({ text: line.slice(offset, offset + width), ...style });
+      target.push({
+        text: line.slice(offset, offset + width),
+        ...style,
+        anchor: anchorBase === undefined ? undefined : `${anchorBase}:${rawLineIndex}:${segment}`,
+      });
+      segment++;
     }
   }
 }
@@ -154,9 +174,9 @@ function appendDiffLines(
 
 function liveOutputLabel(entry: ToolTranscriptEntry): string {
   const seen = entry.lineCount ?? 0;
-  const visible = entry.visibleLineCount ?? 0;
-  return visible < seen
-    ? `Live output · ${seen} lines seen · showing latest ${visible}`
+  const retained = entry.retainedLineCount ?? 0;
+  return retained < seen
+    ? `Live output · ${seen} lines seen · retaining latest ${retained}`
     : `Live output · ${seen} lines seen`;
 }
 
@@ -191,11 +211,23 @@ export function buildToolTranscriptDetailLines(
     allLines.push({ text: liveOutputLabel(entry), color: "cyan" });
   }
   allLines.push({ text: "".padEnd(Math.min(columns - 2, 40), "─"), dim: true });
+  if (entry.status === "running" && (entry.droppedLineCount ?? 0) > 0) {
+    allLines.push({
+      text: `… ${entry.droppedLineCount} earlier lines omitted`,
+      dim: true,
+    });
+  }
   if (entry.status === "running" && entry.fullResult.length === 0) {
     allLines.push({ text: "Waiting for output…", dim: true });
   } else {
-    for (const line of entry.fullResult.split("\n")) {
-      appendVisualLines(allLines, line || " ", columns);
+    for (const [index, line] of entry.fullResult.split("\n").entries()) {
+      appendVisualLines(
+        allLines,
+        line || " ",
+        columns,
+        {},
+        `output:${entry.outputStartLine + index}`,
+      );
     }
   }
   return allLines;

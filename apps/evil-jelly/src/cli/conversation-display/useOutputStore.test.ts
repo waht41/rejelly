@@ -521,9 +521,10 @@ describe("logTool", () => {
         toolName: "run_command",
         summary: "[Tools] build",
         args: '{"command":"pnpm build"}',
-        tail: ["compiling"],
+        outputLines: ["compiling"],
         partial: "linking",
         lineCount: 1,
+        droppedLineCount: 0,
       });
     });
   });
@@ -568,7 +569,7 @@ describe("logTool", () => {
 
     store.appendToolOutput(handle.id, "line 1\n");
     await vi.waitFor(() => {
-      expect(useOutputStore.getState().runningTools[0]?.tail).toEqual(["line 1"]);
+      expect(useOutputStore.getState().runningTools[0]?.outputLines).toEqual(["line 1"]);
     });
   });
 });

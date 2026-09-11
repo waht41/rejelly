@@ -9,7 +9,8 @@ export interface InteractiveToolEntry {
   detail?: { type: string; text: string; phase?: "proposed" | "applied" };
   fullResult: string;
   lineCount?: number;
-  visibleLineCount?: number;
+  retainedLineCount?: number;
+  droppedLineCount?: number;
 }
 
 export interface InteractiveCommandPorts {
@@ -54,14 +55,18 @@ function handleExpandTool(text: string, ports: InteractiveCommandPorts): boolean
         : "\n";
   const liveOutput = running
     ? `Live output · ${tool.lineCount ?? 0} lines seen${
-        (tool.visibleLineCount ?? 0) < (tool.lineCount ?? 0)
-          ? ` · showing latest ${tool.visibleLineCount ?? 0}`
+        (tool.retainedLineCount ?? 0) < (tool.lineCount ?? 0)
+          ? ` · retaining latest ${tool.retainedLineCount ?? 0}`
           : ""
       }\n`
     : "";
+  const omitted =
+    running && (tool.droppedLineCount ?? 0) > 0
+      ? `… ${tool.droppedLineCount} earlier lines omitted\n`
+      : "";
   const result = running && tool.fullResult.length === 0 ? "Waiting for output…" : tool.fullResult;
   ports.logSystem(
-    `#${ordinal} ${tool.toolName}${running ? " (running)" : ""}\n${tool.summary}${detailBlock}${liveOutput}${border}\n${result}`,
+    `#${ordinal} ${tool.toolName}${running ? " (running)" : ""}\n${tool.summary}${detailBlock}${liveOutput}${border}\n${omitted}${result}`,
   );
   return true;
 }

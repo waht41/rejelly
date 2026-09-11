@@ -66,6 +66,7 @@ export function ToolTranscriptOverlay() {
     () => toolEntries[0]?.id ?? null,
   );
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [scrollAnchor, setScrollAnchor] = useState<string | null>(null);
 
   useEffect(() => {
     setSelectedEntryId((current) => {
@@ -85,7 +86,15 @@ export function ToolTranscriptOverlay() {
     [columns, selectedEntry],
   );
   const detailMaxOffset = Math.max(0, detailLines.length - detailViewportLines);
-  const safeDetailOffset = Math.min(scrollOffset, detailMaxOffset);
+  const anchoredOffset =
+    scrollAnchor === null ? -1 : detailLines.findIndex((line) => line.anchor === scrollAnchor);
+  const safeDetailOffset =
+    anchoredOffset >= 0 ? anchoredOffset : Math.min(scrollOffset, detailMaxOffset);
+  const moveDetailTo = (offset: number) => {
+    const nextOffset = Math.max(0, Math.min(offset, detailMaxOffset));
+    setScrollOffset(nextOffset);
+    setScrollAnchor(detailLines[nextOffset]?.anchor ?? null);
+  };
   const visibleDetailLines = detailLines.slice(
     safeDetailOffset,
     safeDetailOffset + detailViewportLines,
@@ -130,6 +139,7 @@ export function ToolTranscriptOverlay() {
       }
       if (key.return && selectedEntry) {
         setScrollOffset(0);
+        setScrollAnchor(detailLines[0]?.anchor ?? null);
         setMode("detail");
       }
       return;
@@ -146,29 +156,29 @@ export function ToolTranscriptOverlay() {
     }
 
     if (key.upArrow) {
-      setScrollOffset((prev) => Math.max(0, prev - 1));
+      moveDetailTo(safeDetailOffset - 1);
       return;
     }
     if (key.downArrow) {
-      setScrollOffset((prev) => Math.min(detailMaxOffset, prev + 1));
+      moveDetailTo(safeDetailOffset + 1);
       return;
     }
     if (key.pageUp || (key.shift && key.tab)) {
       const detailPageStep = Math.max(1, Math.floor(detailViewportLines * PAGE_SCROLL_FRACTION));
-      setScrollOffset((prev) => Math.max(0, prev - detailPageStep));
+      moveDetailTo(safeDetailOffset - detailPageStep);
       return;
     }
     if (key.pageDown) {
       const detailPageStep = Math.max(1, Math.floor(detailViewportLines * PAGE_SCROLL_FRACTION));
-      setScrollOffset((prev) => Math.min(detailMaxOffset, prev + detailPageStep));
+      moveDetailTo(safeDetailOffset + detailPageStep);
       return;
     }
     if (key.home) {
-      setScrollOffset(0);
+      moveDetailTo(0);
       return;
     }
     if (key.end) {
-      setScrollOffset(detailMaxOffset);
+      moveDetailTo(detailMaxOffset);
       return;
     }
   });

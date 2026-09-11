@@ -33,9 +33,11 @@ function runningTool(overrides: Partial<RunningTool> = {}): RunningTool {
     toolName: "run_command",
     summary: "run tests",
     args: '{"command":"pnpm test"}',
-    tail: ["compiling", "testing"],
+    outputLines: ["compiling", "testing"],
     partial: "still running",
     lineCount: 40,
+    droppedLineCount: 38,
+    retainedBytes: 18,
     ...overrides,
   };
 }
@@ -71,7 +73,8 @@ describe("tool transcript projection", () => {
       args: '{"command":"pnpm test"}',
       fullResult: "compiling\ntesting\nstill running",
       lineCount: 41,
-      visibleLineCount: 3,
+      retainedLineCount: 3,
+      droppedLineCount: 38,
     });
   });
 
@@ -81,6 +84,34 @@ describe("tool transcript projection", () => {
 
     expect(before[findToolTranscriptEntryIndex(before, "tc_3")]?.status).toBe("running");
     expect(after[findToolTranscriptEntryIndex(after, "tc_3")]?.status).toBe("completed");
+  });
+
+  it("gives retained output rows stable anchors across live updates and completion", () => {
+    const live = buildToolTranscriptEntries(
+      [],
+      [
+        runningTool({
+          outputLines: ["first", "second"],
+          partial: "",
+          lineCount: 2,
+          droppedLineCount: 0,
+          retainedBytes: 13,
+        }),
+      ],
+    )[0]!;
+    const completedTurn = toolTurn("turn_3", 3, "tc_3");
+    completedTurn.tool.fullResult = "first\nsecond\nthird";
+    const completed = buildToolTranscriptEntries([completedTurn])[0]!;
+
+    const liveAnchor = buildToolTranscriptDetailLines(live, 40).find(
+      (line) => line.text === "second",
+    )?.anchor;
+    const completedAnchor = buildToolTranscriptDetailLines(completed, 40).find(
+      (line) => line.text === "second",
+    )?.anchor;
+
+    expect(liveAnchor).toBe("output:2:0:0");
+    expect(completedAnchor).toBe(liveAnchor);
   });
 
   it("keeps selection on the same tool when a newer entry is prepended", () => {
@@ -107,10 +138,11 @@ describe("tool transcript projection", () => {
     expect(lines[0]).toEqual({ text: "#3 run_command (running)", color: "yellow" });
     expect(lines).toContainEqual({ text: "Arguments", color: "cyan" });
     expect(lines).toContainEqual({
-      text: "Live output · 41 lines seen · showing latest 3",
+      text: "Live output · 41 lines seen · retaining latest 3",
       color: "cyan",
     });
-    expect(lines.slice(-3).map((line) => line.text)).toEqual([
+    expect(lines.slice(-4).map((line) => line.text)).toEqual([
+      "… 38 earlier lines omitted",
       "compiling",
       "testing",
       "still running",
@@ -120,7 +152,15 @@ describe("tool transcript projection", () => {
   it("shows a waiting message before a running tool emits output", () => {
     const entry = buildToolTranscriptEntries(
       [],
-      [runningTool({ tail: [], partial: "", lineCount: 0 })],
+      [
+        runningTool({
+          outputLines: [],
+          partial: "",
+          lineCount: 0,
+          droppedLineCount: 0,
+          retainedBytes: 0,
+        }),
+      ],
     )[0]!;
 
     expect(buildToolTranscriptDetailLines(entry, 40).at(-1)).toEqual({
@@ -139,6 +179,7 @@ describe("tool transcript projection", () => {
       args: '{"path":"a"}',
       fullResult: "abcdefghij",
       ok: true,
+      outputStartLine: 1,
     };
 
     const lines = buildToolTranscriptDetailLines(entry, 6);
@@ -163,6 +204,7 @@ describe("tool transcript projection", () => {
       },
       fullResult: "done",
       ok: false,
+      outputStartLine: 1,
     };
 
     const lines = buildToolTranscriptDetailLines(entry, 20);
@@ -191,6 +233,7 @@ describe("tool transcript projection", () => {
       },
       fullResult: "done",
       ok: true,
+      outputStartLine: 1,
     };
 
     const lines = buildToolTranscriptDetailLines(entry, 12);

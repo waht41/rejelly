@@ -77,8 +77,8 @@ export function drainToolOutput(buffer: string): ToolOutputDrain {
 export interface RunningToolTail {
   /** The tool call's display number, also its prefix in a shared window. */
   ordinal: number;
-  /** Complete lines, oldest first. */
-  tail: string[];
+  /** Retained transcript lines; only the newest visible rows are projected below. */
+  outputLines: string[];
   /** Raw unterminated remainder, shown provisionally as the newest row. */
   partial: string;
 }
@@ -90,7 +90,7 @@ export interface TailRow {
 
 function rowsOf(tool: RunningToolTail): string[] {
   const partial = toDisplayLine(tool.partial);
-  return partial.length > 0 ? [...tool.tail, partial] : tool.tail;
+  return partial.length > 0 ? [...tool.outputLines, partial] : tool.outputLines;
 }
 
 /**

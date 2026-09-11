@@ -59,7 +59,8 @@ describe("interactive commands", () => {
           args: '{"command":"pnpm test"}',
           fullResult: "compiling\ntesting",
           lineCount: 40,
-          visibleLineCount: 2,
+          retainedLineCount: 2,
+          droppedLineCount: 38,
         },
       ],
     });
@@ -69,7 +70,10 @@ describe("interactive commands", () => {
       expect.stringContaining("#3 run_command (running)"),
     );
     expect(ports.logSystem).toHaveBeenCalledWith(
-      expect.stringContaining("Live output · 40 lines seen · showing latest 2"),
+      expect.stringContaining("Live output · 40 lines seen · retaining latest 2"),
+    );
+    expect(ports.logSystem).toHaveBeenCalledWith(
+      expect.stringContaining("… 38 earlier lines omitted"),
     );
   });
 
