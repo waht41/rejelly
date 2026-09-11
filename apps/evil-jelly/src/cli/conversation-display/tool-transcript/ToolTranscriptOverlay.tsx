@@ -44,12 +44,16 @@ function TranscriptLine({ line }: { line: ToolTranscriptRenderLine }) {
 
 export function ToolTranscriptOverlay() {
   const toolHistory = useOutputStore((s) => s.toolHistory);
+  const runningTools = useOutputStore((s) => s.runningTools);
   const closeTranscript = useToolTranscriptViewStore((s) => s.closeTranscript);
   const { stdout } = useStdout();
   const rows = stdout?.rows ?? 24;
   const columns = stdout?.columns ?? 80;
 
-  const toolEntries = useMemo(() => buildToolTranscriptEntries(toolHistory), [toolHistory]);
+  const toolEntries = useMemo(
+    () => buildToolTranscriptEntries(toolHistory, runningTools),
+    [runningTools, toolHistory],
+  );
   const listViewportRows = Math.max(4, rows - 3); // reserve 1 for header + 1 gap + 1 status
   const detailViewportLines = Math.max(4, rows - 3);
   const pageStep = Math.max(1, Math.floor(listViewportRows * PAGE_SCROLL_FRACTION));
@@ -211,8 +215,9 @@ export function ToolTranscriptOverlay() {
           renderItem={(entry, { selected }) => {
             return (
               <Text wrap="truncate-end" color={selected ? "cyan" : undefined} inverse={selected}>
-                {selected ? "▸ " : "  "}#{entry.ordinal} {entry.tool.ok ? "✓" : "✗"}{" "}
-                {entry.tool.toolName} · {entry.tool.summary}
+                {selected ? "▸ " : "  "}#{entry.ordinal}{" "}
+                {entry.status === "running" ? "…" : entry.ok ? "✓" : "✗"} {entry.toolName} ·{" "}
+                {entry.summary}
               </Text>
             );
           }}

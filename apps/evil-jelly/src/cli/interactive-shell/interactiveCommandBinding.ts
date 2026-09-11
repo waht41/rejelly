@@ -1,3 +1,4 @@
+import { buildToolTranscriptEntries } from "../conversation-display/tool-transcript/projection";
 import { useToolTranscriptViewStore } from "../conversation-display/tool-transcript/viewStore";
 import { useOutputStore } from "../conversation-display/useOutputStore";
 import { applyModeCommand, MODE_META } from "../tool-approval/approvalModeStore";
@@ -9,18 +10,10 @@ export const handleLocalCommand = createInteractiveCommandHandler({
     const mode = applyModeCommand(text);
     return mode ? MODE_META[mode] : null;
   },
-  listTools: () =>
-    useOutputStore
-      .getState()
-      .toolHistory.filter((turn) => turn.type === "tool")
-      .map((turn, index) => ({
-        ordinal: turn.tool.ordinal ?? index + 1,
-        toolName: turn.tool.toolName,
-        summary: turn.tool.summary,
-        args: turn.tool.args,
-        detail: turn.tool.detail,
-        fullResult: turn.tool.fullResult,
-      })),
+  listTools: () => {
+    const { runningTools, toolHistory } = useOutputStore.getState();
+    return buildToolTranscriptEntries(toolHistory, runningTools);
+  },
   getLastAssistantMessage: () =>
     [...useOutputStore.getState().history].reverse().find((turn) => turn.type === "assistant")
       ?.content,

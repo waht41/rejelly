@@ -35,7 +35,7 @@ export function withToolLogger(): ToolMiddleware {
         const { summary, args } = projectToolStart(ctx);
         // The handle both numbers this call in invocation order and lets a streaming handler
         // attribute its output. Bindings without a live view get the one-line announcement.
-        const call = logToolStart?.({ toolName: ctx.toolName, summary });
+        const call = logToolStart?.({ toolName: ctx.toolName, summary, args });
         if (call) {
           setActiveToolCall(call);
         } else {

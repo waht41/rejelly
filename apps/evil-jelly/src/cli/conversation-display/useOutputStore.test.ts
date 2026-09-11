@@ -506,16 +506,25 @@ describe("logTool", () => {
     expect(ordinals).toEqual([2, 1]);
   });
 
-  it("accumulates live output into the running tool's tail", async () => {
+  it("accumulates live output and invocation metadata in the running tool", async () => {
     const store = useOutputStore.getState();
-    const handle = store.beginTool({ toolName: "run_command", summary: "[Tools] build" });
+    const handle = store.beginTool({
+      toolName: "run_command",
+      summary: "[Tools] build",
+      args: '{"command":"pnpm build"}',
+    });
 
     store.appendToolOutput(handle.id, "compiling\nlinking");
     await vi.waitFor(() => {
       const tool = useOutputStore.getState().runningTools[0]!;
-      expect(tool.tail).toEqual(["compiling"]);
-      expect(tool.partial).toBe("linking");
-      expect(tool.lineCount).toBe(1);
+      expect(tool).toMatchObject({
+        toolName: "run_command",
+        summary: "[Tools] build",
+        args: '{"command":"pnpm build"}',
+        tail: ["compiling"],
+        partial: "linking",
+        lineCount: 1,
+      });
     });
   });
 

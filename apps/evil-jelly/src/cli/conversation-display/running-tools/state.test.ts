@@ -3,11 +3,17 @@ import { applyRunningToolOutput, finishRunningTool, startRunningTool } from "./s
 
 describe("running tool state", () => {
   it("starts and finishes a tool by handle", () => {
-    const tools = startRunningTool([], { id: "tool-1", ordinal: 2 }, "read files");
+    const tools = startRunningTool(
+      [],
+      { id: "tool-1", ordinal: 2 },
+      { toolName: "read_file", summary: "read files", args: '{"path":"a.ts"}' },
+    );
     expect(tools[0]).toEqual({
       id: "tool-1",
       ordinal: 2,
+      toolName: "read_file",
       summary: "read files",
+      args: '{"path":"a.ts"}',
       tail: [],
       partial: "",
       lineCount: 0,
@@ -16,7 +22,11 @@ describe("running tool state", () => {
   });
 
   it("keeps only the newest display tail while counting every line", () => {
-    const tools = startRunningTool([], { id: "tool-1", ordinal: 1 }, "shell");
+    const tools = startRunningTool(
+      [],
+      { id: "tool-1", ordinal: 1 },
+      { toolName: "run_command", summary: "shell" },
+    );
     const lines = Array.from({ length: 40 }, (_, index) => `line ${index}`);
     const next = applyRunningToolOutput(tools, new Map([["tool-1", { lines, rest: "partial" }]]));
 

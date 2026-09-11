@@ -1,4 +1,4 @@
-import type { ToolCallHandle } from "../../../shared/tool-observation/model";
+import type { ToolCallHandle, ToolObservationStart } from "../../../shared/tool-observation/model";
 import type { ToolOutputDrain } from "./tailWindow";
 
 const TOOL_TAIL_CAP = 32;
@@ -7,7 +7,9 @@ const TOOL_TAIL_CAP = 32;
 export interface RunningTool {
   id: string;
   ordinal: number;
+  toolName: string;
   summary: string;
+  args?: string;
   /** Complete output lines, oldest first. */
   tail: string[];
   /** Raw unterminated remainder of the newest line. */
@@ -23,11 +25,20 @@ export interface RunningToolsState {
 export function startRunningTool(
   tools: RunningTool[],
   handle: ToolCallHandle,
-  summary: string,
+  start: ToolObservationStart,
 ): RunningTool[] {
   return [
     ...tools,
-    { id: handle.id, ordinal: handle.ordinal, summary, tail: [], partial: "", lineCount: 0 },
+    {
+      id: handle.id,
+      ordinal: handle.ordinal,
+      toolName: start.toolName,
+      summary: start.summary,
+      args: start.args,
+      tail: [],
+      partial: "",
+      lineCount: 0,
+    },
   ];
 }
 

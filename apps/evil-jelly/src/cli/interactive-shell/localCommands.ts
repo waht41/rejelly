@@ -2,11 +2,14 @@ const EXPAND_TOOL_RE = /^\/expand-tool\s+#?(\d+)\s*$/;
 
 export interface InteractiveToolEntry {
   ordinal: number;
+  status?: "running" | "completed";
   toolName: string;
   summary: string;
   args?: string;
   detail?: { type: string; text: string; phase?: "proposed" | "applied" };
   fullResult: string;
+  lineCount?: number;
+  visibleLineCount?: number;
 }
 
 export interface InteractiveCommandPorts {
@@ -40,6 +43,7 @@ function handleExpandTool(text: string, ports: InteractiveCommandPorts): boolean
   }
 
   const border = "".padEnd(40, "─");
+  const running = tool.status === "running";
   const diffTitle =
     tool.detail?.phase === "proposed" ? "Proposed diff (not applied)" : "Applied changes";
   const detailBlock =
@@ -48,8 +52,16 @@ function handleExpandTool(text: string, ports: InteractiveCommandPorts): boolean
       : tool.args !== undefined && tool.args.trim().length > 0
         ? `\nArguments\n${tool.args}\n`
         : "\n";
+  const liveOutput = running
+    ? `Live output · ${tool.lineCount ?? 0} lines seen${
+        (tool.visibleLineCount ?? 0) < (tool.lineCount ?? 0)
+          ? ` · showing latest ${tool.visibleLineCount ?? 0}`
+          : ""
+      }\n`
+    : "";
+  const result = running && tool.fullResult.length === 0 ? "Waiting for output…" : tool.fullResult;
   ports.logSystem(
-    `#${ordinal} ${tool.toolName}\n${tool.summary}${detailBlock}${border}\n${tool.fullResult}`,
+    `#${ordinal} ${tool.toolName}${running ? " (running)" : ""}\n${tool.summary}${detailBlock}${liveOutput}${border}\n${result}`,
   );
   return true;
 }
