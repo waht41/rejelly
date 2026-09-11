@@ -5,7 +5,7 @@ import stripAnsi from "strip-ansi";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { RuntimePhase } from "../../../shared/host/presentationBindings";
 import { resetOutputSession, useOutputStore } from "../useOutputStore";
-import { formatElapsedTime, RuntimeStatusLine } from "./RuntimeStatusLine";
+import { classifyRuntimeHealth, formatElapsedTime, RuntimeStatusLine } from "./RuntimeStatusLine";
 
 beforeEach(() => {
   resetOutputSession();
@@ -51,6 +51,27 @@ describe("formatElapsedTime", () => {
     expect(formatElapsedTime(9)).toBe("9s");
     expect(formatElapsedTime(61)).toBe("1m 1s");
     expect(formatElapsedTime(3_661)).toBe("1h 1m 1s");
+  });
+});
+
+describe("classifyRuntimeHealth", () => {
+  it.each([
+    ["connecting", 14, 200, "normal"],
+    ["connecting", 15, 0, "slow"],
+    ["connecting", 30, 0, "stalled"],
+    ["streaming", 300, 9, "normal"],
+    ["streaming", 1, 10, "slow"],
+    ["streaming", 1, 30, "stalled"],
+    ["compacting", 44, 0, "normal"],
+    ["compacting", 45, 0, "slow"],
+    ["compacting", 120, 0, "stalled"],
+    ["thinking", 59, 0, "normal"],
+    ["thinking", 60, 0, "slow"],
+    ["thinking", 180, 0, "stalled"],
+    ["reconnecting", 0, 0, "recovering"],
+    ["tool", 600, 600, "normal"],
+  ] as const)("classifies %s at phase=%ss idle=%ss as %s", (phase, phaseElapsedSeconds, outputIdleSeconds, expected) => {
+    expect(classifyRuntimeHealth({ phase, phaseElapsedSeconds, outputIdleSeconds })).toBe(expected);
   });
 });
 

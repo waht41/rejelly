@@ -4,7 +4,35 @@ import type { RuntimePhase } from "../../../shared/host/presentationBindings";
 import { useOutputStore } from "../useOutputStore";
 import { runtimeWorkElapsedMs } from "./state";
 
-const STALLED_PHASE_SECONDS = 10;
+export type RuntimeHealth = "normal" | "slow" | "recovering" | "stalled";
+
+type RuntimeHealthPolicy = {
+  clock: "phase" | "output-idle";
+  slowAfterSeconds: number;
+  stalledAfterSeconds: number;
+};
+
+const RUNTIME_HEALTH_POLICY: Partial<Record<RuntimePhase, RuntimeHealthPolicy>> = {
+  connecting: { clock: "phase", slowAfterSeconds: 15, stalledAfterSeconds: 30 },
+  thinking: { clock: "phase", slowAfterSeconds: 60, stalledAfterSeconds: 180 },
+  streaming: { clock: "output-idle", slowAfterSeconds: 10, stalledAfterSeconds: 30 },
+  compacting: { clock: "phase", slowAfterSeconds: 45, stalledAfterSeconds: 120 },
+};
+
+export function classifyRuntimeHealth(input: {
+  phase: RuntimePhase;
+  phaseElapsedSeconds: number;
+  outputIdleSeconds: number;
+}): RuntimeHealth {
+  if (input.phase === "reconnecting") return "recovering";
+  const policy = RUNTIME_HEALTH_POLICY[input.phase];
+  if (!policy) return "normal";
+  const elapsed = policy.clock === "phase" ? input.phaseElapsedSeconds : input.outputIdleSeconds;
+  if (elapsed >= policy.stalledAfterSeconds) return "stalled";
+  if (elapsed >= policy.slowAfterSeconds) return "slow";
+  return "normal";
+}
+
 const WORKING_DETAIL: Partial<Record<RuntimePhase, string>> = {
   connecting: "connecting",
   thinking: "thinking",
@@ -13,7 +41,6 @@ const WORKING_DETAIL: Partial<Record<RuntimePhase, string>> = {
   compacting: "compacting context",
   tool: "running tools",
 };
-const NETWORK_PHASES = new Set<RuntimePhase>(["connecting", "reconnecting", "compacting"]);
 const GENERIC_STATUS_DETAILS = new Set(["Ready", "Waiting for input"]);
 const STARTING_RUNTIME_DETAIL = "Starting runtime…";
 
@@ -69,9 +96,11 @@ export function RuntimeStatusLine() {
   const turnElapsed = Math.floor(runtimeWorkElapsedMs(runtime, now) / 1_000);
   const phaseElapsed = elapsedSeconds(now, phaseSince);
   const outputIdle = elapsedSeconds(now, lastOutputSecond * 1_000);
-  const stalled = NETWORK_PHASES.has(phase)
-    ? phaseElapsed >= STALLED_PHASE_SECONDS
-    : phase === "streaming" && outputIdle >= STALLED_PHASE_SECONDS;
+  const health = classifyRuntimeHealth({
+    phase,
+    phaseElapsedSeconds: phaseElapsed,
+    outputIdleSeconds: outputIdle,
+  });
 
   if (phase === "idle") {
     return (
@@ -104,9 +133,7 @@ export function RuntimeStatusLine() {
     return (
       <Box>
         <Text color="yellow">● </Text>
-        <Text color="yellow" bold>
-          Working {formatElapsedTime(turnElapsed)} (paused)
-        </Text>
+        <Text color="yellow">Working {formatElapsedTime(turnElapsed)} (paused)</Text>
         <Text dimColor>
           {" "}
           · reconnecting · {detail} · {formatElapsedTime(phaseElapsed)}
@@ -131,11 +158,11 @@ export function RuntimeStatusLine() {
   }
   const largeToolCall =
     phase === "preparing_tool" && (toolCallGeneration?.totalArgumentChars ?? 0) >= 50_000;
-  const color = stalled || largeToolCall ? "yellow" : undefined;
+  const color = health !== "normal" || largeToolCall ? "yellow" : undefined;
   return (
     <Box>
       <Text color={color ?? "gray"}>● </Text>
-      <Text color={color} bold={stalled}>
+      <Text color={color} bold={health === "stalled"}>
         Working {formatElapsedTime(turnElapsed)}
       </Text>
       {detailSuffix !== undefined ? <Text dimColor> · {detailSuffix}</Text> : null}
