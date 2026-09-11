@@ -318,6 +318,26 @@ describe("GrepSearchTool Node fallback context merge", () => {
     );
   });
 
+  it("accepts a concrete file through the directory parameter", async () => {
+    await fs.writeFile(
+      path.join(tmpDir, "target.ts"),
+      "export const directNeedle = true;\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(tmpDir, "sibling.ts"),
+      "export const directNeedle = false;\n",
+      "utf8",
+    );
+
+    const out = await executeGrepSearch("directNeedle", "*.ts", 0, {
+      directory: "target.ts",
+    });
+
+    expect(out).toContain("target.ts\n> 1 | export const directNeedle = true");
+    expect(out).not.toContain("sibling.ts");
+  });
+
   it("confirms and searches an outside directory", async () => {
     const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), "evil-jelly-outside-grep-"));
     const outsideFile = path.join(outsideDir, "external.ts");

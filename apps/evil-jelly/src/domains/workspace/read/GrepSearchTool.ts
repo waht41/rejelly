@@ -499,17 +499,20 @@ async function fallbackNodeSearch(
       return `grep failed: ${scopeError}`;
     }
   }
+  let searchRootIsDirectory: boolean;
   try {
     const stat = await policy.statResolved(resolved);
-    if (!stat.isDirectory()) {
-      return `grep failed: Search directory is not a directory: ${resolved.rel}`;
-    }
+    searchRootIsDirectory = stat.isDirectory();
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     return `grep failed: ${msg}`;
   }
 
-  const allFiles = await collectFiles(policy, resolved, includeIgnored);
+  // `directory` remains the agent-facing contract, but agents sometimes pass a concrete file while
+  // narrowing a search. Treat that as a single-file scan instead of rejecting an otherwise safe path.
+  const allFiles = searchRootIsDirectory
+    ? await collectFiles(policy, resolved, includeIgnored)
+    : [resolved];
   const searchResults: SearchFileResult[] = [];
   const normalizedContextLines = clampContextLines(contextLines);
 
