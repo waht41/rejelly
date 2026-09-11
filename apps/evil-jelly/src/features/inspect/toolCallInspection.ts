@@ -29,6 +29,7 @@ export interface ToolCallPayloadInspection {
 export interface GrepSearchOutputInspection {
   matches: number;
   files: number;
+  fileNames: string[];
   snippets: number;
   emittedLines: number;
   contextLines: number;
@@ -184,6 +185,7 @@ function deriveGrepSearchOutput(
   return {
     matches,
     files: files.size,
+    fileNames: [...files].sort((left, right) => left.localeCompare(right)),
     snippets,
     emittedLines: result.lines,
     contextLines,
@@ -196,8 +198,11 @@ function deriveGrepSearchOutput(
 
 function recordedGrepSearchOutput(
   metrics: GrepSearchToolMetrics | undefined,
+  derived: GrepSearchOutputInspection | undefined,
 ): GrepSearchOutputInspection | undefined {
-  return metrics ? { ...metrics, source: "recorded" } : undefined;
+  return metrics
+    ? { ...metrics, fileNames: derived?.fileNames ?? [], source: "recorded" }
+    : undefined;
 }
 
 function segmentCall(
@@ -355,9 +360,11 @@ export function projectToolCallInspection(
     argumentsText !== undefined ? payload(argumentsText, addresses.request) : undefined;
   const result = resultText !== undefined ? payload(resultText, addresses.result) : undefined;
   const side = selectedSide ?? (result ? "result" : "request");
+  const derivedGrepSearch =
+    toolName === "grep" ? deriveGrepSearchOutput(argumentsText, result) : undefined;
   const grepSearch =
     toolName === "grep"
-      ? (recordedGrepSearchOutput(grepMetrics) ?? deriveGrepSearchOutput(argumentsText, result))
+      ? (recordedGrepSearchOutput(grepMetrics, derivedGrepSearch) ?? derivedGrepSearch)
       : undefined;
   return {
     type: "tool_call_inspection_v1",

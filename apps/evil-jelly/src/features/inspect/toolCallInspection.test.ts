@@ -221,6 +221,7 @@ describe("Tool call inspection", () => {
     expect(inspection.grepSearch).toEqual({
       matches: 4,
       files: 2,
+      fileNames: ["src/a.ts", "src/b.ts"],
       snippets: 3,
       emittedLines: 7,
       contextLines: 3,

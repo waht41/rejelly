@@ -1,5 +1,6 @@
 import type {
   AggregatedToolCall,
+  GrepAggregateSummary,
   ToolAggregateSummary,
   ToolAggregationInspection,
 } from "./toolAggregationInspection";
@@ -15,6 +16,10 @@ function compact(value: number): string {
 
 function percentage(value: number | undefined): string {
   return value === undefined ? "-" : `${(value * 100).toFixed(0)}%`;
+}
+
+function decimal(value: number | undefined): string {
+  return value === undefined ? "-" : value.toFixed(1);
 }
 
 function duration(value: number): string {
@@ -108,6 +113,58 @@ function renderCalls(
   ];
 }
 
+function renderGrepCalls(title: string, calls: readonly AggregatedToolCall[]): string[] {
+  if (calls.length === 0) return [];
+  const labelWidth = Math.max(4, ...calls.map((call) => callLabel(call, false).length));
+  const widths = [labelWidth, 9, 8, 7, 7, 5, 9, 10];
+  return [
+    title,
+    row(["call", "result", "matches", "files", "lines", "ctx", "duration", "status"], widths),
+    "-".repeat(widths.reduce((sum, width) => sum + width, 0) + (widths.length - 1) * 2),
+    ...calls.map((call) =>
+      row(
+        [
+          callLabel(call, false),
+          compact(call.resultTokens),
+          call.grepSearch ? integer(call.grepSearch.matches) : "-",
+          call.grepSearch ? integer(call.grepSearch.files) : "-",
+          call.grepSearch ? integer(call.grepSearch.emittedLines) : integer(call.resultLines),
+          call.grepSearch ? integer(call.grepSearch.contextLines) : "-",
+          call.durationMs === undefined ? "-" : duration(call.durationMs),
+          call.status,
+        ],
+        widths,
+      ),
+    ),
+  ];
+}
+
+function renderGrepSummary(summary: GrepAggregateSummary, calls: number): string[] {
+  const measuredHint =
+    summary.measuredCalls < calls ? ` across ${summary.measuredCalls} measured calls` : "";
+  const omittedHint =
+    summary.omittedMatchesMeasuredCalls < summary.measuredCalls
+      ? ` / ${summary.omittedMatchesMeasuredCalls} measured`
+      : "";
+  return [
+    "Search output",
+    `  matches              ${integer(summary.matches)} total / ${decimal(summary.averageMatches)} avg / ${integer(summary.p95Matches)} p95${measuredHint}`,
+    `  files                ${integer(summary.files)} summed / ${integer(summary.uniqueFiles)} unique emitted`,
+    `  snippets             ${integer(summary.snippets)} total`,
+    `  emitted lines        ${integer(summary.emittedLines)} total / ${decimal(summary.averageEmittedLines)} avg`,
+    `  context lines        ${integer(summary.p50ContextLines)} p50 / ${integer(summary.p95ContextLines)} p95`,
+    `  omitted matches      ${integer(summary.omittedMatches)}${omittedHint}`,
+    `  tool truncated       ${integer(summary.toolTruncated)} / ${integer(summary.toolTruncationMeasuredCalls)}`,
+    `  canonical complete  ${integer(summary.canonicalComplete)} / ${integer(calls)}`,
+    "",
+    "Output density",
+    `  tokens / match       ${decimal(summary.tokensPerMatch)}`,
+    `  lines / match        ${decimal(summary.linesPerMatch)}`,
+    `  tokens / line        ${decimal(summary.tokensPerLine)}`,
+    `  window merge         ${integer(summary.rawWindows)} raw -> ${integer(summary.finalRanges)} ranges${summary.mergeReduction === undefined ? "" : ` / ${percentage(summary.mergeReduction)} reduction`}`,
+  ];
+}
+
 function summaryLines(summary: ToolAggregateSummary): string[] {
   const ratio =
     summary.resultRequestRatio === undefined ? "-" : `${summary.resultRequestRatio.toFixed(2)}x`;
@@ -169,11 +226,20 @@ export function renderToolAggregation(inspection: ToolAggregationInspection): st
     "",
     ...summaryLines(inspection.summary),
   ];
+  if (inspection.grepSearch) {
+    lines.push("", ...renderGrepSummary(inspection.grepSearch, inspection.summary.calls));
+  }
   if (inspection.scope === "turn_tool") {
-    const calls = renderCalls("Calls", inspection.calls, false);
+    const calls =
+      inspection.toolName === "grep"
+        ? renderGrepCalls("Calls", inspection.calls)
+        : renderCalls("Calls", inspection.calls, false);
     if (calls.length > 0) lines.push("", ...calls);
   } else {
-    const largest = renderCalls("Largest calls", inspection.largestCalls, false);
+    const largest =
+      inspection.toolName === "grep"
+        ? renderGrepCalls("Largest calls", inspection.largestCalls)
+        : renderCalls("Largest calls", inspection.largestCalls, false);
     if (largest.length > 0) lines.push("", ...largest);
   }
   const failed = renderCalls("Failed calls", inspection.failedCalls, false);
