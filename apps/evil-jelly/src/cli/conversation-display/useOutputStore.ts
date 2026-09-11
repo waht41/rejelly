@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import type {
+  ReconnectProgress,
   RuntimePhase,
   ToolCallGenerationProgress,
 } from "../../shared/host/presentationBindings";
@@ -40,6 +41,7 @@ import {
   recordRuntimeOutput,
   resumeRuntimeWork,
   transitionRuntimePhase,
+  updateRuntimeReconnect,
   withRuntimeDetail,
 } from "./runtime-status/state";
 
@@ -77,6 +79,7 @@ interface OutputState extends RunningToolsState, RuntimeStatusState {
   appendToolOutput: (toolCallId: string, chunk: string) => void;
   setDetail: (detail: string) => void;
   setToolCallGeneration: (progress: ToolCallGenerationProgress | null) => void;
+  setReconnectProgress: (progress: ReconnectProgress) => void;
   /** Move to `phase`, optionally updating the detail in the same commit. */
   setPhase: (phase: RuntimePhase, detail?: string) => void;
   /** Anchor the turn timer at an initial user input; steers and maintenance commands never call it. */
@@ -167,6 +170,9 @@ export const useOutputStore = create<OutputState>((set) => ({
   setDetail: (detail) => set((state) => ({ runtime: withRuntimeDetail(state.runtime, detail) })),
 
   setToolCallGeneration: (progress) => set({ toolCallGeneration: progress }),
+
+  setReconnectProgress: (progress) =>
+    set((state) => ({ runtime: updateRuntimeReconnect(state.runtime, progress) })),
 
   /** Anchor the turn timer; idempotent until a turn boundary resets it. */
   beginTurn: () =>

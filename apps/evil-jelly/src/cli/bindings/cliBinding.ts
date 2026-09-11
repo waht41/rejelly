@@ -150,8 +150,11 @@ function createOutputBindings(): ConversationPresentationBindings {
     onDetailUpdate: (detail: string) => {
       out().setDetail(detail);
     },
-    onPhaseUpdate: (phase) => {
-      out().setPhase(phase);
+    onPhaseUpdate: (phase, detail) => {
+      out().setPhase(phase, detail);
+    },
+    onReconnectUpdate: (progress) => {
+      out().setReconnectProgress(progress);
     },
     onToolCallGenerationUpdate: (progress) => {
       out().setToolCallGeneration(progress);

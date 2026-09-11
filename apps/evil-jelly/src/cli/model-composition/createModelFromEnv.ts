@@ -5,11 +5,34 @@ import {
   createOpenAIAdapter,
   type ResponseParams,
 } from "@rejelly/adapter-openai";
-import { augmentModel, type ModelAdapter } from "@rejelly/core";
+import { augmentModel, isContextNotFoundError, type ModelAdapter } from "@rejelly/core";
 import { env } from "../../shared/configuration/env";
+import { getBinding } from "../../shared/host/context";
 import { registerSessionModelConfiguration } from "../../shared/model/observation/modelConfiguration";
 import { withModelInputMetrics } from "../../shared/model/observation/modelInputMetrics";
-import { withRetry } from "./withRetry";
+import { type ConnectionRetryMode, type ModelRetryNotice, withRetry } from "./withRetry";
+
+export interface CreateOpenAIModelOptions {
+  connectionRetry?: ConnectionRetryMode;
+}
+
+function reportModelRetry(notice: ModelRetryNotice): void {
+  try {
+    const binding = getBinding();
+    const now = Date.now();
+    binding.onReconnectUpdate?.({
+      stage: notice.type === "retry_wait" ? "backoff" : "attempt",
+      kind: notice.kind,
+      attempt: notice.attempt,
+      ...(notice.maxAttempts === undefined ? {} : { maxAttempts: notice.maxAttempts }),
+      errorCode: notice.errorCode,
+      stageStartedAt: now,
+      ...(notice.type === "retry_wait" ? { retryAt: now + notice.delayMs } : {}),
+    });
+  } catch (error) {
+    if (!isContextNotFoundError(error)) throw error;
+  }
+}
 
 function isDeepSeekModelConfig(options: {
   modelId: string;
@@ -38,7 +61,7 @@ function resolveResponseParams(effort: string): ResponseParams | undefined {
   return effort ? ({ reasoning: { effort } } as ResponseParams) : undefined;
 }
 
-export function createOpenAIModelFromEnv(): ModelAdapter {
+export function createOpenAIModelFromEnv(options: CreateOpenAIModelOptions = {}): ModelAdapter {
   const apiKey = env.OPENAI_API_KEY;
   const modelId = env.OPENAI_MODEL_ID;
   const baseURL = env.OPENAI_BASE_URL;
@@ -75,7 +98,11 @@ export function createOpenAIModelFromEnv(): ModelAdapter {
 
   const model = augmentModel(adapter, [
     withModelInputMetrics(),
-    withRetry({ maxAttempts: env.OPENAI_RETRY_MAX_ATTEMPTS }),
+    withRetry({
+      maxAttempts: env.OPENAI_RETRY_MAX_ATTEMPTS,
+      connectionRetry: options.connectionRetry,
+      onRetry: reportModelRetry,
+    }),
   ]);
   return registerSessionModelConfiguration(model, {
     modelId,

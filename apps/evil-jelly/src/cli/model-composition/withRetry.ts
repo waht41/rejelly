@@ -11,18 +11,45 @@ import {
   recordModelRetryMetrics,
 } from "../../shared/model/observation/modelRetryMetrics";
 
+export type ConnectionRetryMode = "bounded" | "unbounded";
+
+interface ModelRetryNoticeBase {
+  kind: "connection" | "transient";
+  /** The physical model attempt that will run after this retry wait. */
+  attempt: number;
+  maxAttempts?: number;
+  errorCode: string;
+}
+
+export type ModelRetryNotice =
+  | (ModelRetryNoticeBase & {
+      type: "retry_wait";
+      delayMs: number;
+    })
+  | (ModelRetryNoticeBase & {
+      type: "attempt_start";
+    });
+
 /** Retry policy applied by Evil Jelly's model composition boundary. */
 export interface WithRetryOptions {
-  /** Total attempts, including the first call. */
+  /** Total transient attempts, including the first call. */
   maxAttempts?: number;
-  /** Initial exponential backoff delay in ms. */
+  /** Initial transient-error exponential backoff delay in ms. */
   initialDelayMs?: number;
   /** Backoff multiplier after each failed attempt. */
   backoffMultiplier?: number;
-  /** Maximum delay between attempts in ms. */
+  /** Maximum delay between transient attempts in ms. */
   maxDelayMs?: number;
   /** Random delay added as a fraction of the selected backoff. */
   jitterRatio?: number;
+  /** Whether connection failures have the bounded transient budget or wait until cancellation. */
+  connectionRetry?: ConnectionRetryMode;
+  /** Initial wait after a connection failure in ms. */
+  connectionInitialDelayMs?: number;
+  /** Maximum wait between connection attempts in ms. */
+  connectionMaxDelayMs?: number;
+  /** Best-effort retry observation for host status presentation. */
+  onRetry?: (notice: ModelRetryNotice) => void;
 }
 
 const DEFAULT_MAX_ATTEMPTS = 3;
@@ -30,6 +57,8 @@ const DEFAULT_INITIAL_DELAY_MS = 1_000;
 const DEFAULT_BACKOFF_MULTIPLIER = 2;
 const DEFAULT_MAX_DELAY_MS = 30_000;
 const DEFAULT_JITTER_RATIO = 0.25;
+const DEFAULT_CONNECTION_INITIAL_DELAY_MS = 5_000;
+const DEFAULT_CONNECTION_MAX_DELAY_MS = 60_000;
 
 function sleep(delayMs: number, options: { signal?: AbortSignal } = {}): Promise<void> {
   if (options.signal?.aborted) {
@@ -58,9 +87,21 @@ function errorCode(error: unknown): string {
   return error instanceof Error ? error.name : "unknown";
 }
 
-function shouldRetry(error: unknown): boolean {
+function publishRetryNotice(listener: WithRetryOptions["onRetry"], notice: ModelRetryNotice): void {
+  try {
+    listener?.(notice);
+  } catch {
+    // Host presentation is best-effort and must not change model retry behavior.
+  }
+}
+
+function isConnectionError(error: unknown): boolean {
+  return isModelCallError(error) && error.code === "connection_error";
+}
+
+function shouldRetryTransient(error: unknown): boolean {
   if (isModelCallError(error)) {
-    return error.code === "rate_limit" || error.code === "server_error";
+    return error.code === "rate_limit" || error.code === "server_error" || error.code === "timeout";
   }
   return isLocalRateLimitError(error);
 }
@@ -151,6 +192,10 @@ export function withRetry(options: WithRetryOptions = {}): ModelMiddleware {
   const backoffMultiplier = options.backoffMultiplier ?? DEFAULT_BACKOFF_MULTIPLIER;
   const maxDelayMs = options.maxDelayMs ?? DEFAULT_MAX_DELAY_MS;
   const jitterRatio = options.jitterRatio ?? DEFAULT_JITTER_RATIO;
+  const connectionRetry = options.connectionRetry ?? "bounded";
+  const connectionInitialDelayMs =
+    options.connectionInitialDelayMs ?? DEFAULT_CONNECTION_INITIAL_DELAY_MS;
+  const connectionMaxDelayMs = options.connectionMaxDelayMs ?? DEFAULT_CONNECTION_MAX_DELAY_MS;
 
   if (!Number.isInteger(maxAttempts) || maxAttempts < 1) {
     throw new Error("withRetry: maxAttempts must be an integer >= 1");
@@ -160,14 +205,25 @@ export function withRetry(options: WithRetryOptions = {}): ModelMiddleware {
     backoffMultiplier < 1 ||
     maxDelayMs < 0 ||
     jitterRatio < 0 ||
-    jitterRatio > 1
+    jitterRatio > 1 ||
+    connectionInitialDelayMs < 0 ||
+    connectionMaxDelayMs < 0
   ) {
     throw new Error("withRetry: invalid backoff options");
   }
 
   return {
     name: "evil_jelly_model_retry",
-    config: { maxAttempts, initialDelayMs, backoffMultiplier, maxDelayMs, jitterRatio },
+    config: {
+      maxAttempts,
+      initialDelayMs,
+      backoffMultiplier,
+      maxDelayMs,
+      jitterRatio,
+      connectionRetry,
+      connectionInitialDelayMs,
+      connectionMaxDelayMs,
+    },
     wrap(inner: ModelAdapter): ModelAdapter {
       return {
         ...inner,
@@ -175,13 +231,18 @@ export function withRetry(options: WithRetryOptions = {}): ModelMiddleware {
           messages: Message[],
           streamOptions?: ModelStreamOptions,
         ): AsyncGenerator<StreamEvent> {
+          let physicalAttempt = 0;
+          let transientRetries = 0;
+          let connectionRetries = 0;
           let nextBackoffMs = initialDelayMs;
+          let nextConnectionBackoffMs = connectionInitialDelayMs;
           let totalRetryDelayMs = 0;
           const attempts: ModelAttemptMetrics[] = [];
           const publishMetrics = (): void =>
             recordModelRetryMetrics({ attempts: [...attempts], totalRetryDelayMs });
 
-          for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          while (true) {
+            physicalAttempt += 1;
             let yielded = false;
             const attemptStartedAt = Date.now();
             try {
@@ -190,7 +251,7 @@ export function withRetry(options: WithRetryOptions = {}): ModelMiddleware {
                 yield event;
               }
               attempts.push({
-                attempt,
+                attempt: physicalAttempt,
                 status: "succeeded",
                 durationMs: Date.now() - attemptStartedAt,
               });
@@ -198,24 +259,62 @@ export function withRetry(options: WithRetryOptions = {}): ModelMiddleware {
               return;
             } catch (error) {
               const failedAttempt: ModelAttemptMetrics = {
-                attempt,
+                attempt: physicalAttempt,
                 status: "failed",
                 durationMs: Date.now() - attemptStartedAt,
                 errorCode: errorCode(error),
               };
               attempts.push(failedAttempt);
-              const canRetry = !yielded && attempt < maxAttempts && shouldRetry(error);
-              if (!canRetry) {
+
+              const connectionFailure = isConnectionError(error);
+              const canRetryConnection =
+                !yielded &&
+                connectionFailure &&
+                (connectionRetry === "unbounded" || connectionRetries < maxAttempts - 1);
+              const canRetryTransient =
+                !yielded &&
+                !connectionFailure &&
+                transientRetries < maxAttempts - 1 &&
+                shouldRetryTransient(error);
+              if (!canRetryConnection && !canRetryTransient) {
                 publishMetrics();
                 throw error;
               }
 
-              const retryAfterMs = readRetryAfterMs(error);
-              const delayMs = addRetryJitter(
-                retryAfterMs ?? nextBackoffMs,
-                maxDelayMs,
-                jitterRatio,
-              );
+              let delayMs: number;
+              let notice: ModelRetryNoticeBase;
+              if (canRetryConnection) {
+                connectionRetries += 1;
+                delayMs = addRetryJitter(
+                  nextConnectionBackoffMs,
+                  connectionMaxDelayMs,
+                  jitterRatio,
+                );
+                nextConnectionBackoffMs = clampDelay(
+                  nextConnectionBackoffMs * backoffMultiplier,
+                  connectionMaxDelayMs,
+                );
+                notice = {
+                  kind: "connection",
+                  attempt: physicalAttempt + 1,
+                  ...(connectionRetry === "bounded" ? { maxAttempts } : {}),
+                  errorCode: failedAttempt.errorCode ?? "unknown",
+                };
+              } else {
+                transientRetries += 1;
+                const retryAfterMs = readRetryAfterMs(error);
+                delayMs = addRetryJitter(retryAfterMs ?? nextBackoffMs, maxDelayMs, jitterRatio);
+                nextBackoffMs = clampDelay(nextBackoffMs * backoffMultiplier, maxDelayMs);
+                notice = {
+                  kind: "transient",
+                  attempt: physicalAttempt + 1,
+                  maxAttempts,
+                  errorCode: failedAttempt.errorCode ?? "unknown",
+                };
+              }
+
+              publishRetryNotice(options.onRetry, { ...notice, type: "retry_wait", delayMs });
+
               const delayStartedAt = Date.now();
               try {
                 await sleep(delayMs, { signal: streamOptions?.signal });
@@ -224,7 +323,7 @@ export function withRetry(options: WithRetryOptions = {}): ModelMiddleware {
                 totalRetryDelayMs += failedAttempt.retryDelayMs;
                 publishMetrics();
               }
-              nextBackoffMs = clampDelay(nextBackoffMs * backoffMultiplier, maxDelayMs);
+              publishRetryNotice(options.onRetry, { ...notice, type: "attempt_start" });
             }
           }
         },
