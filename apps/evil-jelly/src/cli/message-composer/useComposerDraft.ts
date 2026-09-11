@@ -12,6 +12,7 @@ import {
 import {
   concatenatePromptInputs,
   type PromptAttachment,
+  type PromptImageMimeType,
   type PromptInput,
   promptInputCommandText,
   textPromptInput,
@@ -46,7 +47,7 @@ export interface ComposerDraft {
   clear: () => void;
   submit: () => void;
   submitCommand: (command: string) => void;
-  attachImage: (path: string) => void;
+  attachImage: (path: string, mimeType: PromptImageMimeType) => void;
   handleTextPaste: (text: string) => boolean;
   hasCollapsedPaste: boolean;
 }
@@ -202,7 +203,7 @@ export function useComposerDraft({
   );
 
   const attachImage = useCallback(
-    (path: string) => {
+    (path: string, mimeType: PromptImageMimeType) => {
       const normalized = path.trim();
       if (!normalized) return;
       const id = createAttachmentId();
@@ -212,7 +213,7 @@ export function useComposerDraft({
           id,
           kind: "image",
           path: normalized,
-          mimeType: "image/png",
+          mimeType,
           ownership: "composer_temp",
         },
       ]);
