@@ -1,18 +1,21 @@
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import type { PromptImageMimeType } from "../../../shared/model/prompt/promptInput";
+import { saveNativeLinuxClipboardImage } from "./linuxClipboardImage";
 
 const execFileAsync = promisify(execFile);
 const CLIPBOARD_IMAGE_DIRECTORY = path.join(os.tmpdir(), "evil-jelly-clipboard-images");
-const CLIPBOARD_IMAGE_NAME_PATTERN = /^clipboard-.*\.png$/;
+const CLIPBOARD_IMAGE_NAME_PATTERN = /^clipboard-.*\.(?:png|jpe?g|webp|gif)$/i;
 const DEFAULT_ORPHAN_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const MAX_ORPHAN_SCAN_ENTRIES = 1024;
 
 export type ClipboardImageResult =
-  | { ok: true; path: string }
+  | { ok: true; path: string; mimeType: PromptImageMimeType }
   | { ok: false; reason: "unsupported" | "empty" | "failed"; message: string };
 
 export interface ClipboardImageCleanupOptions {
@@ -56,6 +59,31 @@ function timestampSlug(): string {
   return new Date().toISOString().replace(/[:.]/g, "-");
 }
 
+function clipboardImagePath(directory: string): string {
+  return path.join(directory, `clipboard-${timestampSlug()}-${randomUUID()}.png`);
+}
+
+async function isProbablyWsl(): Promise<boolean> {
+  // biome-ignore lint/style/noProcessEnv: WSL exposes its runtime identity through process env.
+  if (process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP) return true;
+  try {
+    const version = await fs.readFile("/proc/version", "utf8");
+    return /microsoft|wsl/i.test(version);
+  } catch {
+    return false;
+  }
+}
+
+async function windowsPathForWsl(linuxPath: string): Promise<string> {
+  const { stdout } = await execFileAsync("wslpath", ["-w", linuxPath], {
+    timeout: 5000,
+    windowsHide: true,
+  });
+  const converted = stdout.trim();
+  if (!converted) throw new Error("wslpath returned an empty Windows path.");
+  return converted;
+}
+
 function isTerminalErrorNoise(char: string): boolean {
   const code = char.charCodeAt(0);
   return (
@@ -92,11 +120,35 @@ function buildWindowsCommand(imagePath: string): PlatformCommand {
   const script = `
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
-if (-not [System.Windows.Forms.Clipboard]::ContainsImage()) {
+
+$image = $null
+
+# Explorer copies image files as a FileDropList rather than clipboard bitmap
+# data. Prefer a decodable source file when both forms are present so we do not
+# accidentally attach a lower-resolution thumbnail exposed by the source app.
+if ([System.Windows.Forms.Clipboard]::ContainsFileDropList()) {
+  foreach ($file in [System.Windows.Forms.Clipboard]::GetFileDropList()) {
+    if (-not [System.IO.File]::Exists($file)) {
+      continue
+    }
+    try {
+      $image = [System.Drawing.Image]::FromFile($file)
+      break
+    } catch {
+      # Mixed file selections are valid; keep looking for a decodable image.
+    }
+  }
+}
+
+if ($null -eq $image -and [System.Windows.Forms.Clipboard]::ContainsImage()) {
+  $image = [System.Windows.Forms.Clipboard]::GetImage()
+}
+
+if ($null -eq $image) {
   Write-Output "EMPTY"
   exit 2
 }
-$image = [System.Windows.Forms.Clipboard]::GetImage()
+
 try {
   $image.Save($env:CLIP_IMG_PATH, [System.Drawing.Imaging.ImageFormat]::Png)
   Write-Output "OK"
@@ -104,6 +156,14 @@ try {
   $image.Dispose()
 }
 `;
+  // WSL forwards explicitly listed variables to Windows processes. The value is
+  // already a Windows UNC path, so it intentionally has no `/p` conversion flag.
+  // biome-ignore lint/style/noProcessEnv: platform subprocess must inherit PATH and user env.
+  const inheritedWslEnv = process.env.WSLENV;
+  const wslEnv =
+    process.platform === "linux"
+      ? [inheritedWslEnv, "CLIP_IMG_PATH"].filter(Boolean).join(":")
+      : inheritedWslEnv;
   return {
     file: "powershell.exe",
     args: [
@@ -116,7 +176,7 @@ try {
       script,
     ],
     // biome-ignore lint/style/noProcessEnv: platform subprocess must inherit PATH and user env.
-    env: { ...process.env, CLIP_IMG_PATH: imagePath },
+    env: { ...process.env, CLIP_IMG_PATH: imagePath, ...(wslEnv ? { WSLENV: wslEnv } : {}) },
     windowsHide: true,
   };
 }
@@ -155,26 +215,10 @@ return "OK"
   };
 }
 
-export async function saveClipboardImage(): Promise<ClipboardImageResult> {
-  const dir = CLIPBOARD_IMAGE_DIRECTORY;
-  const imagePath = path.join(dir, `clipboard-${timestampSlug()}.png`);
-
-  const command =
-    process.platform === "win32"
-      ? buildWindowsCommand(imagePath)
-      : process.platform === "darwin"
-        ? buildMacCommand(imagePath)
-        : null;
-  if (!command) {
-    return {
-      ok: false,
-      reason: "unsupported",
-      message: "Clipboard image paste is only implemented on Windows and macOS.",
-    };
-  }
-
-  await fs.mkdir(dir, { recursive: true });
-
+async function executePngClipboardCommand(
+  command: PlatformCommand,
+  imagePath: string,
+): Promise<ClipboardImageResult> {
   try {
     const { stdout } = await execFileAsync(command.file, command.args, {
       windowsHide: command.windowsHide,
@@ -186,7 +230,7 @@ export async function saveClipboardImage(): Promise<ClipboardImageResult> {
     if (stdout?.includes("EMPTY")) {
       return { ok: false, reason: "empty", message: "Clipboard does not contain an image." };
     }
-    return { ok: true, path: imagePath };
+    return { ok: true, path: imagePath, mimeType: "image/png" };
   } catch (error: unknown) {
     await fs.unlink(imagePath).catch(() => undefined);
     const maybe = error as { code?: number; stderr?: string; stdout?: string; message?: string };
@@ -205,4 +249,53 @@ export async function saveClipboardImage(): Promise<ClipboardImageResult> {
       message: sanitizedMessage || "Failed to read clipboard image.",
     };
   }
+}
+
+export async function saveClipboardImage(): Promise<ClipboardImageResult> {
+  const dir = CLIPBOARD_IMAGE_DIRECTORY;
+  const imagePath = clipboardImagePath(dir);
+  await fs.mkdir(dir, { recursive: true });
+
+  if (process.platform === "win32") {
+    return executePngClipboardCommand(buildWindowsCommand(imagePath), imagePath);
+  }
+  if (process.platform === "darwin") {
+    return executePngClipboardCommand(buildMacCommand(imagePath), imagePath);
+  }
+  if (process.platform === "linux") {
+    let wslFailure: Extract<ClipboardImageResult, { ok: false }> | undefined;
+    if (await isProbablyWsl()) {
+      try {
+        const windowsPath = await windowsPathForWsl(imagePath);
+        const result = await executePngClipboardCommand(
+          buildWindowsCommand(windowsPath),
+          imagePath,
+        );
+        if (result.ok || result.reason === "empty") return result;
+        wslFailure = result;
+      } catch (error) {
+        wslFailure = {
+          ok: false,
+          reason: "failed",
+          message: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+
+    const nativeResult = await saveNativeLinuxClipboardImage({ directory: dir });
+    if (wslFailure && !nativeResult.ok && nativeResult.reason === "unsupported") {
+      return {
+        ok: false,
+        reason: "failed",
+        message: `Windows clipboard access from WSL failed: ${wslFailure.message} ${nativeResult.message}`,
+      };
+    }
+    return nativeResult;
+  }
+
+  return {
+    ok: false,
+    reason: "unsupported",
+    message: `Clipboard image paste is not implemented on ${process.platform}.`,
+  };
 }

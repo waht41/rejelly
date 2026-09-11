@@ -33,6 +33,7 @@ import {
   MAX_EXPLICIT_MEMORY_REFERENCES,
   promptDocumentCommandText,
 } from "../../shared/model/prompt/promptDocument";
+import type { PromptImageMimeType } from "../../shared/model/prompt/promptInput";
 import { startupTimeline } from "../../shared/profile/startup/timeline";
 import { BufferView } from "./editor/BufferView";
 import { useLineKeybindings } from "./editor/keyboard/useLineKeybindings";
@@ -53,7 +54,9 @@ import { useComposerDraft } from "./useComposerDraft";
 const MIN_SUGGESTION_ROWS = 5;
 const MAX_SUGGESTION_ROWS = 10;
 
-export type ClipboardImageReadResult = { ok: true; path: string } | { ok: false; message: string };
+export type ClipboardImageReadResult =
+  | { ok: true; path: string; mimeType: PromptImageMimeType }
+  | { ok: false; message: string };
 
 export interface MessageComposerProps {
   label: string;
@@ -162,7 +165,7 @@ export function MessageComposer({
     setClipboardImageStatus("Reading clipboard image...");
     void readClipboardImage().then((result) => {
       if (result.ok) {
-        draft.attachImage(result.path);
+        draft.attachImage(result.path, result.mimeType);
         setClipboardImageStatus(null);
         return;
       }
