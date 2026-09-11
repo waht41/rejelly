@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -56,6 +57,10 @@ function timestampSlug(): string {
   return new Date().toISOString().replace(/[:.]/g, "-");
 }
 
+function clipboardImagePath(directory: string): string {
+  return path.join(directory, `clipboard-${timestampSlug()}-${randomUUID()}.png`);
+}
+
 function isTerminalErrorNoise(char: string): boolean {
   const code = char.charCodeAt(0);
   return (
@@ -92,11 +97,35 @@ function buildWindowsCommand(imagePath: string): PlatformCommand {
   const script = `
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
-if (-not [System.Windows.Forms.Clipboard]::ContainsImage()) {
+
+$image = $null
+
+# Explorer copies image files as a FileDropList rather than clipboard bitmap
+# data. Prefer a decodable source file when both forms are present so we do not
+# accidentally attach a lower-resolution thumbnail exposed by the source app.
+if ([System.Windows.Forms.Clipboard]::ContainsFileDropList()) {
+  foreach ($file in [System.Windows.Forms.Clipboard]::GetFileDropList()) {
+    if (-not [System.IO.File]::Exists($file)) {
+      continue
+    }
+    try {
+      $image = [System.Drawing.Image]::FromFile($file)
+      break
+    } catch {
+      # Mixed file selections are valid; keep looking for a decodable image.
+    }
+  }
+}
+
+if ($null -eq $image -and [System.Windows.Forms.Clipboard]::ContainsImage()) {
+  $image = [System.Windows.Forms.Clipboard]::GetImage()
+}
+
+if ($null -eq $image) {
   Write-Output "EMPTY"
   exit 2
 }
-$image = [System.Windows.Forms.Clipboard]::GetImage()
+
 try {
   $image.Save($env:CLIP_IMG_PATH, [System.Drawing.Imaging.ImageFormat]::Png)
   Write-Output "OK"
@@ -157,7 +186,7 @@ return "OK"
 
 export async function saveClipboardImage(): Promise<ClipboardImageResult> {
   const dir = CLIPBOARD_IMAGE_DIRECTORY;
-  const imagePath = path.join(dir, `clipboard-${timestampSlug()}.png`);
+  const imagePath = clipboardImagePath(dir);
 
   const command =
     process.platform === "win32"
