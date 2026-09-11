@@ -421,6 +421,51 @@ describe("OpenAI Responses adapter", () => {
     expect(mocks.create).not.toHaveBeenCalled();
   });
 
+  it("normalizes a clean iterator close after cancellation to AbortError", async () => {
+    const controller = new AbortController();
+    mocks.create.mockImplementation(() => {
+      controller.abort("Stopped by user");
+      return events();
+    });
+    const adapter = createOpenAIAdapter({ api: "responses", modelId: "test-model" });
+
+    const result = (async () => {
+      for await (const _event of adapter.stream([{ role: "user", content: "hi" }], {
+        signal: controller.signal,
+      })) {
+        // Drain the stream.
+      }
+    })();
+
+    await expect(result).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("normalizes endpoint-specific stream errors after cancellation to AbortError", async () => {
+    const controller = new AbortController();
+    mocks.create.mockImplementation(() => {
+      controller.abort("Stopped by user");
+      return {
+        [Symbol.asyncIterator]() {
+          return this;
+        },
+        async next() {
+          throw new Error("socket closed");
+        },
+      };
+    });
+    const adapter = createOpenAIAdapter({ api: "responses", modelId: "test-model" });
+
+    const result = (async () => {
+      for await (const _event of adapter.stream([{ role: "user", content: "hi" }], {
+        signal: controller.signal,
+      })) {
+        // Drain the stream.
+      }
+    })();
+
+    await expect(result).rejects.toMatchObject({ name: "AbortError" });
+  });
+
   it("does not fall back to Chat when a Responses stream fails", async () => {
     mocks.create.mockImplementation(() =>
       events({

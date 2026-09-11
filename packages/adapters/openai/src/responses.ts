@@ -462,10 +462,21 @@ export async function* streamResponses(
       }
     }
 
+    // Some OpenAI-compatible endpoints close the async iterator cleanly when the request is
+    // aborted instead of throwing an SDK abort error. Preserve the caller's cancellation intent
+    // before classifying a missing terminal event as a malformed stream.
+    if (signal?.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
     if (!terminal) {
       throw new Error("Responses stream ended without a terminal event");
     }
   } catch (error) {
+    // Abort can also surface as endpoint-specific transport errors (for example, a closed socket).
+    // The upstream signal is authoritative once cancellation has been requested.
+    if (signal?.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
     wrapAsModelCallError(error, modelId, provider, client.baseURL);
   } finally {
     if (signal) signal.removeEventListener("abort", onAgentAbort);
