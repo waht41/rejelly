@@ -458,6 +458,56 @@ export function compactProcessOutput(
   return { text, truncated };
 }
 
+interface TurboOutputLine {
+  prefix?: string;
+  text: string;
+}
+
+function parseTurboOutputLine(line: string): TurboOutputLine {
+  const match = /^((?:@[^:\s]+\/)?[^:\s]+):([^:\s]+): ?(.*)$/.exec(line);
+  if (!match) return { text: line };
+  return { prefix: `${match[1]} ${match[2]}`, text: match[3] ?? "" };
+}
+
+function isFailureOutputNoise(text: string): boolean {
+  const trimmed = text.trim();
+  return (
+    /^✓\s+.*\.(?:test|spec)\.[cm]?[jt]sx?(?:\s|\(|$)/u.test(trimmed) ||
+    /^[⎯─]+(?:\[\d+\/\d+\])?[⎯─]*$/u.test(trimmed) ||
+    /^ELIFECYCLE\b/u.test(trimmed) ||
+    /^ERROR:\s+command finished with error:/u.test(trimmed) ||
+    /^ERROR\s+run failed:/u.test(trimmed) ||
+    /^Failed:\s+/u.test(trimmed) ||
+    /#\S+:\s+command .* exited \(\d+\)$/u.test(trimmed) ||
+    /^•\s+(?:turbo|Packages in scope:|Running |Remote caching disabled)/u.test(trimmed) ||
+    /^(?:Tasks|Cached|Time):\s+/u.test(trimmed) ||
+    /^>\s+\S+@\S+\s+test\b/u.test(trimmed) ||
+    /^>\s+(?:vitest|cargo\s+test)\b/u.test(trimmed)
+  );
+}
+
+/** Remove successful Vitest files and repeated Turbo/pnpm wrappers from failed task output. */
+export function formatFailureDiagnostics(output: string): string {
+  const rendered: string[] = [];
+  let activePrefix: string | undefined;
+  for (const line of stripAnsiControlSequences(output).trimEnd().split(/\r?\n/)) {
+    const parsed = parseTurboOutputLine(line);
+    if (isFailureOutputNoise(parsed.text)) continue;
+    if (parsed.text.trim().length === 0) {
+      if (rendered.length > 0 && rendered.at(-1) !== "") rendered.push("");
+      continue;
+    }
+    if (parsed.prefix && parsed.prefix !== activePrefix) {
+      if (rendered.length > 0 && rendered.at(-1) !== "") rendered.push("");
+      rendered.push(parsed.prefix, "");
+      activePrefix = parsed.prefix;
+    }
+    rendered.push(parsed.text);
+  }
+  while (rendered.at(-1) === "") rendered.pop();
+  return rendered.join("\n");
+}
+
 export function extractFailureFacts(output: string): {
   failedTasks: string[];
   failedTestFiles: string[];
@@ -489,7 +539,7 @@ function executionStatus(
 }
 
 function failureReport(step: VerifyStep, output: string): VerifyFailureReport {
-  const diagnostics = compactProcessOutput(stripAnsiControlSequences(output));
+  const diagnostics = compactProcessOutput(formatFailureDiagnostics(output));
   return {
     ...extractFailureFacts(output),
     diagnostics: diagnostics.text,
@@ -498,11 +548,17 @@ function failureReport(step: VerifyStep, output: string): VerifyFailureReport {
   };
 }
 
-function printChildOutput(output: string, failed: boolean): void {
-  const compact = compactProcessOutput(output, {
-    maxChars: failed ? 20_000 : 8_000,
-    maxLines: failed ? 100 : 30,
-  });
+function printChildOutput(output: string, failed: boolean, verbose: boolean): void {
+  if (verbose) {
+    const raw = output.trimEnd();
+    if (raw) console.log(raw);
+    return;
+  }
+  if (!failed) {
+    console.log("passed");
+    return;
+  }
+  const compact = compactProcessOutput(formatFailureDiagnostics(output));
   if (compact.text) console.log(compact.text);
 }
 
@@ -579,7 +635,7 @@ export async function runVerify(
       timedOut: processResult.timedOut,
     });
     if (step.kind === "process" && !options.json) {
-      printChildOutput(processResult.output, processResult.status !== 0);
+      printChildOutput(processResult.output, processResult.status !== 0, options.verbose);
     }
     if (processResult.status !== 0) {
       const status = executionStatus(processResult);
@@ -588,7 +644,9 @@ export async function runVerify(
       if (options.json) {
         console.log(JSON.stringify(report, null, 2));
       } else {
-        console.error(`[repo-tool] failed: ${step.label} (exit ${processResult.status})`);
+        const failedTasks =
+          failure.failedTasks.length > 0 ? `, ${failure.failedTasks.join(", ")}` : "";
+        console.error(`FAILED ${step.label}${failedTasks} (exit ${processResult.status})`);
       }
       return { exitCode: processResult.status, report };
     }

@@ -8,6 +8,7 @@ import {
   compactProcessOutput,
   createVerifyPlan,
   extractFailureFacts,
+  formatFailureDiagnostics,
   isSafeRelatedTestPath,
   resolveAffectedScope,
   resolveRelatedTestPlan,
@@ -291,6 +292,42 @@ describe("verify failure projection", () => {
       text: "[repo-tool] earlier child output omitted\nline 18\nline 19\nline 20",
       truncated: true,
     });
+  });
+
+  it("removes successful Vitest files, repeated Turbo prefixes, and failure wrappers", () => {
+    const output = [
+      "• turbo 2.8.13",
+      "• Packages in scope: @rejelly/app",
+      "@rejelly/app:test: > @rejelly/app@0.0.0 test /repo/app",
+      "@rejelly/app:test: > vitest run",
+      "@rejelly/app:test:  ✓ src/passed.test.ts (3 tests) 10ms",
+      "@rejelly/app:test: ",
+      "@rejelly/app:test:  FAIL  src/failed.test.ts > example",
+      "@rejelly/app:test: AssertionError: expected true to be false",
+      "@rejelly/app:test: ",
+      "@rejelly/app:test:  Test Files  1 failed | 205 passed (206)",
+      "@rejelly/app:test:       Tests  1 failed | 1499 passed (1500)",
+      "Tasks: 1 failed, 8 successful",
+      "Cached: 6 cached, 9 total",
+      "Time: 30.2s",
+      "Failed: @rejelly/app#test",
+      "ERROR: command finished with error: test exited (1)",
+      "@rejelly/app#test: command test exited (1)",
+      "ERROR run failed: command exited (1)",
+      "ELIFECYCLE Test failed",
+    ].join("\n");
+
+    expect(formatFailureDiagnostics(output)).toBe(
+      [
+        "@rejelly/app test",
+        "",
+        " FAIL  src/failed.test.ts > example",
+        "AssertionError: expected true to be false",
+        "",
+        " Test Files  1 failed | 205 passed (206)",
+        "      Tests  1 failed | 1499 passed (1500)",
+      ].join("\n"),
+    );
   });
 
   it("extracts Turbo tasks and Vitest files without depending on ANSI formatting", () => {

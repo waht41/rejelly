@@ -87,7 +87,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     .option("--dry-run", "Print the verification plan without running it")
     .option("--json", "Print one structured verification result")
     .option("--timeout <seconds>", "Optional timeout for each verification step")
-    .option("--verbose", "List files selected or modified by Biome")
+    .option("--verbose", "Show raw child-process logs and detailed Biome file lists")
     .action(async (options: Record<string, unknown>) => {
       const result = await runVerify(findRepoRoot(), normalizeVerifyOptions(options));
       process.exitCode = result.exitCode;
