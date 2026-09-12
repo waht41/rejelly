@@ -129,6 +129,49 @@ describe("heuristic AST document symbol extensions", () => {
     expect(raw).not.toContain("\\n");
   });
 
+  it("ast_read_symbol_code preserves multiple matches in source order", async () => {
+    const repeatedFile = "packages/core/src/repeated-symbol.ts";
+    await fs.writeFile(
+      path.join(tmpDir, repeatedFile),
+      [
+        "function repeatedSymbol() { return 'first' }",
+        "function outer() {",
+        "  function repeatedSymbol() { return 'second' }",
+        "  return repeatedSymbol()",
+        "}",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const raw = await astReadSymbolCodeService({
+      filePath: repeatedFile,
+      symbolName: "repeatedSymbol",
+      caseInsensitive: false,
+    });
+
+    expect(raw.match(/function_declaration/g)).toHaveLength(2);
+    expect(raw.indexOf("return 'first'")).toBeLessThan(raw.indexOf("return 'second'"));
+  });
+
+  it("ast_read_symbol_code truncates oversized source output", async () => {
+    const largeFile = "packages/core/src/large-symbol.ts";
+    await fs.writeFile(
+      path.join(tmpDir, largeFile),
+      `function largeSymbol() {\n  const payload = "${"x".repeat(50_000)}"\n  return payload\n}\n`,
+      "utf-8",
+    );
+
+    const raw = await astReadSymbolCodeService({
+      filePath: largeFile,
+      symbolName: "largeSymbol",
+      caseInsensitive: false,
+    });
+
+    expect(raw.length).toBeGreaterThan(45_000);
+    expect(raw.length).toBeLessThan(45_100);
+    expect(raw).toContain("... (truncated, max 45000 chars)");
+  });
+
   it("confirms and parses one outside source file", async () => {
     const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), "evil-jelly-outside-ast-"));
     const outsideFile = path.join(outsideDir, "external.ts");
@@ -175,6 +218,32 @@ describe("heuristic AST document symbol extensions", () => {
     }
   });
 
+  it("ast_workspace_symbols handles multiple roots and no matches", async () => {
+    const secondFile = "packages/core/src/second-budget-system.ts";
+    await fs.writeFile(
+      path.join(tmpDir, secondFile),
+      "export function equipSystem() { return 'second' }\n",
+      "utf-8",
+    );
+
+    const found = await astWorkspaceSymbolsService({
+      queryName: "equipSystem",
+      roots: [relFile, secondFile],
+      caseInsensitive: false,
+    });
+    expect(found).toContain(`roots: ${relFile}, ${secondFile}`);
+    expect(found).toContain(`${relFile}:8  function equipSystem`);
+    expect(found).toContain(`${secondFile}:1  function equipSystem`);
+
+    const missing = await astWorkspaceSymbolsService({
+      queryName: "missingWorkspaceSymbol",
+      roots: [relFile, secondFile],
+      caseInsensitive: false,
+    });
+    expect(missing).toContain("missingWorkspaceSymbol");
+    expect(missing).toContain("(no matching declarations)");
+  });
+
   it("ast_document_symbols includes re-export barrel entries", async () => {
     const barrel = "packages/core/src/index.ts";
     await fs.writeFile(
@@ -214,6 +283,28 @@ describe("heuristic AST document symbol extensions", () => {
     expect(raw).toContain(`${relFile}:8  function equipSystem`);
     expect(raw).toContain(`${jsFile}:1  function equipSystem`);
     expect(raw).not.toContain('"matches"');
+  });
+
+  it("ast_workspace_symbols reports truncation at the match limit", async () => {
+    const repeatedFile = "packages/core/src/repeated.ts";
+    await fs.writeFile(
+      path.join(tmpDir, repeatedFile),
+      Array.from(
+        { length: 130 },
+        (_, index) => `function repeatedSymbol() { return ${index} }`,
+      ).join("\n"),
+      "utf-8",
+    );
+
+    const raw = await astWorkspaceSymbolsService({
+      queryName: "repeatedSymbol",
+      roots: [repeatedFile],
+      caseInsensitive: false,
+    });
+
+    const matchLines = raw.split("\n").filter((line) => line.includes("function repeatedSymbol"));
+    expect(matchLines).toHaveLength(120);
+    expect(raw).toContain("... (120 matches shown; results truncated)");
   });
 
   it("ast_document_symbols reports unsupported file extensions clearly", async () => {
