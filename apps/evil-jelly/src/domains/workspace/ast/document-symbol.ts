@@ -57,25 +57,9 @@ export const astReadSymbolCodeParameters = z.object({
     .describe("When true, matches declaration names case-insensitively."),
 });
 
-export const astModuleExportsParameters = z.object({
-  filePath: z.string().min(1).describe("Path to a JS/TS module."),
-});
-
 type AstDocumentSymbolsArgs = z.input<typeof astDocumentSymbolsParameters>;
 type AstWorkspaceSymbolsArgs = z.infer<typeof astWorkspaceSymbolsParameters>;
 type AstReadSymbolCodeArgs = z.infer<typeof astReadSymbolCodeParameters>;
-type AstModuleExportsArgs = z.infer<typeof astModuleExportsParameters>;
-type ModuleExportEntry = {
-  kind: string;
-  name: string;
-  line: number;
-  signature?: string | null;
-  description?: string | null;
-  source?: string | null;
-  isTypeOnly?: boolean;
-  importedName?: string | null;
-  exportedName?: string | null;
-};
 
 function stripJsDocBlock(raw: string): string {
   return raw
@@ -282,6 +266,25 @@ function outlineDepth(node: SgNode): number {
   return node.kind() === "method_definition" && node.parent()?.kind() === "class_body" ? 1 : 0;
 }
 
+function collectReExportSymbols(lines: readonly string[]): OutlineSymbol[] {
+  const symbols: OutlineSymbol[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = lines[index]?.match(
+      /^\s*export\s+((?:type\s+)?(?:\*\s*(?:as\s+\w+\s*)?|\{.*\})(?:\s+from\s+['"][^'"]+['"])?);?\s*$/,
+    );
+    if (!match?.[1]) continue;
+    symbols.push({
+      kind: "variable",
+      name: match[1],
+      line: index + 1,
+      depth: 0,
+      exported: true,
+      compactSignature: oneLine(match[1]),
+    });
+  }
+  return symbols;
+}
+
 function buildSymbolsForParsedFile(
   rel: string,
   text: string,
@@ -291,7 +294,7 @@ function buildSymbolsForParsedFile(
   const lines = text.split(/\r?\n/);
   const moduleDocRaw = extractLeadingFileJsDoc(lines);
   const moduleDoc = moduleDocRaw ? truncateOneLine(stripJsDocBlock(moduleDocRaw)) : undefined;
-  const symbols = collectOutlineDeclarations(root, lang).map(({ kind, name, node }) => {
+  const declarations = collectOutlineDeclarations(root, lang).map(({ kind, name, node }) => {
     const line = node.range().start.line + 1;
     const rawDescription = extractCommentBlockAbove(lines, line);
     const inlineComment = extractInlineComment(lines[line - 1]);
@@ -310,6 +313,9 @@ function buildSymbolsForParsedFile(
       ...(description ? { description } : {}),
     };
   });
+  const symbols = [...declarations, ...collectReExportSymbols(lines)].sort(
+    (left, right) => left.line - right.line,
+  );
   return {
     file: rel.replace(/\\/g, "/"),
     ...(moduleDoc ? { moduleDoc } : {}),
@@ -437,92 +443,11 @@ export async function astReadSymbolCodeService(args: AstReadSymbolCodeArgs): Pro
   return truncateJson({ file: relOut, results });
 }
 
-export async function astModuleExportsService(args: AstModuleExportsArgs): Promise<string> {
-  const parsed = await getParsedAst(args.filePath);
-  if (!parsed.ok) {
-    return parsed.error;
-  }
-  const sourceLines = parsed.text.split(/\r?\n/);
-  const base = buildSymbolsForParsedFile(parsed.rel, parsed.text, parsed.root, parsed.lang);
-  const declarationExports: ModuleExportEntry[] = base.symbols
-    .filter((symbol) => symbol.exported)
-    .map((symbol) => ({
-      kind: symbol.kind,
-      name: symbol.name,
-      line: symbol.line,
-      signature: symbol.compactSignature,
-      description: symbol.description ?? null,
-      source: null,
-      isTypeOnly: symbol.kind === "type" || symbol.kind === "interface",
-      importedName: null,
-      exportedName: symbol.name,
-    }));
-
-  const reExports: ModuleExportEntry[] = [];
-  for (let i = 0; i < sourceLines.length; i += 1) {
-    const line = sourceLines[i] ?? "";
-    const lineNo = i + 1;
-    const exportAll = line.match(/^\s*export\s+(type\s+)?\*\s+from\s+['"]([^'"]+)['"]/);
-    if (exportAll) {
-      reExports.push({
-        kind: "re-export-all",
-        name: "*",
-        line: lineNo,
-        signature: null,
-        description: null,
-        source: exportAll[2] ?? null,
-        isTypeOnly: Boolean(exportAll[1]),
-        importedName: "*",
-        exportedName: "*",
-      });
-      continue;
-    }
-    const exportNamed = line.match(/^\s*export\s+(type\s+)?\{([^}]+)\}\s+from\s+['"]([^'"]+)['"]/);
-    if (exportNamed) {
-      const typeOnly = Boolean(exportNamed[1]);
-      const members = (exportNamed[2] ?? "")
-        .split(",")
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-      for (const member of members) {
-        const aliasMatch = member.match(/^(.+?)\s+as\s+(.+)$/);
-        const imported = (aliasMatch ? aliasMatch[1] : member).replace(/^type\s+/, "").trim();
-        const exported = (aliasMatch ? aliasMatch[2] : member).replace(/^type\s+/, "").trim();
-        reExports.push({
-          kind: "re-export",
-          name: exported,
-          line: lineNo,
-          signature: null,
-          description: null,
-          source: exportNamed[3] ?? null,
-          isTypeOnly: typeOnly || member.startsWith("type "),
-          importedName: imported,
-          exportedName: exported,
-        });
-      }
-    }
-  }
-  const dedupe = new Set<string>();
-  const exportsOnly = [...declarationExports, ...reExports].filter((entry) => {
-    const key = `${entry.kind}|${entry.name}|${entry.line}|${entry.source ?? ""}`;
-    if (dedupe.has(key)) {
-      return false;
-    }
-    dedupe.add(key);
-    return true;
-  });
-  return truncateJson({
-    file: base.file,
-    exports: exportsOnly,
-    totalExports: exportsOnly.length,
-  });
-}
-
 export const AstDocumentSymbolsTool: ToolDefinition<typeof astDocumentSymbolsParameters> = {
   name: "ast_document_symbols",
   description:
     "Compact source-order outline of top-level classes, interfaces, types, enums, functions, class methods, and module-level const/let. " +
-    "Pass one filePath or batch several files; use include to keep all declarations or only exports. " +
+    "Pass one filePath or batch several files; use include to keep all declarations or only exports, including re-export statements. " +
     "Returns one symbol per line with compact signatures and indented class members, omitting empty metadata. " +
     "Ignores locals inside functions, arrows, and object-literal methods.",
   parameters: astDocumentSymbolsParameters,
@@ -546,12 +471,4 @@ export const AstReadSymbolCodeTool: ToolDefinition<typeof astReadSymbolCodeParam
     "Returns signature, JSDoc summary, and declaration source blocks without full-file reads.",
   parameters: astReadSymbolCodeParameters,
   handler: async (args) => astReadSymbolCodeService(args),
-};
-
-export const AstModuleExportsTool: ToolDefinition<typeof astModuleExportsParameters> = {
-  name: "ast_module_exports",
-  description:
-    "List exported declarations in one module for structural skim (filters out internal non-export symbols).",
-  parameters: astModuleExportsParameters,
-  handler: async (args) => astModuleExportsService(args),
 };

@@ -7,7 +7,6 @@ import { augmentTool, equipTool, type ToolDefinition } from "@rejelly/core";
 import { evilJellyToolLoggerMiddleware } from "../../shared/tool-observation/middleware";
 import {
   AstDocumentSymbolsTool,
-  AstModuleExportsTool,
   AstReadSymbolCodeTool,
   AstWorkspaceSymbolsTool,
 } from "./ast/document-symbol";
@@ -28,7 +27,6 @@ const READ_ONLY_WORKSPACE_TOOLS: ToolDefinition<any>[] = [
   FuzzySearchTool,
   GrepSearchTool,
   AstDocumentSymbolsTool,
-  AstModuleExportsTool,
   AstReadSymbolCodeTool,
   AstWorkspaceSymbolsTool,
   AstGetFunctionDependenciesTool,

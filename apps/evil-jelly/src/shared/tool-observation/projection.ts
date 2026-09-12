@@ -80,10 +80,6 @@ function formatToolProgressLine(ctx: ToolContext): string {
         : "";
     return `[Tools] ast_read_symbol_code → ${fp || "(path)"} [${syms}]…\n`;
   }
-  if (ctx.toolName === "ast_module_exports") {
-    const fp = typeof input.filePath === "string" ? input.filePath : "";
-    return `[Tools] ast_module_exports → ${fp || "(path)"}…\n`;
-  }
   if (ctx.toolName === "ast_workspace_symbols") {
     const q = typeof input.queryName === "string" ? input.queryName : "";
     return `[Tools] ast_workspace_symbols → "${q}"…\n`;

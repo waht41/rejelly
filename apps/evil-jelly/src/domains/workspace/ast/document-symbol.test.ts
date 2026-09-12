@@ -8,7 +8,6 @@ import type { FsOutsideAccessPayload } from "../../../shared/host/toolConfirmati
 import { createTestHostBindings } from "../__tests__/testHostBindings";
 import {
   astDocumentSymbolsService,
-  astModuleExportsService,
   astReadSymbolCodeService,
   astWorkspaceSymbolsService,
 } from "./document-symbol";
@@ -173,20 +172,7 @@ describe("heuristic AST document symbol extensions", () => {
     }
   });
 
-  it("ast_module_exports returns export-only topology", async () => {
-    const raw = await astModuleExportsService({ filePath: relFile });
-    const parsed = JSON.parse(raw) as {
-      exports: Array<{ name: string }>;
-      totalExports: number;
-    };
-    const names = parsed.exports.map((s) => s.name);
-    expect(names).toContain("equipSystem");
-    expect(names).toContain("itemMergeKey");
-    expect(names).not.toContain("_parseAndValidate");
-    expect(parsed.totalExports).toBe(2);
-  });
-
-  it("ast_module_exports captures re-export barrel entries", async () => {
+  it("ast_document_symbols includes re-export barrel entries", async () => {
     const barrel = "packages/core/src/index.ts";
     await fs.writeFile(
       path.join(tmpDir, barrel),
@@ -198,24 +184,11 @@ describe("heuristic AST document symbol extensions", () => {
       "utf-8",
     );
 
-    const raw = await astModuleExportsService({ filePath: barrel });
-    const parsed = JSON.parse(raw) as {
-      exports: Array<{
-        kind: string;
-        name: string;
-        source?: string | null;
-        isTypeOnly?: boolean;
-      }>;
-      totalExports: number;
-    };
-    expect(parsed.totalExports).toBe(4);
-    expect(parsed.exports.some((e) => e.kind === "re-export" && e.name === "BudgetConfig")).toBe(
-      true,
-    );
-    expect(parsed.exports.some((e) => e.kind === "re-export" && e.name === "createAgent")).toBe(
-      true,
-    );
-    expect(parsed.exports.some((e) => e.kind === "re-export-all" && e.name === "*")).toBe(true);
+    const raw = await astDocumentSymbolsService({ filePath: barrel, include: "exported" });
+
+    expect(raw).toContain("export type { BudgetConfig, BudgetState } from './core/context/budget'");
+    expect(raw).toContain("export { createAgent } from './core/engine/agent'");
+    expect(raw).toContain("export * from './core/primitives/run'");
   });
 
   it("ast_workspace_symbols scans workspaces containing plain .js files without crashing", async () => {
