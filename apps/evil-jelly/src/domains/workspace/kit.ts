@@ -10,7 +10,6 @@ import {
   AstReadSymbolCodeTool,
   AstWorkspaceSymbolsTool,
 } from "./ast/document-symbol";
-import { AstGetFunctionDependenciesTool } from "./ast/function-dependencies";
 import { RunCommandTool } from "./execute/runCommandTool";
 import { ListDirTool, ReadFileTool } from "./read/FileSystemTools";
 import { FuzzySearchTool } from "./read/FuzzySearchTool";
@@ -29,7 +28,6 @@ const READ_ONLY_WORKSPACE_TOOLS: ToolDefinition<any>[] = [
   AstDocumentSymbolsTool,
   AstReadSymbolCodeTool,
   AstWorkspaceSymbolsTool,
-  AstGetFunctionDependenciesTool,
   ReadFileTool,
   // Returns image `toolContent`, not text: an intake budget only charges string outputs, so
   // including it here equips it without it ever drawing down such a pool.
