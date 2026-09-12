@@ -8,7 +8,6 @@ import type { FsOutsideAccessPayload } from "../../../shared/host/toolConfirmati
 import { createTestHostBindings } from "../__tests__/testHostBindings";
 import {
   astDocumentSymbolsService,
-  astModuleExportsService,
   astReadSymbolCodeService,
   astWorkspaceSymbolsService,
 } from "./document-symbol";
@@ -106,22 +105,71 @@ describe("heuristic AST document symbol extensions", () => {
     expect(raw).toContain("3    async run(input) → boolean");
   });
 
-  it("ast_read_symbol_code returns declaration source blocks", async () => {
+  it("ast_read_symbol_code returns unescaped declaration source", async () => {
     const raw = await astReadSymbolCodeService({
       filePath: relFile,
-      symbolName: "equipSystem",
+      symbolName: ["equipSystem", "missingSymbol"],
       caseInsensitive: false,
     });
-    const parsed = JSON.parse(raw) as {
-      results: Array<{
-        symbolName: string;
-        matches: Array<{ code: string; signature: string | null; jsDoc: string | null }>;
-      }>;
-    };
-    const hit = parsed.results[0]?.matches[0];
-    expect(hit?.code).toContain("export function equipSystem");
-    expect(hit?.signature).toContain("equipSystem(amount: number): string");
-    expect(hit?.jsDoc).toContain("Equip the budget system");
+
+    expect(raw.startsWith(`${relFile}\n\nequipSystem\n`)).toBe(true);
+    expect(raw).toContain("8  function_declaration");
+    expect(raw).toContain("signature: function equipSystem(amount: number): string");
+    expect(raw).toContain("jsdoc: Equip the budget system for runtime checks.");
+    expect(raw).toContain(
+      [
+        "code:",
+        "export function equipSystem(amount: number): string {",
+        "  return String(amount)",
+        "}",
+      ].join("\n"),
+    );
+    expect(raw).toContain("missingSymbol\n  (no matching declarations)");
+    expect(raw).not.toContain('"code"');
+    expect(raw).not.toContain("\\n");
+  });
+
+  it("ast_read_symbol_code preserves multiple matches in source order", async () => {
+    const repeatedFile = "packages/core/src/repeated-symbol.ts";
+    await fs.writeFile(
+      path.join(tmpDir, repeatedFile),
+      [
+        "function repeatedSymbol() { return 'first' }",
+        "function outer() {",
+        "  function repeatedSymbol() { return 'second' }",
+        "  return repeatedSymbol()",
+        "}",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const raw = await astReadSymbolCodeService({
+      filePath: repeatedFile,
+      symbolName: "repeatedSymbol",
+      caseInsensitive: false,
+    });
+
+    expect(raw.match(/function_declaration/g)).toHaveLength(2);
+    expect(raw.indexOf("return 'first'")).toBeLessThan(raw.indexOf("return 'second'"));
+  });
+
+  it("ast_read_symbol_code truncates oversized source output", async () => {
+    const largeFile = "packages/core/src/large-symbol.ts";
+    await fs.writeFile(
+      path.join(tmpDir, largeFile),
+      `function largeSymbol() {\n  const payload = "${"x".repeat(50_000)}"\n  return payload\n}\n`,
+      "utf-8",
+    );
+
+    const raw = await astReadSymbolCodeService({
+      filePath: largeFile,
+      symbolName: "largeSymbol",
+      caseInsensitive: false,
+    });
+
+    expect(raw.length).toBeGreaterThan(45_000);
+    expect(raw.length).toBeLessThan(45_100);
+    expect(raw).toContain("... (truncated, max 45000 chars)");
   });
 
   it("confirms and parses one outside source file", async () => {
@@ -158,35 +206,45 @@ describe("heuristic AST document symbol extensions", () => {
         caseInsensitive: false,
         roots: [outsideDir],
       });
-      const parsed = JSON.parse(raw) as { matches: Array<{ file: string; name: string }> };
 
       expect(outsideAccessRequests).toHaveLength(1);
       expect(outsideAccessRequests[0]?.access).toBe("scan");
-      expect(parsed.matches).toEqual([
-        expect.objectContaining({
-          file: path.join(outsideDir, "external.ts").replace(/\\/g, "/"),
-          name: "outsideRootSymbol",
-        }),
-      ]);
+      expect(raw).toContain(`roots: ${outsideDir.replace(/\\/g, "/")}`);
+      expect(raw).toContain(
+        `${path.join(outsideDir, "external.ts").replace(/\\/g, "/")}:1  variable outsideRootSymbol`,
+      );
     } finally {
       await fs.rm(outsideDir, { recursive: true, force: true });
     }
   });
 
-  it("ast_module_exports returns export-only topology", async () => {
-    const raw = await astModuleExportsService({ filePath: relFile });
-    const parsed = JSON.parse(raw) as {
-      exports: Array<{ name: string }>;
-      totalExports: number;
-    };
-    const names = parsed.exports.map((s) => s.name);
-    expect(names).toContain("equipSystem");
-    expect(names).toContain("itemMergeKey");
-    expect(names).not.toContain("_parseAndValidate");
-    expect(parsed.totalExports).toBe(2);
+  it("ast_workspace_symbols handles multiple roots and no matches", async () => {
+    const secondFile = "packages/core/src/second-budget-system.ts";
+    await fs.writeFile(
+      path.join(tmpDir, secondFile),
+      "export function equipSystem() { return 'second' }\n",
+      "utf-8",
+    );
+
+    const found = await astWorkspaceSymbolsService({
+      queryName: "equipSystem",
+      roots: [relFile, secondFile],
+      caseInsensitive: false,
+    });
+    expect(found).toContain(`roots: ${relFile}, ${secondFile}`);
+    expect(found).toContain(`${relFile}:8  function equipSystem`);
+    expect(found).toContain(`${secondFile}:1  function equipSystem`);
+
+    const missing = await astWorkspaceSymbolsService({
+      queryName: "missingWorkspaceSymbol",
+      roots: [relFile, secondFile],
+      caseInsensitive: false,
+    });
+    expect(missing).toContain("missingWorkspaceSymbol");
+    expect(missing).toContain("(no matching declarations)");
   });
 
-  it("ast_module_exports captures re-export barrel entries", async () => {
+  it("ast_document_symbols includes re-export barrel entries", async () => {
     const barrel = "packages/core/src/index.ts";
     await fs.writeFile(
       path.join(tmpDir, barrel),
@@ -198,24 +256,11 @@ describe("heuristic AST document symbol extensions", () => {
       "utf-8",
     );
 
-    const raw = await astModuleExportsService({ filePath: barrel });
-    const parsed = JSON.parse(raw) as {
-      exports: Array<{
-        kind: string;
-        name: string;
-        source?: string | null;
-        isTypeOnly?: boolean;
-      }>;
-      totalExports: number;
-    };
-    expect(parsed.totalExports).toBe(4);
-    expect(parsed.exports.some((e) => e.kind === "re-export" && e.name === "BudgetConfig")).toBe(
-      true,
-    );
-    expect(parsed.exports.some((e) => e.kind === "re-export" && e.name === "createAgent")).toBe(
-      true,
-    );
-    expect(parsed.exports.some((e) => e.kind === "re-export-all" && e.name === "*")).toBe(true);
+    const raw = await astDocumentSymbolsService({ filePath: barrel, include: "exported" });
+
+    expect(raw).toContain("export type { BudgetConfig, BudgetState } from './core/context/budget'");
+    expect(raw).toContain("export { createAgent } from './core/engine/agent'");
+    expect(raw).toContain("export * from './core/primitives/run'");
   });
 
   it("ast_workspace_symbols scans workspaces containing plain .js files without crashing", async () => {
@@ -233,12 +278,33 @@ describe("heuristic AST document symbol extensions", () => {
       queryName: "equipSystem",
       caseInsensitive: false,
     });
-    const parsed = JSON.parse(raw) as {
-      matches: Array<{ file: string; name: string; kind: string }>;
-    };
-    const files = parsed.matches.map((m) => m.file);
-    expect(files).toContain(relFile);
-    expect(files).toContain(jsFile);
+
+    expect(raw.startsWith("equipSystem\n\n")).toBe(true);
+    expect(raw).toContain(`${relFile}:8  function equipSystem`);
+    expect(raw).toContain(`${jsFile}:1  function equipSystem`);
+    expect(raw).not.toContain('"matches"');
+  });
+
+  it("ast_workspace_symbols reports truncation at the match limit", async () => {
+    const repeatedFile = "packages/core/src/repeated.ts";
+    await fs.writeFile(
+      path.join(tmpDir, repeatedFile),
+      Array.from(
+        { length: 130 },
+        (_, index) => `function repeatedSymbol() { return ${index} }`,
+      ).join("\n"),
+      "utf-8",
+    );
+
+    const raw = await astWorkspaceSymbolsService({
+      queryName: "repeatedSymbol",
+      roots: [repeatedFile],
+      caseInsensitive: false,
+    });
+
+    const matchLines = raw.split("\n").filter((line) => line.includes("function repeatedSymbol"));
+    expect(matchLines).toHaveLength(120);
+    expect(raw).toContain("... (120 matches shown; results truncated)");
   });
 
   it("ast_document_symbols reports unsupported file extensions clearly", async () => {

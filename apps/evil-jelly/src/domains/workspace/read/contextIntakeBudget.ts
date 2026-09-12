@@ -47,7 +47,7 @@ export interface ContextIntakeBudgetOptions {
 function narrowHint(occupancy: number, max: number): string {
   return (
     `[context budget warning: ~${occupancy}/${max} tokens of context in use. ` +
-    "Prefer grep / ast_document_symbols / ast_read_symbol over full reads to narrow further.]"
+    "Prefer grep / ast_document_symbols / ast_read_symbol_code over full reads to narrow further.]"
   );
 }
 

@@ -2,11 +2,8 @@ import { Lang, parse } from "@ast-grep/napi";
 import { describe, expect, it } from "vitest";
 import {
   collectDocumentSymbols,
-  extractExternalCalleeSymbols,
   filterDeclarationsByName,
-  findCallableDeclarationForSymbol,
   findNamedDeclarationAstNodes,
-  getCallableEnvelope,
   sliceDeclarationSignature,
 } from "./queries";
 
@@ -100,24 +97,6 @@ describe("workspace AST queries", () => {
     expect(filterDeclarationsByName(rows, "foo", true)).toHaveLength(2);
   });
 
-  it("extractExternalCalleeSymbols lists non-local callees only", () => {
-    const code = `
-      function outer() {
-        const helper = () => sink();
-        helper();
-        externalFn();
-      }
-    `;
-    const root = parse(Lang.TypeScript, code).root();
-    const fd = findCallableDeclarationForSymbol(root, "outer", false);
-    expect(fd).toBeTruthy();
-    const env = getCallableEnvelope(fd!);
-    const body = env!.field("body")!;
-    const syms = extractExternalCalleeSymbols(body, Lang.TypeScript);
-    expect(syms).toContain("externalFn");
-    expect(syms).not.toContain("helper");
-  });
-
   it("collectDocumentSymbols works on plain JavaScript parses (TS-only kinds skipped, no throw)", () => {
     const code = `
       class C {}
@@ -141,23 +120,6 @@ describe("workspace AST queries", () => {
     const nodes = findNamedDeclarationAstNodes(root, "target", false, Lang.JavaScript);
     expect(nodes.length).toBe(1);
     expect(nodes[0]?.kind()).toBe("function_declaration");
-  });
-
-  it("extractExternalCalleeSymbols binds JS parameters without TS parameter kinds", () => {
-    const code = `
-      function outer(cb) {
-        cb();
-        externalFn();
-      }
-    `;
-    const root = parse(Lang.JavaScript, code).root();
-    const fd = findCallableDeclarationForSymbol(root, "outer", false);
-    expect(fd).toBeTruthy();
-    const env = getCallableEnvelope(fd!);
-    const body = env!.field("body")!;
-    const syms = extractExternalCalleeSymbols(body, Lang.JavaScript);
-    expect(syms).toContain("externalFn");
-    expect(syms).not.toContain("cb");
   });
 
   it("sliceDeclarationSignature omits function body text", () => {

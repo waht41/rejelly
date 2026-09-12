@@ -2,4 +2,4 @@
 "@rejelly/evil-jelly": minor
 ---
 
-Report grep hits as per-file snippets with `>` markers instead of repeating the path on every line, and return `ast_document_symbols` as a compact source-order outline with an `include` filter, so workspace search and outline output stay small enough for agents to read directly.
+Reduce agent-facing workspace tool overhead: report grep hits as per-file snippets, return compact source-order AST outlines with export and re-export filtering, and render symbol lookup/code results as readable text instead of JSON-escaped payloads. Consolidate overlapping AST tools into `ast_document_symbols`, `ast_workspace_symbols`, and `ast_read_symbol_code`, removing the unused raw-symbol and heuristic dependency-tree tools.
