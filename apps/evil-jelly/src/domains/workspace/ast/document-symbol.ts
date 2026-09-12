@@ -369,31 +369,49 @@ export async function astDocumentSymbolsService(args: AstDocumentSymbolsArgs): P
   return truncateAstText(sections.join("\n\n"));
 }
 
+type WorkspaceSymbolsResult = {
+  queryName: string;
+  roots?: readonly string[];
+  matches: Awaited<ReturnType<typeof collectMatchingDeclarations>>;
+  truncated: boolean;
+};
+
+function formatWorkspaceSymbolsResult(result: WorkspaceSymbolsResult): string {
+  const output = [result.queryName];
+  if (result.roots) {
+    output.push(`roots: ${result.roots.map((root) => root.replace(/\\/g, "/")).join(", ")}`);
+  }
+  output.push("");
+  if (result.matches.length === 0) {
+    output.push("(no matching declarations)");
+  } else {
+    for (const match of result.matches) {
+      output.push(`${match.file}:${match.line}  ${match.kind} ${match.name}`);
+    }
+  }
+  if (result.truncated) {
+    output.push("", `... (${result.matches.length} matches shown; results truncated)`);
+  }
+  return output.join("\n");
+}
+
 export async function astWorkspaceSymbolsService(args: AstWorkspaceSymbolsArgs): Promise<string> {
   const { queryName, caseInsensitive, roots } = args;
-  let hits: Awaited<ReturnType<typeof collectMatchingDeclarations>>;
+  let matches: Awaited<ReturnType<typeof collectMatchingDeclarations>>;
   try {
-    hits = await collectMatchingDeclarations(queryName, caseInsensitive, roots);
+    matches = await collectMatchingDeclarations(queryName, caseInsensitive, roots);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return `AST workspace scan failed: ${message}`;
   }
-  const output = [queryName];
-  if (roots) {
-    output.push(`roots: ${roots.map((root) => root.replace(/\\/g, "/")).join(", ")}`);
-  }
-  output.push("");
-  if (hits.length === 0) {
-    output.push("(no matching declarations)");
-  } else {
-    for (const hit of hits) {
-      output.push(`${hit.file}:${hit.line}  ${hit.kind} ${hit.name}`);
-    }
-  }
-  if (hits.length >= MAX_HEURISTIC_RESULTS) {
-    output.push("", `... (${hits.length} matches shown; results truncated)`);
-  }
-  return truncateAstText(output.join("\n"));
+  return truncateAstText(
+    formatWorkspaceSymbolsResult({
+      queryName,
+      ...(roots ? { roots } : {}),
+      matches,
+      truncated: matches.length >= MAX_HEURISTIC_RESULTS,
+    }),
+  );
 }
 
 function normalizeCodeSnippetNodeText(node: SgNode): string {
@@ -410,6 +428,46 @@ function normalizeCodeSnippetNodeText(node: SgNode): string {
   return node.text();
 }
 
+type SymbolCodeMatch = {
+  kind: string;
+  line: number;
+  signature: string;
+  jsDoc?: string;
+  code: string;
+};
+
+type SymbolCodeResult = {
+  symbolName: string;
+  matches: SymbolCodeMatch[];
+};
+
+type SymbolCodeFileResult = {
+  file: string;
+  results: SymbolCodeResult[];
+};
+
+function formatSymbolCodeResult(file: SymbolCodeFileResult): string {
+  const output = [file.file, ""];
+  for (const result of file.results) {
+    output.push(result.symbolName);
+    if (result.matches.length === 0) {
+      output.push("  (no matching declarations)", "");
+      continue;
+    }
+    for (const match of result.matches) {
+      output.push(`  ${match.line}  ${match.kind}`);
+      if (match.signature) {
+        output.push(`  signature: ${match.signature.replace(/\r?\n/g, "\n    ")}`);
+      }
+      if (match.jsDoc) {
+        output.push(`  jsdoc: ${match.jsDoc}`);
+      }
+      output.push("  code:", match.code, "");
+    }
+  }
+  return output.join("\n").trimEnd();
+}
+
 export async function astReadSymbolCodeService(args: AstReadSymbolCodeArgs): Promise<string> {
   const { filePath, symbolName, caseInsensitive } = args;
   const parsed = await getParsedAst(filePath);
@@ -419,29 +477,26 @@ export async function astReadSymbolCodeService(args: AstReadSymbolCodeArgs): Pro
   const { rel, root, text, lang } = parsed;
   const lines = text.split(/\r?\n/);
   const names = Array.isArray(symbolName) ? symbolName : [symbolName];
-  const output = [rel.replace(/\\/g, "/"), ""];
-  for (const name of names) {
-    output.push(name);
-    const nodes = findNamedDeclarationAstNodes(root, name, caseInsensitive, lang);
-    if (nodes.length === 0) {
-      output.push("  (no matching declarations)", "");
-      continue;
-    }
-    for (const node of nodes) {
+  const results: SymbolCodeResult[] = names.map((name) => ({
+    symbolName: name,
+    matches: findNamedDeclarationAstNodes(root, name, caseInsensitive, lang).map((node) => {
       const line = node.range().start.line + 1;
-      const signature = sliceDeclarationSignature(text, node);
       const rawJsdoc = extractCommentBlockAbove(lines, line);
-      output.push(`  ${line}  ${String(node.kind())}`);
-      if (signature) {
-        output.push(`  signature: ${signature.replace(/\r?\n/g, "\n    ")}`);
-      }
-      if (rawJsdoc) {
-        output.push(`  jsdoc: ${stripJsDocBlock(rawJsdoc)}`);
-      }
-      output.push("  code:", normalizeCodeSnippetNodeText(node).trimEnd(), "");
-    }
-  }
-  return truncateAstText(output.join("\n").trimEnd());
+      return {
+        kind: String(node.kind()),
+        line,
+        signature: sliceDeclarationSignature(text, node),
+        ...(rawJsdoc ? { jsDoc: stripJsDocBlock(rawJsdoc) } : {}),
+        code: normalizeCodeSnippetNodeText(node).trimEnd(),
+      };
+    }),
+  }));
+  return truncateAstText(
+    formatSymbolCodeResult({
+      file: rel.replace(/\\/g, "/"),
+      results,
+    }),
+  );
 }
 
 export const AstDocumentSymbolsTool: ToolDefinition<typeof astDocumentSymbolsParameters> = {
