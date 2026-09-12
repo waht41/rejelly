@@ -4,6 +4,7 @@ import {
   type SessionMetaLine,
 } from "../../domains/session/model/sessionEvents";
 import { messageContentToText } from "../../shared/model/message/content";
+import type { GrepSearchToolMetrics } from "../../shared/tool-observation/model";
 import {
   resolveWaterfallSegment,
   type TurnWaterfallChild,
@@ -25,10 +26,22 @@ export interface ToolCallPayloadInspection {
   lines: number;
 }
 
+export interface GrepSearchOutputInspection {
+  matches: number;
+  files: number;
+  emittedLines: number;
+  contextLines: number;
+  omittedMatches?: number;
+  maxLines?: number;
+  truncated?: boolean;
+  source: "recorded" | "derived";
+}
+
 export interface ToolCallInspection {
   type: "tool_call_inspection_v1";
   sessionId: string;
   turnId: string;
+  turnNumber?: number;
   toolCallId: string;
   toolName: string;
   selectedSide: ToolCallSelectionSide;
@@ -44,6 +57,7 @@ export interface ToolCallInspection {
   admittedResultChars?: number;
   truncated?: boolean;
   truncationReason?: "size_limit" | "line_limit" | "host_summary";
+  grepSearch?: GrepSearchOutputInspection;
   request?: ToolCallPayloadInspection;
   result?: ToolCallPayloadInspection;
   totalTokens: number;
@@ -71,6 +85,25 @@ function lineCount(value: string): number {
   return value.length === 0 ? 0 : value.split(/\r?\n/).length;
 }
 
+function turnNumbers(events: readonly SessionEvent[]): Map<string, number> {
+  const firstSeq = new Map<string, number>();
+  for (const event of events) {
+    if (!isKnownSessionEvent(event)) continue;
+    const turnId =
+      "turnId" in event && typeof event.turnId === "string"
+        ? event.turnId
+        : event.type === "context_compacted"
+          ? event.activeTurnId
+          : undefined;
+    if (turnId && !firstSeq.has(turnId)) firstSeq.set(turnId, event.seq);
+  }
+  return new Map(
+    [...firstSeq.entries()]
+      .sort((left, right) => left[1] - right[1])
+      .map(([turnId], index) => [turnId, index + 1]),
+  );
+}
+
 function payload(content: string, address?: ToolCallAddress): ToolCallPayloadInspection {
   return {
     ...(address
@@ -87,6 +120,80 @@ function payload(content: string, address?: ToolCallAddress): ToolCallPayloadIns
     bytes: utf8Bytes(content),
     lines: lineCount(content),
   };
+}
+
+function deriveGrepSearchOutput(
+  argumentsText: string | undefined,
+  result: ToolCallPayloadInspection | undefined,
+): GrepSearchOutputInspection | undefined {
+  if (!result) return undefined;
+  let contextLines = 3;
+  if (argumentsText) {
+    try {
+      const parsed = JSON.parse(argumentsText) as { contextLines?: unknown };
+      if (typeof parsed.contextLines === "number" && Number.isFinite(parsed.contextLines)) {
+        contextLines = Math.max(0, Math.min(12, Math.trunc(parsed.contextLines)));
+      }
+    } catch {
+      // Persisted arguments from custom adapters need not be JSON.
+    }
+  }
+  const lines = result.content.split(/\r?\n/);
+  const files = new Set<string>();
+  let matches = 0;
+  let currentFile: string | undefined;
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    const next = lines[index + 1] ?? "";
+    if (line === "--") continue;
+    if (!/^[ >] \d+ \|/.test(line) && /^[ >] \d+ \|/.test(next)) {
+      currentFile = line;
+      continue;
+    }
+
+    let file = currentFile;
+    let lineNumber: number | undefined;
+    let matched = false;
+    const formatted = line.match(/^([ >]) (\d+) \|/);
+    if (formatted && file) {
+      matched = formatted[1] === ">";
+      lineNumber = Number(formatted[2]);
+    } else {
+      const matchingDelimiter = line.match(/:(\d+):/);
+      const contextDelimiter = line.match(/-(\d+)-/);
+      const matchingIndex = matchingDelimiter?.index ?? Number.POSITIVE_INFINITY;
+      const contextIndex = contextDelimiter?.index ?? Number.POSITIVE_INFINITY;
+      const delimiter = matchingIndex < contextIndex ? matchingDelimiter : contextDelimiter;
+      const delimiterIndex = Math.min(matchingIndex, contextIndex);
+      if (delimiter && Number.isFinite(delimiterIndex)) {
+        file = line.slice(0, delimiterIndex);
+        lineNumber = Number(delimiter[1]);
+        matched = matchingIndex < contextIndex;
+      }
+    }
+    if (!file || lineNumber === undefined) continue;
+
+    files.add(file);
+    if (matched) matches += 1;
+  }
+  const explicitTruncation =
+    /\[grep (?:line truncated:|output truncated at)|more matches truncated\)/.test(result.content);
+  const truncated = explicitTruncation ? true : result.lines >= 300 ? undefined : false;
+  return {
+    matches,
+    files: files.size,
+    emittedLines: result.lines,
+    contextLines,
+    ...(truncated === false ? { omittedMatches: 0 } : {}),
+    ...(truncated !== undefined ? { truncated } : {}),
+    source: "derived",
+  };
+}
+
+function recordedGrepSearchOutput(
+  metrics: GrepSearchToolMetrics | undefined,
+): GrepSearchOutputInspection | undefined {
+  return metrics ? { ...metrics, source: "recorded" } : undefined;
 }
 
 function segmentCall(
@@ -196,6 +303,7 @@ export function projectToolCallInspection(
   let toolName: string | undefined;
   let argumentsText: string | undefined;
   let resultText: string | undefined;
+  let grepMetrics: GrepSearchToolMetrics | undefined;
   let completion:
     | {
         durationMs: number;
@@ -229,6 +337,7 @@ export function projectToolCallInspection(
     if (event.type === "tool_observation_recorded" && event.toolCallId === toolCallId) {
       toolName = event.toolName;
       argumentsText ??= event.args;
+      if (event.metrics?.type === "grep_search") grepMetrics = event.metrics;
     }
     if (event.type === "tool_call_completed" && event.toolCallId === toolCallId) {
       toolName = event.toolName;
@@ -242,10 +351,15 @@ export function projectToolCallInspection(
     argumentsText !== undefined ? payload(argumentsText, addresses.request) : undefined;
   const result = resultText !== undefined ? payload(resultText, addresses.result) : undefined;
   const side = selectedSide ?? (result ? "result" : "request");
+  const derivedGrepSearch =
+    toolName === "grep" ? deriveGrepSearchOutput(argumentsText, result) : undefined;
+  const grepSearch =
+    toolName === "grep" ? (recordedGrepSearchOutput(grepMetrics) ?? derivedGrepSearch) : undefined;
   return {
     type: "tool_call_inspection_v1",
     sessionId: meta.sessionId,
     turnId: waterfall.turnId,
+    turnNumber: turnNumbers(events).get(waterfall.turnId),
     toolCallId,
     toolName,
     selectedSide: side,
@@ -271,6 +385,7 @@ export function projectToolCallInspection(
           ...(completion.truncationReason ? { truncationReason: completion.truncationReason } : {}),
         }
       : {}),
+    ...(grepSearch ? { grepSearch } : {}),
     ...(request ? { request } : {}),
     ...(result ? { result } : {}),
     totalTokens: (request?.tokens ?? 0) + (result?.tokens ?? 0),

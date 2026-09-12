@@ -139,6 +139,17 @@ export const userInputRecordedEventSchema = z
   })
   .passthrough();
 
+const toolObservationMetricsSchema = z.object({
+  type: z.literal("grep_search"),
+  matches: nonNegativeIntSchema,
+  files: nonNegativeIntSchema,
+  emittedLines: nonNegativeIntSchema,
+  contextLines: nonNegativeIntSchema,
+  omittedMatches: nonNegativeIntSchema,
+  maxLines: nonNegativeIntSchema,
+  truncated: z.boolean(),
+});
+
 const toolObservationDetailSchema = z
   .object({
     type: z.literal("diff"),
@@ -160,6 +171,7 @@ export const toolObservationRecordedEventSchema = z
     summary: z.string(),
     args: z.string().optional(),
     detail: toolObservationDetailSchema.optional(),
+    metrics: toolObservationMetricsSchema.optional(),
     /** Transport/handler completion only; do not interpret as business success. */
     ok: z.boolean(),
     outcome: z.enum(["succeeded", "failed", "denied", "aborted", "timed_out"]).optional(),

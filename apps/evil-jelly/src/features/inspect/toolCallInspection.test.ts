@@ -75,7 +75,17 @@ function fixture(): SessionEvent[] {
         toolCallId: "call-1",
         toolName: "grep",
         summary: "[Tools] grep → 45 lines",
-        args: '{"pattern":"x","path":"src"}',
+        args: '{"pattern":"x","path":"src","contextLines":5}',
+        metrics: {
+          type: "grep_search",
+          matches: 47,
+          files: 6,
+          emittedLines: 45,
+          contextLines: 5,
+          omittedMatches: 2,
+          maxLines: 300,
+          truncated: true,
+        },
         ok: true,
         outcome: "succeeded",
       },
@@ -138,7 +148,9 @@ describe("Tool call inspection", () => {
     const requestSelection = projectToolCallBySegment(meta, events, waterfall, "2");
     expect(requestSelection).toMatchObject({
       type: "tool_call_inspection_v1",
+      sessionId: "session-1",
       turnId: "turn-1",
+      turnNumber: 1,
       toolCallId: "call-1",
       toolName: "grep",
       selectedSide: "request",
@@ -151,9 +163,20 @@ describe("Tool call inspection", () => {
 
     const resultSelection = projectToolCallBySegment(meta, events, waterfall, "3");
     expect(extractToolCallPayload(resultSelection)).toContain("src/file-45.ts:x");
+    expect(resultSelection.grepSearch).toMatchObject({
+      matches: 47,
+      files: 6,
+      emittedLines: 45,
+      source: "recorded",
+    });
     expect(renderToolCallInspection(resultSelection)).toContain("Tool call #3");
+    expect(renderToolCallInspection(resultSelection)).toContain("Session: session-1");
+    expect(renderToolCallInspection(resultSelection)).toContain("Turn: 1 (turn-1)");
+    expect(renderToolCallInspection(resultSelection)).toContain("Search output");
+    expect(renderToolCallInspection(resultSelection)).toContain("tool truncation      yes");
+    expect(renderToolCallInspection(resultSelection)).toContain("Output limit");
     expect(renderToolCallInspection(resultSelection)).toContain(
-      "[truncated preview, showing 40/45 lines; use --full or --payload]",
+      "[inspect preview, showing 40/45 lines; use --full or --payload]",
     );
     expect(renderToolCallInspection(resultSelection, { full: true })).toContain("src/file-45.ts:x");
     expect(
@@ -163,8 +186,52 @@ describe("Tool call inspection", () => {
         truncationReason: "size_limit",
       }),
     ).toContain(
-      "[tool output was reduced before canonical admission: size_limit; the displayed result is complete as persisted]",
+      "[canonical admission truncated the Tool result: size_limit; the displayed result is complete as persisted]",
     );
+  });
+
+  it("derives grep metrics from legacy native output when recorded metrics are absent", () => {
+    const events = fixture().map((candidate) => {
+      if (!isKnownSessionEvent(candidate)) return candidate;
+      if (candidate.type === "tool_observation_recorded") {
+        return { ...candidate, metrics: undefined };
+      }
+      if (candidate.type === "message_recorded" && candidate.source.kind === "tool") {
+        return {
+          ...candidate,
+          message: {
+            ...candidate.message,
+            content: [
+              "src/a.ts-1-before",
+              "src/a.ts:2:hit",
+              "src/a.ts:3:hit",
+              "--",
+              "src/a.ts-9-before",
+              "src/a.ts:10:hit",
+              "src/b.ts:1:hit",
+            ].join("\n"),
+          },
+        } as SessionEvent;
+      }
+      return candidate;
+    });
+    const inspection = projectToolCallInspection(
+      meta,
+      events,
+      projectTurnWaterfall(meta, events, "turn-1"),
+      "call-1",
+    );
+
+    expect(inspection.grepSearch).toEqual({
+      matches: 4,
+      files: 2,
+      emittedLines: 7,
+      contextLines: 3,
+      omittedMatches: 0,
+      truncated: false,
+      source: "derived",
+    });
+    expect(renderToolCallInspection(inspection)).not.toContain("omitted matches");
   });
 
   it("locates a call across the Session and ranks addressable token contributors", () => {

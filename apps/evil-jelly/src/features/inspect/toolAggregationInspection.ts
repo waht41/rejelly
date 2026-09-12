@@ -19,6 +19,7 @@ export interface AggregatedToolCall {
   durationMs?: number;
   completedAt?: number;
   truncated: boolean;
+  grepSearch?: ToolCallInspection["grepSearch"];
 }
 
 export interface ToolAggregateSummary {
@@ -47,6 +48,24 @@ export interface ToolTypeAggregate extends ToolAggregateSummary {
   toolName: string;
 }
 
+export interface GrepAggregateSummary {
+  measuredCalls: number;
+  matches: number;
+  averageMatches: number;
+  p95Matches: number;
+  files: number;
+  emittedLines: number;
+  averageEmittedLines: number;
+  p50ContextLines: number;
+  p95ContextLines: number;
+  omittedMatches: number;
+  omittedMatchesMeasuredCalls: number;
+  toolTruncated: number;
+  toolTruncationMeasuredCalls: number;
+  canonicalComplete: number;
+  linesPerMatch?: number;
+}
+
 export interface ToolAggregationInspection {
   type: "tool_aggregation_v1";
   sessionId: string;
@@ -54,6 +73,7 @@ export interface ToolAggregationInspection {
   turnId?: string;
   toolName?: string;
   summary: ToolAggregateSummary;
+  grepSearch?: GrepAggregateSummary;
   tools: ToolTypeAggregate[];
   unusedTools: string[];
   calls: AggregatedToolCall[];
@@ -132,6 +152,34 @@ function summarize(calls: readonly AggregatedToolCall[]): ToolAggregateSummary {
     p95DurationMs: percentile(durations, 0.95),
     truncationRate:
       calls.length === 0 ? 0 : calls.filter((call) => call.truncated).length / calls.length,
+  };
+}
+
+function summarizeGrep(calls: readonly AggregatedToolCall[]): GrepAggregateSummary | undefined {
+  const measured = calls.flatMap((call) => (call.grepSearch ? [call.grepSearch] : []));
+  if (measured.length === 0) return undefined;
+  const matchesByCall = measured.map((search) => search.matches);
+  const contextByCall = measured.map((search) => search.contextLines);
+  const matches = matchesByCall.reduce((sum, value) => sum + value, 0);
+  const emittedLines = measured.reduce((sum, search) => sum + search.emittedLines, 0);
+  const omittedMeasured = measured.filter((search) => search.omittedMatches !== undefined);
+  const truncationMeasured = measured.filter((search) => search.truncated !== undefined);
+  return {
+    measuredCalls: measured.length,
+    matches,
+    averageMatches: matches / measured.length,
+    p95Matches: percentile(matchesByCall, 0.95),
+    files: measured.reduce((sum, search) => sum + search.files, 0),
+    emittedLines,
+    averageEmittedLines: emittedLines / measured.length,
+    p50ContextLines: percentile(contextByCall, 0.5),
+    p95ContextLines: percentile(contextByCall, 0.95),
+    omittedMatches: omittedMeasured.reduce((sum, search) => sum + (search.omittedMatches ?? 0), 0),
+    omittedMatchesMeasuredCalls: omittedMeasured.length,
+    toolTruncated: truncationMeasured.filter((search) => search.truncated).length,
+    toolTruncationMeasuredCalls: truncationMeasured.length,
+    canonicalComplete: calls.filter((call) => !call.truncated).length,
+    ...(matches > 0 ? { linesPerMatch: emittedLines / matches } : {}),
   };
 }
 
@@ -257,6 +305,7 @@ export function projectToolCalls(
         ? { durationMs: completion.durationMs, completedAt: completion.timestamp }
         : {}),
       truncated: completion?.truncated ?? false,
+      ...(inspection?.grepSearch ? { grepSearch: inspection.grepSearch } : {}),
     };
   });
 }
@@ -298,7 +347,7 @@ export function projectToolAggregation(
       (left, right) =>
         right.resultTokens - left.resultTokens || left.toolName.localeCompare(right.toolName),
     );
-  const largestLimit = options.top ?? (options.turnId ? 5 : 10);
+  const largestLimit = options.top ?? (options.toolName === "grep" || options.turnId ? 5 : 10);
   return {
     type: "tool_aggregation_v1",
     sessionId: meta.sessionId,
@@ -312,6 +361,7 @@ export function projectToolAggregation(
     ...(options.turnId ? { turnId: options.turnId } : {}),
     ...(options.toolName ? { toolName: options.toolName } : {}),
     summary: summarize(calls),
+    ...(options.toolName === "grep" ? { grepSearch: summarizeGrep(calls) } : {}),
     tools,
     unusedTools: [...availableTools]
       .filter((toolName) => !calledToolNames.has(toolName))

@@ -23,6 +23,19 @@ export type ToolObservationDetail = {
   presentation?: "inline" | "expanded";
 };
 
+export interface GrepSearchToolMetrics {
+  type: "grep_search";
+  matches: number;
+  files: number;
+  emittedLines: number;
+  contextLines: number;
+  omittedMatches: number;
+  maxLines: number;
+  truncated: boolean;
+}
+
+export type ToolObservationMetrics = GrepSearchToolMetrics;
+
 export type ToolExecutionOutcome = "succeeded" | "failed" | "denied" | "aborted" | "timed_out";
 
 export interface ToolExecutionOutcomeRecord {
@@ -37,6 +50,7 @@ export interface ToolObservationBlock extends ToolObservationStart {
   ordinal?: number;
   args?: string;
   detail?: ToolObservationDetail;
+  metrics?: ToolObservationMetrics;
   preview: string;
   fullResult: string;
   /** Transport/handler completion only; business success is represented by `outcome`. */

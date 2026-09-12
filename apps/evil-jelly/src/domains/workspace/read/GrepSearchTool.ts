@@ -17,6 +17,7 @@ import {
   TOOL_ALWAYS_IGNORED_DIR_NAMES,
   type WorkspaceDirEntry,
 } from "../../../shared/fs-policy/workspace-scan";
+import { recordActiveToolMetrics } from "../../../shared/tool-observation/invocationContext";
 import { resolveFileToolPath } from "../file-access/resolveFileToolPath";
 
 const MAX_FALLBACK_FILE_BYTES = 200 * 1024;
@@ -329,7 +330,21 @@ function renderSearchResults(results: SearchFileResult[], contextLines: number):
     }
   }
 
-  return outputLines.length > 0 ? truncateOutput(outputLines.join("\n")) : "";
+  const rawOutput = outputLines.join("\n");
+  const output = rawOutput.length > 0 ? truncateOutput(rawOutput) : "";
+  const matches = results.reduce((sum, result) => sum + result.matchedLineNumbers.size, 0);
+  const emittedMatches = output.split("\n").filter((line) => /^> \d+ \|/.test(line)).length;
+  recordActiveToolMetrics({
+    type: "grep_search",
+    matches,
+    files: results.filter((result) => result.matchedLineNumbers.size > 0).length,
+    emittedLines: output.length === 0 ? 0 : output.split("\n").length,
+    contextLines: clampContextLines(contextLines),
+    omittedMatches: Math.max(0, matches - emittedMatches),
+    maxLines: TRUNCATE_MAX_LINES,
+    truncated: output !== rawOutput,
+  });
+  return output;
 }
 
 function rgExcludeGlobs(): string[] {

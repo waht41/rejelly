@@ -67,6 +67,8 @@ export function renderToolCallInspection(
   const fallbackAddress = inspection.result?.address ?? inspection.request?.address;
   const lines = [
     `Tool call ${(selectedAddress ?? fallbackAddress) ? `#${selectedAddress ?? fallbackAddress}` : ""}`.trimEnd(),
+    `Session: ${inspection.sessionId}`,
+    `Turn: ${inspection.turnNumber ?? "-"} (${inspection.turnId})`,
     `Tool: ${inspection.toolName}`,
     `Call: ${inspection.toolCallId}`,
     `Status: ${inspection.status}`,
@@ -81,11 +83,50 @@ export function renderToolCallInspection(
     lines.push(`  context  ${integer(contextStart)} -> ${integer(contextEnd)}`);
   }
 
+  const resultPreview = inspection.result
+    ? preview(inspection.result.content, options.full ?? false)
+    : undefined;
+  if (inspection.grepSearch) {
+    const search = inspection.grepSearch;
+    lines.push(
+      "",
+      "Search output",
+      `  ${"matches".padEnd(20)} ${integer(search.matches)}`,
+      `  ${"files".padEnd(20)} ${integer(search.files)}`,
+      `  ${"emitted lines".padEnd(20)} ${integer(search.emittedLines)}`,
+      `  ${"context lines".padEnd(20)} ${integer(search.contextLines)}`,
+    );
+    if (search.omittedMatches !== undefined && search.omittedMatches > 0) {
+      lines.push(`  ${"omitted matches".padEnd(20)} ${integer(search.omittedMatches)}`);
+    }
+    lines.push(
+      `  ${"tool truncation".padEnd(20)} ${search.truncated === undefined ? "unknown" : search.truncated ? "yes" : "no"}`,
+      `  ${"canonical admission".padEnd(20)} ${inspection.truncated ? "truncated" : "complete"}`,
+      `  ${"inspect preview".padEnd(20)} ${resultPreview ? `${integer(resultPreview.shown)} / ${integer(resultPreview.total)} lines` : "-"}`,
+    );
+  }
+
+  if (inspection.grepSearch?.truncated && inspection.grepSearch.maxLines !== undefined) {
+    lines.push(
+      "",
+      "Output limit",
+      `  ${"max lines".padEnd(20)} ${integer(inspection.grepSearch.maxLines)}`,
+      `  ${"emitted lines".padEnd(20)} ${integer(inspection.grepSearch.emittedLines)}`,
+    );
+    if (
+      inspection.grepSearch.omittedMatches !== undefined &&
+      inspection.grepSearch.omittedMatches > 0
+    ) {
+      lines.push(
+        `  ${"omitted matches".padEnd(20)} ${integer(inspection.grepSearch.omittedMatches)}`,
+      );
+    }
+  }
+
   if (inspection.request) {
     lines.push("", "Request", indent(prettyArguments(inspection.request.content)));
   }
-  if (inspection.result) {
-    const resultPreview = preview(inspection.result.content, options.full ?? false);
+  if (inspection.result && resultPreview) {
     lines.push(
       "",
       "Result",
@@ -95,12 +136,12 @@ export function renderToolCallInspection(
     );
     if (resultPreview.shown < resultPreview.total) {
       lines.push(
-        `  [truncated preview, showing ${resultPreview.shown}/${resultPreview.total} lines; use --full or --payload]`,
+        `  [inspect preview, showing ${resultPreview.shown}/${resultPreview.total} lines; use --full or --payload]`,
       );
     }
     if (inspection.truncated) {
       lines.push(
-        `  [tool output was reduced before canonical admission${inspection.truncationReason ? `: ${inspection.truncationReason}` : ""}; the displayed result is complete as persisted]`,
+        `  [canonical admission truncated the Tool result${inspection.truncationReason ? `: ${inspection.truncationReason}` : ""}; the displayed result is complete as persisted]`,
       );
     }
   }

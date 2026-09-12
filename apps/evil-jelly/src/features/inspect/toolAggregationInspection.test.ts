@@ -100,8 +100,23 @@ const events: SessionEvent[] = [
     },
     1,
   ),
-  ...toolEvents("turn-1", 2, "call-1", "grep", "a\nb\nc", 800),
-  ...toolEvents("turn-1", 5, "call-2", "grep", "x".repeat(400), 700, "failed"),
+  ...toolEvents(
+    "turn-1",
+    2,
+    "call-1",
+    "grep",
+    "src/a.ts\n> 1 | alpha\n  2 | context\n> 3 | beta\n> 4 | gamma",
+    800,
+  ),
+  ...toolEvents(
+    "turn-1",
+    5,
+    "call-2",
+    "grep",
+    "src/b.ts:10:gamma\nsrc/b.ts-11-context\n--\nsrc/b.ts:20:delta\n... (+5 more matches truncated)",
+    700,
+    "failed",
+  ),
   ...toolEvents("turn-1", 8, "call-3", "read_file", "line\n".repeat(20), 600),
   event({ type: "turn_completed", turnId: "turn-1", status: "completed" }, 11),
 ];
@@ -134,8 +149,24 @@ describe("Tool aggregation inspection", () => {
     const grep = projectToolAggregation(meta, events, { toolName: "grep" });
     const rendered = renderToolAggregation(grep);
     expect(grep.summary.calls).toBe(2);
+    expect(grep.grepSearch).toMatchObject({
+      measuredCalls: 2,
+      matches: 5,
+      files: 2,
+      linesPerMatch: 2,
+    });
     expect(rendered).toContain("Tool: grep");
     expect(rendered).toContain("Result / request");
+    expect(rendered).toContain("Search output");
+    expect(rendered).toContain("Output expansion");
+    expect(rendered).toContain("Truncation");
+    expect(rendered).toContain("metadata             1 / 2 calls");
+    expect(rendered).not.toContain("Highest expansion");
+    expect(rendered).not.toContain("Truncated calls");
+    expect(rendered).toContain("matches");
+    expect(rendered).toContain("ctx");
+    expect(rendered).toContain("trunc");
+    expect(rendered).toContain("yes");
     expect(rendered).toContain("Largest calls");
     expect(rendered).toContain("Failed calls");
 
