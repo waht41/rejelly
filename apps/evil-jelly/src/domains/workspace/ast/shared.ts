@@ -20,18 +20,6 @@ import {
   type HeuristicSymbolRow,
 } from "./queries";
 
-export const MAX_OUTPUT_CHARS = 45_000;
-
-export const identifierSafe = /^[A-Za-z_$][\w$]*$/;
-
-export function truncateJson(obj: unknown): string {
-  const raw = JSON.stringify(obj, null, 2);
-  if (raw.length <= MAX_OUTPUT_CHARS) {
-    return raw;
-  }
-  return `${raw.slice(0, MAX_OUTPUT_CHARS)}\n... (truncated, max ${MAX_OUTPUT_CHARS} chars)`;
-}
-
 /**
  * Resolve user path under cwd, read bounded source, infer language, parse AST.
  * Shared by single-file AST tools to avoid duplicated resolve/read/parse boilerplate.

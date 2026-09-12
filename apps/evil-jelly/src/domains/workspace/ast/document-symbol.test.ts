@@ -105,22 +105,28 @@ describe("heuristic AST document symbol extensions", () => {
     expect(raw).toContain("3    async run(input) → boolean");
   });
 
-  it("ast_read_symbol_code returns declaration source blocks", async () => {
+  it("ast_read_symbol_code returns unescaped declaration source", async () => {
     const raw = await astReadSymbolCodeService({
       filePath: relFile,
-      symbolName: "equipSystem",
+      symbolName: ["equipSystem", "missingSymbol"],
       caseInsensitive: false,
     });
-    const parsed = JSON.parse(raw) as {
-      results: Array<{
-        symbolName: string;
-        matches: Array<{ code: string; signature: string | null; jsDoc: string | null }>;
-      }>;
-    };
-    const hit = parsed.results[0]?.matches[0];
-    expect(hit?.code).toContain("export function equipSystem");
-    expect(hit?.signature).toContain("equipSystem(amount: number): string");
-    expect(hit?.jsDoc).toContain("Equip the budget system");
+
+    expect(raw.startsWith(`${relFile}\n\nequipSystem\n`)).toBe(true);
+    expect(raw).toContain("8  function_declaration");
+    expect(raw).toContain("signature: function equipSystem(amount: number): string");
+    expect(raw).toContain("jsdoc: Equip the budget system for runtime checks.");
+    expect(raw).toContain(
+      [
+        "code:",
+        "export function equipSystem(amount: number): string {",
+        "  return String(amount)",
+        "}",
+      ].join("\n"),
+    );
+    expect(raw).toContain("missingSymbol\n  (no matching declarations)");
+    expect(raw).not.toContain('"code"');
+    expect(raw).not.toContain("\\n");
   });
 
   it("confirms and parses one outside source file", async () => {
@@ -157,16 +163,13 @@ describe("heuristic AST document symbol extensions", () => {
         caseInsensitive: false,
         roots: [outsideDir],
       });
-      const parsed = JSON.parse(raw) as { matches: Array<{ file: string; name: string }> };
 
       expect(outsideAccessRequests).toHaveLength(1);
       expect(outsideAccessRequests[0]?.access).toBe("scan");
-      expect(parsed.matches).toEqual([
-        expect.objectContaining({
-          file: path.join(outsideDir, "external.ts").replace(/\\/g, "/"),
-          name: "outsideRootSymbol",
-        }),
-      ]);
+      expect(raw).toContain(`roots: ${outsideDir.replace(/\\/g, "/")}`);
+      expect(raw).toContain(
+        `${path.join(outsideDir, "external.ts").replace(/\\/g, "/")}:1  variable outsideRootSymbol`,
+      );
     } finally {
       await fs.rm(outsideDir, { recursive: true, force: true });
     }
@@ -206,12 +209,11 @@ describe("heuristic AST document symbol extensions", () => {
       queryName: "equipSystem",
       caseInsensitive: false,
     });
-    const parsed = JSON.parse(raw) as {
-      matches: Array<{ file: string; name: string; kind: string }>;
-    };
-    const files = parsed.matches.map((m) => m.file);
-    expect(files).toContain(relFile);
-    expect(files).toContain(jsFile);
+
+    expect(raw.startsWith("equipSystem\n\n")).toBe(true);
+    expect(raw).toContain(`${relFile}:8  function equipSystem`);
+    expect(raw).toContain(`${jsFile}:1  function equipSystem`);
+    expect(raw).not.toContain('"matches"');
   });
 
   it("ast_document_symbols reports unsupported file extensions clearly", async () => {

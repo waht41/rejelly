@@ -13,12 +13,7 @@ import {
   type HeuristicSymbolKind,
   sliceDeclarationSignature,
 } from "./queries";
-import {
-  collectMatchingDeclarations,
-  getParsedAst,
-  MAX_OUTPUT_CHARS,
-  truncateJson,
-} from "./shared";
+import { collectMatchingDeclarations, getParsedAst } from "./shared";
 
 export const astDocumentSymbolsParameters = z.object({
   filePath: z
@@ -60,6 +55,8 @@ export const astReadSymbolCodeParameters = z.object({
 type AstDocumentSymbolsArgs = z.input<typeof astDocumentSymbolsParameters>;
 type AstWorkspaceSymbolsArgs = z.infer<typeof astWorkspaceSymbolsParameters>;
 type AstReadSymbolCodeArgs = z.infer<typeof astReadSymbolCodeParameters>;
+
+const MAX_AST_OUTPUT_CHARS = 45_000;
 
 function stripJsDocBlock(raw: string): string {
   return raw
@@ -344,10 +341,10 @@ function formatDocumentOutline(file: DocumentSymbolsFileOk, include: "all" | "ex
   return output.join("\n").trimEnd();
 }
 
-function truncateOutline(raw: string): string {
-  return raw.length <= MAX_OUTPUT_CHARS
+function truncateAstText(raw: string): string {
+  return raw.length <= MAX_AST_OUTPUT_CHARS
     ? raw
-    : `${raw.slice(0, MAX_OUTPUT_CHARS)}\n... (truncated, max ${MAX_OUTPUT_CHARS} chars)`;
+    : `${raw.slice(0, MAX_AST_OUTPUT_CHARS)}\n... (truncated, max ${MAX_AST_OUTPUT_CHARS} chars)`;
 }
 
 async function documentSymbolsForOneFile(
@@ -369,7 +366,7 @@ export async function astDocumentSymbolsService(args: AstDocumentSymbolsArgs): P
     }
     return formatDocumentOutline(result, args.include ?? "all");
   });
-  return truncateOutline(sections.join("\n\n"));
+  return truncateAstText(sections.join("\n\n"));
 }
 
 export async function astWorkspaceSymbolsService(args: AstWorkspaceSymbolsArgs): Promise<string> {
@@ -381,12 +378,22 @@ export async function astWorkspaceSymbolsService(args: AstWorkspaceSymbolsArgs):
     const message = error instanceof Error ? error.message : String(error);
     return `AST workspace scan failed: ${message}`;
   }
-  return truncateJson({
-    queryName,
-    roots: roots ?? ["."],
-    matches: hits,
-    truncated: hits.length >= MAX_HEURISTIC_RESULTS,
-  });
+  const output = [queryName];
+  if (roots) {
+    output.push(`roots: ${roots.map((root) => root.replace(/\\/g, "/")).join(", ")}`);
+  }
+  output.push("");
+  if (hits.length === 0) {
+    output.push("(no matching declarations)");
+  } else {
+    for (const hit of hits) {
+      output.push(`${hit.file}:${hit.line}  ${hit.kind} ${hit.name}`);
+    }
+  }
+  if (hits.length >= MAX_HEURISTIC_RESULTS) {
+    output.push("", `... (${hits.length} matches shown; results truncated)`);
+  }
+  return truncateAstText(output.join("\n"));
 }
 
 function normalizeCodeSnippetNodeText(node: SgNode): string {
@@ -412,35 +419,29 @@ export async function astReadSymbolCodeService(args: AstReadSymbolCodeArgs): Pro
   const { rel, root, text, lang } = parsed;
   const lines = text.split(/\r?\n/);
   const names = Array.isArray(symbolName) ? symbolName : [symbolName];
-  const relOut = rel.replace(/\\/g, "/");
-  const results: Array<{
-    symbolName: string;
-    matches: Array<{
-      kind: string;
-      line: number;
-      signature: string | null;
-      jsDoc: string | null;
-      code: string;
-    }>;
-  }> = [];
-  for (const q of names) {
-    const nodes = findNamedDeclarationAstNodes(root, q, caseInsensitive, lang);
-    results.push({
-      symbolName: q,
-      matches: nodes.map((node) => {
-        const line = node.range().start.line + 1;
-        const rawJsdoc = extractCommentBlockAbove(lines, line);
-        return {
-          kind: String(node.kind()),
-          line,
-          signature: sliceDeclarationSignature(text, node),
-          jsDoc: rawJsdoc ? stripJsDocBlock(rawJsdoc) : null,
-          code: normalizeCodeSnippetNodeText(node),
-        };
-      }),
-    });
+  const output = [rel.replace(/\\/g, "/"), ""];
+  for (const name of names) {
+    output.push(name);
+    const nodes = findNamedDeclarationAstNodes(root, name, caseInsensitive, lang);
+    if (nodes.length === 0) {
+      output.push("  (no matching declarations)", "");
+      continue;
+    }
+    for (const node of nodes) {
+      const line = node.range().start.line + 1;
+      const signature = sliceDeclarationSignature(text, node);
+      const rawJsdoc = extractCommentBlockAbove(lines, line);
+      output.push(`  ${line}  ${String(node.kind())}`);
+      if (signature) {
+        output.push(`  signature: ${signature.replace(/\r?\n/g, "\n    ")}`);
+      }
+      if (rawJsdoc) {
+        output.push(`  jsdoc: ${stripJsDocBlock(rawJsdoc)}`);
+      }
+      output.push("  code:", normalizeCodeSnippetNodeText(node).trimEnd(), "");
+    }
   }
-  return truncateJson({ file: relOut, results });
+  return truncateAstText(output.join("\n").trimEnd());
 }
 
 export const AstDocumentSymbolsTool: ToolDefinition<typeof astDocumentSymbolsParameters> = {
@@ -458,7 +459,7 @@ export const AstWorkspaceSymbolsTool: ToolDefinition<typeof astWorkspaceSymbolsP
   name: "ast_workspace_symbols",
   description:
     "Search files for declarations (class, function, interface, type, enum, method, variable) whose name matches queryName. " +
-    "Pass roots to search selected files or directories. " +
+    "Pass roots to search selected files or directories. Returns compact file:line rows. " +
     "Heuristic only — no type-aware binding; multiple hits are common.",
   parameters: astWorkspaceSymbolsParameters,
   handler: async (args) => astWorkspaceSymbolsService(args),
@@ -468,7 +469,7 @@ export const AstReadSymbolCodeTool: ToolDefinition<typeof astReadSymbolCodeParam
   name: "ast_read_symbol_code",
   description:
     "Read declaration code blocks by symbol name from one file (AST-scoped deep dive). " +
-    "Returns signature, JSDoc summary, and declaration source blocks without full-file reads.",
+    "Returns compact text with source-order matches, signatures, optional JSDoc, and unescaped source code.",
   parameters: astReadSymbolCodeParameters,
   handler: async (args) => astReadSymbolCodeService(args),
 };
