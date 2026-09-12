@@ -2,4 +2,4 @@
 "@rejelly/evil-jelly": minor
 ---
 
-Add `evil inspect` for reading finished session journals: session, turn, segment, and checkpoint views with token, cache, tool, and model-call drill-down.
+Add Tool call inspection to `evil inspect`, including Session and Turn aggregation, unused Tool visibility, per-Tool drill-down, exact ToolCall selection, and unified `--tools [selector]` and `--models [selector]` CLI entry points.

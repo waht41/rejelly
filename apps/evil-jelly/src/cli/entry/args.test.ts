@@ -76,9 +76,14 @@ describe("parseCliArgs", () => {
     expect(help).toContain("--turn <selector>");
     expect(help).toContain("--segment <address>");
     expect(help).toContain("N, N.M, or C1");
-    expect(help).toContain("--call <id>");
-    expect(help).toContain("--models [range]");
-    expect(help).toContain("--model <address>");
+    expect(help).toMatch(
+      /\n {2}--tools \[selector\]\s+Inspect Tool calls \(all, Tool name, or ToolCall ID\)/,
+    );
+    expect(help).toContain("--models [selector]");
+    expect(help).not.toContain("--tool <name>");
+    expect(help).not.toContain("--model <address>");
+    expect(help).not.toContain("--call <id>");
+    expect(help).not.toContain("--tool-call <id>");
     expect(help).toContain("--tokens");
     expect(help).toContain("--latency");
     expect(help).toContain("--transport");
@@ -227,7 +232,7 @@ describe("parseCliArgs", () => {
       "evil",
       "inspect",
       "session-1",
-      "--call",
+      "--tools",
       "call-1",
       "--payload",
       "--output",
@@ -235,9 +240,33 @@ describe("parseCliArgs", () => {
     ]);
     expect(call).toMatchObject({
       kind: "inspect",
-      inspectCallId: "call-1",
+      inspectTools: "call-1",
       inspectPayload: true,
       inspectOutput: "payload.json",
+    });
+
+    expect(parseCliArgs(["node", "evil", "inspect", "session-1", "--tools"])).toMatchObject({
+      kind: "inspect",
+      inspectTools: "",
+    });
+    expect(
+      parseCliArgs([
+        "node",
+        "evil",
+        "inspect",
+        "session-1",
+        "--turn",
+        "1",
+        "--tools",
+        "grep",
+        "--top",
+        "5",
+      ]),
+    ).toMatchObject({
+      kind: "inspect",
+      inspectTurnId: "1",
+      inspectTools: "grep",
+      inspectTop: 5,
     });
 
     const turnTop = parseCliArgs([
@@ -282,7 +311,7 @@ describe("parseCliArgs", () => {
     expect(parseCliArgs(["node", "evil", "inspect", "session-1", "--models", "M16"])).toMatchObject(
       {
         kind: "inspect",
-        inspectModels: "M16",
+        inspectModelId: "M16",
       },
     );
     expect(
@@ -298,7 +327,7 @@ describe("parseCliArgs", () => {
         "evil",
         "inspect",
         "session-1",
-        "--model",
+        "--models",
         "M85",
         "--input",
         "--attempts",
@@ -313,16 +342,20 @@ describe("parseCliArgs", () => {
 
   it.each([
     ["segment without turn", ["inspect", "session-1", "--segment", "4"]],
-    ["call with turn", ["inspect", "session-1", "--turn", "1", "--call", "call-1"]],
-    ["payload with json", ["inspect", "session-1", "--call", "call-1", "--payload", "--json"]],
-    ["full with json", ["inspect", "session-1", "--call", "call-1", "--full", "--json"]],
-    ["full with payload", ["inspect", "session-1", "--call", "call-1", "--full", "--payload"]],
+    ["payload with json", ["inspect", "session-1", "--tools", "call-1", "--payload", "--json"]],
+    ["full with json", ["inspect", "session-1", "--tools", "call-1", "--full", "--json"]],
+    ["full with payload", ["inspect", "session-1", "--tools", "call-1", "--full", "--payload"]],
     ["invalid top", ["inspect", "session-1", "--turn", "1", "--top", "0"]],
-    ["model with turn", ["inspect", "session-1", "--turn", "1", "--model", "M1"]],
+    ["model with turn", ["inspect", "session-1", "--turn", "1", "--models", "M1"]],
     ["range with turn", ["inspect", "session-1", "--turn", "1", "--models", "M1..M2"]],
     ["profile without models", ["inspect", "session-1", "--latency"]],
     ["input without model", ["inspect", "session-1", "--input"]],
     ["model list with top", ["inspect", "session-1", "--models", "--top", "3"]],
+    ["model profile with exact address", ["inspect", "session-1", "--models", "M1", "--tokens"]],
+    ["removed tool option", ["inspect", "session-1", "--tool", "grep"]],
+    ["removed model option", ["inspect", "session-1", "--model", "M1"]],
+    ["removed call option", ["inspect", "session-1", "--call", "call-1"]],
+    ["removed tool-call option", ["inspect", "session-1", "--tool-call", "call-1"]],
   ])("rejects invalid inspect drill-down options: %s", (_name, argvTail) => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.spyOn(process, "exit").mockImplementation((code) => {

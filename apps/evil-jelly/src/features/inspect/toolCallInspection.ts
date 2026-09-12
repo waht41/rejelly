@@ -155,7 +155,10 @@ function addressesForCall(
   return addresses;
 }
 
-export function findToolCallTurnId(events: readonly SessionEvent[], toolCallId: string): string {
+export function resolveToolCallTurnId(
+  events: readonly SessionEvent[],
+  toolCallId: string,
+): string | undefined {
   const turnIds = new Set<string>();
   for (const event of events) {
     if (!isKnownSessionEvent(event)) continue;
@@ -172,9 +175,15 @@ export function findToolCallTurnId(events: readonly SessionEvent[], toolCallId: 
         turnIds.add(event.turnId);
     }
   }
-  if (turnIds.size === 0) throw new Error(`Tool call not found in Session: ${toolCallId}`);
+  if (turnIds.size === 0) return undefined;
   if (turnIds.size > 1) throw new Error(`Tool call id is not unique in Session: ${toolCallId}`);
   return [...turnIds][0];
+}
+
+export function findToolCallTurnId(events: readonly SessionEvent[], toolCallId: string): string {
+  const turnId = resolveToolCallTurnId(events, toolCallId);
+  if (!turnId) throw new Error(`Tool call not found in Session: ${toolCallId}`);
+  return turnId;
 }
 
 export function projectToolCallInspection(
