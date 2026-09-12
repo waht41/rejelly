@@ -72,6 +72,8 @@ const HELP_OPTION_PREFIXES = {
     "--turn",
     "--segment",
     "--call",
+    "--tools",
+    "--tool",
     "--models",
     "--model",
     "--tokens",

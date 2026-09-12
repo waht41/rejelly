@@ -42,7 +42,7 @@ async function main() {
       allWorkspaces: args.inspectAllWorkspaces,
       turnId: args.inspectTurnId,
       segment: args.inspectSegment,
-      callId: args.inspectCallId,
+      tools: args.inspectTools,
       models: args.inspectModels,
       modelId: args.inspectModelId,
       modelView: args.inspectModelView,

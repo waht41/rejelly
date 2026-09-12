@@ -11,6 +11,7 @@ import {
   projectToolCallBySegment,
   projectToolCallInspection,
   resolveSegmentToolCall,
+  resolveToolCallTurnId,
 } from "./toolCallInspection";
 import { projectTopContributors, projectTurnWaterfall } from "./turnWaterfall";
 
@@ -170,6 +171,8 @@ describe("Tool call inspection", () => {
     const events = fixture();
     const waterfall = projectTurnWaterfall(meta, events, "turn-1");
 
+    expect(resolveToolCallTurnId(events, "call-1")).toBe("turn-1");
+    expect(resolveToolCallTurnId(events, "grep")).toBeUndefined();
     expect(findToolCallTurnId(events, "call-1")).toBe("turn-1");
     expect(projectToolCallInspection(meta, events, waterfall, "call-1").selectedSide).toBe(
       "result",

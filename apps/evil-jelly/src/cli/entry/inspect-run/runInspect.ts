@@ -17,6 +17,7 @@ import {
 import { renderParallelToolBatchInspection } from "../../../features/inspect/renderParallelToolBatchInspection";
 import { renderSegmentInspection } from "../../../features/inspect/renderSegmentInspection";
 import { renderSessionInspection } from "../../../features/inspect/renderSessionInspection";
+import { renderToolAggregation } from "../../../features/inspect/renderToolAggregationInspection";
 import { renderToolCallInspection } from "../../../features/inspect/renderToolCallInspection";
 import { renderTurnWaterfall } from "../../../features/inspect/renderTurnWaterfall";
 import {
@@ -28,10 +29,11 @@ import {
   projectSessionInspection,
   resolveTurnId,
 } from "../../../features/inspect/sessionInspection";
+import { projectToolAggregation } from "../../../features/inspect/toolAggregationInspection";
 import {
   extractToolCallPayload,
-  findToolCallTurnId,
   projectToolCallInspection,
+  resolveToolCallTurnId,
   type ToolCallInspection,
 } from "../../../features/inspect/toolCallInspection";
 import {
@@ -47,7 +49,7 @@ export interface RunInspectOptions {
   allWorkspaces: boolean;
   turnId?: string;
   segment?: string;
-  callId?: string;
+  tools?: string;
   models?: string;
   modelId?: string;
   modelView: ModelCallView;
@@ -134,6 +136,25 @@ export async function runInspect(options: RunInspectOptions): Promise<void> {
         `Ignored ${warning.byteLength} trailing byte(s) from an incomplete Session event at offset ${warning.offset}.`,
     ),
   );
+  const toolSelector = options.tools;
+  const toolCallTurnId = toolSelector
+    ? resolveToolCallTurnId(stored.events, toolSelector)
+    : undefined;
+  if (toolCallTurnId && toolSelector) {
+    if (options.turnId)
+      throw new Error("A ToolCall ID --tools selector cannot be combined with --turn");
+    if (options.top !== undefined)
+      throw new Error("--top cannot be combined with a ToolCall ID --tools selector");
+    const waterfall = projectTurnWaterfall(stored.meta, stored.events, toolCallTurnId);
+    await printToolCall(
+      projectToolCallInspection(stored.meta, stored.events, waterfall, toolSelector),
+      options,
+    );
+    return;
+  }
+  if (options.tools && (options.payload || options.full)) {
+    throw new Error("--payload and --full require a ToolCall ID --tools selector");
+  }
   if (options.modelId) {
     const modelCall = projectModelCallInspection(stored.meta, stored.events, options.modelId);
     await writeInspectionOutput(
@@ -147,17 +168,20 @@ export async function runInspect(options: RunInspectOptions): Promise<void> {
     );
     return;
   }
-  if (options.callId) {
-    const turnId = findToolCallTurnId(stored.events, options.callId);
-    const waterfall = projectTurnWaterfall(stored.meta, stored.events, turnId);
-    await printToolCall(
-      projectToolCallInspection(stored.meta, stored.events, waterfall, options.callId),
-      options,
-    );
-    return;
-  }
   if (options.turnId) {
     const turnId = resolveTurnId(inspection, options.turnId);
+    if (options.tools !== undefined) {
+      const tools = projectToolAggregation(stored.meta, stored.events, {
+        turnId,
+        ...(options.tools ? { toolName: options.tools } : {}),
+        ...(options.top !== undefined ? { top: options.top } : {}),
+      });
+      await writeInspectionOutput(
+        options.json ? JSON.stringify(tools, null, 2) : renderToolAggregation(tools),
+        options,
+      );
+      return;
+    }
     if (options.models !== undefined) {
       const modelCalls = projectModelCallList(stored.meta, stored.events, { turnId });
       await writeInspectionOutput(
@@ -186,6 +210,17 @@ export async function runInspect(options: RunInspectOptions): Promise<void> {
     } else {
       await writeInspectionOutput(renderTurnWaterfall(waterfall, { top: options.top }), options);
     }
+    return;
+  }
+  if (options.tools !== undefined) {
+    const tools = projectToolAggregation(stored.meta, stored.events, {
+      ...(options.tools ? { toolName: options.tools } : {}),
+      ...(options.top !== undefined ? { top: options.top } : {}),
+    });
+    await writeInspectionOutput(
+      options.json ? JSON.stringify(tools, null, 2) : renderToolAggregation(tools),
+      options,
+    );
     return;
   }
   if (options.models !== undefined) {
