@@ -9,7 +9,6 @@ import {
   AstDocumentSymbolsTool,
   AstModuleExportsTool,
   AstReadSymbolCodeTool,
-  AstReadSymbolTool,
   AstWorkspaceSymbolsTool,
 } from "./ast/document-symbol";
 import { AstGetFunctionDependenciesTool } from "./ast/function-dependencies";
@@ -30,7 +29,6 @@ const READ_ONLY_WORKSPACE_TOOLS: ToolDefinition<any>[] = [
   GrepSearchTool,
   AstDocumentSymbolsTool,
   AstModuleExportsTool,
-  AstReadSymbolTool,
   AstReadSymbolCodeTool,
   AstWorkspaceSymbolsTool,
   AstGetFunctionDependenciesTool,

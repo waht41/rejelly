@@ -70,16 +70,6 @@ function formatToolProgressLine(ctx: ToolContext): string {
     const parts = typeof raw === "string" ? [raw] : Array.isArray(raw) ? (raw as string[]) : [];
     return `[Tools] ast_document_symbols → ${formatPathList(parts)}…\n`;
   }
-  if (ctx.toolName === "ast_read_symbol") {
-    const fp = typeof input.filePath === "string" ? input.filePath : "";
-    const raw = input.symbolName;
-    const syms = Array.isArray(raw)
-      ? (raw as string[]).join(", ")
-      : typeof raw === "string"
-        ? raw
-        : "";
-    return `[Tools] ast_read_symbol → ${fp || "(path)"} [${syms}]…\n`;
-  }
   if (ctx.toolName === "ast_read_symbol_code") {
     const fp = typeof input.filePath === "string" ? input.filePath : "";
     const raw = input.symbolName;

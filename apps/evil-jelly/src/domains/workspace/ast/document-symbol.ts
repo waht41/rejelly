@@ -1,5 +1,5 @@
 /**
- * Outline / read-symbol / workspace symbol listing for heuristic AST tools.
+ * Outline, symbol-code, and workspace symbol listing for heuristic AST tools.
  */
 
 import type { SgNode } from "@ast-grep/napi";
@@ -29,18 +29,6 @@ export const astDocumentSymbolsParameters = z.object({
     .optional()
     .default("all")
     .describe("Whether to include all outline declarations or only exported declarations."),
-});
-
-export const astReadSymbolParameters = z.object({
-  filePath: z.string().min(1).describe("Path to a JS/TS file."),
-  symbolName: z
-    .union([z.string().min(1), z.array(z.string().min(1)).min(1)])
-    .describe("Exact declaration name(s): function, class, const, method, type, etc."),
-  caseInsensitive: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe("When true, matches declaration names case-insensitively."),
 });
 
 export const astWorkspaceSymbolsParameters = z.object({
@@ -74,7 +62,6 @@ export const astModuleExportsParameters = z.object({
 });
 
 type AstDocumentSymbolsArgs = z.input<typeof astDocumentSymbolsParameters>;
-type AstReadSymbolArgs = z.infer<typeof astReadSymbolParameters>;
 type AstWorkspaceSymbolsArgs = z.infer<typeof astWorkspaceSymbolsParameters>;
 type AstReadSymbolCodeArgs = z.infer<typeof astReadSymbolCodeParameters>;
 type AstModuleExportsArgs = z.infer<typeof astModuleExportsParameters>;
@@ -379,33 +366,6 @@ export async function astDocumentSymbolsService(args: AstDocumentSymbolsArgs): P
   return truncateOutline(sections.join("\n\n"));
 }
 
-export async function astReadSymbolService(args: AstReadSymbolArgs): Promise<string> {
-  const { filePath, symbolName, caseInsensitive } = args;
-  const parsed = await getParsedAst(filePath);
-  if (!parsed.ok) {
-    return parsed.error;
-  }
-  const { rel, root, lang } = parsed;
-  const names = Array.isArray(symbolName) ? symbolName : [symbolName];
-  const relOut = rel.replace(/\\/g, "/");
-  const results: Array<{
-    symbolName: string;
-    matches: Array<{ kind: string; line: number; text: string }>;
-  }> = [];
-  for (const q of names) {
-    const nodes = findNamedDeclarationAstNodes(root, q, caseInsensitive, lang);
-    results.push({
-      symbolName: q,
-      matches: nodes.map((node) => ({
-        kind: String(node.kind()),
-        line: node.range().start.line + 1,
-        text: node.text(),
-      })),
-    });
-  }
-  return truncateJson({ file: relOut, results });
-}
-
 export async function astWorkspaceSymbolsService(args: AstWorkspaceSymbolsArgs): Promise<string> {
   const { queryName, caseInsensitive, roots } = args;
   let hits: Awaited<ReturnType<typeof collectMatchingDeclarations>>;
@@ -567,15 +527,6 @@ export const AstDocumentSymbolsTool: ToolDefinition<typeof astDocumentSymbolsPar
     "Ignores locals inside functions, arrows, and object-literal methods.",
   parameters: astDocumentSymbolsParameters,
   handler: async (args) => astDocumentSymbolsService(args),
-};
-
-export const AstReadSymbolTool: ToolDefinition<typeof astReadSymbolParameters> = {
-  name: "ast_read_symbol",
-  description:
-    "In one file, find declaration AST node(s) whose bound name equals symbolName (any depth: nested functions, methods, locals). " +
-    "Returns each node's raw source span via node.text(). Multiple names may be passed as an array.",
-  parameters: astReadSymbolParameters,
-  handler: async (args) => astReadSymbolService(args),
 };
 
 export const AstWorkspaceSymbolsTool: ToolDefinition<typeof astWorkspaceSymbolsParameters> = {

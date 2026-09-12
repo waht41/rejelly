@@ -173,7 +173,7 @@ function matchDeclarationName(
 
 /**
  * Declaration nodes that bind this identifier anywhere in the file (including nested scopes).
- * Sorted by start position. Used by ast_read_symbol to return node.text().
+ * Sorted by start position for symbol-code and dependency queries.
  */
 export function findNamedDeclarationAstNodes(
   root: SgNode,
