@@ -1,4 +1,4 @@
-import type { CAC } from "cac";
+import type { CAC, Command } from "cac";
 
 function failArgs(message: string): never {
   console.error(message);
@@ -15,8 +15,8 @@ export interface SkillsCommandArgs {
   readonly skillCommand: SkillManagementCommand;
 }
 
-export function registerSkillsArgs(cli: CAC): void {
-  cli
+export function registerSkillsArgs(cli: CAC): Command {
+  return cli
     .command("skills [...skillArgs]", "Inspect local Skills")
     .usage("skills list|show|doctor [name]");
 }

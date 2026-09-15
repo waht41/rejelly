@@ -1,4 +1,4 @@
-import type { CAC } from "cac";
+import type { CAC, Command } from "cac";
 import type { McpServerSettings } from "../../../domains/mcp/configuration/configuration";
 import type { McpValueSource } from "../../../domains/mcp/contracts";
 
@@ -52,8 +52,8 @@ export function extractMcpAddCommand(argv: readonly string[]): readonly string[]
   return separatorIndex < 0 ? undefined : tail.slice(separatorIndex + 1);
 }
 
-export function registerMcpArgs(cli: CAC): void {
-  cli
+export function registerMcpArgs(cli: CAC): Command {
+  return cli
     .command("mcp [...mcpArgs]", "Manage MCP server settings")
     .usage("mcp list|get|add|remove|enable|disable [serverId] [options]")
     .option("--scope <scope>", "user, project, or effective (read commands only)")

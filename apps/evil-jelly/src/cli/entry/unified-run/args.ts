@@ -1,4 +1,4 @@
-import type { CAC } from "cac";
+import type { CAC, Command } from "cac";
 export type RunStartupArgs =
   | { kind: "fresh"; seedInput: string | undefined }
   | { kind: "resume"; sessionId: string | undefined; seedInput: string | undefined }
@@ -27,13 +27,10 @@ function resolveOptionalString(raw: unknown, trim = true): string | undefined {
   return value.length > 0 ? value : undefined;
 }
 
-export function registerUnifiedRunArgs(cli: CAC): void {
-  cli.option(
-    "--devtool",
-    "Connect the devtool MCP toolset for the interactive coding run (not supported by audit)",
-  );
-  cli
+export function registerUnifiedRunArgs(cli: CAC): Command {
+  return cli
     .command("", "Start the interactive run loop")
+    .option("--devtool", "Connect the devtool MCP toolset for the interactive coding run")
     .option(
       "--snapshot <traceId>",
       "Restore a Review trace snapshot; mutually exclusive with --mock, --resume, and --headless",

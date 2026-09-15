@@ -2,7 +2,7 @@
 
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import cac from "cac";
+import cac, { type Command } from "cac";
 import {
   type ProfileSelector,
   parseProfileSelectors,
@@ -12,7 +12,6 @@ import { failArgs, resolveOptionalPath, resolveOptionalString } from "./argsSupp
 import {
   type AuditCommandArgs,
   auditSettingsOverrides,
-  hasAuditOnlyArgs,
   parseAuditArgs,
   registerAuditArgs,
 } from "./audit-run/args";
@@ -66,80 +65,62 @@ export function getCliVersion(): string {
 
 const cli = cac("evil");
 
-const HELP_OPTION_PREFIXES = {
-  inspect: [
-    "--json",
-    "--turn",
-    "--segment",
-    "--call",
-    "--tools",
-    "--tool",
-    "--models",
-    "--model",
-    "--tokens",
-    "--latency",
-    "--transport",
-    "--input",
-    "--attempts",
-    "--payload",
-    "--full",
-    "--output",
-    "--top",
-    "--all-workspaces",
-    "--workspace",
-    "-h, --help",
-  ],
-  skills: ["--workspace", "-h, --help"],
-} as const;
-
 function customizeHelpSections(
   sections: Array<{ readonly title?: string; readonly body: string }>,
 ): Array<{ readonly title?: string; readonly body: string }> {
-  const commandName = cli.matchedCommandName ?? cli.matchedCommand?.name ?? "";
-  return sections.map((section) => {
+  return sections.map((section) => ({
+    ...section,
     // CAC models --no-* flags as default=true booleans. Hide that parser implementation detail.
-    let body = section.body.replace(/^(\s+--no-\S+.*?) \(default: true\)$/gm, "$1");
-    const allowedOptionPrefixes =
-      commandName === "inspect"
-        ? HELP_OPTION_PREFIXES.inspect
-        : commandName === "skills"
-          ? HELP_OPTION_PREFIXES.skills
-          : undefined;
-    if (allowedOptionPrefixes && section.title === "Options") {
-      body = body
-        .split("\n")
-        .filter((line) =>
-          allowedOptionPrefixes.some((prefix) => line.trimStart().startsWith(prefix)),
-        )
-        .join("\n");
-    }
-    return { ...section, body };
-  });
+    body: section.body.replace(/^(\s+--no-\S+.*?) \(default: true\)$/gm, "$1"),
+  }));
 }
 
-cli
-  .usage("[command] [options]")
-  .option("--api-key <key>", "OPENAI_API_KEY override for this command")
-  .option(
-    "--env <name|path>",
-    "Env profile above the shell: a name resolves to ~/.evil-jelly/<name>.env",
-  )
-  .option(
-    "--workspace <dir>",
-    "Workspace root for config and agent tools; defaults to the current directory",
-  )
-  .option(
-    "--profile <selector>",
-    "Profile view(s), comma-separated; available: startup, startup:bootstrap, startup:imports, startup:ink",
-  )
-  .option("--review", "Enable review trace exporter");
+cli.usage("[command] [options]");
 
-registerUnifiedRunArgs(cli);
-registerInitArgs(cli);
-registerAuditArgs(cli);
-registerInspectArgs(cli);
-registerMcpArgs(cli);
-registerSkillsArgs(cli);
+function registerSharedCommandArgs(commands: {
+  readonly unified: Command;
+  readonly init: Command;
+  readonly audit: Command;
+  readonly inspect: Command;
+  readonly mcp: Command;
+  readonly skills: Command;
+}): void {
+  const { unified, init, audit, inspect, mcp, skills } = commands;
+
+  for (const command of [unified, init, audit]) {
+    command
+      .option("--api-key <key>", "OPENAI_API_KEY override for this command")
+      .option(
+        "--env <name|path>",
+        "Env profile above the shell: a name resolves to ~/.evil-jelly/<name>.env",
+      );
+  }
+
+  for (const command of [unified, audit, inspect, mcp, skills]) {
+    command.option(
+      "--workspace <dir>",
+      "Workspace root for config and agent tools; defaults to the current directory",
+    );
+  }
+
+  for (const command of [unified, audit]) {
+    command
+      .option(
+        "--profile <selector>",
+        "Profile view(s), comma-separated; available: startup, startup:bootstrap, startup:imports, startup:ink",
+      )
+      .option("--review", "Enable review trace exporter");
+  }
+}
+
+registerSharedCommandArgs({
+  unified: registerUnifiedRunArgs(cli),
+  init: registerInitArgs(cli),
+  audit: registerAuditArgs(cli),
+  inspect: registerInspectArgs(cli),
+  mcp: registerMcpArgs(cli),
+  skills: registerSkillsArgs(cli),
+});
 
 cli.help(customizeHelpSections).version(getCliVersion());
 
@@ -156,8 +137,27 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
   }
 
   const { args, options } = cli.parse(argv, { run: false });
-  if (options.cwd !== undefined) {
-    throw new Error("Unknown option `--cwd`; use `--workspace <dir>` instead");
+  const commandName = cli.matchedCommandName ?? cli.matchedCommand?.name ?? "";
+  const rawMcpAddCommand = commandName === "mcp" ? extractMcpAddCommand(argv) : undefined;
+  const matchedCommand = cli.matchedCommand;
+  if (matchedCommand) {
+    try {
+      matchedCommand.checkUnknownOptions();
+      matchedCommand.checkOptionValue();
+      matchedCommand.checkRequiredArgs();
+    } catch (error) {
+      // Preserve the actionable separator guidance when an unseparated stdio command contains
+      // flags that CAC would otherwise report as unknown Evil options.
+      if (
+        commandName === "mcp" &&
+        args[0] === "add" &&
+        options.url === undefined &&
+        rawMcpAddCommand === undefined
+      ) {
+        parseMcpArgs(args, options, rawMcpAddCommand);
+      }
+      failArgs(error instanceof Error ? error.message : String(error));
+    }
   }
 
   let profileSelectors: readonly ProfileSelector[] | undefined;
@@ -185,16 +185,10 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
     process.exit(0);
   }
 
-  const commandName = cli.matchedCommandName ?? cli.matchedCommand?.name ?? "";
   if (commandName === "init") {
     return { ...common, ...parseInitArgs(options) };
   }
   if (commandName === "audit") {
-    if (options.devtool) {
-      failArgs(
-        "--devtool is not supported by audit; configure a server with use.audit.exposure=always instead",
-      );
-    }
     return { ...common, ...parseAuditArgs(args, options) };
   }
   if (commandName === "inspect") {
@@ -205,27 +199,10 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
     return { ...common, ...inspect };
   }
   if (commandName === "mcp") {
-    return { ...common, ...parseMcpArgs(args, options, extractMcpAddCommand(argv)) };
+    return { ...common, ...parseMcpArgs(args, options, rawMcpAddCommand) };
   }
   if (commandName === "skills") {
-    const unsupported = [
-      options.apiKey !== undefined ? "--api-key" : undefined,
-      options.env !== undefined ? "--env" : undefined,
-      options.review ? "--review" : undefined,
-      options.devtool ? "--devtool" : undefined,
-      options.docMap !== undefined ? "--doc-map" : undefined,
-    ].filter((flag): flag is string => flag !== undefined);
-    if (unsupported.length > 0) {
-      failArgs(
-        `Unsupported skills option${unsupported.length === 1 ? "" : "s"}: ${unsupported.join(", ")}.`,
-      );
-    }
     return { ...common, ...parseSkillsArgs(args) };
-  }
-  if (hasAuditOnlyArgs(options)) {
-    failArgs(
-      "--family/--only-actionable/--max-seeds/--ledger-gc-days/--no-ledger-gc/--doc/--code require the audit subcommand",
-    );
   }
   const runArgs = parseUnifiedRunArgs(args, options);
   return {

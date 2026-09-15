@@ -1,4 +1,4 @@
-import type { CAC } from "cac";
+import type { CAC, Command } from "cac";
 import {
   SELECTABLE_AUDIT_FAMILIES,
   type SelectableAuditFamilyKind,
@@ -63,14 +63,14 @@ function resolveAuditFamily(raw: unknown): SelectableAuditFamilyKind {
   );
 }
 
-export function registerAuditArgs(cli: CAC): void {
-  cli.option(
-    "--doc-map <path>",
-    "Doc map path for doc-drift validation, workspace-relative (default: .evil-jelly/doc-map.jsonc)",
-  );
-  cli
+export function registerAuditArgs(cli: CAC): Command {
+  return cli
     .command("audit", "Run the one-shot audit/report workflow")
     .usage("audit --family <name> [options]")
+    .option(
+      "--doc-map <path>",
+      "Doc map path for doc-drift validation, workspace-relative (default: .evil-jelly/doc-map.jsonc)",
+    )
     .option(
       "--family <name>",
       "Required; one of clone, complexity, fragmentation, doc-drift, or doc-sync",
@@ -96,18 +96,6 @@ export function auditSettingsOverrides(options: Record<string, unknown>): Settin
     auditLedgerGcDays: resolvePositiveInteger(options.ledgerGcDays, "--ledger-gc-days"),
     auditDisableLedgerGc: options.ledgerGc === false ? true : undefined,
   };
-}
-
-export function hasAuditOnlyArgs(options: Record<string, unknown>): boolean {
-  return (
-    options.family !== undefined ||
-    options.onlyActionable !== undefined ||
-    options.doc !== undefined ||
-    options.code !== undefined ||
-    options.maxSeeds !== undefined ||
-    options.ledgerGcDays !== undefined ||
-    options.ledgerGc === false
-  );
 }
 
 export function parseAuditArgs(
