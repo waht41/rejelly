@@ -2,7 +2,7 @@
 
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import cac from "cac";
+import cac, { type Command } from "cac";
 import {
   type ProfileSelector,
   parseProfileSelectors,
@@ -117,29 +117,52 @@ function customizeHelpSections(
   });
 }
 
-cli
-  .usage("[command] [options]")
-  .option("--api-key <key>", "OPENAI_API_KEY override for this command")
-  .option(
-    "--env <name|path>",
-    "Env profile above the shell: a name resolves to ~/.evil-jelly/<name>.env",
-  )
-  .option(
-    "--workspace <dir>",
-    "Workspace root for config and agent tools; defaults to the current directory",
-  )
-  .option(
-    "--profile <selector>",
-    "Profile view(s), comma-separated; available: startup, startup:bootstrap, startup:imports, startup:ink",
-  )
-  .option("--review", "Enable review trace exporter");
+cli.usage("[command] [options]");
 
-registerUnifiedRunArgs(cli);
-registerInitArgs(cli);
-registerAuditArgs(cli);
-registerInspectArgs(cli);
-registerMcpArgs(cli);
-registerSkillsArgs(cli);
+function registerSharedCommandArgs(commands: {
+  readonly unified: Command;
+  readonly init: Command;
+  readonly audit: Command;
+  readonly inspect: Command;
+  readonly mcp: Command;
+  readonly skills: Command;
+}): void {
+  const { unified, init, audit, inspect, mcp, skills } = commands;
+
+  for (const command of [unified, init, audit]) {
+    command
+      .option("--api-key <key>", "OPENAI_API_KEY override for this command")
+      .option(
+        "--env <name|path>",
+        "Env profile above the shell: a name resolves to ~/.evil-jelly/<name>.env",
+      );
+  }
+
+  for (const command of [unified, audit, inspect, mcp, skills]) {
+    command.option(
+      "--workspace <dir>",
+      "Workspace root for config and agent tools; defaults to the current directory",
+    );
+  }
+
+  for (const command of [unified, audit]) {
+    command
+      .option(
+        "--profile <selector>",
+        "Profile view(s), comma-separated; available: startup, startup:bootstrap, startup:imports, startup:ink",
+      )
+      .option("--review", "Enable review trace exporter");
+  }
+}
+
+registerSharedCommandArgs({
+  unified: registerUnifiedRunArgs(cli),
+  init: registerInitArgs(cli),
+  audit: registerAuditArgs(cli),
+  inspect: registerInspectArgs(cli),
+  mcp: registerMcpArgs(cli),
+  skills: registerSkillsArgs(cli),
+});
 
 cli.help(customizeHelpSections).version(getCliVersion());
 

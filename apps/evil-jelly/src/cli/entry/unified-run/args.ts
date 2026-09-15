@@ -28,12 +28,9 @@ function resolveOptionalString(raw: unknown, trim = true): string | undefined {
 }
 
 export function registerUnifiedRunArgs(cli: CAC): Command {
-  cli.option(
-    "--devtool",
-    "Connect the devtool MCP toolset for the interactive coding run (not supported by audit)",
-  );
   return cli
     .command("", "Start the interactive run loop")
+    .option("--devtool", "Connect the devtool MCP toolset for the interactive coding run")
     .option(
       "--snapshot <traceId>",
       "Restore a Review trace snapshot; mutually exclusive with --mock, --resume, and --headless",

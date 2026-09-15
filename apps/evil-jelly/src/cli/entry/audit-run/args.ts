@@ -64,13 +64,13 @@ function resolveAuditFamily(raw: unknown): SelectableAuditFamilyKind {
 }
 
 export function registerAuditArgs(cli: CAC): Command {
-  cli.option(
-    "--doc-map <path>",
-    "Doc map path for doc-drift validation, workspace-relative (default: .evil-jelly/doc-map.jsonc)",
-  );
   return cli
     .command("audit", "Run the one-shot audit/report workflow")
     .usage("audit --family <name> [options]")
+    .option(
+      "--doc-map <path>",
+      "Doc map path for doc-drift validation, workspace-relative (default: .evil-jelly/doc-map.jsonc)",
+    )
     .option(
       "--family <name>",
       "Required; one of clone, complexity, fragmentation, doc-drift, or doc-sync",
