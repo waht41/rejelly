@@ -30,17 +30,57 @@ export type DiffSummary = {
 
 const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 
+const QUOTED_PATH_ESCAPES: Readonly<Record<string, string>> = {
+  a: "\x07",
+  b: "\b",
+  t: "\t",
+  n: "\n",
+  v: "\v",
+  f: "\f",
+  r: "\r",
+  "\\": "\\",
+  '"': '"',
+};
+
+/** Decode the C-style quoting used by Git/jsdiff, including octal UTF-8 bytes. */
+function decodeQuotedDiffPath(value: string): string {
+  const inner = value.slice(1, -1);
+  const bytes: number[] = [];
+  const appendText = (text: string) => bytes.push(...Buffer.from(text, "utf8"));
+
+  for (let index = 0; index < inner.length; ) {
+    const character = inner[index]!;
+    if (character !== "\\") {
+      const codePoint = inner.codePointAt(index)!;
+      const text = String.fromCodePoint(codePoint);
+      appendText(text);
+      index += text.length;
+      continue;
+    }
+
+    const octal = /^[0-7]{3}/.exec(inner.slice(index + 1));
+    if (octal) {
+      bytes.push(Number.parseInt(octal[0], 8));
+      index += 4;
+      continue;
+    }
+
+    const escaped = inner[index + 1];
+    if (escaped === undefined) {
+      appendText("\\");
+      break;
+    }
+    appendText(QUOTED_PATH_ESCAPES[escaped] ?? `\\${escaped}`);
+    index += 2;
+  }
+
+  return Buffer.from(bytes).toString("utf8");
+}
+
 function cleanDiffPath(path: string): string {
   const value = path.trim().split("\t", 1)[0] ?? "";
-  let unquoted = value;
-
-  if (value.startsWith('"') && value.endsWith('"')) {
-    try {
-      unquoted = JSON.parse(value) as string;
-    } catch {
-      unquoted = value.slice(1, -1);
-    }
-  }
+  const unquoted =
+    value.startsWith('"') && value.endsWith('"') ? decodeQuotedDiffPath(value) : value;
 
   return unquoted.replace(/\\{2,}/g, "\\");
 }
