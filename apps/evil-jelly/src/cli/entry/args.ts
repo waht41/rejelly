@@ -12,7 +12,6 @@ import { failArgs, resolveOptionalPath, resolveOptionalString } from "./argsSupp
 import {
   type AuditCommandArgs,
   auditSettingsOverrides,
-  hasAuditOnlyArgs,
   parseAuditArgs,
   registerAuditArgs,
 } from "./audit-run/args";
@@ -66,55 +65,14 @@ export function getCliVersion(): string {
 
 const cli = cac("evil");
 
-const HELP_OPTION_PREFIXES = {
-  inspect: [
-    "--json",
-    "--turn",
-    "--segment",
-    "--call",
-    "--tools",
-    "--tool",
-    "--models",
-    "--model",
-    "--tokens",
-    "--latency",
-    "--transport",
-    "--input",
-    "--attempts",
-    "--payload",
-    "--full",
-    "--output",
-    "--top",
-    "--all-workspaces",
-    "--workspace",
-    "-h, --help",
-  ],
-  skills: ["--workspace", "-h, --help"],
-} as const;
-
 function customizeHelpSections(
   sections: Array<{ readonly title?: string; readonly body: string }>,
 ): Array<{ readonly title?: string; readonly body: string }> {
-  const commandName = cli.matchedCommandName ?? cli.matchedCommand?.name ?? "";
-  return sections.map((section) => {
+  return sections.map((section) => ({
+    ...section,
     // CAC models --no-* flags as default=true booleans. Hide that parser implementation detail.
-    let body = section.body.replace(/^(\s+--no-\S+.*?) \(default: true\)$/gm, "$1");
-    const allowedOptionPrefixes =
-      commandName === "inspect"
-        ? HELP_OPTION_PREFIXES.inspect
-        : commandName === "skills"
-          ? HELP_OPTION_PREFIXES.skills
-          : undefined;
-    if (allowedOptionPrefixes && section.title === "Options") {
-      body = body
-        .split("\n")
-        .filter((line) =>
-          allowedOptionPrefixes.some((prefix) => line.trimStart().startsWith(prefix)),
-        )
-        .join("\n");
-    }
-    return { ...section, body };
-  });
+    body: section.body.replace(/^(\s+--no-\S+.*?) \(default: true\)$/gm, "$1"),
+  }));
 }
 
 cli.usage("[command] [options]");
@@ -231,11 +189,6 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
     return { ...common, ...parseInitArgs(options) };
   }
   if (commandName === "audit") {
-    if (options.devtool) {
-      failArgs(
-        "--devtool is not supported by audit; configure a server with use.audit.exposure=always instead",
-      );
-    }
     return { ...common, ...parseAuditArgs(args, options) };
   }
   if (commandName === "inspect") {
@@ -249,24 +202,7 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
     return { ...common, ...parseMcpArgs(args, options, rawMcpAddCommand) };
   }
   if (commandName === "skills") {
-    const unsupported = [
-      options.apiKey !== undefined ? "--api-key" : undefined,
-      options.env !== undefined ? "--env" : undefined,
-      options.review ? "--review" : undefined,
-      options.devtool ? "--devtool" : undefined,
-      options.docMap !== undefined ? "--doc-map" : undefined,
-    ].filter((flag): flag is string => flag !== undefined);
-    if (unsupported.length > 0) {
-      failArgs(
-        `Unsupported skills option${unsupported.length === 1 ? "" : "s"}: ${unsupported.join(", ")}.`,
-      );
-    }
     return { ...common, ...parseSkillsArgs(args) };
-  }
-  if (hasAuditOnlyArgs(options)) {
-    failArgs(
-      "--family/--only-actionable/--max-seeds/--ledger-gc-days/--no-ledger-gc/--doc/--code require the audit subcommand",
-    );
   }
   const runArgs = parseUnifiedRunArgs(args, options);
   return {

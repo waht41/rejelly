@@ -74,12 +74,6 @@ export function parseInspectArgs(
 ): InspectCommandArgs {
   const [rawSessionId, ...rest] = args;
   if (rest.length > 0) failArgs(`Unknown inspect argument: ${rest[0]}`);
-  for (const removedOption of ["tool", "model", "call", "toolCall"] as const) {
-    if (options[removedOption] !== undefined)
-      failArgs(
-        `Unknown inspect option: --${removedOption === "toolCall" ? "tool-call" : removedOption}`,
-      );
-  }
   const inspectSessionId = resolveOptionalString(rawSessionId);
   const inspectAllWorkspaces = Boolean(options.allWorkspaces);
   const inspectTurnId = resolveOptionalString(options.turn);

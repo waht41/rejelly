@@ -98,18 +98,6 @@ export function auditSettingsOverrides(options: Record<string, unknown>): Settin
   };
 }
 
-export function hasAuditOnlyArgs(options: Record<string, unknown>): boolean {
-  return (
-    options.family !== undefined ||
-    options.onlyActionable !== undefined ||
-    options.doc !== undefined ||
-    options.code !== undefined ||
-    options.maxSeeds !== undefined ||
-    options.ledgerGcDays !== undefined ||
-    options.ledgerGc === false
-  );
-}
-
 export function parseAuditArgs(
   args: ReadonlyArray<string>,
   options: Record<string, unknown>,
