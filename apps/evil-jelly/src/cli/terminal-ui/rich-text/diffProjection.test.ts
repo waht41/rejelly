@@ -11,6 +11,16 @@ describe("diff projection", () => {
     expect(file).toMatchObject({ text: ".evil-jelly\\tmp\\new.txt", kind: "file" });
   });
 
+  it("decodes Git-style octal UTF-8 escapes in quoted paths", () => {
+    const [file] = projectUnifiedDiff(
+      '--- "\\344\\270\\255\\345\\272\\217\\351\\201\\215\\345\\216\\206.ts"\n' +
+        '+++ "\\347\\233\\270\\345\\205\\263\\351\\223\\276\\350\\241\\250.ts"\n' +
+        "@@ -1 +1 @@",
+    );
+
+    expect(file).toMatchObject({ text: "相关链表.ts", kind: "file" });
+  });
+
   it("wraps mixed CJK and Latin text by terminal cells with bounded continuation markers", () => {
     const addition = projectUnifiedDiff(`--- a\n+++ a\n@@ -1 +1 @@\n+中文 mixed content 中文`).find(
       (line) => line.kind === "addition",
