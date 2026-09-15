@@ -1,4 +1,4 @@
-import type { CAC } from "cac";
+import type { CAC, Command } from "cac";
 
 export interface InspectCommandArgs {
   readonly kind: "inspect";
@@ -39,8 +39,8 @@ function resolvePositiveInteger(raw: unknown, option: string): number | undefine
   return parsed;
 }
 
-export function registerInspectArgs(cli: CAC): void {
-  cli
+export function registerInspectArgs(cli: CAC): Command {
+  return cli
     .command("inspect [sessionId]", "Inspect durable Session and Turn usage")
     .option("--json", "Print the versioned inspection projection as JSON")
     .option(

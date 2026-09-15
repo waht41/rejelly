@@ -1,4 +1,4 @@
-import type { CAC } from "cac";
+import type { CAC, Command } from "cac";
 
 export type InitCommandArgs = {
   kind: "init";
@@ -13,8 +13,8 @@ function optionalString(raw: unknown): string | undefined {
   return value.length > 0 ? value : undefined;
 }
 
-export function registerInitArgs(cli: CAC): void {
-  cli
+export function registerInitArgs(cli: CAC): Command {
+  return cli
     .command("init", "Setup global config file under ~/.evil-jelly/.env")
     .option(
       "--base-url <url>",

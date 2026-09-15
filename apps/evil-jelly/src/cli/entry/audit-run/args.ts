@@ -1,4 +1,4 @@
-import type { CAC } from "cac";
+import type { CAC, Command } from "cac";
 import {
   SELECTABLE_AUDIT_FAMILIES,
   type SelectableAuditFamilyKind,
@@ -63,12 +63,12 @@ function resolveAuditFamily(raw: unknown): SelectableAuditFamilyKind {
   );
 }
 
-export function registerAuditArgs(cli: CAC): void {
+export function registerAuditArgs(cli: CAC): Command {
   cli.option(
     "--doc-map <path>",
     "Doc map path for doc-drift validation, workspace-relative (default: .evil-jelly/doc-map.jsonc)",
   );
-  cli
+  return cli
     .command("audit", "Run the one-shot audit/report workflow")
     .usage("audit --family <name> [options]")
     .option(
