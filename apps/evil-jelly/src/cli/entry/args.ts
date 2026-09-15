@@ -179,8 +179,27 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
   }
 
   const { args, options } = cli.parse(argv, { run: false });
-  if (options.cwd !== undefined) {
-    throw new Error("Unknown option `--cwd`; use `--workspace <dir>` instead");
+  const commandName = cli.matchedCommandName ?? cli.matchedCommand?.name ?? "";
+  const rawMcpAddCommand = commandName === "mcp" ? extractMcpAddCommand(argv) : undefined;
+  const matchedCommand = cli.matchedCommand;
+  if (matchedCommand) {
+    try {
+      matchedCommand.checkUnknownOptions();
+      matchedCommand.checkOptionValue();
+      matchedCommand.checkRequiredArgs();
+    } catch (error) {
+      // Preserve the actionable separator guidance when an unseparated stdio command contains
+      // flags that CAC would otherwise report as unknown Evil options.
+      if (
+        commandName === "mcp" &&
+        args[0] === "add" &&
+        options.url === undefined &&
+        rawMcpAddCommand === undefined
+      ) {
+        parseMcpArgs(args, options, rawMcpAddCommand);
+      }
+      failArgs(error instanceof Error ? error.message : String(error));
+    }
   }
 
   let profileSelectors: readonly ProfileSelector[] | undefined;
@@ -208,7 +227,6 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
     process.exit(0);
   }
 
-  const commandName = cli.matchedCommandName ?? cli.matchedCommand?.name ?? "";
   if (commandName === "init") {
     return { ...common, ...parseInitArgs(options) };
   }
@@ -228,7 +246,7 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
     return { ...common, ...inspect };
   }
   if (commandName === "mcp") {
-    return { ...common, ...parseMcpArgs(args, options, extractMcpAddCommand(argv)) };
+    return { ...common, ...parseMcpArgs(args, options, rawMcpAddCommand) };
   }
   if (commandName === "skills") {
     const unsupported = [

@@ -152,9 +152,49 @@ describe("parseCliArgs", () => {
   });
 
   it("rejects the removed --cwd option", () => {
-    expect(() => parseCliArgs(["node", "evil", "--cwd", "project-a"])).toThrow(
-      "Unknown option `--cwd`",
-    );
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+
+    expect(() => parseCliArgs(["node", "evil", "--cwd", "project-a"])).toThrow("exit 1");
+    expect(error).toHaveBeenCalledWith("Unknown option `--cwd`");
+  });
+
+  it.each([
+    ["audit rejects a run option", ["audit", "--family", "clone", "--headless"], "--headless"],
+    ["audit rejects an inspect option", ["audit", "--family", "clone", "--json"], "--json"],
+    ["inspect rejects an audit option", ["inspect", "--family", "clone"], "--family"],
+    ["inspect rejects an init option", ["inspect", "--model", "gpt-test"], "--model"],
+    ["init rejects a workspace option", ["init", "--workspace", "."], "--workspace"],
+    ["skills rejects a review option", ["skills", "--review"], "--review"],
+    ["mcp rejects an inspect option", ["mcp", "list", "--json"], "--json"],
+    ["default run rejects an audit option", ["--family", "clone"], "--family"],
+  ])("rejects cross-command options: %s", (_name, argvTail, option) => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+
+    expect(() => parseCliArgs(["node", "evil", ...argvTail])).toThrow("exit 1");
+    expect(error).toHaveBeenCalledWith(`Unknown option \`${option}\``);
+  });
+
+  it.each([
+    ["default API key", ["--api-key"], "--api-key <key>"],
+    ["init env profile", ["init", "--env"], "--env <name|path>"],
+    ["audit family", ["audit", "--family"], "--family <name>"],
+    ["inspect turn", ["inspect", "--turn"], "--turn <selector>"],
+    ["inspect output", ["inspect", "--output"], "--output <path>"],
+    ["MCP URL", ["mcp", "add", "docs", "--url"], "--url <url>"],
+  ])("rejects options with missing values: %s", (_name, argvTail, declaration) => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+
+    expect(() => parseCliArgs(["node", "evil", ...argvTail])).toThrow("exit 1");
+    expect(error).toHaveBeenCalledWith(`option \`${declaration}\` value is missing`);
   });
 
   it("supports init command with API, endpoint, and model options", () => {
@@ -425,14 +465,14 @@ describe("parseCliArgs", () => {
     expect(doctor.skillCommand).toEqual({ action: "doctor" });
   });
 
-  it("rejects global options that have no effect on Skills inspection", () => {
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
+  it("rejects options outside the Skills command scope", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.spyOn(process, "exit").mockImplementation((code) => {
       throw new Error(`exit ${String(code)}`);
     });
 
     expect(() => parseCliArgs(["node", "evil", "skills", "--devtool"])).toThrow("exit 1");
-    expect(console.error).toHaveBeenCalledWith("Unsupported skills option: --devtool.");
+    expect(error).toHaveBeenCalledWith("Unknown option `--devtool`");
   });
 
   it("parses HTTP and stdio MCP additions", () => {
@@ -627,11 +667,8 @@ describe("parseCliArgs", () => {
     });
   });
 
-  it("parses settings-override flags into common settings", () => {
-    const unifiedArgs = parseCliArgs(["node", "evil", "--devtool", "--doc-map", "docs/map.jsonc"]);
-    expect(unifiedArgs.settings).toEqual({
-      docMap: "docs/map.jsonc",
-    });
+  it("parses command-specific settings overrides", () => {
+    const unifiedArgs = parseCliArgs(["node", "evil", "--devtool"]);
     expect(unifiedArgs).toMatchObject({ kind: "unified", devtool: true });
 
     const auditArgs = parseCliArgs([
@@ -836,7 +873,7 @@ describe("parseCliArgs", () => {
     expect(() => parseCliArgs(["node", "evil", "audit", "--family", "clone", "--devtool"])).toThrow(
       "exit 1",
     );
-    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("not supported by audit"));
+    expect(console.error).toHaveBeenCalledWith("Unknown option `--devtool`");
   });
 
   it("rejects DevTool MCP outside the interactive coding workflow", () => {
