@@ -114,6 +114,50 @@ describe("GrepSearchTool contextLines", () => {
     }
   });
 
+  it("reports ripgrep parameter failures instead of treating the backend as unavailable", async () => {
+    execFileSyncMock.mockImplementationOnce(() => {
+      throw Object.assign(new Error("rg failed"), {
+        status: 2,
+        stderr: 'error parsing glob "*[": unclosed character class',
+      });
+    });
+
+    const out = await executeGrepSearch("needle", "*[", 0);
+
+    expect(out).toBe(
+      'grep failed (ripgrep, exit 2): error parsing glob "*[": unclosed character class',
+    );
+    expect(execFileSyncMock).toHaveBeenCalledOnce();
+  });
+
+  it("reports git grep failures after ripgrep is genuinely missing", async () => {
+    execFileSyncMock.mockImplementationOnce(() => {
+      throw Object.assign(new Error("missing rg"), { code: "ENOENT" });
+    });
+    execFileSyncMock.mockImplementationOnce(() => {
+      throw Object.assign(new Error("git grep failed"), {
+        status: 2,
+        stderr: "fatal: invalid pathspec",
+      });
+    });
+
+    const out = await executeGrepSearch("needle", "*[", 0);
+
+    expect(out).toBe("grep failed (git grep, exit 2): fatal: invalid pathspec");
+    expect(execFileSyncMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports native process failures without an exit code", async () => {
+    execFileSyncMock.mockImplementationOnce(() => {
+      throw Object.assign(new Error("spawn buffer exceeded"), { code: "ENOBUFS" });
+    });
+
+    const out = await executeGrepSearch("needle", "*.ts", 0);
+
+    expect(out).toBe("grep failed (ripgrep): spawn buffer exceeded");
+    expect(execFileSyncMock).toHaveBeenCalledOnce();
+  });
+
   it("uses case-insensitive ripgrep to match other grep backends", async () => {
     execFileSyncMock.mockReturnValue("src/file.ts:1:Needle\n");
 

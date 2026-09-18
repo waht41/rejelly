@@ -134,10 +134,19 @@ function truncateOutput(text: string, maxLines = TRUNCATE_MAX_LINES): string {
   );
 }
 
-function execFileStdout(
-  cmd: string,
-  args: string[],
-): { ok: true; stdout: string } | { ok: false; kind: "missing" | "other" } {
+type ExecFileOutcome =
+  | { ok: true; stdout: string }
+  | { ok: false; kind: "missing" }
+  | { ok: false; kind: "failed"; message: string; exitCode?: number };
+
+function errorOutput(value: string | Buffer | undefined): string {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  return value?.toString("utf8").trim() ?? "";
+}
+
+function execFileStdout(cmd: string, args: string[]): ExecFileOutcome {
   try {
     const stdout = execFileSync(cmd, args, {
       encoding: "utf8",
@@ -146,22 +155,28 @@ function execFileStdout(
       stdio: ["ignore", "pipe", "pipe"],
     });
     return { ok: true, stdout: typeof stdout === "string" ? stdout : String(stdout) };
-  } catch (e: unknown) {
-    const err = e as { status?: number; stdout?: string | Buffer; code?: string };
+  } catch (error: unknown) {
+    const err = error as {
+      status?: number;
+      stdout?: string | Buffer;
+      stderr?: string | Buffer;
+      code?: string;
+      message?: string;
+    };
     if (err.code === "ENOENT") {
       return { ok: false, kind: "missing" };
     }
     // ripgrep / git grep: exit 1 == no matches; stdout may still be empty
     if (err.status === 1) {
-      const raw =
-        typeof err.stdout === "string"
-          ? err.stdout
-          : err.stdout != null
-            ? err.stdout.toString("utf8")
-            : "";
-      return { ok: true, stdout: raw };
+      return { ok: true, stdout: errorOutput(err.stdout) };
     }
-    return { ok: false, kind: "other" };
+    const detail = errorOutput(err.stderr) || err.message?.trim() || "Unknown process error.";
+    return {
+      ok: false,
+      kind: "failed",
+      message: truncateTotalOutput(detail),
+      ...(err.status === undefined ? {} : { exitCode: err.status }),
+    };
   }
 }
 
@@ -169,7 +184,8 @@ function execFileStdout(
 type NativeSearchOutcome =
   | { kind: "hits"; text: string }
   | { kind: "empty" }
-  | { kind: "unavailable" };
+  | { kind: "unavailable" }
+  | { kind: "failed"; message: string };
 
 /**
  * Git pathspec does not perform shell brace expansion; patterns like `*.{ts,tsx}` are literal.
@@ -385,7 +401,11 @@ function runRipgrep(
   }
   const result = execFileStdout("rg", args);
   if (!result.ok) {
-    return { kind: "unavailable" };
+    if (result.kind === "missing") {
+      return { kind: "unavailable" };
+    }
+    const exit = result.exitCode === undefined ? "" : `, exit ${result.exitCode}`;
+    return { kind: "failed", message: `grep failed (ripgrep${exit}): ${result.message}` };
   }
   const out = renderSearchResults(
     parseNativeSearchOutput(result.stdout),
@@ -420,7 +440,11 @@ function runGitGrep(
   }
   const result = execFileStdout("git", args);
   if (!result.ok) {
-    return { kind: "unavailable" };
+    if (result.kind === "missing") {
+      return { kind: "unavailable" };
+    }
+    const exit = result.exitCode === undefined ? "" : `, exit ${result.exitCode}`;
+    return { kind: "failed", message: `grep failed (git grep${exit}): ${result.message}` };
   }
   const out = renderSearchResults(
     parseNativeSearchOutput(result.stdout),
@@ -635,11 +659,17 @@ export async function executeGrepSearch(
     return await fallbackNodeSearch(query, filePattern, contextLines, options);
   }
   const rg = runRipgrep(query, mode, filePattern, contextLines);
+  if (rg.kind === "failed") {
+    return rg.message;
+  }
   if (rg.kind !== "unavailable") {
     return rg.kind === "hits" ? rg.text : "No matches found (ripgrep).";
   }
 
   const git = runGitGrep(query, mode, filePattern, contextLines);
+  if (git.kind === "failed") {
+    return git.message;
+  }
   if (git.kind !== "unavailable") {
     return git.kind === "hits" ? git.text : "No matches found (git grep).";
   }
