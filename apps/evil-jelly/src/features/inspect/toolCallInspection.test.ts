@@ -151,6 +151,8 @@ describe("Tool call inspection", () => {
       sessionId: "session-1",
       turnId: "turn-1",
       turnNumber: 1,
+      ordinal: 1,
+      address: "TC1",
       toolCallId: "call-1",
       toolName: "grep",
       selectedSide: "request",
@@ -169,7 +171,8 @@ describe("Tool call inspection", () => {
       emittedLines: 45,
       source: "recorded",
     });
-    expect(renderToolCallInspection(resultSelection)).toContain("Tool call #3");
+    expect(renderToolCallInspection(resultSelection)).toContain("Tool call TC1");
+    expect(renderToolCallInspection(resultSelection)).toContain("Selected segment: #3");
     expect(renderToolCallInspection(resultSelection)).toContain("Session: session-1");
     expect(renderToolCallInspection(resultSelection)).toContain("Turn: 1 (turn-1)");
     expect(renderToolCallInspection(resultSelection)).toContain("Search output");
@@ -239,8 +242,13 @@ describe("Tool call inspection", () => {
     const waterfall = projectTurnWaterfall(meta, events, "turn-1");
 
     expect(resolveToolCallTurnId(events, "call-1")).toBe("turn-1");
+    expect(resolveToolCallTurnId(events, "TC1")).toBe("turn-1");
     expect(resolveToolCallTurnId(events, "grep")).toBeUndefined();
     expect(findToolCallTurnId(events, "call-1")).toBe("turn-1");
+    expect(findToolCallTurnId(events, "tc1")).toBe("turn-1");
+    expect(() => resolveToolCallTurnId(events, "TC2")).toThrow(
+      "Tool Call address TC2 is outside this Session",
+    );
     expect(projectToolCallInspection(meta, events, waterfall, "call-1").selectedSide).toBe(
       "result",
     );

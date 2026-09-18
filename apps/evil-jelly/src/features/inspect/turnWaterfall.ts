@@ -7,6 +7,7 @@ import {
 import { estimateMessagesTokens } from "../../shared/model/budget/tokenEstimate";
 import { projectFrozenUserInputMessage } from "../../shared/model/prompt/frozenUserInput";
 import { type PromptMetrics, projectPromptMetrics } from "./promptMetrics";
+import { projectToolCallIdentities } from "./toolCallAddress";
 
 export type TurnWaterfallSegmentKind =
   | "user"
@@ -20,6 +21,7 @@ export type TurnWaterfallSegmentKind =
 export interface TurnWaterfallChild {
   label: string;
   toolCallId?: string;
+  toolCallAddress?: string;
   tokens: number;
   tokenSource: "estimated";
   contextTokens: number;
@@ -31,6 +33,7 @@ export interface TurnWaterfallSegment {
   kind: TurnWaterfallSegmentKind;
   label: string;
   toolCallId?: string;
+  toolCallAddress?: string;
   tokens: number;
   tokenSource: "provider" | "estimated";
   contextTokens: number;
@@ -64,6 +67,7 @@ export interface TurnWaterfallTopContributor {
   address: string;
   label: string;
   toolCallId?: string;
+  toolCallAddress?: string;
   tokens: number;
   tokenSource: "provider" | "estimated";
   share: number;
@@ -114,6 +118,7 @@ function allocateParallelToolTokens(
   totalTokens: number,
   calls: NonNullable<Message["tool_calls"]>,
   initialContextTokens: number,
+  toolCallAddresses: ReadonlyMap<string, string>,
 ): TurnWaterfallChild[] {
   const weights = calls.map((call) =>
     Math.max(1, messageTokens({ role: "assistant", content: null, tool_calls: [call] })),
@@ -131,6 +136,9 @@ function allocateParallelToolTokens(
     return {
       label: `${call.name} request`,
       toolCallId: call.id,
+      ...(toolCallAddresses.get(call.id)
+        ? { toolCallAddress: toolCallAddresses.get(call.id) }
+        : {}),
       tokens,
       tokenSource: "estimated",
       contextTokens: childContextTokens,
@@ -145,6 +153,9 @@ export function projectTurnWaterfall(
   turnId: string,
 ): TurnWaterfallInspection {
   const known = events.filter(isKnownSessionEvent);
+  const toolCallAddresses = new Map(
+    projectToolCallIdentities(events).map((identity) => [identity.toolCallId, identity.address]),
+  );
   const modelCallAddresses = new Map<number, string>();
   let globalModelCallNumber = 0;
   for (const event of known) {
@@ -207,7 +218,7 @@ export function projectTurnWaterfall(
       seq,
       kind,
       label,
-      ...(toolCallId ? { toolCallId } : {}),
+      ...(toolCallId ? { toolCallId, toolCallAddress: toolCallAddresses.get(toolCallId) } : {}),
       tokens,
       tokenSource,
       contextTokens,
@@ -248,6 +259,9 @@ export function projectTurnWaterfall(
     segment.children!.push({
       label,
       toolCallId,
+      ...(toolCallAddresses.get(toolCallId)
+        ? { toolCallAddress: toolCallAddresses.get(toolCallId) }
+        : {}),
       tokens,
       tokenSource: "estimated",
       contextTokens,
@@ -328,6 +342,7 @@ export function projectTurnWaterfall(
               visibleTokens,
               calls,
               initialContextTokens,
+              toolCallAddresses,
             );
           }
         }
@@ -438,6 +453,7 @@ function projectTopContributorCandidates(
         address: `${segmentIndex + 1}.${childIndex + 1}`,
         label: child.label,
         ...(child.toolCallId ? { toolCallId: child.toolCallId } : {}),
+        ...(child.toolCallAddress ? { toolCallAddress: child.toolCallAddress } : {}),
         tokens: child.tokens,
         tokenSource: child.tokenSource,
       }));
@@ -448,6 +464,7 @@ function projectTopContributorCandidates(
         address: String(segmentIndex + 1),
         label: segment.label,
         ...(segment.toolCallId ? { toolCallId: segment.toolCallId } : {}),
+        ...(segment.toolCallAddress ? { toolCallAddress: segment.toolCallAddress } : {}),
         tokens: segment.tokens,
         tokenSource: segment.tokenSource,
       },

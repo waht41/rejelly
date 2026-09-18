@@ -138,13 +138,20 @@ describe("Tool aggregation inspection", () => {
     expect(renderToolAggregation(inspection)).toContain("avg result");
     expect(renderToolAggregation(inspection)).toContain("Unused tools (2)");
     expect(renderToolAggregation(inspection)).toContain("edit_file, run_command");
+    expect(inspection.calls.map((call) => call.address)).toEqual(["TC1", "TC2", "TC3"]);
     expect(renderToolAggregation(inspection)).toContain("summed execution");
+    expect(renderToolAggregation(inspection)).toContain("TC1");
+    expect(renderToolAggregation(inspection)).toContain(
+      "Inspect one call with --tools <TC-address-or-id>.",
+    );
   });
 
   it("renders Turn aggregation, Tool detail, failures, and largest calls", () => {
     const turn = projectToolAggregation(meta, events, { turnId: "turn-1" });
     expect(renderToolAggregation(turn)).toContain("Tools — Turn turn-1");
-    expect(renderToolAggregation(turn)).toContain("Largest results");
+    expect(renderToolAggregation(turn)).toContain("Calls");
+    expect(renderToolAggregation(turn)).not.toContain("Largest results");
+    expect(renderToolAggregation(turn)).toContain("TC3  Turn 1  read_file");
 
     const grep = projectToolAggregation(meta, events, { toolName: "grep" });
     const rendered = renderToolAggregation(grep);

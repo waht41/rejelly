@@ -51,7 +51,7 @@ export function registerInspectArgs(cli: CAC): Command {
       "--segment <address>",
       "Inspect one persisted waterfall segment or Initial context (N, N.M, or C1)",
     )
-    .option("--tools [selector]", "Inspect Tool calls (all, Tool name, or ToolCall ID)")
+    .option("--tools [selector]", "Inspect Tool calls (all, Tool name, TC address, or ToolCall ID)")
     .option("--models [selector]", "Inspect Model calls; selector may be an address or range")
     .option("--tokens", "Use the Model Call token profile")
     .option("--latency", "Use the Model Call latency profile")

@@ -3,11 +3,13 @@ import {
   type SessionEvent,
   type SessionMetaLine,
 } from "../../domains/session/model/sessionEvents";
+import { projectToolCallIdentities } from "./toolCallAddress";
 import { projectToolCallInspection, type ToolCallInspection } from "./toolCallInspection";
 import { projectTurnWaterfall } from "./turnWaterfall";
 
 export interface AggregatedToolCall {
   ordinal: number;
+  address: string;
   toolCallId: string;
   toolName: string;
   turnId?: string;
@@ -79,14 +81,6 @@ export interface ToolAggregationInspection {
   calls: AggregatedToolCall[];
   largestCalls: AggregatedToolCall[];
   failedCalls: AggregatedToolCall[];
-}
-
-interface CallIdentity {
-  toolCallId: string;
-  toolName?: string;
-  turnId?: string;
-  firstSeq: number;
-  firstTimestamp: number;
 }
 
 function percentile(values: readonly number[], fraction: number): number {
@@ -202,56 +196,6 @@ function turnNumbers(events: readonly SessionEvent[]): Map<string, number> {
   );
 }
 
-function collectCallIdentities(events: readonly SessionEvent[]): CallIdentity[] {
-  const calls = new Map<string, CallIdentity>();
-  const record = (
-    toolCallId: string,
-    seq: number,
-    timestamp: number,
-    toolName?: string,
-    turnId?: string,
-  ): void => {
-    const existing = calls.get(toolCallId);
-    if (!existing) {
-      calls.set(toolCallId, {
-        toolCallId,
-        toolName,
-        turnId,
-        firstSeq: seq,
-        firstTimestamp: timestamp,
-      });
-      return;
-    }
-    existing.toolName ??= toolName;
-    existing.turnId ??= turnId;
-    if (seq < existing.firstSeq) {
-      existing.firstSeq = seq;
-      existing.firstTimestamp = timestamp;
-    }
-  };
-  for (const event of events) {
-    if (!isKnownSessionEvent(event)) continue;
-    if (event.type === "tool_call_completed" || event.type === "tool_observation_recorded") {
-      record(event.toolCallId, event.seq, event.timestamp, event.toolName, event.turnId);
-    }
-    if (event.type === "message_recorded") {
-      for (const call of event.message.tool_calls ?? []) {
-        record(call.id, event.seq, event.timestamp, call.name, event.turnId);
-      }
-      if (event.message.tool_call_id) {
-        record(
-          event.message.tool_call_id,
-          event.seq,
-          event.timestamp,
-          event.message.name,
-          event.turnId,
-        );
-      }
-    }
-  }
-  return [...calls.values()].sort((left, right) => left.firstSeq - right.firstSeq);
-}
-
 export function projectToolCalls(
   meta: SessionMetaLine,
   events: readonly SessionEvent[],
@@ -272,7 +216,7 @@ export function projectToolCalls(
     ),
   );
   const waterfalls = new Map<string, ReturnType<typeof projectTurnWaterfall>>();
-  return collectCallIdentities(events).map((identity, index) => {
+  return projectToolCallIdentities(events).map((identity) => {
     const completion = completions.get(identity.toolCallId);
     const observation = observations.get(identity.toolCallId);
     let inspection: ToolCallInspection | undefined;
@@ -291,7 +235,8 @@ export function projectToolCalls(
       completion?.outcome ??
       (completion?.transportOk === false ? "failed" : completion ? "succeeded" : observedStatus);
     return {
-      ordinal: index + 1,
+      ordinal: identity.ordinal,
+      address: identity.address,
       toolCallId: identity.toolCallId,
       toolName: inspection?.toolName ?? identity.toolName ?? "unknown",
       ...(identity.turnId

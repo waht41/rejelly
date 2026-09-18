@@ -77,7 +77,7 @@ describe("parseCliArgs", () => {
     expect(help).toContain("--segment <address>");
     expect(help).toContain("N, N.M, or C1");
     expect(help).toMatch(
-      /\n {2}--tools \[selector\]\s+Inspect Tool calls \(all, Tool name, or ToolCall ID\)/,
+      /\n {2}--tools \[selector\]\s+Inspect Tool calls \(all, Tool name, TC address, or ToolCall ID\)/,
     );
     expect(help).toContain("--models [selector]");
     expect(help).not.toContain("--tool <name>");

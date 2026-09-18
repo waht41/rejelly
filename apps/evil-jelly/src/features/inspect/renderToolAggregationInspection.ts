@@ -84,10 +84,8 @@ function renderAggregateTable(inspection: ToolAggregationInspection): string[] {
 }
 
 function callLabel(call: AggregatedToolCall, includeTool: boolean): string {
-  const turn = call.turnNumber ? `T${call.turnNumber}` : (call.turnId ?? "-");
-  return [turn, includeTool ? call.toolName : undefined, call.toolCallId]
-    .filter(Boolean)
-    .join("  ");
+  const turn = call.turnNumber ? `Turn ${call.turnNumber}` : (call.turnId ?? "-");
+  return [call.address, turn, includeTool ? call.toolName : undefined].filter(Boolean).join("  ");
 }
 
 function renderCalls(
@@ -213,9 +211,13 @@ export function renderToolAggregation(inspection: ToolAggregationInspection): st
         `  ${inspection.unusedTools.join(", ")}`,
       );
     }
-    if (inspection.scope === "turn") {
-      const largest = renderCalls("Largest results", inspection.largestCalls, true);
-      if (largest.length > 0) lines.push("", ...largest);
+    const calls =
+      inspection.scope === "turn"
+        ? renderCalls("Calls", inspection.calls, true)
+        : renderCalls("Largest results", inspection.largestCalls, true);
+    if (calls.length > 0) lines.push("", ...calls);
+    if (inspection.scope === "session") {
+      lines.push("", "Inspect one call with --tools <TC-address-or-id>.");
     }
     lines.push(
       "",

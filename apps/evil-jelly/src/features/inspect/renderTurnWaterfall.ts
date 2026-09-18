@@ -28,8 +28,9 @@ function label(value: string, width = LABEL_WIDTH): string {
   return value.length <= width ? value.padEnd(width) : `${value.slice(0, width - 1)}…`;
 }
 
-function toolLabel(value: string, toolCallId?: string): string {
-  return toolCallId ? `${value} [${toolCallId}]` : value;
+function toolLabel(value: string, toolCallAddress?: string, toolCallId?: string): string {
+  const identity = toolCallAddress ?? toolCallId;
+  return identity ? `${value} [${identity}]` : value;
 }
 
 function bar(tokens: number, positiveLargest: number, negativeLargest: number): string {
@@ -57,7 +58,7 @@ function childLine(
   positiveLargest: number,
   negativeLargest: number,
 ): string {
-  return `${address.padStart(4)} ${last ? "└─" : "├─"} ${label(toolLabel(child.label, child.toolCallId), LABEL_WIDTH - 3)} ${values(child.tokens, child.tokenSource, child.contextTokens, child.contextSource)}   ${bar(child.tokens, positiveLargest, negativeLargest)}`;
+  return `${address.padStart(4)} ${last ? "└─" : "├─"} ${label(toolLabel(child.label, child.toolCallAddress, child.toolCallId), LABEL_WIDTH - 3)} ${values(child.tokens, child.tokenSource, child.contextTokens, child.contextSource)}   ${bar(child.tokens, positiveLargest, negativeLargest)}`;
 }
 
 export function renderTurnWaterfall(
@@ -135,7 +136,7 @@ export function renderTurnWaterfall(
       return;
     }
     lines.push(
-      `${String(index + 1).padStart(4)}   ${label(toolLabel(segment.label, segment.toolCallId))} ${values(segment.tokens, segment.tokenSource, segment.contextTokens, segment.contextSource)}   ${bar(segment.tokens, positiveLargest, negativeLargest)}`,
+      `${String(index + 1).padStart(4)}   ${label(toolLabel(segment.label, segment.toolCallAddress, segment.toolCallId))} ${values(segment.tokens, segment.tokenSource, segment.contextTokens, segment.contextSource)}   ${bar(segment.tokens, positiveLargest, negativeLargest)}`,
     );
   });
   appendCheckpointsThrough(Number.POSITIVE_INFINITY);
@@ -146,7 +147,11 @@ export function renderTurnWaterfall(
     else {
       for (const contributor of contributors) {
         const estimated = contributor.tokenSource === "estimated" ? "~" : " ";
-        const name = toolLabel(contributor.label, contributor.toolCallId);
+        const name = toolLabel(
+          contributor.label,
+          contributor.toolCallAddress,
+          contributor.toolCallId,
+        );
         lines.push(
           ` #${contributor.address.padEnd(5)} ${label(name, 50)} ${estimated}${compactTokens(contributor.tokens).slice(1).padStart(8)}  ${(contributor.share * 100).toFixed(1).padStart(5)}%`,
         );
@@ -157,6 +162,7 @@ export function renderTurnWaterfall(
     "",
     "~ estimated from canonical message content; unmarked token counts are provider-reported.",
     "Model input checkpoints align the running estimate to provider-reported input; M-addresses are Session-global Model Call addresses.",
+    "TC-addresses are Session-global Tool Call addresses; inspect one with --tools <TC-address-or-id>.",
     "Parallel Tool Results are grouped by request batch and ordered by conversation admission, not necessarily completion time.",
   );
   if (inspection.warnings.length > 0)
