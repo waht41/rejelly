@@ -32,7 +32,11 @@ const DEFAULT_CONTEXT_LINES = 3;
 const MAX_CONTEXT_LINES = 12;
 
 const GrepSearchSchema = z.object({
-  query: z.string().min(1).describe("Keyword or regex pattern to search for."),
+  query: z.string().min(1).describe("Text or regex pattern to search for."),
+  mode: z
+    .enum(["literal", "regex"])
+    .default("literal")
+    .describe("Interpret query as literal text by default, or as a regular expression."),
   filePattern: z
     .string()
     .optional()
@@ -130,10 +134,19 @@ function truncateOutput(text: string, maxLines = TRUNCATE_MAX_LINES): string {
   );
 }
 
-function execFileStdout(
-  cmd: string,
-  args: string[],
-): { ok: true; stdout: string } | { ok: false; kind: "missing" | "other" } {
+type ExecFileOutcome =
+  | { ok: true; stdout: string }
+  | { ok: false; kind: "missing" }
+  | { ok: false; kind: "failed"; message: string; exitCode?: number };
+
+function errorOutput(value: string | Buffer | undefined): string {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  return value?.toString("utf8").trim() ?? "";
+}
+
+function execFileStdout(cmd: string, args: string[]): ExecFileOutcome {
   try {
     const stdout = execFileSync(cmd, args, {
       encoding: "utf8",
@@ -142,22 +155,28 @@ function execFileStdout(
       stdio: ["ignore", "pipe", "pipe"],
     });
     return { ok: true, stdout: typeof stdout === "string" ? stdout : String(stdout) };
-  } catch (e: unknown) {
-    const err = e as { status?: number; stdout?: string | Buffer; code?: string };
+  } catch (error: unknown) {
+    const err = error as {
+      status?: number;
+      stdout?: string | Buffer;
+      stderr?: string | Buffer;
+      code?: string;
+      message?: string;
+    };
     if (err.code === "ENOENT") {
       return { ok: false, kind: "missing" };
     }
     // ripgrep / git grep: exit 1 == no matches; stdout may still be empty
     if (err.status === 1) {
-      const raw =
-        typeof err.stdout === "string"
-          ? err.stdout
-          : err.stdout != null
-            ? err.stdout.toString("utf8")
-            : "";
-      return { ok: true, stdout: raw };
+      return { ok: true, stdout: errorOutput(err.stdout) };
     }
-    return { ok: false, kind: "other" };
+    const detail = errorOutput(err.stderr) || err.message?.trim() || "Unknown process error.";
+    return {
+      ok: false,
+      kind: "failed",
+      message: truncateTotalOutput(detail),
+      ...(err.status === undefined ? {} : { exitCode: err.status }),
+    };
   }
 }
 
@@ -165,7 +184,8 @@ function execFileStdout(
 type NativeSearchOutcome =
   | { kind: "hits"; text: string }
   | { kind: "empty" }
-  | { kind: "unavailable" };
+  | { kind: "unavailable" }
+  | { kind: "failed"; message: string };
 
 /**
  * Git pathspec does not perform shell brace expansion; patterns like `*.{ts,tsx}` are literal.
@@ -357,6 +377,7 @@ function gitExcludePathspecs(): string[] {
 
 function runRipgrep(
   query: string,
+  mode: GrepSearchMode,
   filePattern?: string,
   contextLines = DEFAULT_CONTEXT_LINES,
 ): NativeSearchOutcome {
@@ -367,6 +388,7 @@ function runRipgrep(
     "-n",
     "-H",
     "-i",
+    ...(mode === "literal" ? ["-F"] : []),
     "--max-columns",
     String(MAX_GREP_OUTPUT_LINE_BYTES),
     "--max-columns-preview",
@@ -379,7 +401,11 @@ function runRipgrep(
   }
   const result = execFileStdout("rg", args);
   if (!result.ok) {
-    return { kind: "unavailable" };
+    if (result.kind === "missing") {
+      return { kind: "unavailable" };
+    }
+    const exit = result.exitCode === undefined ? "" : `, exit ${result.exitCode}`;
+    return { kind: "failed", message: `grep failed (ripgrep${exit}): ${result.message}` };
   }
   const out = renderSearchResults(
     parseNativeSearchOutput(result.stdout),
@@ -390,6 +416,7 @@ function runRipgrep(
 
 function runGitGrep(
   query: string,
+  mode: GrepSearchMode,
   filePattern?: string,
   contextLines = DEFAULT_CONTEXT_LINES,
 ): NativeSearchOutcome {
@@ -399,7 +426,7 @@ function runGitGrep(
     "-n",
     "-I",
     "-i",
-    "-E",
+    mode === "literal" ? "-F" : "-E",
     "-e",
     query,
     "-C",
@@ -413,7 +440,11 @@ function runGitGrep(
   }
   const result = execFileStdout("git", args);
   if (!result.ok) {
-    return { kind: "unavailable" };
+    if (result.kind === "missing") {
+      return { kind: "unavailable" };
+    }
+    const exit = result.exitCode === undefined ? "" : `, exit ${result.exitCode}`;
+    return { kind: "failed", message: `grep failed (git grep${exit}): ${result.message}` };
   }
   const out = renderSearchResults(
     parseNativeSearchOutput(result.stdout),
@@ -487,6 +518,24 @@ function matchGlob(fileRel: string, pattern?: string): boolean {
   return false;
 }
 
+function invalidRegexMessage(query: string, error: unknown): string {
+  const reason = error instanceof Error ? error.message : String(error);
+  return (
+    `Invalid regex for mode="regex": ${reason}. ` +
+    `Query: ${JSON.stringify(query)}. ` +
+    'Use mode="literal" to search for the exact text, or escape regex metacharacters ' +
+    '(for example, "\\\\(" matches a literal opening parenthesis).'
+  );
+}
+
+function compileRegex(query: string): { regex: RegExp } | { error: string } {
+  try {
+    return { regex: new RegExp(query, "i") };
+  } catch (error: unknown) {
+    return { error: invalidRegexMessage(query, error) };
+  }
+}
+
 async function fallbackNodeSearch(
   query: string,
   filePattern?: string,
@@ -494,12 +543,17 @@ async function fallbackNodeSearch(
   options: GrepSearchOptions = {},
 ): Promise<string> {
   const policy = getWorkspaceFiles();
-  let re: RegExp;
-  try {
-    re = new RegExp(query, "i");
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return `Invalid regex for Node fallback: ${msg}`;
+  const mode = options.mode ?? "literal";
+  let matchesLine: (line: string) => boolean;
+  if (mode === "literal") {
+    const normalizedQuery = query.toLocaleLowerCase();
+    matchesLine = (line) => line.toLocaleLowerCase().includes(normalizedQuery);
+  } else {
+    const compiled = compileRegex(query);
+    if ("error" in compiled) {
+      return compiled.error;
+    }
+    matchesLine = (line) => compiled.regex.test(line);
   }
 
   const directory = options.directory ?? ".";
@@ -549,7 +603,7 @@ async function fallbackNodeSearch(
     const matchedLineNumbers = new Set<number>();
 
     for (let i = 0; i < lines.length; i++) {
-      if (re.test(lines[i])) {
+      if (matchesLine(lines[i] ?? "")) {
         matchedLineNumbers.add(i + 1);
       }
     }
@@ -580,9 +634,12 @@ async function fallbackNodeSearch(
 }
 
 /** Shared ripgrep / git grep / Node fallback pipeline (also used by planner-scoped grep). */
+export type GrepSearchMode = "literal" | "regex";
+
 export interface GrepSearchOptions {
   directory?: string;
   includeIgnored?: boolean;
+  mode?: GrepSearchMode;
 }
 
 export async function executeGrepSearch(
@@ -591,15 +648,28 @@ export async function executeGrepSearch(
   contextLines = DEFAULT_CONTEXT_LINES,
   options: GrepSearchOptions = {},
 ): Promise<string> {
+  const mode = options.mode ?? "literal";
+  if (mode === "regex") {
+    const compiled = compileRegex(query);
+    if ("error" in compiled) {
+      return compiled.error;
+    }
+  }
   if ((options.directory ?? ".") !== "." || options.includeIgnored) {
     return await fallbackNodeSearch(query, filePattern, contextLines, options);
   }
-  const rg = runRipgrep(query, filePattern, contextLines);
+  const rg = runRipgrep(query, mode, filePattern, contextLines);
+  if (rg.kind === "failed") {
+    return rg.message;
+  }
   if (rg.kind !== "unavailable") {
     return rg.kind === "hits" ? rg.text : "No matches found (ripgrep).";
   }
 
-  const git = runGitGrep(query, filePattern, contextLines);
+  const git = runGitGrep(query, mode, filePattern, contextLines);
+  if (git.kind === "failed") {
+    return git.message;
+  }
   if (git.kind !== "unavailable") {
     return git.kind === "hits" ? git.text : "No matches found (git grep).";
   }
@@ -610,7 +680,7 @@ export async function executeGrepSearch(
 export const GrepSearchTool: ToolDefinition<typeof GrepSearchSchema> = {
   name: "grep",
   description:
-    "Search files for text or regex patterns (like grep/ripgrep) to find usages and definitions. " +
+    'Search files for literal text by default, or set mode="regex" for regular expressions, to find usages and definitions. ' +
     "Skips node_modules and .git. Uses ripgrep when available, then git grep if rg is missing, then a bounded Node scan only if both native tools are unavailable. " +
     "Native tools mostly respect .gitignore; git grep expands trailing `*.{ext,...}` style globs into multiple pathspecs. " +
     "Use directory plus includeIgnored for a bounded ignored-subtree search; node_modules requires a concrete package path. " +
@@ -619,7 +689,11 @@ export const GrepSearchTool: ToolDefinition<typeof GrepSearchSchema> = {
     `The complete response is capped at ${MAX_GREP_OUTPUT_BYTES / 1024} KB. ` +
     "The Node fallback uses case-insensitive JavaScript RegExp (`i` flag) and picomatch for filePattern.",
   parameters: GrepSearchSchema,
-  handler: async ({ query, filePattern, contextLines, directory, includeIgnored }) => {
-    return executeGrepSearch(query, filePattern, contextLines, { directory, includeIgnored });
+  handler: async ({ query, mode, filePattern, contextLines, directory, includeIgnored }) => {
+    return executeGrepSearch(query, filePattern, contextLines, {
+      directory,
+      includeIgnored,
+      mode,
+    });
   },
 };
