@@ -49,21 +49,32 @@ describe("GrepSearchTool contextLines", () => {
     execFileSyncMock.mockReset();
   });
 
-  it("uses default contextLines=3 in rg args", async () => {
-    execFileSyncMock.mockReturnValue("src/file.ts:1:needle\n");
+  it("defaults to literal mode and contextLines=3 in rg args", async () => {
+    execFileSyncMock.mockReturnValue("src/file.ts:1:recordModelCall(\n");
 
     const parsed = GrepSearchTool.parameters.parse({
-      query: "needle",
+      query: "recordModelCall(",
     });
     const out = await GrepSearchTool.handler(parsed);
 
-    expect(out).toContain("src/file.ts\n> 1 | needle");
+    expect(parsed.mode).toBe("literal");
+    expect(out).toContain("src/file.ts\n> 1 | recordModelCall(");
     expect(execFileSyncMock).toHaveBeenCalledOnce();
     expect(execFileSyncMock).toHaveBeenCalledWith(
       "rg",
-      expect.arrayContaining(["-C", "3"]),
+      expect.arrayContaining(["-F", "recordModelCall(", "-C", "3"]),
       expect.any(Object),
     );
+  });
+
+  it("omits fixed-string mode when regex mode is explicit", async () => {
+    execFileSyncMock.mockReturnValue("src/file.ts:1:recordModelCall(\n");
+
+    await executeGrepSearch("recordModelCall\\(", "*.ts", 0, { mode: "regex" });
+
+    const args = execFileSyncMock.mock.calls[0]?.[1] as string[];
+    expect(args).not.toContain("-F");
+    expect(args).toContain("recordModelCall\\(");
   });
 
   it("derives ripgrep excluded directories from fs policy constants", async () => {
@@ -150,7 +161,9 @@ describe("GrepSearchTool contextLines", () => {
       ].join("\n"),
     );
 
-    const out = await executeGrepSearch("inspect|sessionId|latest", "*.ts", 1);
+    const out = await executeGrepSearch("inspect|sessionId|latest", "*.ts", 1, {
+      mode: "regex",
+    });
 
     expect(out.split("src/a.ts")).toHaveLength(2);
     expect(out).toContain("src/a.ts\n  1 | before");
@@ -291,6 +304,41 @@ describe("GrepSearchTool Node fallback context merge", () => {
     expect(out).toContain("  11 | around-d");
   });
 
+  it("treats regex metacharacters literally by default in the Node fallback", async () => {
+    const missingBinaryError = () =>
+      Object.assign(new Error("missing binary"), {
+        code: "ENOENT",
+      });
+    execFileSyncMock.mockImplementation(() => {
+      throw missingBinaryError();
+    });
+    await fs.writeFile(
+      path.join(tmpDir, "literal.ts"),
+      "recordModelCall(\nrecordModelCallX\n",
+      "utf8",
+    );
+
+    const out = await executeGrepSearch("recordModelCall(", "*.ts", 0);
+
+    expect(out).toContain("literal.ts\n> 1 | recordModelCall(");
+    expect(out).not.toContain("recordModelCallX");
+  });
+
+  it("reports invalid explicit regexes with literal-mode guidance", async () => {
+    const missingBinaryError = () =>
+      Object.assign(new Error("missing binary"), {
+        code: "ENOENT",
+      });
+    execFileSyncMock.mockImplementation(() => {
+      throw missingBinaryError();
+    });
+
+    const out = await executeGrepSearch("recordModelCall(", "*.ts", 0, { mode: "regex" });
+
+    expect(out).toContain("Invalid regex:");
+    expect(out).toContain('Use mode="literal"');
+  });
+
   it("renders a same-line multi-alternative match once", async () => {
     const missingBinaryError = () =>
       Object.assign(new Error("missing binary"), {
@@ -301,7 +349,9 @@ describe("GrepSearchTool Node fallback context merge", () => {
     });
     await fs.writeFile(path.join(tmpDir, "same-line.ts"), "inspect sessionId latest\n", "utf8");
 
-    const out = await executeGrepSearch("inspect|sessionId|latest", "*.ts", 0);
+    const out = await executeGrepSearch("inspect|sessionId|latest", "*.ts", 0, {
+      mode: "regex",
+    });
 
     expect(out.split("> 1 |")).toHaveLength(2);
     expect(out).toContain("same-line.ts\n> 1 | inspect sessionId latest");

@@ -32,7 +32,11 @@ const DEFAULT_CONTEXT_LINES = 3;
 const MAX_CONTEXT_LINES = 12;
 
 const GrepSearchSchema = z.object({
-  query: z.string().min(1).describe("Keyword or regex pattern to search for."),
+  query: z.string().min(1).describe("Text or regex pattern to search for."),
+  mode: z
+    .enum(["literal", "regex"])
+    .default("literal")
+    .describe("Interpret query as literal text by default, or as a regular expression."),
   filePattern: z
     .string()
     .optional()
@@ -357,6 +361,7 @@ function gitExcludePathspecs(): string[] {
 
 function runRipgrep(
   query: string,
+  mode: GrepSearchMode,
   filePattern?: string,
   contextLines = DEFAULT_CONTEXT_LINES,
 ): NativeSearchOutcome {
@@ -367,6 +372,7 @@ function runRipgrep(
     "-n",
     "-H",
     "-i",
+    ...(mode === "literal" ? ["-F"] : []),
     "--max-columns",
     String(MAX_GREP_OUTPUT_LINE_BYTES),
     "--max-columns-preview",
@@ -390,6 +396,7 @@ function runRipgrep(
 
 function runGitGrep(
   query: string,
+  mode: GrepSearchMode,
   filePattern?: string,
   contextLines = DEFAULT_CONTEXT_LINES,
 ): NativeSearchOutcome {
@@ -399,7 +406,7 @@ function runGitGrep(
     "-n",
     "-I",
     "-i",
-    "-E",
+    mode === "literal" ? "-F" : "-E",
     "-e",
     query,
     "-C",
@@ -494,12 +501,20 @@ async function fallbackNodeSearch(
   options: GrepSearchOptions = {},
 ): Promise<string> {
   const policy = getWorkspaceFiles();
-  let re: RegExp;
-  try {
-    re = new RegExp(query, "i");
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return `Invalid regex for Node fallback: ${msg}`;
+  const mode = options.mode ?? "literal";
+  let matchesLine: (line: string) => boolean;
+  if (mode === "literal") {
+    const normalizedQuery = query.toLocaleLowerCase();
+    matchesLine = (line) => line.toLocaleLowerCase().includes(normalizedQuery);
+  } else {
+    let re: RegExp;
+    try {
+      re = new RegExp(query, "i");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return `Invalid regex: ${msg}. Use mode="literal" to search for this text literally.`;
+    }
+    matchesLine = (line) => re.test(line);
   }
 
   const directory = options.directory ?? ".";
@@ -549,7 +564,7 @@ async function fallbackNodeSearch(
     const matchedLineNumbers = new Set<number>();
 
     for (let i = 0; i < lines.length; i++) {
-      if (re.test(lines[i])) {
+      if (matchesLine(lines[i] ?? "")) {
         matchedLineNumbers.add(i + 1);
       }
     }
@@ -580,9 +595,12 @@ async function fallbackNodeSearch(
 }
 
 /** Shared ripgrep / git grep / Node fallback pipeline (also used by planner-scoped grep). */
+export type GrepSearchMode = "literal" | "regex";
+
 export interface GrepSearchOptions {
   directory?: string;
   includeIgnored?: boolean;
+  mode?: GrepSearchMode;
 }
 
 export async function executeGrepSearch(
@@ -594,12 +612,13 @@ export async function executeGrepSearch(
   if ((options.directory ?? ".") !== "." || options.includeIgnored) {
     return await fallbackNodeSearch(query, filePattern, contextLines, options);
   }
-  const rg = runRipgrep(query, filePattern, contextLines);
+  const mode = options.mode ?? "literal";
+  const rg = runRipgrep(query, mode, filePattern, contextLines);
   if (rg.kind !== "unavailable") {
     return rg.kind === "hits" ? rg.text : "No matches found (ripgrep).";
   }
 
-  const git = runGitGrep(query, filePattern, contextLines);
+  const git = runGitGrep(query, mode, filePattern, contextLines);
   if (git.kind !== "unavailable") {
     return git.kind === "hits" ? git.text : "No matches found (git grep).";
   }
@@ -610,7 +629,7 @@ export async function executeGrepSearch(
 export const GrepSearchTool: ToolDefinition<typeof GrepSearchSchema> = {
   name: "grep",
   description:
-    "Search files for text or regex patterns (like grep/ripgrep) to find usages and definitions. " +
+    'Search files for literal text by default, or set mode="regex" for regular expressions, to find usages and definitions. ' +
     "Skips node_modules and .git. Uses ripgrep when available, then git grep if rg is missing, then a bounded Node scan only if both native tools are unavailable. " +
     "Native tools mostly respect .gitignore; git grep expands trailing `*.{ext,...}` style globs into multiple pathspecs. " +
     "Use directory plus includeIgnored for a bounded ignored-subtree search; node_modules requires a concrete package path. " +
@@ -619,7 +638,11 @@ export const GrepSearchTool: ToolDefinition<typeof GrepSearchSchema> = {
     `The complete response is capped at ${MAX_GREP_OUTPUT_BYTES / 1024} KB. ` +
     "The Node fallback uses case-insensitive JavaScript RegExp (`i` flag) and picomatch for filePattern.",
   parameters: GrepSearchSchema,
-  handler: async ({ query, filePattern, contextLines, directory, includeIgnored }) => {
-    return executeGrepSearch(query, filePattern, contextLines, { directory, includeIgnored });
+  handler: async ({ query, mode, filePattern, contextLines, directory, includeIgnored }) => {
+    return executeGrepSearch(query, filePattern, contextLines, {
+      directory,
+      includeIgnored,
+      mode,
+    });
   },
 };
