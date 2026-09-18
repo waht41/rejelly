@@ -77,6 +77,16 @@ describe("GrepSearchTool contextLines", () => {
     expect(args).toContain("recordModelCall\\(");
   });
 
+  it("rejects invalid regexes before selecting a native backend", async () => {
+    const out = await executeGrepSearch("recordModelCall(", "*.ts", 0, { mode: "regex" });
+
+    expect(out).toContain('Invalid regex for mode="regex"');
+    expect(out).toContain('Query: "recordModelCall("');
+    expect(out).toContain('Use mode="literal" to search for the exact text');
+    expect(out).toContain('"\\\\(" matches a literal opening parenthesis');
+    expect(execFileSyncMock).not.toHaveBeenCalled();
+  });
+
   it("derives ripgrep excluded directories from fs policy constants", async () => {
     execFileSyncMock.mockReturnValue("src/file.ts:1:needle\n");
 
@@ -335,8 +345,9 @@ describe("GrepSearchTool Node fallback context merge", () => {
 
     const out = await executeGrepSearch("recordModelCall(", "*.ts", 0, { mode: "regex" });
 
-    expect(out).toContain("Invalid regex:");
-    expect(out).toContain('Use mode="literal"');
+    expect(out).toContain('Invalid regex for mode="regex"');
+    expect(out).toContain('Query: "recordModelCall("');
+    expect(out).toContain('Use mode="literal" to search for the exact text');
   });
 
   it("renders a same-line multi-alternative match once", async () => {

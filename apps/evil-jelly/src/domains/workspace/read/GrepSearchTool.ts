@@ -494,6 +494,24 @@ function matchGlob(fileRel: string, pattern?: string): boolean {
   return false;
 }
 
+function invalidRegexMessage(query: string, error: unknown): string {
+  const reason = error instanceof Error ? error.message : String(error);
+  return (
+    `Invalid regex for mode="regex": ${reason}. ` +
+    `Query: ${JSON.stringify(query)}. ` +
+    'Use mode="literal" to search for the exact text, or escape regex metacharacters ' +
+    '(for example, "\\\\(" matches a literal opening parenthesis).'
+  );
+}
+
+function compileRegex(query: string): { regex: RegExp } | { error: string } {
+  try {
+    return { regex: new RegExp(query, "i") };
+  } catch (error: unknown) {
+    return { error: invalidRegexMessage(query, error) };
+  }
+}
+
 async function fallbackNodeSearch(
   query: string,
   filePattern?: string,
@@ -507,14 +525,11 @@ async function fallbackNodeSearch(
     const normalizedQuery = query.toLocaleLowerCase();
     matchesLine = (line) => line.toLocaleLowerCase().includes(normalizedQuery);
   } else {
-    let re: RegExp;
-    try {
-      re = new RegExp(query, "i");
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      return `Invalid regex: ${msg}. Use mode="literal" to search for this text literally.`;
+    const compiled = compileRegex(query);
+    if ("error" in compiled) {
+      return compiled.error;
     }
-    matchesLine = (line) => re.test(line);
+    matchesLine = (line) => compiled.regex.test(line);
   }
 
   const directory = options.directory ?? ".";
@@ -609,10 +624,16 @@ export async function executeGrepSearch(
   contextLines = DEFAULT_CONTEXT_LINES,
   options: GrepSearchOptions = {},
 ): Promise<string> {
+  const mode = options.mode ?? "literal";
+  if (mode === "regex") {
+    const compiled = compileRegex(query);
+    if ("error" in compiled) {
+      return compiled.error;
+    }
+  }
   if ((options.directory ?? ".") !== "." || options.includeIgnored) {
     return await fallbackNodeSearch(query, filePattern, contextLines, options);
   }
-  const mode = options.mode ?? "literal";
   const rg = runRipgrep(query, mode, filePattern, contextLines);
   if (rg.kind !== "unavailable") {
     return rg.kind === "hits" ? rg.text : "No matches found (ripgrep).";
