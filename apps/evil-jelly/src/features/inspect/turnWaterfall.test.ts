@@ -170,13 +170,14 @@ describe("turn waterfall", () => {
     expect(rendered).toContain("┬ parallel tool requests");
     expect(rendered).not.toContain("parallel tool requests — M1");
     expect(rendered).not.toContain("parallel tool results — M1");
-    expect(rendered).toContain("├─ grep request [call-1]");
-    expect(rendered).toContain("└─ read_file request [call-2]");
-    expect(rendered).toContain("4.1 └─ grep result [call-1]");
+    expect(rendered).toContain("├─ grep request [TC1]");
+    expect(rendered).toContain("└─ read_file request [TC2]");
+    expect(rendered).toContain("4.1 └─ grep result [TC1]");
     expect(rendered).toContain("compact [auto]");
     expect(rendered).not.toContain("█");
     expect(rendered).toContain("~ estimated from canonical message content");
     expect(rendered).toContain("Model input checkpoints");
+    expect(rendered).toContain("TC-addresses are Session-global Tool Call addresses");
     expect(rendered.indexOf("prior context + system/tools")).toBeLessThan(
       rendered.indexOf("user input"),
     );
@@ -257,10 +258,10 @@ describe("turn waterfall", () => {
       },
     ]);
     const rendered = renderTurnWaterfall(inspection);
-    expect(rendered).toContain("1.1 ├─ grep request [call-1]");
-    expect(rendered).toContain("1.2 └─ read_file request [call-2]");
-    expect(rendered).toContain("2.1 ├─ grep result [call-1]");
-    expect(rendered).toContain("2.2 └─ read_file result [call-2]");
+    expect(rendered).toContain("1.1 ├─ grep request [TC1]");
+    expect(rendered).toContain("1.2 └─ read_file request [TC2]");
+    expect(rendered).toContain("2.1 ├─ grep result [TC1]");
+    expect(rendered).toContain("2.2 └─ read_file result [TC2]");
     expect(rendered).toContain("ordered by conversation admission");
   });
 

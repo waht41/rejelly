@@ -66,11 +66,14 @@ export function renderToolCallInspection(
       : inspection.result?.address;
   const fallbackAddress = inspection.result?.address ?? inspection.request?.address;
   const lines = [
-    `Tool call ${(selectedAddress ?? fallbackAddress) ? `#${selectedAddress ?? fallbackAddress}` : ""}`.trimEnd(),
+    `Tool call ${inspection.address}`,
     `Session: ${inspection.sessionId}`,
     `Turn: ${inspection.turnNumber ?? "-"} (${inspection.turnId})`,
     `Tool: ${inspection.toolName}`,
-    `Call: ${inspection.toolCallId}`,
+    `ToolCall ID: ${inspection.toolCallId}`,
+    ...((selectedAddress ?? fallbackAddress)
+      ? [`Selected segment: #${selectedAddress ?? fallbackAddress}`]
+      : []),
     `Status: ${inspection.status}`,
   ];
   if (inspection.durationMs !== undefined)

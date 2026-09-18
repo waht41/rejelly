@@ -30,10 +30,10 @@ import {
   resolveTurnId,
 } from "../../../features/inspect/sessionInspection";
 import { projectToolAggregation } from "../../../features/inspect/toolAggregationInspection";
+import { resolveToolCallIdentity } from "../../../features/inspect/toolCallAddress";
 import {
   extractToolCallPayload,
   projectToolCallInspection,
-  resolveToolCallTurnId,
   type ToolCallInspection,
 } from "../../../features/inspect/toolCallInspection";
 import {
@@ -137,17 +137,17 @@ export async function runInspect(options: RunInspectOptions): Promise<void> {
     ),
   );
   const toolSelector = options.tools;
-  const toolCallTurnId = toolSelector
-    ? resolveToolCallTurnId(stored.events, toolSelector)
+  const toolCallIdentity = toolSelector
+    ? resolveToolCallIdentity(stored.events, toolSelector)
     : undefined;
-  if (toolCallTurnId && toolSelector) {
+  if (toolCallIdentity?.turnId && toolSelector) {
     if (options.turnId)
       throw new Error("A ToolCall ID --tools selector cannot be combined with --turn");
     if (options.top !== undefined)
       throw new Error("--top cannot be combined with a ToolCall ID --tools selector");
-    const waterfall = projectTurnWaterfall(stored.meta, stored.events, toolCallTurnId);
+    const waterfall = projectTurnWaterfall(stored.meta, stored.events, toolCallIdentity.turnId);
     await printToolCall(
-      projectToolCallInspection(stored.meta, stored.events, waterfall, toolSelector),
+      projectToolCallInspection(stored.meta, stored.events, waterfall, toolCallIdentity.toolCallId),
       options,
     );
     return;

@@ -5,6 +5,7 @@ import {
 } from "../../domains/session/model/sessionEvents";
 import { messageContentToText } from "../../shared/model/message/content";
 import type { GrepSearchToolMetrics } from "../../shared/tool-observation/model";
+import { projectToolCallIdentities, resolveToolCallIdentity } from "./toolCallAddress";
 import {
   resolveWaterfallSegment,
   type TurnWaterfallChild,
@@ -42,6 +43,8 @@ export interface ToolCallInspection {
   sessionId: string;
   turnId: string;
   turnNumber?: number;
+  ordinal: number;
+  address: string;
   toolCallId: string;
   toolName: string;
   selectedSide: ToolCallSelectionSide;
@@ -264,32 +267,14 @@ function addressesForCall(
 
 export function resolveToolCallTurnId(
   events: readonly SessionEvent[],
-  toolCallId: string,
+  selector: string,
 ): string | undefined {
-  const turnIds = new Set<string>();
-  for (const event of events) {
-    if (!isKnownSessionEvent(event)) continue;
-    if (
-      (event.type === "tool_call_completed" || event.type === "tool_observation_recorded") &&
-      event.toolCallId === toolCallId &&
-      event.turnId
-    ) {
-      turnIds.add(event.turnId);
-    }
-    if (event.type === "message_recorded") {
-      if (event.message.tool_call_id === toolCallId) turnIds.add(event.turnId);
-      if (event.message.tool_calls?.some((call) => call.id === toolCallId))
-        turnIds.add(event.turnId);
-    }
-  }
-  if (turnIds.size === 0) return undefined;
-  if (turnIds.size > 1) throw new Error(`Tool call id is not unique in Session: ${toolCallId}`);
-  return [...turnIds][0];
+  return resolveToolCallIdentity(events, selector)?.turnId;
 }
 
-export function findToolCallTurnId(events: readonly SessionEvent[], toolCallId: string): string {
-  const turnId = resolveToolCallTurnId(events, toolCallId);
-  if (!turnId) throw new Error(`Tool call not found in Session: ${toolCallId}`);
+export function findToolCallTurnId(events: readonly SessionEvent[], selector: string): string {
+  const turnId = resolveToolCallTurnId(events, selector);
+  if (!turnId) throw new Error(`Tool call not found in Session: ${selector}`);
   return turnId;
 }
 
@@ -346,6 +331,10 @@ export function projectToolCallInspection(
   }
   if (!toolName) throw new Error(`Tool call not found in Session ${meta.sessionId}: ${toolCallId}`);
 
+  const identity = projectToolCallIdentities(events).find(
+    (candidate) => candidate.toolCallId === toolCallId,
+  );
+  if (!identity) throw new Error(`Tool call not found in Session ${meta.sessionId}: ${toolCallId}`);
   const addresses = addressesForCall(waterfall, toolCallId);
   const request =
     argumentsText !== undefined ? payload(argumentsText, addresses.request) : undefined;
@@ -360,6 +349,8 @@ export function projectToolCallInspection(
     sessionId: meta.sessionId,
     turnId: waterfall.turnId,
     turnNumber: turnNumbers(events).get(waterfall.turnId),
+    ordinal: identity.ordinal,
+    address: identity.address,
     toolCallId,
     toolName,
     selectedSide: side,
