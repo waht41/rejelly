@@ -12,7 +12,7 @@
  * (DR-0005 narrow workflow).
  */
 
-import { createAgent, expectResource } from "@rejelly/core";
+import { createAgent, expectResource, getContextSignal } from "@rejelly/core";
 import {
   MCP_AUDIT_PROVENANCE_RESOURCE_KEY,
   type McpAuditProvenanceCollector,
@@ -25,6 +25,7 @@ import { complexityFamily } from "./families/complexity";
 import { docDriftFamily } from "./families/docDrift";
 import { docSyncFamily } from "./families/docSync";
 import { fragmentationFamily } from "./families/fragmentation";
+import { evaluateWithTimeout } from "./runtime/evaluatorTimeout";
 import {
   type AuditLedgerStats,
   decideLedgerReuse,
@@ -90,16 +91,18 @@ function findingFromLedger(
   return null;
 }
 
-async function evaluatePreparedSeeds(
+export async function evaluatePreparedSeeds(
   seeds: PreparedSeed[],
   familyLabel: string,
   concurrency: number,
+  evaluatorTimeoutMs: number,
   printOut: PrintOut,
   onFindingSettled: (finding: AuditFinding) => Promise<void>,
 ): Promise<AuditFinding[]> {
   if (seeds.length === 0) {
     return [];
   }
+  const parentSignal = getContextSignal();
   // Unordered fan-out: seeds are independent and only aggregated at the end, so a slow seed must
   // not stall scheduling of the rest (head-of-line blocking). Results stay in seed order.
   return await mapWithConcurrency(
@@ -108,7 +111,11 @@ async function evaluatePreparedSeeds(
     async (prepared: PreparedSeed): Promise<AuditFinding> => {
       let finding: AuditFinding;
       try {
-        const verdict = await prepared.evaluate();
+        const verdict = await evaluateWithTimeout(
+          prepared.evaluate,
+          evaluatorTimeoutMs,
+          parentSignal,
+        );
         finding = {
           seed: prepared.seed,
           identity: prepared.identity,
@@ -252,6 +259,7 @@ async function processFamily(
   ledger: AuditLedgerFile,
   maxSeeds: number,
   concurrency: number,
+  evaluatorTimeoutMs: number,
   nowIso: string,
   printOut: PrintOut,
   ledgerStats: AuditLedgerStats,
@@ -307,6 +315,7 @@ async function processFamily(
     toEvaluate,
     family.label,
     concurrency,
+    evaluatorTimeoutMs,
     printOut,
     checkpointFinding,
   );
@@ -342,6 +351,10 @@ export const AuditAgent = createAgent<AuditAgentProps, string>({
     const maxSeeds = props.maxSeeds ?? settings.audit.maxSeeds ?? AUDIT_DEFAULTS.maxSeeds;
     const concurrency =
       props.concurrency ?? settings.audit.concurrency ?? AUDIT_DEFAULTS.concurrency;
+    const evaluatorTimeoutMs =
+      props.evaluatorTimeoutMs ??
+      settings.audit.evaluatorTimeoutMs ??
+      AUDIT_DEFAULTS.evaluatorTimeoutMs;
     const ledgerGcDays =
       props.disableLedgerGc || settings.audit.disableLedgerGc
         ? undefined
@@ -414,6 +427,7 @@ export const AuditAgent = createAgent<AuditAgentProps, string>({
         ledger,
         maxSeeds,
         concurrency,
+        evaluatorTimeoutMs,
         generatedAt,
         printOut,
         ledgerStats,

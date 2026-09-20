@@ -42,6 +42,7 @@ export interface RunAuditOptions {
     docFilter?: string;
     docCodePaths?: string[];
     maxSeeds?: number;
+    evaluatorTimeoutMs?: number;
     ledgerGcDays?: number;
     disableLedgerGc?: boolean;
   };

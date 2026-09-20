@@ -495,7 +495,7 @@ export const docDriftFamily: AuditSeedFamily = {
         prepared.push({
           seed: docDriftSeedView(candidate),
           identity: docDriftIdentityFor(candidate),
-          evaluate: () => DocDriftEvaluatorAgent({ native: candidate }),
+          evaluate: (signal) => DocDriftEvaluatorAgent({ native: candidate, signal }),
         });
       }
     };

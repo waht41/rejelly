@@ -58,6 +58,8 @@ const SettingsFileSchema = z
         concurrency: z.number().int().positive().optional(),
         /** Max candidate seeds per family to send to the LLM evaluator. */
         maxSeeds: z.number().int().positive().optional(),
+        /** Hard deadline in milliseconds for one evaluator. */
+        evaluatorTimeoutMs: z.number().int().positive().optional(),
         /** Delete same-family ledger entries not seen for this many days. */
         ledgerGcDays: z.number().int().positive().optional(),
       })
@@ -75,6 +77,7 @@ export type EvilJellySettingsFile = z.infer<typeof SettingsFileSchema>;
 export interface SettingsCliOverrides {
   docMap?: string;
   auditMaxSeeds?: number;
+  auditEvaluatorTimeoutMs?: number;
   auditLedgerGcDays?: number;
   auditDisableLedgerGc?: boolean;
 }
@@ -86,6 +89,7 @@ export interface ResolvedSettings {
   audit: {
     concurrency: number | undefined;
     maxSeeds: number | undefined;
+    evaluatorTimeoutMs: number | undefined;
     ledgerGcDays: number | undefined;
     disableLedgerGc: boolean;
   };
@@ -153,6 +157,10 @@ export function getSettings(): ResolvedSettings {
       concurrency: workspaceFile.audit?.concurrency ?? userFile.audit?.concurrency,
       maxSeeds:
         cliOverrides.auditMaxSeeds ?? workspaceFile.audit?.maxSeeds ?? userFile.audit?.maxSeeds,
+      evaluatorTimeoutMs:
+        cliOverrides.auditEvaluatorTimeoutMs ??
+        workspaceFile.audit?.evaluatorTimeoutMs ??
+        userFile.audit?.evaluatorTimeoutMs,
       ledgerGcDays:
         cliOverrides.auditLedgerGcDays ??
         workspaceFile.audit?.ledgerGcDays ??

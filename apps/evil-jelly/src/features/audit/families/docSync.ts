@@ -311,8 +311,11 @@ export const DocSyncEvaluatorAgent = makeSeedEvaluatorAgent<
 });
 
 /** Run the evaluator and flatten its section list into the stored verdict shape. */
-async function evaluatePair(candidate: DocPairCandidate): Promise<SeedVerdict> {
-  const { sections, ...verdict } = await DocSyncEvaluatorAgent({ native: candidate });
+async function evaluatePair(
+  candidate: DocPairCandidate,
+  signal: AbortSignal,
+): Promise<SeedVerdict> {
+  const { sections, ...verdict } = await DocSyncEvaluatorAgent({ native: candidate, signal });
   return { ...verdict, details: renderDocSyncSectionTable(sections) };
 }
 
@@ -354,7 +357,7 @@ export const docSyncFamily: AuditSeedFamily = {
         evaluate:
           leftText === null || rightText === null
             ? () => Promise.resolve(missingCounterpartVerdict(candidate))
-            : () => evaluatePair(candidate),
+            : (signal) => evaluatePair(candidate, signal),
       });
     }
 

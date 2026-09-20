@@ -49,6 +49,7 @@ describe("settings resolution", () => {
     expect(s.audit).toEqual({
       concurrency: undefined,
       maxSeeds: undefined,
+      evaluatorTimeoutMs: undefined,
       ledgerGcDays: undefined,
       disableLedgerGc: false,
     });
@@ -59,12 +60,13 @@ describe("settings resolution", () => {
   it("reads values from workspace .evil-jelly/settings.jsonc", () => {
     writeWorkspaceSettingsFile(`{
       // repo facts
-      "audit": { "concurrency": 8, "maxSeeds": 64, "ledgerGcDays": 14 }
+      "audit": { "concurrency": 8, "maxSeeds": 64, "evaluatorTimeoutMs": 120000, "ledgerGcDays": 14 }
     }`);
 
     expect(getSettings().audit).toEqual({
       concurrency: 8,
       maxSeeds: 64,
+      evaluatorTimeoutMs: 120_000,
       ledgerGcDays: 14,
       disableLedgerGc: false,
     });
@@ -73,12 +75,13 @@ describe("settings resolution", () => {
   it("reads ~/.evil-jelly/settings.jsonc (JSONC comments allowed)", () => {
     writeUserSettingsFile(`{
       // personal defaults
-      "audit": { "concurrency": 4, "maxSeeds": 48, "ledgerGcDays": 21 }
+      "audit": { "concurrency": 4, "maxSeeds": 48, "evaluatorTimeoutMs": 180000, "ledgerGcDays": 21 }
     }`);
 
     expect(getSettings().audit).toEqual({
       concurrency: 4,
       maxSeeds: 48,
+      evaluatorTimeoutMs: 180_000,
       ledgerGcDays: 21,
       disableLedgerGc: false,
     });
@@ -108,15 +111,16 @@ describe("settings resolution", () => {
 
   it("resolves each workspace field over its user default", () => {
     writeUserSettingsFile(`{
-      "audit": { "concurrency": 4, "maxSeeds": 48, "ledgerGcDays": 21 }
+      "audit": { "concurrency": 4, "maxSeeds": 48, "evaluatorTimeoutMs": 180000, "ledgerGcDays": 21 }
     }`);
     writeWorkspaceSettingsFile(`{
-      "audit": { "concurrency": 8, "ledgerGcDays": 14 }
+      "audit": { "concurrency": 8, "evaluatorTimeoutMs": 120000, "ledgerGcDays": 14 }
     }`);
 
     expect(getSettings().audit).toEqual({
       concurrency: 8,
       maxSeeds: 48,
+      evaluatorTimeoutMs: 120_000,
       ledgerGcDays: 14,
       disableLedgerGc: false,
     });
@@ -162,6 +166,7 @@ describe("settings resolution", () => {
     initSettings({
       docMap: "other/map.jsonc",
       auditMaxSeeds: 32,
+      auditEvaluatorTimeoutMs: 90_000,
       auditLedgerGcDays: 7,
       auditDisableLedgerGc: true,
     });
@@ -169,6 +174,7 @@ describe("settings resolution", () => {
     expect(s.docMap).toBe("other/map.jsonc");
     expect(s.audit).toMatchObject({
       maxSeeds: 32,
+      evaluatorTimeoutMs: 90_000,
       ledgerGcDays: 7,
       disableLedgerGc: true,
     });
@@ -268,6 +274,7 @@ describe("settings resolution", () => {
     expect(getSettings().audit).toEqual({
       concurrency: undefined,
       maxSeeds: undefined,
+      evaluatorTimeoutMs: undefined,
       ledgerGcDays: undefined,
       disableLedgerGc: false,
     });
@@ -276,6 +283,7 @@ describe("settings resolution", () => {
     expect(getSettings().audit).toEqual({
       concurrency: undefined,
       maxSeeds: undefined,
+      evaluatorTimeoutMs: undefined,
       ledgerGcDays: undefined,
       disableLedgerGc: false,
     });
@@ -284,6 +292,7 @@ describe("settings resolution", () => {
     expect(getSettings().audit).toEqual({
       concurrency: 8,
       maxSeeds: undefined,
+      evaluatorTimeoutMs: undefined,
       ledgerGcDays: undefined,
       disableLedgerGc: false,
     });

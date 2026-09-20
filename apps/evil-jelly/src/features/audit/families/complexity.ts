@@ -220,7 +220,7 @@ export const complexityFamily: AuditSeedFamily = {
       detection.findings.map(async (finding) => ({
         seed: complexitySeedView(finding),
         identity: await resolver.identityFor(finding),
-        evaluate: () => ComplexityEvaluatorAgent({ native: finding }),
+        evaluate: (signal) => ComplexityEvaluatorAgent({ native: finding, signal }),
       })),
     );
 
