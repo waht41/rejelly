@@ -65,6 +65,13 @@ export function createVerifyPlan(
     });
   }
 
+  steps.push({
+    command: "pnpm",
+    args: ["--filter", "create-rejelly", "run", options.fix ? "generate:guidance" : "lint:doc"],
+    kind: "process",
+    label: `create/docs guidance ${options.fix ? "sync" : "consistency"}`,
+  });
+
   if (scope.kind !== "none") {
     const relatedTestPlan =
       options.tests && options.relatedTests ? context.relatedTestPlan : undefined;
