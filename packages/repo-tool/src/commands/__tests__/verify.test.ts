@@ -30,6 +30,13 @@ const defaults: VerifyOptions = {
 };
 
 describe("createVerifyPlan", () => {
+  const guidanceCheckStep = {
+    command: "pnpm",
+    args: ["--filter", "create-rejelly", "run", "lint:doc"],
+    kind: "process" as const,
+    label: "create/docs guidance consistency",
+  };
+
   it("turns affected packages into explicit Turbo filters", () => {
     expect(
       createVerifyPlan(defaults, {
@@ -49,6 +56,7 @@ describe("createVerifyPlan", () => {
           label: "Biome check (changed files)",
           write: false,
         },
+        guidanceCheckStep,
         {
           command: "pnpm",
           args: [
@@ -79,6 +87,7 @@ describe("createVerifyPlan", () => {
       },
     );
     expect(plan.steps).toEqual([
+      guidanceCheckStep,
       {
         command: "pnpm",
         args: [
@@ -115,6 +124,7 @@ describe("createVerifyPlan", () => {
 
     expect(plan.steps).toEqual([
       { kind: "biome-changed", label: "Biome check (changed files)", write: false },
+      guidanceCheckStep,
       {
         command: "pnpm",
         args: [
@@ -174,6 +184,7 @@ describe("createVerifyPlan", () => {
         kind: "process",
         label: "Biome check (all files)",
       },
+      guidanceCheckStep,
       {
         command: "pnpm",
         args: [
@@ -192,7 +203,7 @@ describe("createVerifyPlan", () => {
     ]);
   });
 
-  it("writes with Biome before running workspace tasks when --fix is enabled", () => {
+  it("writes with Biome and synchronizes create guidance before workspace tasks with --fix", () => {
     const plan = createVerifyPlan(
       { ...defaults, fix: true },
       { filters: ["@rejelly/repo-tool"], kind: "packages", source: "explicit" },
@@ -203,13 +214,20 @@ describe("createVerifyPlan", () => {
       label: "Biome write (changed files)",
       write: true,
     });
-    expect(plan.steps[1]?.label).toBe("workspace tasks");
+    expect(plan.steps[1]).toEqual({
+      command: "pnpm",
+      args: ["--filter", "create-rejelly", "run", "generate:guidance"],
+      kind: "process",
+      label: "create/docs guidance sync",
+    });
+    expect(plan.steps[2]?.label).toBe("workspace tasks");
   });
 
-  it("skips Turbo when no changed file belongs to a workspace package", () => {
+  it("still checks create/docs consistency when no changed file belongs to a package", () => {
     const plan = createVerifyPlan(defaults, { kind: "none", source: "affected" });
     expect(plan.steps).toEqual([
       { kind: "biome-changed", label: "Biome check (changed files)", write: false },
+      guidanceCheckStep,
     ]);
   });
 });

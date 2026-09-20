@@ -73,7 +73,10 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     .command("verify", "Run repository verification as one high-level operation")
     .option("--filter <package>", "Turbo package filter (repeatable)")
     .option("--all", "Verify every workspace package and all Biome files")
-    .option("--fix", "Apply Biome safe fixes, formatting, and import sorting before verification")
+    .option(
+      "--fix",
+      "Apply Biome fixes and synchronize create-rejelly guidance with docs before verification",
+    )
     .option("--branch", "With --fix, include committed branch changes instead of only dirty files")
     .option("--no-tests", "Skip test tasks")
     .option(
