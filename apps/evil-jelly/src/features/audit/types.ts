@@ -155,7 +155,7 @@ export interface AuditReportData {
 }
 
 export interface AuditReportRenderOptions {
-  /** Hide non-actionable verdicts and evaluation errors from the rendered findings body. */
+  /** Hide non-actionable verdicts; evaluation errors remain visible because no verdict was reached. */
   onlyActionable?: boolean;
 }
 
@@ -199,7 +199,7 @@ export interface AuditSeedFamily {
 export interface AuditAgentProps {
   /** The single detector family to run. */
   family: AuditFindingKind;
-  /** Render only actionable findings in the persisted Markdown report. */
+  /** Hide non-actionable verdicts in the report while retaining evaluation errors. */
   onlyActionable?: boolean;
   /** Restrict doc-drift to one doc file (basename or workspace-relative path). */
   docFilter?: string;

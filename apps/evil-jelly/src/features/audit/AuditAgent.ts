@@ -382,7 +382,7 @@ export const AuditAgent = createAgent<AuditAgentProps, string>({
       printOut(`[Audit] Family filter: ${props.family}\n`);
     }
     if (props.onlyActionable) {
-      printOut("[Audit] Report filter: only actionable findings.\n");
+      printOut("[Audit] Report filter: non-actionable verdicts hidden; errors remain visible.\n");
     }
     const collectOptions: AuditCollectOptions = {
       ...(props.docFilter !== undefined ? { docFilter: props.docFilter } : {}),

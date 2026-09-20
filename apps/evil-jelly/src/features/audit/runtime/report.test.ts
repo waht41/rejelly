@@ -211,15 +211,43 @@ describe("renderAuditReport", () => {
           summary: "Repeated test fixture shape",
         }),
       },
-      { seed: seed("err", ["src/e.ts", "src/f.ts"]), error: "model timeout" },
+      {
+        seed: seed("err", ["src/e.ts", "src/f.ts"]),
+        identity: {
+          id: "clone:error-fingerprint",
+          kind: "clone",
+          fingerprint: "error-fingerprint",
+          contentHash: "error-content",
+        },
+        error: "model timeout",
+      },
     ];
     const md = renderAuditReport(data(findings), { onlyActionable: true });
 
-    expect(md).toContain("- Report filters: actionable findings only");
+    expect(md).toContain(
+      "- Report filters: non-actionable verdicts hidden; evaluation errors always shown",
+    );
     expect(md).toContain("actionable: 1 (high 0, medium 1, low 0) · errored: 1");
     expect(md).toContain("Shared retry helper duplicated");
     expect(md).not.toContain("Repeated test fixture shape");
-    expect(md).not.toContain("model timeout");
+    expect(md).toContain("## Evaluation errors");
+    expect(md).toContain("### 1. clone `err`");
+    expect(md).toContain("- Fingerprint: `error-fingerprint`");
+    expect(md).toContain("- Location: `src/e.ts:10-30`");
+    expect(md).toContain("- Error: model timeout");
+  });
+
+  it("renders evaluation errors when there are no actionable findings", () => {
+    const findings: AuditFinding[] = [
+      { seed: seed("err", ["src/x.ts", "src/y.ts"]), error: "tool promise rejected" },
+    ];
+
+    const md = renderAuditReport(data(findings), { onlyActionable: true });
+
+    expect(md).toContain("_No actionable findings to render._");
+    expect(md).toContain("## Evaluation errors");
+    expect(md).toContain("tool promise rejected");
+    expect(md).not.toContain("were hidden by --only-actionable");
   });
 
   it("keeps suppressed unchanged ledger hits out of the findings body", () => {

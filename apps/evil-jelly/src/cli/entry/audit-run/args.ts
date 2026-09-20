@@ -76,7 +76,10 @@ export function registerAuditArgs(cli: CAC): Command {
       "--family <name>",
       "Required; one of clone, complexity, fragmentation, doc-drift, or doc-sync",
     )
-    .option("--only-actionable", "Audit report: render only actionable findings")
+    .option(
+      "--only-actionable",
+      "Audit report: hide non-actionable verdicts (evaluation errors remain visible)",
+    )
     .option("--max-seeds <n>", "Positive limit on new or changed seeds to evaluate")
     .option("--evaluator-timeout-ms <n>", "Positive hard deadline in milliseconds per evaluator")
     .option("--ledger-gc-days <n>", "Positive stale-entry age in days for ledger pruning")

@@ -106,6 +106,30 @@ function renderFindingSections(ranked: AuditFinding[], data: AuditReportData): s
     .join("\n\n---\n\n");
 }
 
+function compactLine(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+/** Errors are incomplete evaluations, not non-actionable verdicts, so filters never hide them. */
+function renderEvaluationErrors(errors: AuditFinding[]): string {
+  const entries = errors.map((finding, index) => {
+    const locations = finding.seed.locations.map(
+      (location) =>
+        `- Location: \`${location.file}:${location.startLine}-${location.endLine}\` (${location.lines} lines)`,
+    );
+    return [
+      `### ${index + 1}. ${finding.seed.kind} \`${finding.seed.id}\``,
+      `- Candidate: ${compactLine(finding.seed.label)}`,
+      finding.identity ? `- Fingerprint: \`${finding.identity.fingerprint}\`` : false,
+      ...locations,
+      `- Error: ${compactLine(finding.error ?? "unknown error")}`,
+    ]
+      .filter((line) => line !== false)
+      .join("\n");
+  });
+  return `## Evaluation errors\n\n${entries.join("\n\n")}`;
+}
+
 function renderDetectorLines(data: AuditReportData): string[] {
   if (data.detectors.length === 0) {
     return [];
@@ -139,6 +163,7 @@ export function renderAuditReport(
   const ranked = options.onlyActionable
     ? activeRanked.filter((finding) => finding.verdict?.isActionable)
     : activeRanked;
+  const evaluationErrors = activeRanked.filter((finding) => finding.error !== undefined);
   const real = activeRanked.filter((f) => f.verdict?.isActionable);
   const bySeverity = { high: 0, medium: 0, low: 0 };
   for (const f of real) {
@@ -163,7 +188,9 @@ export function renderAuditReport(
         ]
       : []),
     ...renderDetectorLines(data),
-    options.onlyActionable ? "- Report filters: actionable findings only" : false,
+    options.onlyActionable
+      ? "- Report filters: non-actionable verdicts hidden; evaluation errors always shown"
+      : false,
     data.progress
       ? `- Status: ${data.progress.status} (${data.progress.settled}/${data.progress.total} evaluations settled)`
       : false,
@@ -189,13 +216,21 @@ export function renderAuditReport(
       `were skipped by the audit ledger._\n`
     );
   }
-  if (ranked.length === 0) {
-    const hidden = activeRanked.length;
-    return (
-      `${header}\n\n` +
-      `_No actionable findings to render. ${hidden} non-actionable or errored candidate(s) ` +
-      `were hidden by --only-actionable._\n`
-    );
+  if (options.onlyActionable) {
+    const hiddenNonActionable = activeRanked.filter(
+      (finding) => finding.verdict !== undefined && !finding.verdict.isActionable,
+    ).length;
+    const findingsBody =
+      ranked.length > 0
+        ? `## Findings\n\n${renderFindingSections(ranked, data)}`
+        : `_No actionable findings to render.${
+            hiddenNonActionable > 0
+              ? ` ${hiddenNonActionable} non-actionable candidate(s) were hidden by --only-actionable.`
+              : ""
+          }_`;
+    const errorsBody =
+      evaluationErrors.length > 0 ? `\n\n${renderEvaluationErrors(evaluationErrors)}` : "";
+    return `${header}\n\n${findingsBody}${errorsBody}\n`;
   }
 
   const sections = renderFindingSections(ranked, data);
