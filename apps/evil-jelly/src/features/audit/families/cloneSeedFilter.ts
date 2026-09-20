@@ -12,7 +12,7 @@
  * the LLM (which is the irreducible recall/precision part anyway).
  */
 
-import type { SgNode } from "@ast-grep/napi";
+import { Lang, type SgNode } from "@ast-grep/napi";
 import { tryParseWorkspaceRel } from "../../../domains/workspace/ast/heuristicAstCore";
 import type { CloneCluster, CloneFragment } from "../detectors/clone";
 
@@ -65,9 +65,21 @@ function intersects(range: LineRange, startLine: number, endLine: number): boole
 }
 
 function findAllRanges(root: SgNode, kinds: readonly string[]): LineRange[] {
+  if (kinds.length === 0) {
+    return [];
+  }
   return root
     .findAll({ rule: { any: kinds.map((kind) => ({ kind })) } })
     .map((n) => lineRangeOf(n));
+}
+
+/**
+ * ast-grep validates every kind against the parsed language before matching. Type declaration kinds
+ * are absent from the JavaScript grammar, so querying a JS root with them throws instead of simply
+ * returning no matches. TSX is the parser for both TSX and JSX and accepts the TypeScript kinds.
+ */
+function typeDeclKindsFor(lang: Lang): readonly string[] {
+  return lang === Lang.JavaScript ? [] : TYPE_DECL_KINDS;
 }
 
 /**
@@ -111,11 +123,11 @@ function varDeclIsPureData(decl: SgNode): boolean {
   return true;
 }
 
-export function analyzeFileBehavior(root: SgNode): FileBehavior {
+export function analyzeFileBehavior(root: SgNode, lang: Lang): FileBehavior {
   return {
     carriers: findAllRanges(root, CODE_CARRIER_KINDS),
     exprStatements: findAllRanges(root, ["expression_statement"]),
-    typeDecls: findAllRanges(root, TYPE_DECL_KINDS),
+    typeDecls: findAllRanges(root, typeDeclKindsFor(lang)),
     varDecls: root
       .findAll({ rule: { any: VAR_DECL_KINDS.map((kind) => ({ kind })) } })
       .map((decl) => ({ range: lineRangeOf(decl), pureData: varDeclIsPureData(decl) })),
@@ -159,7 +171,7 @@ async function behavioralFragments(
     let fb = cache.get(fragment.file);
     if (fb === undefined) {
       const parsed = await tryParseWorkspaceRel(fragment.file);
-      fb = parsed ? analyzeFileBehavior(parsed.root) : null;
+      fb = parsed ? analyzeFileBehavior(parsed.root, parsed.lang) : null;
       cache.set(fragment.file, fb);
     }
     if (!fb || classifyFragment(fb, fragment) === "code") {
