@@ -206,6 +206,7 @@ interface RouterRuntime {
   setNextImageOrdinal: (ordinal: number) => void;
   contextTokenAnchor: () => SessionContextTokenAnchor | undefined;
   clearContextTokenAnchor: () => void;
+  clearLastContextUsage: () => void;
   mcpBindingFactory?: ConversationAgentProps["mcpBindingFactory"];
   memoryRuntime?: SessionMemoryRuntime;
 }
@@ -335,6 +336,9 @@ async function handleCompress(runtime: RouterRuntime): Promise<void> {
 
   runtime.setHistory(result.compactHistory);
   runtime.clearContextTokenAnchor();
+  // The compression call measured the old, pre-compaction prompt. Until the compacted history is
+  // sent to the model, retaining that snapshot makes /status report the context as unchanged.
+  runtime.clearLastContextUsage();
   if (runtime.props.sessionRecorder) {
     await runtime.props.sessionRecorder.recordCompaction({
       trigger: "manual",
@@ -845,6 +849,12 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
       clearContextTokenAnchor: () => {
         liveContextTokenAnchor = undefined;
         storeContextTokenAnchor(null);
+      },
+      clearLastContextUsage: () => {
+        liveContextTokens = 0;
+        liveCacheTokens = 0;
+        setLastContextTokens(0);
+        setLastCacheTokens(0);
       },
       mcpBindingFactory: props.mcpBindingFactory,
       memoryRuntime,

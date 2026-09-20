@@ -15,6 +15,10 @@ function formatTokens(n: number): string {
   return `${(n / 1_000_000).toFixed(2)}m`;
 }
 
+function formatPercentage(ratio: number): string {
+  return `${(Math.max(0, Math.min(1, ratio)) * 100).toFixed(1)}%`;
+}
+
 function formatCosts(costs: Record<string, number>): string {
   const entries = Object.entries(costs).filter(([, value]) => value > 0);
   if (entries.length === 0) return "0";
@@ -63,6 +67,7 @@ export function formatSessionStatus(input: SessionStatusInput): string {
     budget.cacheReadTokens > 0
       ? `  - Tokens: ${formatTokens(budget.totalTokens)} (prompt ${formatTokens(budget.promptTokens)} / completion ${formatTokens(budget.completionTokens)} / cached ${formatTokens(budget.cacheReadTokens)})`
       : `  - Tokens: ${formatTokens(budget.totalTokens)} (prompt ${formatTokens(budget.promptTokens)} / completion ${formatTokens(budget.completionTokens)})`;
+  const cacheHitRate = budget.promptTokens > 0 ? budget.cacheReadTokens / budget.promptTokens : 0;
   return [
     "**Session status**",
     "",
@@ -74,6 +79,7 @@ export function formatSessionStatus(input: SessionStatusInput): string {
     "- Cumulative this session:",
     tokensLine,
     `  - Model calls: ${budget.callCount}`,
+    `  - Cache hit: ${formatPercentage(cacheHitRate)}`,
     `  - Cost: ${formatCosts(budget.costs)}`,
     "",
   ].join("\n");
