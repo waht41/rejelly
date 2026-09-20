@@ -30,15 +30,25 @@ An optional first parameter `schema` (Zod Schema) is used solely for inferring `
 
 **Exhausted attempts**: Throws `AttemptsExhaustedError` (message contains "All attempts exhausted"), with `attempts` / `issues` / `lastFailureType` / `lastData` / `lastRawText` on the instance. There is no validator-level callback; fallback logic should be implemented at the Agent call site.
 
+`expectValidator()` must be registered inside an active Agent context, normally in the Agent handler before `promptAgent()`:
+
 ```typescript
-import { AttemptsExhaustedError, expectValidator } from '@rejelly/core';
+import { AttemptsExhaustedError, createAgent, expectValidator, promptAgent } from '@rejelly/core';
 import { QuoteSchema } from './schemas';
 
-// Basic usage: returning a string triggers retry; schema is only for type inference
-expectValidator(QuoteSchema, (data) => {
-  if (data.price < 0) return "Price cannot be negative, please correct";
-  if (data.price > 10000 && !data.isVip) return "Non-VIP users cannot exceed 10000 per item";
-  return true;
+const QuoteAgent = createAgent({
+  id: 'quote',
+  model: quoteModel,
+  handler: async ({ sku }: { sku: string }) => {
+    // Returning a string triggers retry; schema is only for type inference
+    expectValidator(QuoteSchema, (data) => {
+      if (data.price < 0) return "Price cannot be negative, please correct";
+      if (data.price > 10000 && !data.isVip) return "Non-VIP users cannot exceed 10000 per item";
+      return true;
+    });
+
+    return await promptAgent(QuoteSchema);
+  },
 });
 
 // Exhausted attempts: catch at the Agent call site, throw a custom error or return a fallback value

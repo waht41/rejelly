@@ -53,12 +53,12 @@ equipInstruction([
 **ToolDefinition 接口：**
 
 ```typescript
-interface ToolDefinition {
-  name: string;                    // 工具名称
-  description: string;             // 工具描述，告诉 LLM 何时使用
-  parameters: z.ZodSchema;         // 参数 Schema（使用 Zod 定义）
-  handler: (params: any) => Promise<any>;  // 工具执行函数
-  middlewares?: ToolMiddleware[];  // 静态中间件（可选，通过 augmentTool 添加）
+interface ToolDefinition<TParams extends z.ZodTypeAny = z.ZodTypeAny> {
+  name: string;                              // 工具名称
+  description: string;                       // 工具描述，告诉 LLM 何时使用
+  parameters: TParams;                       // 参数 Schema（使用 Zod 定义）
+  handler: (params: z.infer<TParams>) => Promise<unknown>; // 工具执行函数
+  middlewares?: ToolMiddleware[];            // 静态中间件（可选，通过 augmentTool 添加）
 }
 
 interface EquipToolOptions {

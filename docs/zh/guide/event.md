@@ -27,7 +27,7 @@ Rejelly 的事件系统提供了完整的可观测性能力，让开发者能够
 | PromptAgent | `promptAgent:start` / `:end` | `promptAgent()` 调用前 / 所有 tool loop 后 | start: `generationId`、`schema`、`policyId`；end: `totalSteps`、`cache` |
 | Turn | `turn:start` / `:end` | 单个 step 开/合 | start: `step`（0-based）、`messages`、`schema`、`toolConfig`、`messageCount`；end: `resultType`（`'content'` \| `'tool_calls'`）、`message`、`contentHash`、`cache` |
 | Validation | `validation:success` / `:fail` | 输出校验通过 / 失败（归属 `promptAgent` 作用域） | 共有 `rawText`、`attempt`；success: `data`；fail: 部分 `data`、`errors`（`ErrorInfo[]`） |
-| 模型调用 | `model:call:start` / `:end` | 模型适配器**物理请求**开/合 | start: `adapterId`、`provider`、`messageCount`、`usedTools`、`middlewares`、`networkAttempt`；end: `rawText` / `reasoning` / `toolCalls`、`ttft`、`usage`（推理模型可含 `details.reasoningTokens`）、`costs`、`finishReason` |
+| 模型调用 | `model:call:start` / `:end` | 模型适配器**物理请求**开/合 | start: `adapterId`、`provider`、`messageCount`、`usedTools`、`middlewares`；end: `rawText` / `reasoning` / `toolCalls`、`ttft`、`usage`（推理模型可含 `details.reasoningTokens`）、`costs`、`finishReason` |
 | Budget | `budget:update` | `updateBudgetChain` 记录 LLM / 工具用量时 | `identifiers`、`delta`、`aggregate` |
 | Instrument | `instrument:op:start` / `:end` | `instrument()` 包装的依赖方法（Redis / DB / SDK / 向量库…）调用开/合 | `name`（分类）、`operation`（方法名）；脱敏 metadata 进 `trace.attributes` |
 | Resource | `resource:op:start` / `:end` | `equipResource` 创建 / 销毁开/合 | `operation`（`'create'` \| `'destroy'`）、`resourceId`；end: `reused`（创建时复用现有实例） |

@@ -95,7 +95,7 @@ interface EquipMCPOptions {
 
 - Before a sub-agent can read a parent-exposed Client, the parent Agent must have already called `equipResource('mcp:…', { expose: true })` and **completed registration before** the sub-agent executes.
 - To bypass memo and re-`listTools` each time, pass **`forceRefresh: true`** (can be passed on every `equipMCP` call).
-- The official SDK's `readResource` is often `readResource({ uri })`, which may not match the `MCPClientAdapter` doc signature — adapt or assert types on the business side as needed.
+- `MCPClientAdapter.readResource` directly accepts both `readResource({ uri })` and `readResource(uri)`. The adapter prefers the official SDK's object-parameter form and falls back to a string URI if that call fails.
 
 ## Parent-Child Agent Example (Child Uses `expectResource`)
 

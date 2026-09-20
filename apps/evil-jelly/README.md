@@ -398,7 +398,7 @@ The MCP endpoint is derived from the origin of `REJELLY_REVIEW_ENDPOINT` and def
 
 ### Configuration boundaries
 
-All Evil Jelly configuration lives under an `.evil-jelly/` directory:
+Evil Jelly's persistent configuration files live under `.evil-jelly/` directories. Shell environment variables and CLI arguments provide additional runtime override layers:
 
 - `~/.evil-jelly/settings.jsonc` contains personal, non-secret defaults across workspaces.
 - `.evil-jelly/settings.jsonc` contains local workspace overrides and is ignored by Git.
@@ -460,10 +460,12 @@ When the workspace is the user home directory (or its `.evil-jelly` path aliases
 
 Workspace Skill settings replace matching user defaults. The master switch disables every Skill;
 an individual `true` cannot bypass it. Disabled Skills do not enter the model catalog or resource
-repository. Settings are read into the process-lifetime snapshot, so changes take effect after the
-next Evil Jelly start. A `project:<name>` override in user settings applies to every workspace with
-that qualified name; put it in workspace settings to affect only the current checkout. This
-configuration controls availability only and grants no tool permission.
+repository. Resolved settings are cached in the process, but each consumer defines its refresh
+behavior: interactive Skill availability is snapshotted at startup, so Skill setting changes take
+effect after the next Evil Jelly start, while `/mcp reload` invalidates the settings cache and
+reapplies MCP definitions during the current session. A `project:<name>` override in user settings
+applies to every workspace with that qualified name; put it in workspace settings to affect only
+the current checkout. This configuration controls availability only and grants no tool permission.
 
 At the interactive prompt, type `$` to open the enabled Skill picker. Selecting an entry inserts an
 atomic Skill token such as `$review`; the source qualifier is shown only when names collide. It
@@ -618,7 +620,7 @@ pnpm --filter @rejelly/evil-jelly start --review audit --family doc-drift --work
 The read-only `features/audit/families/docSync.ts` replaced the retired interactive `BiSyncDocsAgent`. There are no shadow copies, direction decisions, or per-file write confirmations.
 
 1. **Deterministic phase, zero LLM calls:** expand both globs in every `sync.pairs` entry and deduplicate the bidirectional union. A file missing on one side produces a high-severity `missing-file` verdict immediately.
-2. **Per-seed evaluation:** compare both full documents using the left side as the review spine. Each section is classified as `ok`, `inconsistent`, `left-only`, or `right-only`; the model handles cross-language section alignment.
+2. **Per-seed evaluation:** compare both documents using the left side as the review spine. The prompt embeds up to 400 lines per side; for longer documents the evaluator must read the truncated tail with read-only workspace tools before grading it. Each section is classified as `ok`, `inconsistent`, `left-only`, or `right-only`; the model handles cross-language section alignment.
 3. **Fan-in:** share the audit ledger with other families, using both paths as the `fingerprint` and both full texts as the `contentHash`. Reevaluate only when either side changes; suppress non-actionable verdicts according to ledger rules.
 
 The audit never changes source or documentation files; it only updates its report and ledger under `.evil-jelly/audit/`. A downstream agent must add translations or resolve which side is authoritative, consulting source code when necessary.

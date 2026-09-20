@@ -701,7 +701,8 @@ Executes the standard chat policy, returning the model's final text and messages
 
 **Differences from `promptAgent(schema)`:**
 
-- `promptChat()` returns `{ data: string, delta: Message[] }`, where `data` is the final text, and `delta` contains messages newly added in this round that can be persisted.
+- Without a schema, `promptChat()` returns `{ data: string, delta: Message[] }`, where `data` is the final text and `delta` contains messages newly added in this round that can be persisted.
+- With `promptChat({ schema })`, `data` is parsed and validated as `z.infer<typeof schema>` and is not necessarily a string.
 - `promptChat()` follows the chat policy's multi-round tool loop; `promptAgent(schema)` is for structured output.
 - `promptChat()` also depends on the already-equipped system/instruction/tools for this round.
 
@@ -712,8 +713,8 @@ Executes the standard chat policy, returning the model's final text and messages
 
 **Termination and exceptions:**
 
-- Ends when the model returns regular content that passes validator checks, returning `{ data, delta }` (if content is not a string, treated as empty string).
-- When `maxTurnSteps` is reached without content, throws `ToolLoopExceededError` (the independent `TurnBudgetExceededError` is the `executeTurn` layer's total budget guardrail — validation retries count toward it; see [Policy - Two-Layer Turn Budget](policy.md#two-layer-turn-budget)).
+- Ends when the model returns regular content that passes schema/validator checks, returning `{ data, delta }`; `data` is a string without a schema and the schema-inferred type when one is supplied.
+- If the final allowed turn still returns `tool_calls`, the loop cannot continue and throws `ToolLoopExceededError`. The independent `TurnBudgetExceededError` is the `executeTurn` layer's total budget guardrail, and validation retries count toward it; repeated content-validation failure instead ends with `AttemptsExhaustedError`. See [Policy - Two-Layer Turn Budget](policy.md#two-layer-turn-budget).
 
 ## `dumpSnapshot()`
 

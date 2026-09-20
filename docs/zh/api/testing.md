@@ -98,9 +98,9 @@ mock.when({ input: 'stream' })
 mock.when({ input: 'stream' })
   .thenStream({ reply: 'hello world' })
 
-// 指定分块大小
+// 指定分块大小：切分的是 JSON.stringify 后的完整文本
 mock.when({ input: 'stream' })
-  .thenStream({ reply: 'hello' }, 2)  // 依次 yield "he", "ll", "o"
+  .thenStream({ reply: 'hello' }, 2)  // 依次 yield '{"', 're', 'pl', 'y"', ':"', 'he', 'll', 'o"', '}'
 ```
 
 ##### `thenCallTools(toolCalls)`

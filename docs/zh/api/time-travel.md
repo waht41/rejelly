@@ -120,7 +120,7 @@ import { dumpSnapshot } from '@rejelly/core/debugger';
 const result = await runWith(async () => {
   const agent = createAgent({ ... });
   const result = await agent({ input: 'test' });
-  const snapshot = dumpSnapshot(); //注意，此api仅限于调试环境使用
+  const snapshot = dumpSnapshot(); // 当前 context 必须启用 enableSnapshot
   return result;
 });
 

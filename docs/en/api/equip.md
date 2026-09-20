@@ -53,12 +53,12 @@ Registers a tool in the tool list for the LLM to call during conversation.
 **ToolDefinition interface:**
 
 ```typescript
-interface ToolDefinition {
-  name: string;                    // Tool name
-  description: string;             // Tool description, tells the LLM when to use it
-  parameters: z.ZodSchema;         // Parameter schema (defined with Zod)
-  handler: (params: any) => Promise<any>;  // Tool execution function
-  middlewares?: ToolMiddleware[];  // Static middleware (optional, added via augmentTool)
+interface ToolDefinition<TParams extends z.ZodTypeAny = z.ZodTypeAny> {
+  name: string;                              // Tool name
+  description: string;                       // Tells the LLM when to use it
+  parameters: TParams;                       // Parameter schema (defined with Zod)
+  handler: (params: z.infer<TParams>) => Promise<unknown>; // Tool execution function
+  middlewares?: ToolMiddleware[];            // Static middleware (optional, added via augmentTool)
 }
 
 interface EquipToolOptions {

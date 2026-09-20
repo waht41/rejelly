@@ -370,7 +370,7 @@ JSON Schema 定义见仓库内 `packages/jelly-lint/jellylint.schema.json`。
 
 ## 5. 常见案例
 
-### 5.1 多应用 + 多 feature 目录，同 feature 子层可互依
+### 5.1 多应用 + 多 feature 目录，按层允许正向依赖
 
 ```jsonc
 "nodes": {

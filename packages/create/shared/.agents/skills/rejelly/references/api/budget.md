@@ -14,7 +14,8 @@ Every Agent's Context maintains a `BudgetState` with two dimensions of usage sta
 
 - **`aggregate`**: Aggregated consumption (Total Time)
   - Includes the sum of the current Agent's own consumption plus all sub-agents' consumption
-  - Consumption items with the same type and name are merged (aggregated by `type + name`)
+  - Model items are merged by `type + provider + name`
+  - Tool items are merged by `type + name + unit + details`; different units or details remain separate items
 
 ```typescript
 interface BudgetState {

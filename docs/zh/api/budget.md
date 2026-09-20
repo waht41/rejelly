@@ -14,7 +14,8 @@ Budget 机制提供层级化的资源消耗监控，在 Agent 调用链中追踪
 
 - **`aggregate`**: 聚合消费（Total Time）
   - 包含当前 Agent 自身以及所有子 Agent 的消费总和
-  - 相同类型和名称的消费项会被合并（按 `type + name` 聚合）
+  - Model 消费项按 `type + provider + name` 合并
+  - Tool 消费项按 `type + name + unit + details` 合并；不同单位或 details 会保留为不同条目
 
 ```typescript
 interface BudgetState {

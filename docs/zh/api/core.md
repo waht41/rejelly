@@ -702,7 +702,8 @@ handler: async () => {
 
 **与 `promptAgent(schema)` 的区别：**
 
-- `promptChat()` 返回 `{ data: string, delta: Message[] }`，其中 `data` 是最终文本，`delta` 是本轮可用于持久化追加的新增消息。
+- 不传 schema 时，`promptChat()` 返回 `{ data: string, delta: Message[] }`，其中 `data` 是最终文本，`delta` 是本轮可用于持久化追加的新增消息。
+- 传入 `promptChat({ schema })` 时，`data` 为经过该 schema 解析和校验的 `z.infer<typeof schema>`，不一定是字符串。
 - `promptChat()` 走 chat policy 的多轮工具循环；`promptAgent(schema)` 面向结构化输出。
 - `promptChat()` 同样依赖本轮已 equip 的 system/instruction/tools。
 
@@ -713,8 +714,8 @@ handler: async () => {
 
 **终止与异常：**
 
-- 当模型返回普通内容且通过 validator 校验时结束，并返回 `{ data, delta }`（若 content 非字符串，按空字符串处理）。
-- 达到 `maxTurnSteps` 仍未得到内容时，抛出 `ToolLoopExceededError`（与之独立的 `TurnBudgetExceededError` 是 `executeTurn` 层的总预算护栏，校验重试也计入，详见 [Policy - 两层 turn 预算](policy.md#两层-turn-预算)）。
+- 当模型返回普通内容且通过 schema / validator 校验时结束，并返回 `{ data, delta }`；未传 schema 时 `data` 为字符串，传入 schema 时为该 schema 的推断类型。
+- 如果最后一个允许的 turn 仍返回 `tool_calls`，工具循环无法继续，抛出 `ToolLoopExceededError`。与之独立的 `TurnBudgetExceededError` 是 `executeTurn` 层的总预算护栏，校验重试也计入；内容校验反复失败则由验证流程抛出 `AttemptsExhaustedError`。详见 [Policy - 两层 turn 预算](policy.md#两层-turn-预算)。
 
 ## `dumpSnapshot()`
 
