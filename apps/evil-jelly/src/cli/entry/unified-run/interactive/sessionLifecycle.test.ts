@@ -146,13 +146,23 @@ describe("non-TTY session lifecycle", () => {
       },
     ]);
 
-    await runEvilJellyHost(createMemoryBindings(["Inspect the workspace", "/compress", "/exit"]), {
+    const firstRunBindings = createMemoryBindings([
+      "Inspect the workspace",
+      "/compress",
+      "/status",
+      "/exit",
+    ]);
+    const firstRunSystemEvents: string[] = [];
+    firstRunBindings.logSystemEvent = (message) => firstRunSystemEvents.push(message);
+    await runEvilJellyHost(firstRunBindings, {
       runControl: createInteractiveRunControl(),
       model: firstModel.adapter,
       sessionId: "lifecycle",
       sessionStartMode: "new",
       session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
     });
+
+    expect(firstRunSystemEvents.join("\n")).toContain("Context window (approx): not measured yet");
 
     const firstResume = await resumeSession(workspaceRoot, "lifecycle", {
       originator: "evil-jelly-cli",

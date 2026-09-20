@@ -31,6 +31,7 @@ describe("formatSessionStatus", () => {
     expect(out).toContain("% used");
     expect(out).toContain("8.1k cached");
     expect(out).toContain("cached 30.2k");
+    expect(out).toContain("- Cache hit: 75.3%");
     expect(out).toContain("$0.1234");
   });
 
@@ -58,5 +59,18 @@ describe("formatSessionStatus", () => {
         protocol: "chat_completions",
       }),
     ).toContain("not measured yet");
+  });
+
+  it("shows a zero cache-hit rate before any prompt usage", () => {
+    expect(
+      formatSessionStatus({
+        sessionId: "s1",
+        workspace: "/work/reagent",
+        turns: 0,
+        budget: emptySessionBudget(),
+        modelId: "gpt-4o",
+        protocol: "responses",
+      }),
+    ).toContain("- Cache hit: 0.0%");
   });
 });
