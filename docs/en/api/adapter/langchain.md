@@ -56,9 +56,12 @@ interface LangChainToolLike {
   name: string;
   description: string;
   schema?: z.ZodTypeAny;
-  invoke?(input: any, options?: any): Promise<any>;
-  call?: (input: any, options?: any): Promise<any>;
-  func?: (input: any, options?: any): Promise<any>;
+  invoke?(input: unknown, options?: unknown): Promise<unknown>;
+  call?(input: unknown, options?: unknown): Promise<unknown>;
+  func?(
+    input: unknown,
+    options?: unknown,
+  ): Promise<unknown> | AsyncGenerator<unknown, unknown, unknown>;
 }
 
 interface FromLangChainToolOptions {
@@ -74,6 +77,7 @@ interface FromLangChainToolOptions {
 - **Duck typing compatibility**: Uses a minimal interface (`LangChainToolLike`) to avoid a hard dependency on the `langchain` library
 - **Schema extraction**: Automatically extracts the Zod Schema from LangChain tools (modern tools typically expose it directly)
 - **Execution method adaptation**: Supports `invoke()`, `call()`, `func()` and other execution methods (priority: invoke > call > func)
+- **AsyncGenerator tools**: Standard LangChain tools consume the generator inside `invoke()`; for duck-typed tools that expose only `func()`, the adapter consumes the generator to completion and uses its final `return` value as the tool result. Intermediate `yield` values are LangChain tool events and are not converted into Rejelly stream output
 - **AbortSignal injection**: Automatically retrieves `AbortSignal` from AgentContext and passes it to LangChain tools
 - **Multimodal results**: Content-block arrays returned by tools that include image blocks are converted to `toolContent` (see [Adapter · Multimodal Tool Results](/en/api/adapter/#multimodal-tool-results)); plain text / unrecognized results pass through unchanged
 - **Error handling**: Friendly error wrapping that preserves the original error context

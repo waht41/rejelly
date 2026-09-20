@@ -56,9 +56,12 @@ interface LangChainToolLike {
   name: string;
   description: string;
   schema?: z.ZodTypeAny;
-  invoke?(input: any, options?: any): Promise<any>;
-  call?: (input: any, options?: any): Promise<any>;
-  func?: (input: any, options?: any): Promise<any>;
+  invoke?(input: unknown, options?: unknown): Promise<unknown>;
+  call?(input: unknown, options?: unknown): Promise<unknown>;
+  func?(
+    input: unknown,
+    options?: unknown,
+  ): Promise<unknown> | AsyncGenerator<unknown, unknown, unknown>;
 }
 
 interface FromLangChainToolOptions {
@@ -74,6 +77,7 @@ interface FromLangChainToolOptions {
 - **鸭子类型兼容**：使用最小化接口（`LangChainToolLike`），避免强依赖 `langchain` 库
 - **Schema 提取**：自动提取 LangChain 工具的 Zod Schema（现代工具通常直接暴露）
 - **执行方法适配**：支持 `invoke()`、`call()`、`func()` 等多种执行方法（优先级：invoke > call > func）
+- **AsyncGenerator 工具**：标准 LangChain 工具由其 `invoke()` 在内部消费 generator；仅暴露 `func()` 的鸭子类型工具则由适配器消费到结束，并将最终 `return` 值作为工具结果。中间 `yield` 是 LangChain tool event，不会转换为 Rejelly stream 输出
 - **AbortSignal 注入**：自动从 AgentContext 获取 `AbortSignal` 并传递给 LangChain 工具
 - **多模态结果**：工具返回的 content-block 数组若含图片块，转成 `toolContent`（见 [Adapter · 多模态工具结果](/zh/api/adapter/#多模态工具结果-multimodal-tool-results)）；纯文本/未识别结果原样透传
 - **错误处理**：友好的错误包装，保留原始错误上下文
