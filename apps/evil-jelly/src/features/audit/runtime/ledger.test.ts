@@ -145,6 +145,19 @@ describe("audit ledger lifecycle", () => {
     expect(l.entries[gone.id]?.resolvedAt).toBe("t1");
   });
 
+  it("does not promote an unevaluated changed content hash", () => {
+    const l = ledger();
+    const evaluated = identity({ contentHash: "content-old" });
+    const changed = identity({ contentHash: "content-new" });
+    recordFindingInLedger(l, finding(evaluated, verdict({ isActionable: true })), "t0");
+
+    touchCurrentIdentity(l, changed, "t1");
+
+    expect(l.entries[evaluated.id]?.contentHash).toBe("content-old");
+    expect(l.entries[evaluated.id]?.lastSeen).toBe("t1");
+    expect(decideLedgerReuse(l, changed).action).toBe("evaluate");
+  });
+
   it("prunes stale same-kind non-accepted entries only", () => {
     const l = ledger();
     const stale = identity({ id: "clone:stale", fingerprint: "stale" });

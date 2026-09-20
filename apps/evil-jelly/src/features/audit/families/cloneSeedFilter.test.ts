@@ -7,7 +7,7 @@ import { analyzeFileBehavior, classifyFragment } from "./cloneSeedFilter";
 function classify(code: string, lang: Lang = Lang.TypeScript): "declaration" | "code" {
   const trimmed = code.replace(/^\n/, "");
   const root = parse(lang, trimmed).root();
-  const fb = analyzeFileBehavior(root);
+  const fb = analyzeFileBehavior(root, lang);
   const lineCount = trimmed.split("\n").length;
   const fragment: CloneFragment = {
     file: "x.ts",
@@ -51,6 +51,14 @@ describe("classifyFragment — droppable declarations", () => {
     expect(
       classify(`const Tool = { name: "grep", description: "search", parameters: schema };`),
     ).toBe("declaration");
+  });
+
+  it("plain JavaScript object without querying TypeScript-only kinds", () => {
+    expect(classify(`const cfg = { mode: "a", retries: 3 };`, Lang.JavaScript)).toBe("declaration");
+  });
+
+  it("TSX interface declaration", () => {
+    expect(classify(`interface Props { label: string }`, Lang.Tsx)).toBe("declaration");
   });
 });
 
@@ -114,7 +122,7 @@ function run(a: Args) {
   return 0;
 }`.replace(/^\n/, "");
     const root = parse(Lang.TypeScript, code).root();
-    const fb = analyzeFileBehavior(root);
+    const fb = analyzeFileBehavior(root, Lang.TypeScript);
     const frag: CloneFragment = { file: "x.ts", startLine: 1, endLine: 7, lines: 7 };
     expect(classifyFragment(fb, frag)).toBe("code");
   });

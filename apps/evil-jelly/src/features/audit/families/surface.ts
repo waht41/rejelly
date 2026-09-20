@@ -14,6 +14,7 @@ import {
 } from "../../../domains/workspace/ast/queries";
 import { langFromRelPath } from "../../../domains/workspace/source/sourceLanguage";
 import { tryParseRoot } from "../detectors/astParse";
+import { sha256 } from "../runtime/ledger";
 import { isTestOrGeneratedPath } from "../sourcePath";
 
 export interface SurfaceSymbol {
@@ -31,8 +32,24 @@ export interface SurfaceSymbol {
 export interface SurfaceExtraction {
   /** Sorted by file, then line, then name — stable for downstream hashing. */
   symbols: SurfaceSymbol[];
+  /** Hash of every successfully parsed mapped implementation file, including private helpers. */
+  implementationHash: string;
   filesScanned: number;
   filesParsed: number;
+}
+
+/**
+ * Stable mapped-source digest for behavior-sensitive ledger invalidation. Whole-file hashing is
+ * intentionally conservative: runtime behavior can change in a private helper without changing an
+ * exported signature or the body of the exported symbol that calls it.
+ */
+export function hashMappedImplementationSources(
+  sources: ReadonlyArray<{ file: string; text: string }>,
+): string {
+  const entries = sources
+    .map(({ file, text }) => ({ file, contentHash: sha256(text) }))
+    .sort((a, b) => a.file.localeCompare(b.file));
+  return sha256(JSON.stringify(entries));
 }
 
 /** Whether a declaration node sits under an `export` statement (directly or via its declaration list). */
@@ -101,6 +118,7 @@ export function extractSurfaceFromSource(file: string, code: string): SurfaceSym
  */
 export async function extractExportedSurface(files: string[]): Promise<SurfaceExtraction> {
   const symbols: SurfaceSymbol[] = [];
+  const implementationSources: Array<{ file: string; text: string }> = [];
   let filesParsed = 0;
   for (const rel of files) {
     if (isTestOrGeneratedPath(rel)) {
@@ -111,10 +129,16 @@ export async function extractExportedSurface(files: string[]): Promise<SurfaceEx
       continue;
     }
     filesParsed++;
+    implementationSources.push({ file: rel, text: parsed.text });
     symbols.push(...extractSurfaceFromParsed(rel, parsed.text, parsed.root));
   }
   symbols.sort(
     (a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.name.localeCompare(b.name),
   );
-  return { symbols, filesScanned: files.length, filesParsed };
+  return {
+    symbols,
+    implementationHash: hashMappedImplementationSources(implementationSources),
+    filesScanned: files.length,
+    filesParsed,
+  };
 }
