@@ -12,7 +12,13 @@
  * (DR-0005 narrow workflow).
  */
 
-import { createAgent, expectResource } from "@rejelly/core";
+import {
+  createAgent,
+  expectResource,
+  getContextSignal,
+  isAbortError,
+  withCustomSpan,
+} from "@rejelly/core";
 import {
   MCP_AUDIT_PROVENANCE_RESOURCE_KEY,
   type McpAuditProvenanceCollector,
@@ -25,6 +31,7 @@ import { complexityFamily } from "./families/complexity";
 import { docDriftFamily } from "./families/docDrift";
 import { docSyncFamily } from "./families/docSync";
 import { fragmentationFamily } from "./families/fragmentation";
+import { AuditEvaluatorTimeoutError, evaluateWithTimeout } from "./runtime/evaluatorTimeout";
 import {
   type AuditLedgerStats,
   decideLedgerReuse,
@@ -90,43 +97,99 @@ function findingFromLedger(
   return null;
 }
 
-async function evaluatePreparedSeeds(
+export function evaluatorTraceAttributes(
+  prepared: PreparedSeed,
+  index: number,
+  total: number,
+  evaluatorTimeoutMs: number,
+): Record<string, unknown> {
+  const firstLocation = prepared.seed.locations[0];
+  const headingPath =
+    prepared.seed.kind === "doc-drift" ? prepared.seed.label.split(" — ", 1)[0] : undefined;
+  return {
+    "evil_jelly.audit.family": prepared.seed.kind,
+    "evil_jelly.audit.candidate_id": prepared.seed.id,
+    "evil_jelly.audit.identity_id": prepared.identity.id,
+    "evil_jelly.audit.fingerprint": prepared.identity.fingerprint,
+    "evil_jelly.audit.candidate_label": prepared.seed.label,
+    "evil_jelly.audit.evaluator_index": index + 1,
+    "evil_jelly.audit.evaluator_total": total,
+    "evil_jelly.audit.timeout_ms": evaluatorTimeoutMs,
+    "evil_jelly.audit.locations": prepared.seed.locations
+      .map((location) => `${location.file}:${location.startLine}-${location.endLine}`)
+      .join(", "),
+    ...(prepared.seed.kind === "doc-drift" && firstLocation
+      ? { "evil_jelly.audit.document_path": firstLocation.file }
+      : {}),
+    ...(headingPath ? { "evil_jelly.audit.heading_path": headingPath } : {}),
+  };
+}
+
+export async function evaluatePreparedSeeds(
   seeds: PreparedSeed[],
   familyLabel: string,
   concurrency: number,
+  evaluatorTimeoutMs: number,
   printOut: PrintOut,
   onFindingSettled: (finding: AuditFinding) => Promise<void>,
 ): Promise<AuditFinding[]> {
   if (seeds.length === 0) {
     return [];
   }
+  const parentSignal = getContextSignal();
   // Unordered fan-out: seeds are independent and only aggregated at the end, so a slow seed must
   // not stall scheduling of the rest (head-of-line blocking). Results stay in seed order.
   return await mapWithConcurrency(
     seeds,
     concurrency,
-    async (prepared: PreparedSeed): Promise<AuditFinding> => {
-      let finding: AuditFinding;
-      try {
-        const verdict = await prepared.evaluate();
-        finding = {
-          seed: prepared.seed,
-          identity: prepared.identity,
-          verdict,
-          ledger: { source: "evaluated", status: "open" },
-        };
-      } catch (error) {
-        finding = {
-          seed: prepared.seed,
-          identity: prepared.identity,
-          error: error instanceof Error ? error.message : String(error),
-        };
-      }
-      // Persist this result before counting it as settled. A later evaluator may hang or the user
-      // may interrupt the run; completed work must already be present in the ledger and live report.
-      await onFindingSettled(finding);
-      return finding;
-    },
+    async (prepared: PreparedSeed, index): Promise<AuditFinding> =>
+      await withCustomSpan(
+        "audit.evaluate_seed",
+        async (span) => {
+          let finding: AuditFinding;
+          try {
+            const verdict = await evaluateWithTimeout(
+              prepared.evaluate,
+              evaluatorTimeoutMs,
+              parentSignal,
+            );
+            finding = {
+              seed: prepared.seed,
+              identity: prepared.identity,
+              verdict,
+              ledger: { source: "evaluated", status: "open" },
+            };
+            span.setAttribute(
+              "evil_jelly.audit.status",
+              verdict.isActionable ? "actionable" : "not_actionable",
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            finding = {
+              seed: prepared.seed,
+              identity: prepared.identity,
+              error: message,
+            };
+            span.setAttributes({
+              "evil_jelly.audit.status":
+                error instanceof AuditEvaluatorTimeoutError
+                  ? "timeout"
+                  : isAbortError(error)
+                    ? "aborted"
+                    : "error",
+              "evil_jelly.audit.error": message,
+            });
+          }
+          // Persist this result before counting it as settled. A later evaluator may hang or the user
+          // may interrupt the run; completed work must already be present in the ledger and live report.
+          await onFindingSettled(finding);
+          span.setAttribute("evil_jelly.audit.settled", true);
+          return finding;
+        },
+        {
+          attributes: evaluatorTraceAttributes(prepared, index, seeds.length, evaluatorTimeoutMs),
+        },
+      ),
     (finding, _prepared, completed) => {
       const tag = finding.error
         ? "error"
@@ -252,6 +315,7 @@ async function processFamily(
   ledger: AuditLedgerFile,
   maxSeeds: number,
   concurrency: number,
+  evaluatorTimeoutMs: number,
   nowIso: string,
   printOut: PrintOut,
   ledgerStats: AuditLedgerStats,
@@ -307,6 +371,7 @@ async function processFamily(
     toEvaluate,
     family.label,
     concurrency,
+    evaluatorTimeoutMs,
     printOut,
     checkpointFinding,
   );
@@ -342,6 +407,10 @@ export const AuditAgent = createAgent<AuditAgentProps, string>({
     const maxSeeds = props.maxSeeds ?? settings.audit.maxSeeds ?? AUDIT_DEFAULTS.maxSeeds;
     const concurrency =
       props.concurrency ?? settings.audit.concurrency ?? AUDIT_DEFAULTS.concurrency;
+    const evaluatorTimeoutMs =
+      props.evaluatorTimeoutMs ??
+      settings.audit.evaluatorTimeoutMs ??
+      AUDIT_DEFAULTS.evaluatorTimeoutMs;
     const ledgerGcDays =
       props.disableLedgerGc || settings.audit.disableLedgerGc
         ? undefined
@@ -369,7 +438,7 @@ export const AuditAgent = createAgent<AuditAgentProps, string>({
       printOut(`[Audit] Family filter: ${props.family}\n`);
     }
     if (props.onlyActionable) {
-      printOut("[Audit] Report filter: only actionable findings.\n");
+      printOut("[Audit] Report filter: non-actionable verdicts hidden; errors remain visible.\n");
     }
     const collectOptions: AuditCollectOptions = {
       ...(props.docFilter !== undefined ? { docFilter: props.docFilter } : {}),
@@ -414,6 +483,7 @@ export const AuditAgent = createAgent<AuditAgentProps, string>({
         ledger,
         maxSeeds,
         concurrency,
+        evaluatorTimeoutMs,
         generatedAt,
         printOut,
         ledgerStats,

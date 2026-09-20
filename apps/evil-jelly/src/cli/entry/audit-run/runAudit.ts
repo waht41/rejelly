@@ -42,6 +42,7 @@ export interface RunAuditOptions {
     docFilter?: string;
     docCodePaths?: string[];
     maxSeeds?: number;
+    evaluatorTimeoutMs?: number;
     ledgerGcDays?: number;
     disableLedgerGc?: boolean;
   };
@@ -102,6 +103,9 @@ export async function runAudit(options: RunAuditOptions): Promise<void> {
       enableReview: options.enableReview,
       run: async () => {
         await setBinding(bindings);
+        if (options.enableReview) {
+          bindings.logSystemEvent(`[Audit] Review trace ID: ${traceId}`);
+        }
         const family = auditOptions.family;
         bindings.logUserMessage(`Run audit family ${family} (CLI audit --family ${family}).`);
 

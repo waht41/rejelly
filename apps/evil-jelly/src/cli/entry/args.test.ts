@@ -681,6 +681,8 @@ describe("parseCliArgs", () => {
       "clone",
       "--max-seeds",
       "48",
+      "--evaluator-timeout-ms",
+      "120000",
       "--ledger-gc-days",
       "10",
       "--no-ledger-gc",
@@ -688,6 +690,7 @@ describe("parseCliArgs", () => {
     expect(auditArgs.settings).toEqual({
       docMap: "docs/map.jsonc",
       auditMaxSeeds: 48,
+      auditEvaluatorTimeoutMs: 120_000,
       auditLedgerGcDays: 10,
       auditDisableLedgerGc: true,
     });
@@ -698,6 +701,7 @@ describe("parseCliArgs", () => {
     expect(args.settings).toEqual({
       docMap: undefined,
       auditMaxSeeds: undefined,
+      auditEvaluatorTimeoutMs: undefined,
       auditLedgerGcDays: undefined,
       auditDisableLedgerGc: undefined,
     });
@@ -744,6 +748,8 @@ describe("parseCliArgs", () => {
       "doc-sync",
       "--max-seeds",
       "64",
+      "--evaluator-timeout-ms",
+      "90000",
       "--ledger-gc-days",
       "7",
       "--no-ledger-gc",
@@ -756,6 +762,7 @@ describe("parseCliArgs", () => {
     expect(args.auditOptions).toMatchObject({
       family: "doc-sync",
       maxSeeds: 64,
+      evaluatorTimeoutMs: 90_000,
       ledgerGcDays: 7,
       disableLedgerGc: true,
     });

@@ -204,7 +204,7 @@ export const fragmentationFamily: AuditSeedFamily = {
     const prepared: PreparedSeed[] = kept.map((cluster) => ({
       seed: fragmentationSeedView(cluster),
       identity: fragmentationIdentity(cluster),
-      evaluate: () => FragmentationEvaluatorAgent({ native: cluster }),
+      evaluate: (signal) => FragmentationEvaluatorAgent({ native: cluster, signal }),
     }));
 
     const stats: AuditFamilyStats = {

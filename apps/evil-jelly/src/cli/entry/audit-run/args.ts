@@ -13,6 +13,7 @@ export type AuditCommandArgs = {
     docFilter?: string;
     docCodePaths?: string[];
     maxSeeds?: number;
+    evaluatorTimeoutMs?: number;
     ledgerGcDays?: number;
     disableLedgerGc?: boolean;
   };
@@ -75,8 +76,12 @@ export function registerAuditArgs(cli: CAC): Command {
       "--family <name>",
       "Required; one of clone, complexity, fragmentation, doc-drift, or doc-sync",
     )
-    .option("--only-actionable", "Audit report: render only actionable findings")
+    .option(
+      "--only-actionable",
+      "Audit report: hide non-actionable verdicts (evaluation errors remain visible)",
+    )
     .option("--max-seeds <n>", "Positive limit on new or changed seeds to evaluate")
+    .option("--evaluator-timeout-ms <n>", "Positive hard deadline in milliseconds per evaluator")
     .option("--ledger-gc-days <n>", "Positive stale-entry age in days for ledger pruning")
     .option("--no-ledger-gc", "Disable stale ledger pruning for this run")
     .option(
@@ -93,6 +98,10 @@ export function auditSettingsOverrides(options: Record<string, unknown>): Settin
   return {
     docMap: resolveOptionalString(options.docMap),
     auditMaxSeeds: resolvePositiveInteger(options.maxSeeds, "--max-seeds"),
+    auditEvaluatorTimeoutMs: resolvePositiveInteger(
+      options.evaluatorTimeoutMs,
+      "--evaluator-timeout-ms",
+    ),
     auditLedgerGcDays: resolvePositiveInteger(options.ledgerGcDays, "--ledger-gc-days"),
     auditDisableLedgerGc: options.ledgerGc === false ? true : undefined,
   };
@@ -109,6 +118,10 @@ export function parseAuditArgs(
   const auditDocFilter = resolveOptionalString(options.doc);
   const auditDocCodePaths = resolveOptionalStringArray(options.code);
   const maxSeeds = resolvePositiveInteger(options.maxSeeds, "--max-seeds");
+  const evaluatorTimeoutMs = resolvePositiveInteger(
+    options.evaluatorTimeoutMs,
+    "--evaluator-timeout-ms",
+  );
   const ledgerGcDays = resolvePositiveInteger(options.ledgerGcDays, "--ledger-gc-days");
   if (auditDocCodePaths.length > 0 && auditDocFilter === undefined) {
     failArgs("--code requires --doc <file>");
@@ -127,6 +140,7 @@ export function parseAuditArgs(
       ...(auditDocFilter !== undefined ? { docFilter: auditDocFilter } : {}),
       ...(auditDocCodePaths.length > 0 ? { docCodePaths: auditDocCodePaths } : {}),
       ...(maxSeeds !== undefined ? { maxSeeds } : {}),
+      ...(evaluatorTimeoutMs !== undefined ? { evaluatorTimeoutMs } : {}),
       ...(ledgerGcDays !== undefined ? { ledgerGcDays } : {}),
       ...(options.ledgerGc === false ? { disableLedgerGc: true } : {}),
     },

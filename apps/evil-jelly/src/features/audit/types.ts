@@ -155,7 +155,7 @@ export interface AuditReportData {
 }
 
 export interface AuditReportRenderOptions {
-  /** Hide non-actionable verdicts and evaluation errors from the rendered findings body. */
+  /** Hide non-actionable verdicts; evaluation errors remain visible because no verdict was reached. */
   onlyActionable?: boolean;
 }
 
@@ -165,8 +165,8 @@ export interface PreparedSeed {
   seed: AuditSeed;
   /** Stable ledger identity. */
   identity: AuditSeedIdentity;
-  /** Evaluate the underlying native candidate (Phase 2). */
-  evaluate: () => Promise<SeedVerdict>;
+  /** Evaluate the underlying native candidate (Phase 2), cancelling all nested work on abort. */
+  evaluate: (signal: AbortSignal) => Promise<SeedVerdict>;
 }
 
 /** Per-run narrowing options passed into family collectors. */
@@ -199,7 +199,7 @@ export interface AuditSeedFamily {
 export interface AuditAgentProps {
   /** The single detector family to run. */
   family: AuditFindingKind;
-  /** Render only actionable findings in the persisted Markdown report. */
+  /** Hide non-actionable verdicts in the report while retaining evaluation errors. */
   onlyActionable?: boolean;
   /** Restrict doc-drift to one doc file (basename or workspace-relative path). */
   docFilter?: string;
@@ -209,6 +209,8 @@ export interface AuditAgentProps {
   maxSeeds?: number;
   /** Concurrency for the per-seed fan-out. */
   concurrency?: number;
+  /** Hard deadline for one evaluator, including its model and tool work. */
+  evaluatorTimeoutMs?: number;
   /** Delete stale same-family ledger entries not seen for this many days. */
   ledgerGcDays?: number;
   /** Disable stale ledger garbage collection for this run. */
@@ -224,6 +226,8 @@ export const AUDIT_DEFAULTS = {
   /** Per-seed fan-out concurrency (unordered pool; deepseek allows ~2500 concurrent, so headroom
    * is large). Overridable via settings.jsonc `audit.concurrency`; this is the fallback. */
   concurrency: 12,
+  /** Hard deadline for one evaluator. Cancellation propagates through agent/model/tool signals. */
+  evaluatorTimeoutMs: 300_000,
   /** Per-seed tool-loop step cap. A safety net against runaway loops, deliberately well above the
    * typical 2-5 turns: per-seed cost is governed by perSeedIntakeTokens (no new tool output once
    * spent), not by this cap, so complex seeds (e.g. cross-file clone evidence) get headroom. */

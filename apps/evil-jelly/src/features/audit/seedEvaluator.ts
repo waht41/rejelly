@@ -15,6 +15,7 @@ import {
   equipSystem,
   equipTool,
   expectResource,
+  getAbortHandle,
   promptAgent,
 } from "@rejelly/core";
 import { z } from "zod";
@@ -82,37 +83,49 @@ export interface SeedEvaluatorConfig<TNative, TVerdict extends SeedVerdict> {
 export function makeSeedEvaluatorAgent<TNative, TVerdict extends SeedVerdict>(
   config: SeedEvaluatorConfig<TNative, TVerdict>,
 ) {
-  return createAgent<{ native: TNative }, TVerdict>({
+  return createAgent<{ native: TNative; signal: AbortSignal }, TVerdict>({
     id: config.id,
     maxTurnSteps: AUDIT_DEFAULTS.perSeedMaxTurnSteps,
-    handler: async ({ native }) => {
-      equipSystem(config.systemPrompt);
-      equipInstruction(await config.buildInstruction(native));
-
-      await equipReadOnlyWorkspaceKit({ quiet: true });
-      const mcpRuntime = expectResource<McpRuntimeManager>(MCP_RUNTIME_RESOURCE_KEY, {
-        optional: true,
-      });
-      const mcpProvenance = expectResource<McpAuditProvenanceCollector>(
-        MCP_AUDIT_PROVENANCE_RESOURCE_KEY,
-        { optional: true },
-      );
-      if (mcpRuntime && mcpProvenance) {
-        for (const tool of createAuditMcpGatewayTools(mcpRuntime, mcpProvenance)) equipTool(tool);
+    handler: async ({ native, signal }) => {
+      const abortEvaluator = getAbortHandle();
+      const forwardAbort = () => abortEvaluator(signal.reason);
+      if (signal.aborted) {
+        forwardAbort();
+        throw signal.reason instanceof Error ? signal.reason : new Error("Evaluator aborted");
       }
-      // Read-only fan-out with no auto-compaction: a hard per-seed intake ceiling is this worker's
-      // top-level context/cost bound. Declared explicitly here rather than hidden inside the kit.
-      equipContextIntakeBudgetMiddleware({
-        name: `${config.id}-context-intake-budget`,
-        maxTokens: AUDIT_DEFAULTS.perSeedIntakeTokens,
-        budgetedTools: READ_ONLY_WORKSPACE_TOOL_NAMES,
-      });
-      equipToolLoopBudgetMiddleware({
-        maxTurnSteps: AUDIT_DEFAULTS.perSeedMaxTurnSteps,
-        name: `${config.id}-tool-loop-budget`,
-      });
+      signal.addEventListener("abort", forwardAbort, { once: true });
 
-      return await promptAgent(config.schema);
+      try {
+        equipSystem(config.systemPrompt);
+        equipInstruction(await config.buildInstruction(native));
+
+        await equipReadOnlyWorkspaceKit({ quiet: true });
+        const mcpRuntime = expectResource<McpRuntimeManager>(MCP_RUNTIME_RESOURCE_KEY, {
+          optional: true,
+        });
+        const mcpProvenance = expectResource<McpAuditProvenanceCollector>(
+          MCP_AUDIT_PROVENANCE_RESOURCE_KEY,
+          { optional: true },
+        );
+        if (mcpRuntime && mcpProvenance) {
+          for (const tool of createAuditMcpGatewayTools(mcpRuntime, mcpProvenance)) equipTool(tool);
+        }
+        // Read-only fan-out with no auto-compaction: a hard per-seed intake ceiling is this worker's
+        // top-level context/cost bound. Declared explicitly here rather than hidden inside the kit.
+        equipContextIntakeBudgetMiddleware({
+          name: `${config.id}-context-intake-budget`,
+          maxTokens: AUDIT_DEFAULTS.perSeedIntakeTokens,
+          budgetedTools: READ_ONLY_WORKSPACE_TOOL_NAMES,
+        });
+        equipToolLoopBudgetMiddleware({
+          maxTurnSteps: AUDIT_DEFAULTS.perSeedMaxTurnSteps,
+          name: `${config.id}-tool-loop-budget`,
+        });
+
+        return await promptAgent(config.schema);
+      } finally {
+        signal.removeEventListener("abort", forwardAbort);
+      }
     },
   });
 }

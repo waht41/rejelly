@@ -242,7 +242,7 @@ export const cloneFamily: AuditSeedFamily = {
       kept.map(async (cluster) => ({
         seed: cloneSeedView(cluster),
         identity: await resolver.identityFor(cluster),
-        evaluate: () => CloneEvaluatorAgent({ native: cluster }),
+        evaluate: (signal) => CloneEvaluatorAgent({ native: cluster, signal }),
       })),
     );
 
