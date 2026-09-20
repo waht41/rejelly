@@ -33,7 +33,7 @@ import type {
 } from "../types";
 import { AUDIT_DEFAULTS } from "../types";
 import type { SurfaceExtraction } from "./surface";
-import { extractExportedSurface } from "./surface";
+import { extractExportedSurface, hashMappedImplementationSources } from "./surface";
 
 // ---------------------------------------------------------------------------
 // Candidate assembly — deterministic Phase 1
@@ -89,7 +89,12 @@ function createSurfaceCache() {
       }
       const created =
         paths.length === 0
-          ? Promise.resolve({ symbols: [], filesScanned: 0, filesParsed: 0 })
+          ? Promise.resolve({
+              symbols: [],
+              implementationHash: hashMappedImplementationSources([]),
+              filesScanned: 0,
+              filesParsed: 0,
+            })
           : listScriptRelPathsUnder(paths).then((files) => extractExportedSurface(files));
       surfaces.set(key, created);
       return created;
@@ -119,7 +124,7 @@ function symbolEvidence(symbol: MatchableSymbol): string {
   return `${symbol.signature}\n${symbol.jsdoc ?? ""}`;
 }
 
-function candidatesForDoc(
+export function candidatesForDoc(
   docFile: string,
   markdown: string,
   entry: DocMapEntry,
@@ -138,12 +143,15 @@ function candidatesForDoc(
       preFiltered++;
       continue;
     }
-    // Matched sections invalidate on their own evidence; narrative sections (no matches) fall back
-    // to the full surface hash of the mapped area — coarser, but signatures churn far less than code.
+    // Every section invalidates on mapped implementation changes. This is deliberately coarser than
+    // signatures: behavior can change inside private helpers while the public surface remains stable.
+    // Matched symbol evidence still avoids unrelated signature churn becoming the only signal, while
+    // narrative sections retain the full-surface fallback for added/removed public capabilities.
     const surfaceHash = sha256(
       JSON.stringify({
         matched: matched.map(symbolEvidence),
         artifacts: artifactHashes,
+        implementation: surface.implementationHash,
         fallback: matched.length === 0 && surface.symbols.length > 0 ? fullSurfaceHash : "",
       }),
     );
@@ -192,10 +200,10 @@ function docDriftSeedView(candidate: DocSectionCandidate): AuditSeed {
 // ---------------------------------------------------------------------------
 
 /**
- * `fingerprint` is keyed by doc file + heading path, so rewording the body keeps the ledger lineage
- * (an accepted/suppressed decision survives edits). `contentHash` covers the section text plus the
- * code-side evidence hash: pure implementation changes that leave signatures/JSDoc/artifacts intact
- * do not re-trigger evaluation (INV-0015 §6 — surface hash is the right invalidation granularity).
+ * `fingerprint` is keyed by doc file + heading path, so rewording the body keeps the ledger lineage.
+ * `contentHash` covers the section text plus signatures/JSDoc/artifacts and the full mapped
+ * implementation digest. Runtime behavior changes therefore re-trigger evaluation even when the
+ * public surface is unchanged.
  */
 export function docDriftIdentityFor(candidate: DocSectionCandidate): AuditSeedIdentity {
   const fingerprint = sha256(

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractSurfaceFromSource } from "./surface";
+import { extractSurfaceFromSource, hashMappedImplementationSources } from "./surface";
 
 const SAMPLE = `/** Module doc. */
 import { x } from "./x";
@@ -78,6 +78,36 @@ describe("extractSurfaceFromSource", () => {
   it("returns empty for unparsable content instead of throwing", () => {
     expect(extractSurfaceFromSource("src/sample.ts", "export function {{{")).toEqual(
       expect.any(Array),
+    );
+  });
+});
+
+describe("hashMappedImplementationSources", () => {
+  it("changes when private implementation behavior changes", () => {
+    const before = hashMappedImplementationSources([
+      {
+        file: "src/api.ts",
+        text: "function cleanup(value: unknown) { return Boolean(value); }\nexport { cleanup };",
+      },
+    ]);
+    const after = hashMappedImplementationSources([
+      {
+        file: "src/api.ts",
+        text: "function cleanup(value: unknown) { return value != null; }\nexport { cleanup };",
+      },
+    ]);
+
+    expect(after).not.toBe(before);
+  });
+
+  it("is stable when mapped files arrive in a different order", () => {
+    const sources = [
+      { file: "src/a.ts", text: "export const a = 1;" },
+      { file: "src/b.ts", text: "export const b = 2;" },
+    ];
+
+    expect(hashMappedImplementationSources(sources)).toBe(
+      hashMappedImplementationSources([...sources].reverse()),
     );
   });
 });
