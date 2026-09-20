@@ -202,7 +202,6 @@ export function touchCurrentIdentity(
   }
   ledger.entries[identity.id] = {
     ...existing,
-    ...identity,
     lastSeen: nowIso,
     resolvedAt: undefined,
     status: existing.status === "resolved" ? "open" : existing.status,
