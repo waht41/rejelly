@@ -54,6 +54,7 @@ function bindings(): EvilJellyBindings {
   return {
     logUserMessage: vi.fn(),
     logAssistantMessage: vi.fn(),
+    logSystemEvent: vi.fn(),
   } as unknown as EvilJellyBindings;
 }
 
@@ -80,6 +81,7 @@ describe("runAudit", () => {
     });
 
     expect(mocks.setBinding).toHaveBeenCalledWith(host);
+    expect(host.logSystemEvent).toHaveBeenCalledWith("[Audit] Review trace ID: audit-trace");
     expect(mocks.auditAgent).toHaveBeenCalledWith({ family: "clone", maxSeeds: 3 });
     expect(host.logAssistantMessage).toHaveBeenCalledWith("audit report");
     expect(mocks.runtimeConstructions).toBe(0);
@@ -107,13 +109,15 @@ describe("runAudit", () => {
       },
     ];
 
+    const host = bindings();
     await runAudit({
       model: { id: "test-model" } as ModelAdapter,
-      bindings: bindings(),
+      bindings: host,
       enableReview: false,
       auditOptions: { family: "clone" },
     });
 
+    expect(host.logSystemEvent).not.toHaveBeenCalled();
     expect(mocks.runtimeConstructions).toBe(1);
     expect(mocks.reconcileMcp).toHaveBeenCalledOnce();
     expect(mocks.waitForRequiredServers).toHaveBeenCalledWith("audit");
