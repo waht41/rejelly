@@ -33,8 +33,8 @@ export interface LangChainToolLike {
   // narrower, generic input types — remain structurally assignable to this duck-typed interface.
   invoke?(input: unknown, options?: unknown): Promise<unknown>;
   call?(input: unknown, options?: unknown): Promise<unknown>;
-  // Real LangChain `func` may also return an AsyncGenerator (streaming tools); we only consume the
-  // awaited value, but the wider return type keeps real tools structurally assignable.
+  // Real LangChain `func` may also return an AsyncGenerator of tool events. Standard tools consume
+  // it inside invoke(); the func-only fallback below consumes it and returns its final value.
   func?(
     input: unknown,
     options?: unknown,
@@ -69,6 +69,27 @@ function isLangChainContentBlockArray(value: unknown): value is Record<string, u
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isAsyncGenerator(value: unknown): value is AsyncGenerator<unknown, unknown, unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as AsyncGenerator<unknown, unknown, unknown>).next === "function" &&
+    typeof (value as AsyncGenerator<unknown, unknown, unknown>)[Symbol.asyncIterator] === "function"
+  );
+}
+
+/** Consume a func-only LangChain async generator and return its final value. */
+async function consumeAsyncGenerator(
+  generator: AsyncGenerator<unknown, unknown, unknown>,
+): Promise<unknown> {
+  for (;;) {
+    const step = await generator.next();
+    if (step.done) return step.value;
+    // LangChain treats yielded values as tool events. Rejelly currently has no equivalent
+    // bridge for a raw func-only fallback, so consume them without exposing them as output.
+  }
 }
 
 /**
@@ -192,8 +213,9 @@ export function fromLangChainTool(
   }
 
   const executeMethod = tool.invoke ?? tool.call ?? tool.func;
+  const executeKind = tool.invoke ? "invoke" : tool.call ? "call" : tool.func ? "func" : undefined;
 
-  if (!executeMethod) {
+  if (!executeMethod || !executeKind) {
     throw new Error(
       `LangChain tool "${tool.name}" must have one of: invoke(), call(), or func() method`,
     );
@@ -211,7 +233,11 @@ export function fromLangChainTool(
           toolOptions.signal = signal;
           toolOptions.configurable = { signal };
         }
-        const result = await executeMethod.call(tool, args, toolOptions);
+        const pendingResult = executeMethod.call(tool, args, toolOptions);
+        const result =
+          executeKind === "func" && isAsyncGenerator(pendingResult)
+            ? await consumeAsyncGenerator(pendingResult)
+            : await pendingResult;
         return normalizeLangChainToolResult(result);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);

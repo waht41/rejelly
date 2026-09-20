@@ -82,4 +82,45 @@ describe("LangChain tool result normalization", () => {
     expect(isToolContent(output)).toBe(false);
     expect(output).toEqual(blocks);
   });
+
+  it("lets a real LangChain tool consume async-generator events and return the final value", async () => {
+    const progress: number[] = [];
+    const lcTool = tool(
+      async function* () {
+        progress.push(1);
+        yield { progress: 1 };
+        progress.push(2);
+        yield { progress: 2 };
+        return "complete";
+      },
+      {
+        name: "streaming_tool",
+        description: "streams progress before returning",
+        schema: z.object({}),
+      },
+    );
+
+    const adapted = fromLangChainTool(lcTool);
+    expect(await adapted.handler({})).toBe("complete");
+    expect(progress).toEqual([1, 2]);
+  });
+
+  it("consumes a func-only async generator and returns its final value", async () => {
+    const progress: number[] = [];
+    const adapted = fromLangChainTool({
+      name: "func_only_streaming_tool",
+      description: "streams progress before returning",
+      schema: z.object({}),
+      async *func() {
+        progress.push(1);
+        yield { progress: 1 };
+        progress.push(2);
+        yield { progress: 2 };
+        return { result: "complete" };
+      },
+    });
+
+    expect(await adapted.handler({})).toEqual({ result: "complete" });
+    expect(progress).toEqual([1, 2]);
+  });
 });
