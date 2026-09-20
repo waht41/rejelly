@@ -64,10 +64,17 @@ Rejelly 的 API 按照 **生命周期阶段** 组织，遵循清晰的执行流�
 
 ```typescript
 import { createAgent, equipSystem, equipInstruction, promptAgent } from '@rejelly/core';
+import { createOpenAIAdapter } from '@rejelly/adapter-openai';
 import { z } from 'zod';
+
+const model = createOpenAIAdapter({
+  modelId: 'gpt-5.6-luna',
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 const MyAgent = createAgent({
   id: 'my_agent',
+  model,
   handler: async (props) => {
     equipSystem('你是一个助手');
     equipInstruction(`任务：${props.task}`);

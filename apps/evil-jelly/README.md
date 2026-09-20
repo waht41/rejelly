@@ -398,7 +398,7 @@ The MCP endpoint is derived from the origin of `REJELLY_REVIEW_ENDPOINT` and def
 
 ### Configuration boundaries
 
-All Evil Jelly configuration lives under an `.evil-jelly/` directory:
+Evil Jelly's persistent configuration files live under `.evil-jelly/` directories. Shell environment variables and CLI arguments provide additional runtime override layers:
 
 - `~/.evil-jelly/settings.jsonc` contains personal, non-secret defaults across workspaces.
 - `.evil-jelly/settings.jsonc` contains local workspace overrides and is ignored by Git.

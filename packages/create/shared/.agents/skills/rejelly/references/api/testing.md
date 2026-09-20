@@ -98,9 +98,9 @@ mock.when({ input: 'stream' })
 mock.when({ input: 'stream' })
   .thenStream({ reply: 'hello world' })
 
-// Specify chunk size
+// Specify chunk size: chunks cover the complete JSON.stringify output
 mock.when({ input: 'stream' })
-  .thenStream({ reply: 'hello' }, 2)  // yields "he", "ll", "o" in order
+  .thenStream({ reply: 'hello' }, 2)  // yields '{"', 're', 'pl', 'y"', ':"', 'he', 'll', 'o"', '}'
 ```
 
 ##### `thenCallTools(toolCalls)`

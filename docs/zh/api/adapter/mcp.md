@@ -95,7 +95,7 @@ interface EquipMCPOptions {
 
 - 子 Agent 读取父级暴露的 Client 前，父 Agent 须已 `equipResource('mcp:…', { expose: true })` 且**先于**子 Agent 执行完成注册。
 - 需要绕过 memo、每次重新 `listTools` 时传 **`forceRefresh: true`**（可每轮 `equipMCP` 都传）。
-- 官方 SDK 的 `readResource` 多为 `readResource({ uri })`，与 `MCPClientAdapter` 文档签名可能不一致，需在业务侧适配或断言类型。
+- `MCPClientAdapter.readResource` 直接接受 `readResource({ uri })` 与 `readResource(uri)` 两种形式；适配器优先使用官方 SDK 的对象参数形式，并在调用失败时回退到字符串 URI。
 
 ## 父子 Agent 示例（子级用 `expectResource`）
 

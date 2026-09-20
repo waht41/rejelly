@@ -64,10 +64,17 @@ Rejelly's API is organized by **lifecycle phase**, following a clear execution f
 
 ```typescript
 import { createAgent, equipSystem, equipInstruction, promptAgent } from '@rejelly/core';
+import { createOpenAIAdapter } from '@rejelly/adapter-openai';
 import { z } from 'zod';
+
+const model = createOpenAIAdapter({
+  modelId: 'gpt-5.6-luna',
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 const MyAgent = createAgent({
   id: 'my_agent',
+  model,
   handler: async (props) => {
     equipSystem('You are an assistant');
     equipInstruction(`Task: ${props.task}`);

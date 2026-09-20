@@ -30,15 +30,25 @@ const result = await promptAgent(
 
 **尝试耗尽**：抛出 `AttemptsExhaustedError`（message 含 "All attempts exhausted"），实例上带 `attempts` / `issues` / `lastFailureType` / `lastData` / `lastRawText`。没有 validator 级别的回调；兜底逻辑在 Agent 调用处捕获实现。
 
+`expectValidator()` 必须在活动 Agent context 中注册，通常放在 Agent handler 内并位于 `promptAgent()` 之前：
+
 ```typescript
-import { AttemptsExhaustedError, expectValidator } from '@rejelly/core';
+import { AttemptsExhaustedError, createAgent, expectValidator, promptAgent } from '@rejelly/core';
 import { QuoteSchema } from './schemas';
 
-// 基本用法：返回 string 会重试；schema 仅用于推断 data 类型
-expectValidator(QuoteSchema, (data) => {
-  if (data.price < 0) return "价格不能为负数，请修正";
-  if (data.price > 10000 && !data.isVip) return "非 VIP 用户单价不能超过 10000";
-  return true;
+const QuoteAgent = createAgent({
+  id: 'quote',
+  model: quoteModel,
+  handler: async ({ sku }: { sku: string }) => {
+    // 返回 string 会重试；schema 仅用于推断 data 类型
+    expectValidator(QuoteSchema, (data) => {
+      if (data.price < 0) return "价格不能为负数，请修正";
+      if (data.price > 10000 && !data.isVip) return "非 VIP 用户单价不能超过 10000";
+      return true;
+    });
+
+    return await promptAgent(QuoteSchema);
+  },
 });
 
 // 尝试耗尽：在 Agent 调用处捕获，抛自定义错误或返回兜底值
