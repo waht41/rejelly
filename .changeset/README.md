@@ -16,6 +16,7 @@ The private `@rejelly/release-tools` workspace package provides additional relea
 
 - `release:prepare` reports packages changed since their latest release tags.
 - `release:pack-hash` compares local package contents with an already published version.
+- `release:check-git` requires a clean `main` branch synchronized with `origin/main` before a public release.
 - `release:check-registry` verifies that every publishable package resolves to the expected registry.
 - `release:canary` builds and publishes commit-based prereleases to a non-public registry.
 
