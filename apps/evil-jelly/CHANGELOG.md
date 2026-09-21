@@ -1,5 +1,51 @@
 # @rejelly/evil-jelly
 
+## 0.3.0
+
+### Minor Changes
+
+- ### Documentation audits
+  
+  - Allow doc-drift mappings to select the Markdown heading depth used for audit candidates, include the Evil Jelly README in the audit map, and checkpoint reports and ledger updates as each evaluator settles. ([#82](https://github.com/waht41/rejelly/pull/82))
+  - Correct audited API and behavior documentation across Evil Jelly and Rejelly in two follow-up passes. ([#85](https://github.com/waht41/rejelly/pull/85), [#108](https://github.com/waht41/rejelly/pull/108))
+  - Add configurable evaluator timeouts, surface evaluator failures alongside acceptable findings, and expose the Review trace ID as soon as an Audit starts. ([#105](https://github.com/waht41/rejelly/pull/105))
+  - Skip TypeScript checks for JavaScript clone seeds, validate doc-drift implementation mappings, and retain changed content hashes until their seeds are evaluated. ([#106](https://github.com/waht41/rejelly/pull/106))
+- ### Sessions and inspection
+  
+  - Persist completed model and tool call facts with prompt-composition metrics, token usage, transport retries, and owner-reported tool outcomes. ([#87](https://github.com/waht41/rejelly/pull/87))
+  - Add `evil inspect` for durable session journals with Session and Turn summaries, waterfalls, segment and checkpoint drill-down, and model and tool call details. ([#88](https://github.com/waht41/rejelly/pull/88))
+  - Add Session- and Turn-level Tool call aggregation, per-Tool drill-down, unused Tool visibility, direct ToolCall inspection, and unified `--tools [selector]` and `--models [selector]` options. ([#95](https://github.com/waht41/rejelly/pull/95))
+  - Add grep-specific `evil inspect --tools grep` diagnostics with search-output metrics, expansion analysis, truncation visibility, and richer largest-call details. ([#97](https://github.com/waht41/rejelly/pull/97))
+  - Add Session-global `TCn` addresses to Tool Call inspection and allow `evil inspect --tools` to select calls by address or persisted ToolCall ID. ([#103](https://github.com/waht41/rejelly/pull/103))
+  - Display the model prompt cache rate in conversation session summaries and refresh the summary after `/compress` changes the active context. ([#110](https://github.com/waht41/rejelly/pull/110))
+- ### Terminal and interactive experience
+  
+  - Support Alt+V image attachment from copied image files on Windows, Windows clipboard access from WSL, and native Wayland/X11 clipboards on Linux while preserving image MIME types and temporary-file cleanup. ([#92](https://github.com/waht41/rejelly/pull/92))
+  - Show in-flight tool calls in `/expand-tool` with their arguments and live output, retain a byte-bounded running transcript, and preserve selection as calls update and complete. ([#94](https://github.com/waht41/rejelly/pull/94))
+  - Decode Git-style quoted UTF-8 paths when rendering reviewed diffs so Chinese and other non-ASCII filenames remain readable. ([#101](https://github.com/waht41/rejelly/pull/101))
+- ### Workspace and command tools
+  
+  - Make `edit_file` validate requested edits atomically per file, report every invalid block, preserve conflict-free file updates, and support bounded replacements between unique start and end anchors. ([#81](https://github.com/waht41/rejelly/pull/81))
+  - Render grep results as merged per-file snippets and return compact source-order AST document outlines with export filtering. ([#86](https://github.com/waht41/rejelly/pull/86))
+  - Allow the `grep` tool's `directory` parameter to accept a concrete file path as a single-file search fallback. ([#93](https://github.com/waht41/rejelly/pull/93))
+  - Limit individual command-output lines to 16 KiB before applying the total output cap, preserving UTF-8 boundaries and both ends of oversized lines. ([#98](https://github.com/waht41/rejelly/pull/98))
+  - Consolidate AST workspace tools into `ast_document_symbols`, `ast_workspace_symbols`, and `ast_read_symbol_code`, remove unused heuristic tools, and render compact readable text instead of JSON-escaped payloads. ([#100](https://github.com/waht41/rejelly/pull/100))
+  - Make `grep` searches literal by default, add an explicit regex mode, validate expressions before backend selection, and report native search failures accurately. ([#104](https://github.com/waht41/rejelly/pull/104))
+
+### Patch Changes
+
+- ### CLI behavior
+  
+  - Fail fast on unknown, cross-command, and missing-value CLI arguments by scoping options to their owning commands and running CAC structural validation before command-specific parsing. ([#102](https://github.com/waht41/rejelly/pull/102))
+- ### Model and conversation runtime
+  
+  - Scope cancellation to the active conversation, agent, turn, or tool operation so interrupting in-flight work does not discard unrelated conversation state or newly submitted user input. ([#83](https://github.com/waht41/rejelly/pull/83))
+  - Recover interactive sessions from transient network failures and expose retry backoff, active attempts, and stable failure reasons in the runtime status bar. ([#90](https://github.com/waht41/rejelly/pull/90))
+- Updated dependencies:
+  - @rejelly/core@0.2.1
+  - @rejelly/adapter-openai@0.2.1
+  - @rejelly/adapter-mcp@0.2.0
+
 ## 0.2.0
 
 ### Minor Changes
