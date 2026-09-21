@@ -1,6 +1,6 @@
 {
   "name": "@rejelly/devtool",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "author": "waht41",
   "type": "module",
   "bin": {
