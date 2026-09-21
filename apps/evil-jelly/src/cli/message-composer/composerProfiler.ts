@@ -2,7 +2,7 @@ import { performance } from "node:perf_hooks";
 import { composerProfileEnabled } from "../../shared/profile/selection";
 
 const SAMPLE_LIMIT = 2_048;
-export const COMPOSER_PROFILE_WINDOW_MS = 3_000;
+export const COMPOSER_PROFILE_BURST_IDLE_MS = 750;
 
 interface InputSample {
   readonly atMs: number;
@@ -14,6 +14,17 @@ interface CommitSample {
   readonly latenciesMs: readonly number[];
 }
 
+interface ComposerProfileBurst {
+  readonly startedAtMs: number;
+  lastInputAtMs: number;
+  totalInputCount: number;
+  inputs: InputSample[];
+  pendingInputs: InputSample[];
+  commits: CommitSample[];
+  textLength: number;
+  rowCount: number;
+}
+
 export interface MetricDistribution {
   readonly p50: number;
   readonly p95: number;
@@ -21,7 +32,9 @@ export interface MetricDistribution {
 }
 
 export interface ComposerProfileSnapshot {
-  readonly windowMs: number;
+  readonly state: "waiting" | "live" | "complete";
+  readonly durationMs: number;
+  readonly idleMs: number;
   readonly inputCount: number;
   readonly commitCount: number;
   readonly pendingCount: number;
@@ -37,7 +50,7 @@ export interface ComposerProfileSnapshot {
 export interface ComposerProfiler {
   recordLeftInput(cursor: number): void;
   recordCommit(cursor: number, textLength: number, rowCount: number): void;
-  snapshot(windowMs?: number): ComposerProfileSnapshot;
+  snapshot(): ComposerProfileSnapshot;
   reset(): void;
 }
 
@@ -72,64 +85,110 @@ function intervals(samples: readonly { atMs: number }[]): number[] {
   return values;
 }
 
+function createBurst(atMs: number, textLength: number, rowCount: number): ComposerProfileBurst {
+  return {
+    startedAtMs: atMs,
+    lastInputAtMs: atMs,
+    totalInputCount: 0,
+    inputs: [],
+    pendingInputs: [],
+    commits: [],
+    textLength,
+    rowCount,
+  };
+}
+
+function burstSnapshot(
+  burst: ComposerProfileBurst,
+  state: "live" | "complete",
+  atMs: number,
+): ComposerProfileSnapshot {
+  const latencies = burst.commits.flatMap((sample) => sample.latenciesMs);
+  const batchDistribution = distribution(burst.commits.map((sample) => sample.batchSize));
+  return {
+    state,
+    durationMs: Math.max(0, burst.lastInputAtMs - burst.startedAtMs),
+    idleMs: Math.max(0, atMs - burst.lastInputAtMs),
+    inputCount: burst.totalInputCount,
+    commitCount: burst.commits.length,
+    pendingCount: burst.pendingInputs.length,
+    textLength: burst.textLength,
+    rowCount: burst.rowCount,
+    inputGapMs: distribution(intervals(burst.inputs)),
+    commitGapMs: distribution(intervals(burst.commits)),
+    inputToCommitMs: distribution(latencies),
+    batchSize: batchDistribution
+      ? { p95: batchDistribution.p95, max: batchDistribution.max }
+      : undefined,
+    stallCount: latencies.filter((latency) => latency > 50).length,
+  };
+}
+
 export function createComposerProfiler(
   now: () => number = () => performance.now(),
 ): ComposerProfiler {
-  let inputs: InputSample[] = [];
-  let pendingInputs: InputSample[] = [];
-  let commits: CommitSample[] = [];
+  let currentBurst: ComposerProfileBurst | undefined;
+  let lastCompletedBurst: ComposerProfileBurst | undefined;
   let textLength = 0;
   let rowCount = 0;
+
+  const completeIdleBurst = (atMs: number): void => {
+    if (currentBurst && atMs - currentBurst.lastInputAtMs >= COMPOSER_PROFILE_BURST_IDLE_MS) {
+      lastCompletedBurst = currentBurst;
+      currentBurst = undefined;
+    }
+  };
 
   return {
     recordLeftInput: (cursor) => {
       if (cursor <= 0) return;
-      const sample = { atMs: now() };
-      inputs.push(sample);
-      pendingInputs.push(sample);
-      trimToLimit(inputs);
-      trimToLimit(pendingInputs);
+      const atMs = now();
+      completeIdleBurst(atMs);
+      currentBurst ??= createBurst(atMs, textLength, rowCount);
+      const sample = { atMs };
+      currentBurst.lastInputAtMs = atMs;
+      currentBurst.totalInputCount += 1;
+      currentBurst.inputs.push(sample);
+      currentBurst.pendingInputs.push(sample);
+      trimToLimit(currentBurst.inputs);
+      trimToLimit(currentBurst.pendingInputs);
     },
     recordCommit: (_cursor, nextTextLength, nextRowCount) => {
       textLength = nextTextLength;
       rowCount = nextRowCount;
-      if (pendingInputs.length === 0) return;
+      if (!currentBurst) return;
+      currentBurst.textLength = nextTextLength;
+      currentBurst.rowCount = nextRowCount;
+      if (currentBurst.pendingInputs.length === 0) return;
       const atMs = now();
-      commits.push({
+      currentBurst.commits.push({
         atMs,
-        batchSize: pendingInputs.length,
-        latenciesMs: pendingInputs.map((sample) => atMs - sample.atMs),
+        batchSize: currentBurst.pendingInputs.length,
+        latenciesMs: currentBurst.pendingInputs.map((sample) => atMs - sample.atMs),
       });
-      pendingInputs = [];
-      trimToLimit(commits);
+      currentBurst.pendingInputs = [];
+      trimToLimit(currentBurst.commits);
     },
-    snapshot: (windowMs = COMPOSER_PROFILE_WINDOW_MS) => {
+    snapshot: () => {
       const atMs = now();
-      const windowStart = atMs - windowMs;
-      const visibleInputs = inputs.filter((sample) => sample.atMs >= windowStart);
-      const visibleCommits = commits.filter((sample) => sample.atMs >= windowStart);
-      const latencies = visibleCommits.flatMap((sample) => sample.latenciesMs);
-      const batchDistribution = distribution(visibleCommits.map((sample) => sample.batchSize));
+      completeIdleBurst(atMs);
+      if (currentBurst) return burstSnapshot(currentBurst, "live", atMs);
+      if (lastCompletedBurst) return burstSnapshot(lastCompletedBurst, "complete", atMs);
       return {
-        windowMs,
-        inputCount: visibleInputs.length,
-        commitCount: visibleCommits.length,
-        pendingCount: pendingInputs.length,
+        state: "waiting",
+        durationMs: 0,
+        idleMs: 0,
+        inputCount: 0,
+        commitCount: 0,
+        pendingCount: 0,
         textLength,
         rowCount,
-        inputGapMs: distribution(intervals(visibleInputs)),
-        commitGapMs: distribution(intervals(visibleCommits)),
-        inputToCommitMs: distribution(latencies),
-        batchSize: batchDistribution
-          ? { p95: batchDistribution.p95, max: batchDistribution.max }
-          : undefined,
-        stallCount: latencies.filter((latency) => latency > 50).length,
+        stallCount: 0,
       };
     },
     reset: () => {
-      inputs = [];
-      pendingInputs = [];
-      commits = [];
+      currentBurst = undefined;
+      lastCompletedBurst = undefined;
       textLength = 0;
       rowCount = 0;
     },

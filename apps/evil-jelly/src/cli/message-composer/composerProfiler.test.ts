@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createComposerProfiler } from "./composerProfiler";
+import { COMPOSER_PROFILE_BURST_IDLE_MS, createComposerProfiler } from "./composerProfiler";
 
 describe("composer profiler", () => {
-  it("reports input cadence, commit latency, batching, and pending input", () => {
+  it("reports input cadence, commit latency, batching, and pending input for a live burst", () => {
     let now = 0;
     const profiler = createComposerProfiler(() => now);
 
@@ -15,8 +15,10 @@ describe("composer profiler", () => {
     now = 80;
     profiler.recordLeftInput(2);
 
-    const snapshot = profiler.snapshot(1_000);
-    expect(snapshot).toMatchObject({
+    expect(profiler.snapshot()).toMatchObject({
+      state: "live",
+      durationMs: 80,
+      idleMs: 0,
       inputCount: 3,
       commitCount: 1,
       pendingCount: 1,
@@ -29,19 +31,48 @@ describe("composer profiler", () => {
     });
   });
 
-  it("keeps only samples in the requested rolling window", () => {
+  it("retains the last completed burst after the idle threshold", () => {
     let now = 0;
     const profiler = createComposerProfiler(() => now);
 
     profiler.recordLeftInput(2);
     now = 10;
     profiler.recordCommit(1, 2, 1);
-    now = 4_000;
+    now = COMPOSER_PROFILE_BURST_IDLE_MS;
 
-    expect(profiler.snapshot(3_000)).toMatchObject({
-      inputCount: 0,
-      commitCount: 0,
+    expect(profiler.snapshot()).toMatchObject({
+      state: "complete",
+      inputCount: 1,
+      commitCount: 1,
       pendingCount: 0,
+      idleMs: COMPOSER_PROFILE_BURST_IDLE_MS,
+    });
+
+    now = 10_000;
+    expect(profiler.snapshot()).toMatchObject({
+      state: "complete",
+      inputCount: 1,
+      commitCount: 1,
+      idleMs: 10_000,
+    });
+  });
+
+  it("starts a fresh burst when input resumes after an idle interval", () => {
+    let now = 0;
+    const profiler = createComposerProfiler(() => now);
+
+    profiler.recordLeftInput(3);
+    now = 10;
+    profiler.recordCommit(2, 3, 1);
+    now = 1_000;
+    profiler.recordLeftInput(2);
+
+    expect(profiler.snapshot()).toMatchObject({
+      state: "live",
+      durationMs: 0,
+      inputCount: 1,
+      commitCount: 0,
+      pendingCount: 1,
     });
   });
 
@@ -49,6 +80,10 @@ describe("composer profiler", () => {
     const profiler = createComposerProfiler(() => 0);
     profiler.recordLeftInput(0);
 
-    expect(profiler.snapshot()).toMatchObject({ inputCount: 0, pendingCount: 0 });
+    expect(profiler.snapshot()).toMatchObject({
+      state: "waiting",
+      inputCount: 0,
+      pendingCount: 0,
+    });
   });
 });

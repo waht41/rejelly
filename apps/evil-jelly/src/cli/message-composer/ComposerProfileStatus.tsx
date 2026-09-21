@@ -1,7 +1,6 @@
 import { Box, Text } from "ink";
 import { useEffect, useState } from "react";
 import {
-  COMPOSER_PROFILE_WINDOW_MS,
   type ComposerProfileSnapshot,
   getComposerProfileSnapshot,
   type MetricDistribution,
@@ -13,6 +12,10 @@ function rounded(value: number): string {
   return String(Math.round(value));
 }
 
+function seconds(valueMs: number): string {
+  return `${(valueMs / 1_000).toFixed(1)}s`;
+}
+
 function formatDistribution(value: MetricDistribution | undefined): string {
   return value ? `${rounded(value.p50)}/${rounded(value.p95)}/${rounded(value.max)}ms` : "—/—/—ms";
 }
@@ -20,11 +23,22 @@ function formatDistribution(value: MetricDistribution | undefined): string {
 export function formatComposerProfileStatus(
   snapshot: ComposerProfileSnapshot,
 ): readonly [string, string] {
+  if (snapshot.state === "waiting") {
+    return [
+      `Profile[left] · waiting for input · chars ${snapshot.textLength} · rows ${snapshot.rowCount}`,
+      "input gap —/—/—ms · input→commit —/—/—ms · batch p95/max —/— · pending 0",
+    ];
+  }
+
   const batch = snapshot.batchSize
     ? `${rounded(snapshot.batchSize.p95)}/${rounded(snapshot.batchSize.max)}`
     : "—/—";
+  const phase =
+    snapshot.state === "live"
+      ? `live burst ${seconds(snapshot.durationMs)}`
+      : `last burst ${seconds(snapshot.durationMs)} · ended ${seconds(snapshot.idleMs)} ago`;
   return [
-    `Profile[left] · ${Math.round(COMPOSER_PROFILE_WINDOW_MS / 1_000)}s · events ${snapshot.inputCount} · chars ${snapshot.textLength} · rows ${snapshot.rowCount} · input gap ${formatDistribution(snapshot.inputGapMs)}`,
+    `Profile[left] · ${phase} · events ${snapshot.inputCount} · chars ${snapshot.textLength} · rows ${snapshot.rowCount} · input gap ${formatDistribution(snapshot.inputGapMs)}`,
     `input→commit ${formatDistribution(snapshot.inputToCommitMs)} · commit gap ${formatDistribution(snapshot.commitGapMs)} · batch p95/max ${batch} · pending ${snapshot.pendingCount} · stalls ${snapshot.stallCount}`,
   ];
 }
