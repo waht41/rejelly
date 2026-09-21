@@ -2,7 +2,10 @@ import { type Instance, render } from "ink";
 import React from "react";
 import { startupTimeline } from "../../shared/profile/startup/timeline";
 import { pruneClearedStaticTurns } from "../conversation-display/useOutputStore";
-import { emitComposerProfileReport } from "../message-composer/composerProfiler";
+import {
+  emitComposerProfileReport,
+  recordComposerInkFrame,
+} from "../message-composer/composerProfiler";
 import { cleanupStaleClipboardImages } from "./clipboard/clipboardImage";
 import { Dashboard } from "./Dashboard";
 import type { CtrlCAbortHandler } from "./useCtrlCAbort";
@@ -58,6 +61,7 @@ function mountInkApp(control: InteractiveShellControl): Instance {
     }),
     {
       exitOnCtrlC: false,
+      onRender: ({ renderTime }) => recordComposerInkFrame(renderTime),
     },
   );
   startupTimeline.mark("ink_render_returned");

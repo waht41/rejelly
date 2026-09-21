@@ -26,24 +26,26 @@ function formatDuration(value: number | undefined): string {
 
 export function formatComposerProfileStatus(
   snapshot: ComposerProfileSnapshot,
-): readonly [string, string] {
+): readonly [string, string, string] {
   if (snapshot.state === "waiting") {
     return [
       `Profile[left] · waiting for input · chars ${snapshot.textLength} · rows ${snapshot.rowCount}`,
-      "repeat delay —ms · steady input —/—/—ms · input→commit —/—/—ms · pending 0",
+      "input: repeat —ms · steady —/—/—ms · input→commit —/—/—ms · loop lag —/—/—ms",
+      "frame: commit→frame —/—/—ms · steady gap —/—/—ms · batch p95/max —/— · render —/—/—ms",
     ];
   }
 
-  const batch = snapshot.batchSize
-    ? `${rounded(snapshot.batchSize.p95)}/${rounded(snapshot.batchSize.max)}`
-    : "—/—";
   const phase =
     snapshot.state === "live"
       ? `live burst ${seconds(snapshot.durationMs)}`
       : `last burst ${seconds(snapshot.durationMs)} · ended ${snapshot.idleCapped ? ">10s" : seconds(snapshot.idleMs)} ago`;
+  const frameBatch = snapshot.frameBatchSize
+    ? `${rounded(snapshot.frameBatchSize.p95)}/${rounded(snapshot.frameBatchSize.max)}`
+    : "—/—";
   return [
-    `Profile[left] · ${phase} · events ${snapshot.inputCount} · chars ${snapshot.textLength} · rows ${snapshot.rowCount} · repeat delay ${formatDuration(snapshot.repeatDelayMs)} · steady input ${formatDistribution(snapshot.steadyInputGapMs)}`,
-    `input→commit ${formatDistribution(snapshot.inputToCommitMs)} · steady commit ${formatDistribution(snapshot.steadyCommitGapMs)} · batch p95/max ${batch} · pending ${snapshot.pendingCount} · stalls ${snapshot.stallCount}`,
+    `Profile[left] · ${phase} · events ${snapshot.inputCount} · chars ${snapshot.textLength} · rows ${snapshot.rowCount}`,
+    `input: repeat ${formatDuration(snapshot.repeatDelayMs)} · steady ${formatDistribution(snapshot.steadyInputGapMs)} · input→commit ${formatDistribution(snapshot.inputToCommitMs)} · loop lag ${formatDistribution(snapshot.eventLoopDelayMs)}`,
+    `frame: commit→frame ${formatDistribution(snapshot.commitToFrameMs)} · steady gap ${formatDistribution(snapshot.steadyFrameGapMs)} · batch p95/max ${frameBatch} · render ${formatDistribution(snapshot.inkRenderTimeMs)} · pending ${snapshot.pendingCount}`,
   ];
 }
 
@@ -55,14 +57,17 @@ export function ComposerProfileStatus() {
     return () => clearInterval(timer);
   }, []);
 
-  const [firstLine, secondLine] = formatComposerProfileStatus(snapshot);
+  const [firstLine, secondLine, thirdLine] = formatComposerProfileStatus(snapshot);
   return (
-    <Box height={2} paddingX={1} flexDirection="column">
+    <Box height={3} paddingX={1} flexDirection="column">
       <Text dimColor wrap="truncate-end">
         {firstLine}
       </Text>
       <Text dimColor wrap="truncate-end">
         {secondLine}
+      </Text>
+      <Text dimColor wrap="truncate-end">
+        {thirdLine}
       </Text>
     </Box>
   );

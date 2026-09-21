@@ -1,4 +1,4 @@
-import { performance } from "node:perf_hooks";
+import { monitorEventLoopDelay, performance } from "node:perf_hooks";
 import { composerProfileEnabled } from "../../shared/profile/selection";
 
 const SAMPLE_LIMIT = 2_048;
@@ -15,6 +15,18 @@ interface CommitSample {
   readonly latenciesMs: readonly number[];
 }
 
+interface FrameSample {
+  readonly atMs: number;
+  readonly commitCount: number;
+  readonly commitToFrameMs: readonly number[];
+  readonly renderTimeMs: number;
+}
+
+export interface EventLoopDelayProbe {
+  reset(): void;
+  snapshot(): MetricDistribution | undefined;
+}
+
 interface ComposerProfileBurst {
   readonly startedAtMs: number;
   lastInputAtMs: number;
@@ -22,6 +34,9 @@ interface ComposerProfileBurst {
   inputs: InputSample[];
   pendingInputs: InputSample[];
   commits: CommitSample[];
+  pendingFrameCommits: CommitSample[];
+  frames: FrameSample[];
+  eventLoopDelayMs?: MetricDistribution;
   textLength: number;
   rowCount: number;
 }
@@ -46,6 +61,11 @@ export interface ComposerProfileSnapshot {
   readonly steadyInputGapMs?: MetricDistribution;
   readonly steadyCommitGapMs?: MetricDistribution;
   readonly inputToCommitMs?: MetricDistribution;
+  readonly commitToFrameMs?: MetricDistribution;
+  readonly steadyFrameGapMs?: MetricDistribution;
+  readonly frameBatchSize?: Pick<MetricDistribution, "p95" | "max">;
+  readonly inkRenderTimeMs?: MetricDistribution;
+  readonly eventLoopDelayMs?: MetricDistribution;
   readonly batchSize?: Pick<MetricDistribution, "p95" | "max">;
   readonly stallCount: number;
 }
@@ -53,6 +73,7 @@ export interface ComposerProfileSnapshot {
 export interface ComposerProfiler {
   recordLeftInput(cursor: number): void;
   recordCommit(cursor: number, textLength: number, rowCount: number): void;
+  recordInkFrame(renderTimeMs: number): void;
   snapshot(): ComposerProfileSnapshot;
   reset(): void;
 }
@@ -96,6 +117,8 @@ function createBurst(atMs: number, textLength: number, rowCount: number): Compos
     inputs: [],
     pendingInputs: [],
     commits: [],
+    pendingFrameCommits: [],
+    frames: [],
     textLength,
     rowCount,
   };
@@ -105,11 +128,15 @@ function burstSnapshot(
   burst: ComposerProfileBurst,
   state: "live" | "complete",
   atMs: number,
+  liveEventLoopDelayMs?: MetricDistribution,
 ): ComposerProfileSnapshot {
   const latencies = burst.commits.flatMap((sample) => sample.latenciesMs);
+  const commitToFrame = burst.frames.flatMap((sample) => sample.commitToFrameMs);
   const inputIntervals = intervals(burst.inputs);
   const commitIntervals = intervals(burst.commits);
+  const frameIntervals = intervals(burst.frames);
   const batchDistribution = distribution(burst.commits.map((sample) => sample.batchSize));
+  const frameBatchDistribution = distribution(burst.frames.map((sample) => sample.commitCount));
   return {
     state,
     durationMs: Math.max(0, burst.lastInputAtMs - burst.startedAtMs),
@@ -124,6 +151,13 @@ function burstSnapshot(
     steadyInputGapMs: distribution(inputIntervals.slice(1)),
     steadyCommitGapMs: distribution(commitIntervals.slice(1)),
     inputToCommitMs: distribution(latencies),
+    commitToFrameMs: distribution(commitToFrame),
+    steadyFrameGapMs: distribution(frameIntervals.slice(1)),
+    frameBatchSize: frameBatchDistribution
+      ? { p95: frameBatchDistribution.p95, max: frameBatchDistribution.max }
+      : undefined,
+    inkRenderTimeMs: distribution(burst.frames.map((sample) => sample.renderTimeMs)),
+    eventLoopDelayMs: burst.eventLoopDelayMs ?? liveEventLoopDelayMs,
     batchSize: batchDistribution
       ? { p95: batchDistribution.p95, max: batchDistribution.max }
       : undefined,
@@ -133,6 +167,7 @@ function burstSnapshot(
 
 export function createComposerProfiler(
   now: () => number = () => performance.now(),
+  eventLoopDelayProbe?: EventLoopDelayProbe,
 ): ComposerProfiler {
   let currentBurst: ComposerProfileBurst | undefined;
   let lastCompletedBurst: ComposerProfileBurst | undefined;
@@ -142,6 +177,7 @@ export function createComposerProfiler(
 
   const completeIdleBurst = (atMs: number): void => {
     if (currentBurst && atMs - currentBurst.lastInputAtMs >= COMPOSER_PROFILE_BURST_IDLE_MS) {
+      currentBurst.eventLoopDelayMs = eventLoopDelayProbe?.snapshot();
       lastCompletedBurst = currentBurst;
       cappedCompletedSnapshot = undefined;
       currentBurst = undefined;
@@ -153,7 +189,10 @@ export function createComposerProfiler(
       if (cursor <= 0) return;
       const atMs = now();
       completeIdleBurst(atMs);
-      currentBurst ??= createBurst(atMs, textLength, rowCount);
+      if (!currentBurst) {
+        currentBurst = createBurst(atMs, textLength, rowCount);
+        eventLoopDelayProbe?.reset();
+      }
       const sample = { atMs };
       currentBurst.lastInputAtMs = atMs;
       currentBurst.totalInputCount += 1;
@@ -170,18 +209,35 @@ export function createComposerProfiler(
       currentBurst.rowCount = nextRowCount;
       if (currentBurst.pendingInputs.length === 0) return;
       const atMs = now();
-      currentBurst.commits.push({
+      const commit = {
         atMs,
         batchSize: currentBurst.pendingInputs.length,
         latenciesMs: currentBurst.pendingInputs.map((sample) => atMs - sample.atMs),
-      });
+      };
+      currentBurst.commits.push(commit);
+      currentBurst.pendingFrameCommits.push(commit);
       currentBurst.pendingInputs = [];
       trimToLimit(currentBurst.commits);
+      trimToLimit(currentBurst.pendingFrameCommits);
+    },
+    recordInkFrame: (renderTimeMs) => {
+      if (!currentBurst || currentBurst.pendingFrameCommits.length === 0) return;
+      const atMs = now();
+      currentBurst.frames.push({
+        atMs,
+        commitCount: currentBurst.pendingFrameCommits.length,
+        commitToFrameMs: currentBurst.pendingFrameCommits.map((sample) => atMs - sample.atMs),
+        renderTimeMs,
+      });
+      currentBurst.pendingFrameCommits = [];
+      trimToLimit(currentBurst.frames);
     },
     snapshot: () => {
       const atMs = now();
       completeIdleBurst(atMs);
-      if (currentBurst) return burstSnapshot(currentBurst, "live", atMs);
+      if (currentBurst) {
+        return burstSnapshot(currentBurst, "live", atMs, eventLoopDelayProbe?.snapshot());
+      }
       if (lastCompletedBurst) {
         if (atMs - lastCompletedBurst.lastInputAtMs >= COMPOSER_PROFILE_IDLE_DISPLAY_LIMIT_MS) {
           cappedCompletedSnapshot ??= {
@@ -219,7 +275,27 @@ export function createComposerProfiler(
   };
 }
 
-const composerProfiler = createComposerProfiler();
+const eventLoopHistogram = composerProfileEnabled()
+  ? monitorEventLoopDelay({ resolution: 1 })
+  : undefined;
+eventLoopHistogram?.enable();
+
+const eventLoopDelayProbe: EventLoopDelayProbe | undefined = eventLoopHistogram
+  ? {
+      reset: () => eventLoopHistogram.reset(),
+      snapshot: () => {
+        if (eventLoopHistogram.max === 0) return undefined;
+        const toMilliseconds = (nanoseconds: number): number => nanoseconds / 1_000_000;
+        return {
+          p50: toMilliseconds(eventLoopHistogram.percentile(50)),
+          p95: toMilliseconds(eventLoopHistogram.percentile(95)),
+          max: toMilliseconds(eventLoopHistogram.max),
+        };
+      },
+    }
+  : undefined;
+
+const composerProfiler = createComposerProfiler(() => performance.now(), eventLoopDelayProbe);
 
 export function recordComposerLeftInput(cursor: number): void {
   if (composerProfileEnabled()) composerProfiler.recordLeftInput(cursor);
@@ -227,6 +303,10 @@ export function recordComposerLeftInput(cursor: number): void {
 
 export function recordComposerCommit(cursor: number, textLength: number, rowCount: number): void {
   if (composerProfileEnabled()) composerProfiler.recordCommit(cursor, textLength, rowCount);
+}
+
+export function recordComposerInkFrame(renderTimeMs: number): void {
+  if (composerProfileEnabled()) composerProfiler.recordInkFrame(renderTimeMs);
 }
 
 export function getComposerProfileSnapshot(): ComposerProfileSnapshot {
@@ -242,6 +322,7 @@ export function emitComposerProfileReport(
 ): ComposerProfileSnapshot | undefined {
   if (!composerProfileEnabled()) return undefined;
   const snapshot = composerProfiler.snapshot();
+  eventLoopHistogram?.disable();
   write(
     `[evil-jelly:composer-profile] ${JSON.stringify({
       type: "evil_jelly_composer_profile",

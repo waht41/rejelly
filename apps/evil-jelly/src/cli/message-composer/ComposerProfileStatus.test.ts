@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { formatComposerProfileStatus } from "./ComposerProfileStatus";
 
 describe("composer profile status", () => {
-  it("formats a live burst as a fixed two-line summary", () => {
+  it("formats a live burst as a fixed three-line summary", () => {
     expect(
       formatComposerProfileStatus({
         state: "live",
@@ -18,12 +18,18 @@ describe("composer profile status", () => {
         steadyInputGapMs: { p50: 31.2, p95: 40.6, max: 47.1 },
         steadyCommitGapMs: { p50: 32, p95: 48, max: 49 },
         inputToCommitMs: { p50: 6, p95: 18, max: 71 },
+        commitToFrameMs: { p50: 4, p95: 28, max: 34 },
+        steadyFrameGapMs: { p50: 34, p95: 35, max: 36 },
+        frameBatchSize: { p95: 2, max: 2 },
+        inkRenderTimeMs: { p50: 1, p95: 2, max: 3 },
+        eventLoopDelayMs: { p50: 1, p95: 2, max: 5 },
         batchSize: { p95: 2, max: 3 },
         stallCount: 1,
       }),
     ).toEqual([
-      "Profile[left] · live burst 1.8s · events 12 · chars 20 · rows 1 · repeat delay 514ms · steady input 31/41/47ms",
-      "input→commit 6/18/71ms · steady commit 32/48/49ms · batch p95/max 2/3 · pending 2 · stalls 1",
+      "Profile[left] · live burst 1.8s · events 12 · chars 20 · rows 1",
+      "input: repeat 514ms · steady 31/41/47ms · input→commit 6/18/71ms · loop lag 1/2/5ms",
+      "frame: commit→frame 4/28/34ms · steady gap 34/35/36ms · batch p95/max 2/2 · render 1/2/3ms · pending 2",
     ]);
   });
 
@@ -77,7 +83,8 @@ describe("composer profile status", () => {
       }),
     ).toEqual([
       "Profile[left] · waiting for input · chars 10 · rows 1",
-      "repeat delay —ms · steady input —/—/—ms · input→commit —/—/—ms · pending 0",
+      "input: repeat —ms · steady —/—/—ms · input→commit —/—/—ms · loop lag —/—/—ms",
+      "frame: commit→frame —/—/—ms · steady gap —/—/—ms · batch p95/max —/— · render —/—/—ms",
     ]);
   });
 });
