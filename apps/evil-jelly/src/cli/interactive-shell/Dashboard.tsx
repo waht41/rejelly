@@ -6,6 +6,7 @@ import type { DOMElement } from "ink";
 import { Box, measureElement, Text, useInput, useWindowSize } from "ink";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { textPromptInput } from "../../shared/model/prompt/promptInput";
+import { composerProfileEnabled } from "../../shared/profile/selection";
 import { hasActiveInterruptibleTask } from "../../shared/task-interruption/taskStack";
 import { AssistantStreamView } from "../conversation-display/assistant-stream/AssistantStreamView";
 import { StaticHistory } from "../conversation-display/history/StaticHistory";
@@ -17,6 +18,7 @@ import { useToolTranscriptViewStore } from "../conversation-display/tool-transcr
 import { useOutputStore } from "../conversation-display/useOutputStore";
 import { McpManagerPrompt } from "../mcp-manager/McpManagerPrompt";
 import { MemoryManagerPrompt } from "../memory-manager/MemoryManagerPrompt";
+import { ComposerProfileStatus } from "../message-composer/ComposerProfileStatus";
 import { MessageComposer } from "../message-composer/MessageComposer";
 import { useComposerSession } from "../message-composer/session/composerSession";
 import { ActionMenuPrompt } from "../operator-decision/ActionMenuPrompt";
@@ -257,6 +259,7 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
                     readClipboardImage={saveClipboardImage}
                   />
                 </Box>
+                {composerProfileEnabled() ? <ComposerProfileStatus /> : null}
                 <ModeBadge />
               </Box>
             ) : null}

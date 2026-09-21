@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { SettingsCliOverrides } from "../../shared/configuration/settings";
-import type { ProfileSelector } from "../../shared/profile/startup/selection";
+import type { ProfileSelector } from "../../shared/profile/selection";
 
 export interface CommonParsedArgs {
   /** OPENAI_API_KEY override from CLI; highest priority. */

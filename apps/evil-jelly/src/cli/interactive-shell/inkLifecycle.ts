@@ -2,10 +2,16 @@ import { type Instance, render } from "ink";
 import React from "react";
 import { startupTimeline } from "../../shared/profile/startup/timeline";
 import { pruneClearedStaticTurns } from "../conversation-display/useOutputStore";
+import {
+  emitComposerProfileReport,
+  recordComposerInkFrame,
+} from "../message-composer/composerProfiler";
 import { cleanupStaleClipboardImages } from "./clipboard/clipboardImage";
 import { Dashboard } from "./Dashboard";
 import type { CtrlCAbortHandler } from "./useCtrlCAbort";
 import { installWindowsVirtualTerminalInputPatch } from "./windowsVtInput";
+
+const INTERACTIVE_MAX_FPS = 60;
 
 export interface InteractiveShellControl {
   requestRunAbort: (reason: string) => boolean;
@@ -57,6 +63,8 @@ function mountInkApp(control: InteractiveShellControl): Instance {
     }),
     {
       exitOnCtrlC: false,
+      maxFps: INTERACTIVE_MAX_FPS,
+      onRender: ({ renderTime }) => recordComposerInkFrame(renderTime),
     },
   );
   startupTimeline.mark("ink_render_returned");
@@ -101,6 +109,7 @@ export function createInteractiveShell(control: InteractiveShellControl): {
       ink.unmount();
       process.stdout.write("\x1b[?25h");
       releaseStdinRawMode();
+      emitComposerProfileReport();
     },
   };
 }

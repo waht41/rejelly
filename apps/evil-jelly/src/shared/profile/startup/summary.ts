@@ -1,8 +1,8 @@
-import { type ProfileSelector, selectedStartupProfileViews } from "./selection";
+import { type StartupProfileSelector, selectedStartupProfileViews } from "../selection";
 import type { StartupTimelineReport } from "./timeline";
 
 export interface StartupTimelineSummaryOptions {
-  readonly selectors?: readonly ProfileSelector[];
+  readonly selectors?: readonly StartupProfileSelector[];
 }
 
 function milestoneDelta(report: StartupTimelineReport, name: string): number | undefined {

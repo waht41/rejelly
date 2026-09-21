@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { PROFILE_ENV } from "./selection";
+import { PROFILE_ENV } from "../selection";
 import { createStartupTimeline } from "./timeline";
 
 const originalProfileEnv = process.env[PROFILE_ENV];

@@ -5,8 +5,10 @@ export const PROFILE_SELECTORS = [
   "startup:bootstrap",
   "startup:imports",
   "startup:ink",
+  "composer",
 ] as const;
 export type ProfileSelector = (typeof PROFILE_SELECTORS)[number];
+export type StartupProfileSelector = Extract<ProfileSelector, `startup${string}`>;
 
 let selectorOverride: readonly ProfileSelector[] | undefined;
 
@@ -43,11 +45,23 @@ function environmentProfileSelectors(): readonly ProfileSelector[] | undefined {
   return parseProfileSelectors(raw);
 }
 
+export function selectedProfileViews(): readonly ProfileSelector[] {
+  return selectorOverride ?? environmentProfileSelectors() ?? [];
+}
+
+export function composerProfileEnabled(): boolean {
+  return selectedProfileViews().includes("composer");
+}
+
 export function startupProfileEnabled(): boolean {
-  return selectorOverride !== undefined || environmentProfileSelectors() !== undefined;
+  return selectedProfileViews().some((selector) => selector.startsWith("startup"));
 }
 
 /** No explicit selector means the existing top-level startup view. */
-export function selectedStartupProfileViews(): readonly ProfileSelector[] {
-  return selectorOverride ?? environmentProfileSelectors() ?? ["startup"];
+export function selectedStartupProfileViews(): readonly StartupProfileSelector[] {
+  const selected = selectedProfileViews();
+  if (selected.length === 0) return ["startup"];
+  return selected.filter((selector): selector is StartupProfileSelector =>
+    selector.startsWith("startup"),
+  );
 }
