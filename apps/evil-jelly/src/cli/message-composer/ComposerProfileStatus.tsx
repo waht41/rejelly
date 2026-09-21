@@ -20,13 +20,17 @@ function formatDistribution(value: MetricDistribution | undefined): string {
   return value ? `${rounded(value.p50)}/${rounded(value.p95)}/${rounded(value.max)}ms` : "—/—/—ms";
 }
 
+function formatDuration(value: number | undefined): string {
+  return value === undefined ? "—ms" : `${rounded(value)}ms`;
+}
+
 export function formatComposerProfileStatus(
   snapshot: ComposerProfileSnapshot,
 ): readonly [string, string] {
   if (snapshot.state === "waiting") {
     return [
       `Profile[left] · waiting for input · chars ${snapshot.textLength} · rows ${snapshot.rowCount}`,
-      "input gap —/—/—ms · input→commit —/—/—ms · batch p95/max —/— · pending 0",
+      "repeat delay —ms · steady input —/—/—ms · input→commit —/—/—ms · pending 0",
     ];
   }
 
@@ -36,10 +40,10 @@ export function formatComposerProfileStatus(
   const phase =
     snapshot.state === "live"
       ? `live burst ${seconds(snapshot.durationMs)}`
-      : `last burst ${seconds(snapshot.durationMs)} · ended ${seconds(snapshot.idleMs)} ago`;
+      : `last burst ${seconds(snapshot.durationMs)} · ended ${snapshot.idleCapped ? ">10s" : seconds(snapshot.idleMs)} ago`;
   return [
-    `Profile[left] · ${phase} · events ${snapshot.inputCount} · chars ${snapshot.textLength} · rows ${snapshot.rowCount} · input gap ${formatDistribution(snapshot.inputGapMs)}`,
-    `input→commit ${formatDistribution(snapshot.inputToCommitMs)} · commit gap ${formatDistribution(snapshot.commitGapMs)} · batch p95/max ${batch} · pending ${snapshot.pendingCount} · stalls ${snapshot.stallCount}`,
+    `Profile[left] · ${phase} · events ${snapshot.inputCount} · chars ${snapshot.textLength} · rows ${snapshot.rowCount} · repeat delay ${formatDuration(snapshot.repeatDelayMs)} · steady input ${formatDistribution(snapshot.steadyInputGapMs)}`,
+    `input→commit ${formatDistribution(snapshot.inputToCommitMs)} · steady commit ${formatDistribution(snapshot.steadyCommitGapMs)} · batch p95/max ${batch} · pending ${snapshot.pendingCount} · stalls ${snapshot.stallCount}`,
   ];
 }
 

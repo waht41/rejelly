@@ -3,6 +3,7 @@ import { composerProfileEnabled } from "../../shared/profile/selection";
 
 const SAMPLE_LIMIT = 2_048;
 export const COMPOSER_PROFILE_BURST_IDLE_MS = 750;
+export const COMPOSER_PROFILE_IDLE_DISPLAY_LIMIT_MS = 10_000;
 
 interface InputSample {
   readonly atMs: number;
@@ -35,13 +36,15 @@ export interface ComposerProfileSnapshot {
   readonly state: "waiting" | "live" | "complete";
   readonly durationMs: number;
   readonly idleMs: number;
+  readonly idleCapped: boolean;
   readonly inputCount: number;
   readonly commitCount: number;
   readonly pendingCount: number;
   readonly textLength: number;
   readonly rowCount: number;
-  readonly inputGapMs?: MetricDistribution;
-  readonly commitGapMs?: MetricDistribution;
+  readonly repeatDelayMs?: number;
+  readonly steadyInputGapMs?: MetricDistribution;
+  readonly steadyCommitGapMs?: MetricDistribution;
   readonly inputToCommitMs?: MetricDistribution;
   readonly batchSize?: Pick<MetricDistribution, "p95" | "max">;
   readonly stallCount: number;
@@ -104,18 +107,22 @@ function burstSnapshot(
   atMs: number,
 ): ComposerProfileSnapshot {
   const latencies = burst.commits.flatMap((sample) => sample.latenciesMs);
+  const inputIntervals = intervals(burst.inputs);
+  const commitIntervals = intervals(burst.commits);
   const batchDistribution = distribution(burst.commits.map((sample) => sample.batchSize));
   return {
     state,
     durationMs: Math.max(0, burst.lastInputAtMs - burst.startedAtMs),
     idleMs: Math.max(0, atMs - burst.lastInputAtMs),
+    idleCapped: false,
     inputCount: burst.totalInputCount,
     commitCount: burst.commits.length,
     pendingCount: burst.pendingInputs.length,
     textLength: burst.textLength,
     rowCount: burst.rowCount,
-    inputGapMs: distribution(intervals(burst.inputs)),
-    commitGapMs: distribution(intervals(burst.commits)),
+    repeatDelayMs: inputIntervals[0],
+    steadyInputGapMs: distribution(inputIntervals.slice(1)),
+    steadyCommitGapMs: distribution(commitIntervals.slice(1)),
     inputToCommitMs: distribution(latencies),
     batchSize: batchDistribution
       ? { p95: batchDistribution.p95, max: batchDistribution.max }
@@ -129,12 +136,14 @@ export function createComposerProfiler(
 ): ComposerProfiler {
   let currentBurst: ComposerProfileBurst | undefined;
   let lastCompletedBurst: ComposerProfileBurst | undefined;
+  let cappedCompletedSnapshot: ComposerProfileSnapshot | undefined;
   let textLength = 0;
   let rowCount = 0;
 
   const completeIdleBurst = (atMs: number): void => {
     if (currentBurst && atMs - currentBurst.lastInputAtMs >= COMPOSER_PROFILE_BURST_IDLE_MS) {
       lastCompletedBurst = currentBurst;
+      cappedCompletedSnapshot = undefined;
       currentBurst = undefined;
     }
   };
@@ -173,11 +182,25 @@ export function createComposerProfiler(
       const atMs = now();
       completeIdleBurst(atMs);
       if (currentBurst) return burstSnapshot(currentBurst, "live", atMs);
-      if (lastCompletedBurst) return burstSnapshot(lastCompletedBurst, "complete", atMs);
+      if (lastCompletedBurst) {
+        if (atMs - lastCompletedBurst.lastInputAtMs >= COMPOSER_PROFILE_IDLE_DISPLAY_LIMIT_MS) {
+          cappedCompletedSnapshot ??= {
+            ...burstSnapshot(
+              lastCompletedBurst,
+              "complete",
+              lastCompletedBurst.lastInputAtMs + COMPOSER_PROFILE_IDLE_DISPLAY_LIMIT_MS,
+            ),
+            idleCapped: true,
+          };
+          return cappedCompletedSnapshot;
+        }
+        return burstSnapshot(lastCompletedBurst, "complete", atMs);
+      }
       return {
         state: "waiting",
         durationMs: 0,
         idleMs: 0,
+        idleCapped: false,
         inputCount: 0,
         commitCount: 0,
         pendingCount: 0,
@@ -189,6 +212,7 @@ export function createComposerProfiler(
     reset: () => {
       currentBurst = undefined;
       lastCompletedBurst = undefined;
+      cappedCompletedSnapshot = undefined;
       textLength = 0;
       rowCount = 0;
     },
