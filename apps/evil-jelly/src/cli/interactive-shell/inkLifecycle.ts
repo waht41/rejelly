@@ -11,6 +11,8 @@ import { Dashboard } from "./Dashboard";
 import type { CtrlCAbortHandler } from "./useCtrlCAbort";
 import { installWindowsVirtualTerminalInputPatch } from "./windowsVtInput";
 
+const INTERACTIVE_MAX_FPS = 60;
+
 export interface InteractiveShellControl {
   requestRunAbort: (reason: string) => boolean;
   cancelSubmission: (reason: string) => boolean;
@@ -61,6 +63,7 @@ function mountInkApp(control: InteractiveShellControl): Instance {
     }),
     {
       exitOnCtrlC: false,
+      maxFps: INTERACTIVE_MAX_FPS,
       onRender: ({ renderTime }) => recordComposerInkFrame(renderTime),
     },
   );
