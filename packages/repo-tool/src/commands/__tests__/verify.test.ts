@@ -9,7 +9,9 @@ import {
   createVerifyPlan,
   extractFailureFacts,
   formatFailureDiagnostics,
+  formatRelatedTestFallback,
   isSafeRelatedTestPath,
+  isTestNeutralPackagePath,
   resolveAffectedScope,
   resolveRelatedTestPlan,
   selectBiomeFiles,
@@ -116,12 +118,35 @@ describe("createVerifyPlan", () => {
       },
       {
         relatedTestPlan: {
+          fallbacks: [
+            {
+              packageName: "@rejelly/downstream",
+              reasons: [
+                {
+                  code: "not-directly-changed",
+                  message:
+                    "package is not directly changed, so Vitest related has no local input files",
+                },
+              ],
+            },
+          ],
           fullPackageFilters: ["@rejelly/downstream"],
           relatedPackages: [{ files: ["src/feature.ts"], packageName: "@rejelly/app" }],
         },
       },
     );
 
+    expect(plan.relatedTestFallbacks).toEqual([
+      {
+        packageName: "@rejelly/downstream",
+        reasons: [
+          {
+            code: "not-directly-changed",
+            message: "package is not directly changed, so Vitest related has no local input files",
+          },
+        ],
+      },
+    ]);
     expect(plan.steps).toEqual([
       { kind: "biome-changed", label: "Biome check (changed files)", write: false },
       guidanceCheckStep,
@@ -263,6 +288,14 @@ describe("related test selection", () => {
     expect(isSafeRelatedTestPath("vitest.config.ts")).toBe(false);
   });
 
+  it("treats package documentation as test-neutral", () => {
+    expect(isTestNeutralPackagePath("README.md")).toBe(true);
+    expect(isTestNeutralPackagePath("CHANGELOG.md")).toBe(true);
+    expect(isTestNeutralPackagePath("docs/usage.md")).toBe(true);
+    expect(isTestNeutralPackagePath("src/usage.md")).toBe(false);
+    expect(isTestNeutralPackagePath("package.json")).toBe(false);
+  });
+
   it("uses related tests only for directly changed Vitest packages", () => {
     const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "repo-tool-related-"));
     try {
@@ -291,9 +324,120 @@ describe("related test selection", () => {
           ],
         }),
       ).toEqual({
+        fallbacks: [
+          {
+            packageName: "@repo/downstream",
+            reasons: [
+              {
+                code: "not-directly-changed",
+                message:
+                  "package is not directly changed, so Vitest related has no local input files",
+              },
+            ],
+          },
+        ],
         fullPackageFilters: ["@repo/downstream"],
         relatedPackages: [{ files: ["src/feature.ts"], packageName: "@repo/app" }],
       });
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("ignores neutral documentation while selecting related source files", () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "repo-tool-neutral-"));
+    try {
+      const appPath = path.join(repoRoot, "packages", "app");
+      fs.mkdirSync(path.join(appPath, "src"), { recursive: true });
+      fs.writeFileSync(
+        path.join(appPath, "package.json"),
+        JSON.stringify({ name: "@repo/app", scripts: { test: "vitest run" } }),
+      );
+      fs.writeFileSync(path.join(appPath, "README.md"), "# App\n");
+      fs.writeFileSync(path.join(appPath, "src", "feature.ts"), "export {};\n");
+
+      expect(
+        resolveRelatedTestPlan({
+          changedFiles: ["packages/app/README.md", "packages/app/src/feature.ts"],
+          directPackageNames: ["@repo/app"],
+          repoRoot,
+          selectedPackages: [{ name: "@repo/app", path: appPath }],
+        }),
+      ).toEqual({
+        fallbacks: [],
+        fullPackageFilters: [],
+        relatedPackages: [{ files: ["src/feature.ts"], packageName: "@repo/app" }],
+      });
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("skips tests for documentation-only package changes", () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "repo-tool-neutral-only-"));
+    try {
+      const appPath = path.join(repoRoot, "packages", "app");
+      fs.mkdirSync(appPath, { recursive: true });
+      fs.writeFileSync(
+        path.join(appPath, "package.json"),
+        JSON.stringify({ name: "@repo/app", scripts: { test: "vitest run" } }),
+      );
+      fs.writeFileSync(path.join(appPath, "README.md"), "# App\n");
+
+      expect(
+        resolveRelatedTestPlan({
+          changedFiles: ["packages/app/README.md"],
+          directPackageNames: ["@repo/app"],
+          repoRoot,
+          selectedPackages: [{ name: "@repo/app", path: appPath }],
+        }),
+      ).toEqual({ fallbacks: [], fullPackageFilters: [], relatedPackages: [] });
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("reports actionable fallback reasons for entrypoints and deleted sources", () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "repo-tool-fallback-"));
+    try {
+      const appPath = path.join(repoRoot, "packages", "app");
+      fs.mkdirSync(path.join(appPath, "src", "cli"), { recursive: true });
+      fs.writeFileSync(
+        path.join(appPath, "package.json"),
+        JSON.stringify({ name: "@repo/app", scripts: { test: "vitest run" } }),
+      );
+      fs.writeFileSync(path.join(appPath, "src", "cli", "index.ts"), "export {};\n");
+
+      const plan = resolveRelatedTestPlan({
+        changedFiles: ["packages/app/src/cli/index.ts", "packages/app/src/deleted.ts"],
+        directPackageNames: ["@repo/app"],
+        repoRoot,
+        selectedPackages: [{ name: "@repo/app", path: appPath }],
+      });
+
+      expect(plan.fullPackageFilters).toEqual(["@repo/app"]);
+      expect(plan.fallbacks).toEqual([
+        {
+          packageName: "@repo/app",
+          reasons: [
+            {
+              code: "package-entrypoint",
+              message: "package entrypoint can affect behavior outside Vitest's related graph",
+              path: "src/cli/index.ts",
+            },
+            {
+              code: "deleted-source",
+              message: "deleted source file is absent from the current Vitest module graph",
+              path: "src/deleted.ts",
+            },
+          ],
+        },
+      ]);
+      expect(formatRelatedTestFallback(plan.fallbacks[0]!)).toEqual([
+        "repo-tool verify: related tests fallback=@repo/app",
+        "  src/cli/index.ts: package entrypoint can affect behavior outside Vitest's related graph",
+        "  src/deleted.ts: deleted source file is absent from the current Vitest module graph",
+      ]);
     } finally {
       fs.rmSync(repoRoot, { recursive: true, force: true });
     }
