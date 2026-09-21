@@ -2,7 +2,7 @@
  * CLI entry: initialize process-wide configuration and dispatch user-facing run modes.
  */
 
-import { setProfileSelectorOverride } from "../shared/profile/startup/selection";
+import { setProfileSelectorOverride } from "../shared/profile/selection";
 import { startupTimeline } from "../shared/profile/startup/timeline";
 import { getCliVersion, parseCliArgs } from "./entry/args";
 import { createInteractiveRunControl } from "./entry/unified-run/interactive/runControl";

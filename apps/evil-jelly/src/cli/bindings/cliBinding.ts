@@ -26,6 +26,7 @@ import type { InteractiveRunControl } from "../entry/unified-run/interactive/run
 import { createInteractiveShell } from "../interactive-shell/inkLifecycle";
 import { createInteractiveSubmission } from "../interactive-shell/submission";
 import { revealMemoryFileInExplorer } from "../memory-manager/openMemoryStore";
+import { resetComposerProfiler } from "../message-composer/composerProfiler";
 import {
   resetComposerSession,
   useComposerSession,
@@ -56,6 +57,7 @@ function resetCliBindingSession(): void {
   resetSubmissionDispatch();
   resetOperatorDecisionSession();
   resetComposerSession();
+  resetComposerProfiler();
   resetOutputSession();
   resetModeSession();
   resetToolTranscriptViewSession();

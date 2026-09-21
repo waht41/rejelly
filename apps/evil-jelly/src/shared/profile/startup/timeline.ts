@@ -1,5 +1,5 @@
 import { performance } from "node:perf_hooks";
-import { startupProfileEnabled } from "./selection";
+import { startupProfileEnabled } from "../selection";
 
 interface StartupMilestone {
   readonly name: string;

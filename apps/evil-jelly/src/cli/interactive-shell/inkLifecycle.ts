@@ -2,6 +2,7 @@ import { type Instance, render } from "ink";
 import React from "react";
 import { startupTimeline } from "../../shared/profile/startup/timeline";
 import { pruneClearedStaticTurns } from "../conversation-display/useOutputStore";
+import { emitComposerProfileReport } from "../message-composer/composerProfiler";
 import { cleanupStaleClipboardImages } from "./clipboard/clipboardImage";
 import { Dashboard } from "./Dashboard";
 import type { CtrlCAbortHandler } from "./useCtrlCAbort";
@@ -101,6 +102,7 @@ export function createInteractiveShell(control: InteractiveShellControl): {
       ink.unmount();
       process.stdout.write("\x1b[?25h");
       releaseStdinRawMode();
+      emitComposerProfileReport();
     },
   };
 }

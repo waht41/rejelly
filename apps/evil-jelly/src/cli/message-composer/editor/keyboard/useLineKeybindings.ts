@@ -14,6 +14,7 @@
 import { type Key, useInput } from "ink";
 import { useRef } from "react";
 import { normalizeNewlines } from "../../../../shared/foundation/string";
+import { recordComposerLeftInput } from "../../composerProfiler";
 import {
   backspace,
   cursorRowCol,
@@ -160,6 +161,12 @@ export function useLineKeybindings(deps: LineKeybindingDeps): void {
         submit();
       }
       return;
+    }
+
+    // Record the arrival cadence before the cursor update. The profiler is a no-op unless
+    // explicitly selected and consumes the pending event at the next committed prompt layout.
+    if (key.leftArrow && !key.ctrl && !key.meta) {
+      recordComposerLeftInput(buf.cursor);
     }
 
     // Pure caret/delete motions (table above); first match wins.

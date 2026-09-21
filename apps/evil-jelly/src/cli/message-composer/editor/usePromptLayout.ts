@@ -2,6 +2,7 @@ import type { DOMElement } from "ink";
 import { useCursor } from "ink";
 import { useLayoutEffect, useRef, useState } from "react";
 import stringWidth from "string-width";
+import { recordComposerCommit } from "../composerProfiler";
 import type { CaretAffinity, WrappedRow } from "./softWrap";
 import { caretCell, wrapRows } from "./softWrap";
 
@@ -76,6 +77,7 @@ export function usePromptLayout({
         ? previous
         : next,
     );
+    recordComposerCommit(cursor, text.length, rows.length);
   });
 
   return { rowRef, rows };

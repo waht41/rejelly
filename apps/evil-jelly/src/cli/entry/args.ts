@@ -4,9 +4,10 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import cac, { type Command } from "cac";
 import {
+  PROFILE_SELECTORS,
   type ProfileSelector,
   parseProfileSelectors,
-} from "../../shared/profile/startup/selection";
+} from "../../shared/profile/selection";
 import type { CommonParsedArgs } from "./argsSupport";
 import { failArgs, resolveOptionalPath, resolveOptionalString } from "./argsSupport";
 import {
@@ -107,7 +108,7 @@ function registerSharedCommandArgs(commands: {
     command
       .option(
         "--profile <selector>",
-        "Profile view(s), comma-separated; available: startup, startup:bootstrap, startup:imports, startup:ink",
+        `Profile view(s), comma-separated; available: ${PROFILE_SELECTORS.join(", ")}`,
       )
       .option("--review", "Enable review trace exporter");
   }
@@ -189,6 +190,9 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
     return { ...common, ...parseInitArgs(options) };
   }
   if (commandName === "audit") {
+    if (profileSelectors?.includes("composer")) {
+      failArgs("--profile composer is supported only by the interactive coding run");
+    }
     return { ...common, ...parseAuditArgs(args, options) };
   }
   if (commandName === "inspect") {
@@ -205,6 +209,9 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
     return { ...common, ...parseSkillsArgs(args) };
   }
   const runArgs = parseUnifiedRunArgs(args, options);
+  if (runArgs.headless && profileSelectors?.includes("composer")) {
+    failArgs("--profile composer requires the interactive Ink interface");
+  }
   return {
     ...common,
     ...runArgs,

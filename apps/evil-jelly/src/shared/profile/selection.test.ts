@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  composerProfileEnabled,
   PROFILE_ENV,
   parseProfileSelectors,
   selectedStartupProfileViews,
@@ -18,19 +19,21 @@ afterEach(() => {
   }
 });
 
-describe("startup profile selection", () => {
+describe("profile selection", () => {
   it("parses comma-separated selectors in order and removes duplicates", () => {
-    expect(
-      parseProfileSelectors("startup:bootstrap, startup:imports, startup, startup:imports"),
-    ).toEqual(["startup:bootstrap", "startup:imports", "startup"]);
+    expect(parseProfileSelectors("composer, startup:imports, startup, composer")).toEqual([
+      "composer",
+      "startup:imports",
+      "startup",
+    ]);
   });
 
   it("rejects empty and unavailable selectors with the available list", () => {
     expect(() => parseProfileSelectors("")).toThrow(
-      'Unknown profile selector "". Available: startup, startup:bootstrap, startup:imports, startup:ink.',
+      'Unknown profile selector "". Available: startup, startup:bootstrap, startup:imports, startup:ink, composer.',
     );
     expect(() => parseProfileSelectors("startup:runtime")).toThrow(
-      'Unknown profile selector "startup:runtime". Available: startup, startup:bootstrap, startup:imports, startup:ink.',
+      'Unknown profile selector "startup:runtime". Available: startup, startup:bootstrap, startup:imports, startup:ink, composer.',
     );
   });
 
@@ -38,6 +41,7 @@ describe("startup profile selection", () => {
     process.env[PROFILE_ENV] = value;
 
     expect(startupProfileEnabled()).toBe(true);
+    expect(composerProfileEnabled()).toBe(false);
     expect(selectedStartupProfileViews()).toEqual(["startup"]);
   });
 
@@ -45,19 +49,30 @@ describe("startup profile selection", () => {
     process.env[PROFILE_ENV] = value;
 
     expect(startupProfileEnabled()).toBe(false);
+    expect(composerProfileEnabled()).toBe(false);
+  });
+
+  it("selects composer profiling without starting the startup timeline", () => {
+    process.env[PROFILE_ENV] = "composer";
+
+    expect(composerProfileEnabled()).toBe(true);
+    expect(startupProfileEnabled()).toBe(false);
+    expect(selectedStartupProfileViews()).toEqual([]);
   });
 
   it("uses other environment values as multiple ordered selectors", () => {
-    process.env[PROFILE_ENV] = "startup:imports,startup";
+    process.env[PROFILE_ENV] = "startup:imports,composer,startup";
 
     expect(startupProfileEnabled()).toBe(true);
+    expect(composerProfileEnabled()).toBe(true);
     expect(selectedStartupProfileViews()).toEqual(["startup:imports", "startup"]);
   });
 
   it("gives the CLI override priority over the environment", () => {
     process.env[PROFILE_ENV] = "startup";
-    setProfileSelectorOverride(["startup:imports"]);
+    setProfileSelectorOverride(["composer"]);
 
-    expect(selectedStartupProfileViews()).toEqual(["startup:imports"]);
+    expect(composerProfileEnabled()).toBe(true);
+    expect(startupProfileEnabled()).toBe(false);
   });
 });

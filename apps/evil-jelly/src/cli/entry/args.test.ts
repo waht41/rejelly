@@ -39,7 +39,9 @@ describe("parseCliArgs", () => {
     expect(help).toContain("--mock-inputs");
     expect(help).toContain("requires --mock and cannot be combined with --input");
     expect(help).toContain("--profile <selector>");
-    expect(help).toContain("available: startup, startup:bootstrap, startup:imports, startup:ink");
+    expect(help).toContain(
+      "available: startup, startup:bootstrap, startup:imports, startup:ink, composer",
+    );
   });
 
   it("describes required audit options without a misleading negated default", () => {
@@ -147,7 +149,28 @@ describe("parseCliArgs", () => {
 
     expect(() => parseCliArgs(["node", "evil", "--profile", "startup:runtime"])).toThrow("exit 1");
     expect(error).toHaveBeenCalledWith(
-      'Unknown profile selector "startup:runtime". Available: startup, startup:bootstrap, startup:imports, startup:ink.',
+      'Unknown profile selector "startup:runtime". Available: startup, startup:bootstrap, startup:imports, startup:ink, composer.',
+    );
+  });
+
+  it("limits composer profiling to the interactive Ink run", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+
+    expect(() =>
+      parseCliArgs(["node", "evil", "audit", "--family", "clone", "--profile", "composer"]),
+    ).toThrow("exit 1");
+    expect(error).toHaveBeenLastCalledWith(
+      "--profile composer is supported only by the interactive coding run",
+    );
+
+    expect(() =>
+      parseCliArgs(["node", "evil", "--profile", "composer", "--headless", "--input", "hello"]),
+    ).toThrow("exit 1");
+    expect(error).toHaveBeenLastCalledWith(
+      "--profile composer requires the interactive Ink interface",
     );
   });
 
