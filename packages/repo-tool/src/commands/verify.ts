@@ -10,6 +10,8 @@ import type {
   VerifyFailureReport,
   VerifyOptions,
   VerifyPlan,
+  VerifyRelatedTestFallback,
+  VerifyRelatedTestFallbackReason,
   VerifyRunResult,
   VerifyStep,
 } from "../contracts.js";
@@ -33,6 +35,7 @@ export interface RelatedTestPackageSelection {
 }
 
 export interface RelatedTestPlan {
+  fallbacks: VerifyRelatedTestFallback[];
   fullPackageFilters: string[];
   relatedPackages: RelatedTestPackageSelection[];
 }
@@ -44,6 +47,7 @@ export function createVerifyPlan(
     biomeSelection?: BiomeChangedSelection;
     changedFileCount?: number;
     changeSummary?: VerifyChangeSummary;
+    relatedTestFallbacks?: VerifyRelatedTestFallback[];
     relatedTestPlan?: RelatedTestPlan;
     unmappedFiles?: string[];
   } = {},
@@ -124,6 +128,9 @@ export function createVerifyPlan(
     ...(context.changedFileCount === undefined
       ? {}
       : { changedFileCount: context.changedFileCount }),
+    ...((context.relatedTestFallbacks ?? context.relatedTestPlan?.fallbacks)?.length
+      ? { relatedTestFallbacks: context.relatedTestFallbacks ?? context.relatedTestPlan?.fallbacks }
+      : {}),
     scope,
     steps,
     ...(context.unmappedFiles ? { unmappedFiles: context.unmappedFiles } : {}),
@@ -140,6 +147,13 @@ function isInsidePackage(packagePath: string, absolutePath: string): boolean {
   );
 }
 
+export function isTestNeutralPackagePath(relativePath: string): boolean {
+  const normalized = relativePath.replaceAll("\\", "/").toLowerCase();
+  return (
+    normalized === "readme.md" || normalized === "changelog.md" || normalized.startsWith("docs/")
+  );
+}
+
 export function isSafeRelatedTestPath(relativePath: string): boolean {
   const normalized = relativePath.replaceAll("\\", "/").toLowerCase();
   if (!normalized.startsWith("src/")) return false;
@@ -147,6 +161,52 @@ export function isSafeRelatedTestPath(relativePath: string): boolean {
   if (/(?:^|\/)__tests__\/fixtures?\//.test(normalized)) return false;
   if (/(?:^|\/)[^/]+\.fixture\.[cm]?[jt]sx?$/.test(normalized)) return false;
   return normalized !== "src/index.ts" && normalized !== "src/cli/index.ts";
+}
+
+function fallbackReasonForPath(
+  packagePath: string,
+  relativePath: string,
+): VerifyRelatedTestFallbackReason | undefined {
+  const normalized = relativePath.replaceAll("\\", "/").toLowerCase();
+  if (!normalized.startsWith("src/")) {
+    return {
+      code: "unsupported-package-file",
+      message: "file is outside src/ and is not classified as test-neutral",
+      path: relativePath,
+    };
+  }
+  if (!/\.[cm]?[jt]sx?$/.test(normalized)) {
+    return {
+      code: "unsupported-source-extension",
+      message: "source file type cannot be mapped safely by Vitest related",
+      path: relativePath,
+    };
+  }
+  if (!fs.existsSync(path.resolve(packagePath, relativePath))) {
+    return {
+      code: "deleted-source",
+      message: "deleted source file is absent from the current Vitest module graph",
+      path: relativePath,
+    };
+  }
+  if (normalized === "src/index.ts" || normalized === "src/cli/index.ts") {
+    return {
+      code: "package-entrypoint",
+      message: "package entrypoint can affect behavior outside Vitest's related graph",
+      path: relativePath,
+    };
+  }
+  if (
+    /(?:^|\/)__tests__\/fixtures?\//.test(normalized) ||
+    /(?:^|\/)[^/]+\.fixture\.[cm]?[jt]sx?$/.test(normalized)
+  ) {
+    return {
+      code: "source-fixture",
+      message: "fixture may be loaded dynamically rather than through static imports",
+      path: relativePath,
+    };
+  }
+  return undefined;
 }
 
 function packageUsesVitest(packagePath: string): boolean {
@@ -172,7 +232,7 @@ export function resolveRelatedTestPlan(input: {
   selectedPackages: readonly WorkspacePackage[];
 }): RelatedTestPlan {
   const directNames = new Set(input.directPackageNames);
-  const fullPackageFilters: string[] = [];
+  const fallbacks: VerifyRelatedTestFallback[] = [];
   const relatedPackages: RelatedTestPackageSelection[] = [];
 
   for (const workspacePackage of input.selectedPackages) {
@@ -181,30 +241,71 @@ export function resolveRelatedTestPlan(input: {
       if (!isInsidePackage(workspacePackage.path, absolutePath)) return [];
       return [path.relative(workspacePackage.path, absolutePath).replaceAll("\\", "/")];
     });
-    const canRunRelated =
-      directNames.has(workspacePackage.name) &&
-      ownedFiles.length > 0 &&
-      packageUsesVitest(workspacePackage.path) &&
-      ownedFiles.every(
-        (file) =>
-          isSafeRelatedTestPath(file) && fs.existsSync(path.resolve(workspacePackage.path, file)),
-      );
-    if (canRunRelated) {
-      relatedPackages.push({
-        files: [...new Set(ownedFiles)].sort(),
-        packageName: workspacePackage.name,
-      });
+    let reasons: VerifyRelatedTestFallbackReason[] = [];
+    if (!directNames.has(workspacePackage.name)) {
+      reasons = [
+        {
+          code: "not-directly-changed",
+          message: "package is not directly changed, so Vitest related has no local input files",
+        },
+      ];
+    } else if (ownedFiles.length === 0) {
+      reasons = [
+        {
+          code: "no-owned-changes",
+          message: "selected package has no owned changed files for Vitest related",
+        },
+      ];
     } else {
-      fullPackageFilters.push(workspacePackage.name);
+      const testRelevantFiles = ownedFiles.filter((file) => !isTestNeutralPackagePath(file));
+      if (testRelevantFiles.length === 0) continue;
+      if (!packageUsesVitest(workspacePackage.path)) {
+        reasons = [
+          {
+            code: "non-vitest-package",
+            message: "package test script does not use Vitest",
+          },
+        ];
+      } else {
+        reasons = testRelevantFiles.flatMap((file) => {
+          const reason = fallbackReasonForPath(workspacePackage.path, file);
+          return reason ? [reason] : [];
+        });
+        if (reasons.length === 0) {
+          relatedPackages.push({
+            files: [...new Set(testRelevantFiles)].sort(),
+            packageName: workspacePackage.name,
+          });
+          continue;
+        }
+      }
     }
+    fallbacks.push({ packageName: workspacePackage.name, reasons });
   }
 
   return {
-    fullPackageFilters: fullPackageFilters.sort(),
+    fallbacks: fallbacks.sort((left, right) => left.packageName.localeCompare(right.packageName)),
+    fullPackageFilters: fallbacks.map((fallback) => fallback.packageName).sort(),
     relatedPackages: relatedPackages.sort((left, right) =>
       left.packageName.localeCompare(right.packageName),
     ),
   };
+}
+
+function globalRootFallbacks(
+  packageNames: readonly string[],
+  globalFiles: readonly string[],
+): VerifyRelatedTestFallback[] {
+  if (globalFiles.length === 0) return [];
+  const names = packageNames.length > 0 ? packageNames : ["workspace"];
+  return names.map((packageName) => ({
+    packageName,
+    reasons: globalFiles.map((file) => ({
+      code: "global-root-impact",
+      message: "global/root change can affect tests beyond Vitest's related module graph",
+      path: file,
+    })),
+  }));
 }
 
 function changeSummary(input: {
@@ -293,11 +394,12 @@ export function resolveVerifyPlan(repoRoot: string, options: VerifyOptions): Ver
       selectBiomeFiles(options, branchBiomeFiles, workingTreeBiomeFiles),
     );
     const selectedNames = new Set(selectedPackages.map((entry) => entry.name));
+    const directPackageNames = affected.packages.filter((name) => selectedNames.has(name));
     const relatedTestPlan =
       options.relatedTests && rootImpact.globalFiles.length === 0
         ? resolveRelatedTestPlan({
             changedFiles: changed.files,
-            directPackageNames: affected.packages.filter((name) => selectedNames.has(name)),
+            directPackageNames,
             repoRoot,
             selectedPackages,
           })
@@ -316,7 +418,7 @@ export function resolveVerifyPlan(repoRoot: string, options: VerifyOptions): Ver
         },
         changeSummary: changeSummary({
           biomeFiles,
-          directPackages: selectedPackages.map((entry) => entry.name),
+          directPackages: directPackageNames,
           globalFiles: rootImpact.globalFiles,
           neutralRootFiles: rootImpact.neutralFiles,
           totalFiles: changed.files,
@@ -324,6 +426,14 @@ export function resolveVerifyPlan(repoRoot: string, options: VerifyOptions): Ver
         }),
         changedFileCount: changed.files.length,
         ...(relatedTestPlan ? { relatedTestPlan } : {}),
+        ...(options.relatedTests && rootImpact.globalFiles.length > 0
+          ? {
+              relatedTestFallbacks: globalRootFallbacks(
+                selectedPackages.map((entry) => entry.name),
+                rootImpact.globalFiles,
+              ),
+            }
+          : {}),
         unmappedFiles: affected.unmappedFiles,
       },
     );
@@ -366,6 +476,9 @@ export function resolveVerifyPlan(repoRoot: string, options: VerifyOptions): Ver
     }),
     changedFileCount: changed.files.length,
     ...(relatedTestPlan ? { relatedTestPlan } : {}),
+    ...(options.relatedTests && rootImpact.globalFiles.length > 0
+      ? { relatedTestFallbacks: globalRootFallbacks([], rootImpact.globalFiles) }
+      : {}),
     unmappedFiles: affected.unmappedFiles,
   });
 }
@@ -385,6 +498,15 @@ function runProcessStep(
     output: "capture",
     timeoutMs: options.timeoutMs,
   });
+}
+
+export function formatRelatedTestFallback(fallback: VerifyRelatedTestFallback): string[] {
+  return [
+    `repo-tool verify: related tests fallback=${fallback.packageName}`,
+    ...fallback.reasons.map(
+      (reason) => `  ${reason.path ? `${reason.path}: ` : ""}${reason.message}`,
+    ),
+  ];
 }
 
 function printScope(plan: VerifyPlan, verbose: boolean): void {
@@ -425,6 +547,9 @@ function printScope(plan: VerifyPlan, verbose: boolean): void {
     if (verbose && plan.unmappedFiles) {
       for (const file of plan.unmappedFiles) console.log(`  ${file}`);
     }
+  }
+  for (const fallback of plan.relatedTestFallbacks ?? []) {
+    for (const line of formatRelatedTestFallback(fallback)) console.log(line);
   }
 }
 

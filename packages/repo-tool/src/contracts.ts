@@ -47,9 +47,32 @@ export interface BiomeChangedSelection {
 
 export type VerifyStep = BiomeChangedVerifyStep | ProcessVerifyStep;
 
+export type VerifyRelatedTestFallbackReasonCode =
+  | "deleted-source"
+  | "global-root-impact"
+  | "no-owned-changes"
+  | "not-directly-changed"
+  | "non-vitest-package"
+  | "package-entrypoint"
+  | "source-fixture"
+  | "unsupported-package-file"
+  | "unsupported-source-extension";
+
+export interface VerifyRelatedTestFallbackReason {
+  code: VerifyRelatedTestFallbackReasonCode;
+  message: string;
+  path?: string;
+}
+
+export interface VerifyRelatedTestFallback {
+  packageName: string;
+  reasons: VerifyRelatedTestFallbackReason[];
+}
+
 export interface VerifyPlan {
   changeSummary?: VerifyChangeSummary;
   changedFileCount?: number;
+  relatedTestFallbacks?: VerifyRelatedTestFallback[];
   scope: ResolvedVerifyScope;
   steps: VerifyStep[];
   unmappedFiles?: string[];
