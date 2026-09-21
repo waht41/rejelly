@@ -4,11 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "release:canary": "tsx src/cli/canary.ts",
+    "release:check-git": "tsx src/cli/check-git.ts",
+    "release:check-registry": "tsx src/cli/check-registry.ts",
     "release:pack-hash": "tsx src/cli/pack-hash.ts",
-    "release:prepare": "tsx src/cli/prepare.ts",
-    "release:check-registry": "tsx src/cli/check-registry.ts"
+    "release:prepare": "tsx src/cli/prepare.ts"
   },
   "dependencies": {
     "cac": "catalog:"
@@ -16,6 +18,7 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "tsx": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

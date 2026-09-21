@@ -24,7 +24,7 @@
     "test:watch": "vitest",
     "changeset": "changeset",
     "release:canary": "pnpm --filter @rejelly/release-tools release:canary --registry http://localhost:4873/",
-    "release": "pnpm --filter @rejelly/release-tools release:check-registry --expect https://registry.npmjs.org/ && turbo run build && changeset publish",
+    "release": "pnpm --filter @rejelly/release-tools release:check-git && pnpm --filter @rejelly/release-tools release:check-registry --expect https://registry.npmjs.org/ && turbo run build && changeset publish",
     "release:local": "turbo run build && pnpm -r publish --registry http://localhost:4873/ --no-git-checks",
     "clean": "turbo run clean"
   },
