@@ -2,13 +2,13 @@ import {
   refreshMemoryInstructionPrefix,
   type SessionMemoryRuntime,
 } from "../../domains/memory/runtime/sessionMemoryRuntime";
-import type { PromptChatCompactionConfig } from "../../domains/policy/promptChatResilient";
 import { env } from "../../shared/configuration/env";
 import {
   DEFAULT_OPENAI_CONTEXT_WINDOW_TOKENS,
   LOW_OPENAI_CONTEXT_WINDOW_TOKENS,
 } from "../../shared/configuration/modelDefaults";
 import { getBinding } from "../../shared/host/context";
+import type { PromptChatCompactionConfig } from "./context-management/promptChatResilient";
 
 /** Trigger mid-loop auto-compaction once estimated live context reaches this fraction of the window. */
 const AUTO_COMPACT_THRESHOLD_RATIO = 0.75;

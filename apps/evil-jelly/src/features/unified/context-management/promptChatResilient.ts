@@ -6,7 +6,7 @@ import {
   transferJsonSchema,
 } from "@rejelly/core/policy";
 import type { z } from "zod";
-import type { SessionMessageSink } from "../../shared/session/recorderPort";
+import type { SessionMessageSink } from "../../../shared/session/recorderPort";
 import type { PromptChatCompactionConfig, PromptTokenUsageReader } from "./compaction";
 import {
   runResilientToolCallLoopPolicy,

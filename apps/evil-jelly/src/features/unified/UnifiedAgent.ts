@@ -32,12 +32,6 @@ import {
   MEMORY_RUNTIME_PROVIDER_KEY,
   type SessionMemoryRuntime,
 } from "../../domains/memory/runtime/sessionMemoryRuntime";
-import type {
-  PromptTokenUsageReader,
-  PromptTokenUsageSnapshot,
-} from "../../domains/policy/compaction";
-import { promptChatResilient } from "../../domains/policy/promptChatResilient";
-import { promptCompactHistory } from "../../domains/policy/promptCompactHistory";
 import { materializeMessageHistory } from "../../domains/session/repository/sessionMessageMaterializer";
 import { equipSkillKit } from "../../domains/skills/agent/equipSkillKit";
 import { equipWebResearchKit } from "../../domains/web/kit";
@@ -52,6 +46,12 @@ import { getBinding } from "../../shared/host/context";
 import { recordAppliedToolDiff } from "../../shared/tool-observation/invocationContext";
 import { evilJellyToolLoggerMiddleware } from "../../shared/tool-observation/middleware";
 import { equipToolObservationRecorder } from "../../shared/tool-observation/persistence";
+import type {
+  PromptTokenUsageReader,
+  PromptTokenUsageSnapshot,
+} from "./context-management/compaction";
+import { promptChatResilient } from "./context-management/promptChatResilient";
+import { promptCompactHistory } from "./context-management/promptCompactHistory";
 import { buildAutoCompactionConfig } from "./contextControl";
 import type { ConversationAgentProps, ConversationAgentResult } from "./conversationRun";
 import { shouldUseTerminalUserReplyRule } from "./outputSurface";
