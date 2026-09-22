@@ -1,15 +1,15 @@
 import type { AgentSnapshot, Message, ModelAdapter } from "@rejelly/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { defaultMcpServerDefinition } from "../../../../domains/mcp/configuration/configuration";
-import { createMcpRuntimeProviders } from "../../../../domains/mcp/mcpServerKit";
-import { sessionRecordFixture } from "../../../../domains/session/__tests__/sessionTestRecord";
-import * as sessionStore from "../../../../domains/session/repository/sessionStore";
-import type { EvilJellyBindings } from "../../../../shared/host/bindings";
+import { defaultMcpServerDefinition } from "../../../domains/mcp/configuration/configuration";
+import { createMcpRuntimeProviders } from "../../../domains/mcp/mcpServerKit";
+import { sessionRecordFixture } from "../../../domains/session/__tests__/sessionTestRecord";
+import * as sessionStore from "../../../domains/session/repository/sessionStore";
+import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import {
   createSessionMcpState,
   emptySessionMcpState,
-} from "../../../../shared/model/mcp/sessionMcpState";
-import { textPromptInput } from "../../../../shared/model/prompt/promptInput";
+} from "../../../shared/model/mcp/sessionMcpState";
+import { textPromptInput } from "../../../shared/model/prompt/promptInput";
 import { createInteractiveRunControl, type InteractiveRunControl } from "./runControl";
 import { runInteractiveLoop } from "./runLoop";
 import { runEvilJellyHost } from "./runSegment";
@@ -26,12 +26,12 @@ vi.mock("./runSegment", () => ({
   runEvilJellyHost: vi.fn(),
 }));
 
-vi.mock("../../../../domains/mcp/mcpServerKit", () => ({
+vi.mock("../../../domains/mcp/mcpServerKit", () => ({
   createMcpDispatchBindingFactory: vi.fn(() => vi.fn()),
   createMcpRuntimeProviders: vi.fn(() => ({})),
 }));
 
-vi.mock("../../../../domains/mcp/runtime/runtimeManager", () => ({
+vi.mock("../../../domains/mcp/runtime/runtimeManager", () => ({
   McpRuntimeManager: class {
     reconcile = runtimeMocks.reconcileMcp;
     dispose = runtimeMocks.disposeMcp;
@@ -41,7 +41,7 @@ vi.mock("../../../../domains/mcp/runtime/runtimeManager", () => ({
   },
 }));
 
-vi.mock("../../../../domains/mcp/runtime/sdkConnector", () => ({
+vi.mock("../../../domains/mcp/runtime/sdkConnector", () => ({
   SdkMcpRuntimeConnector: class {
     constructor(options: unknown) {
       runtimeMocks.connectorOptions(options);
@@ -49,7 +49,7 @@ vi.mock("../../../../domains/mcp/runtime/sdkConnector", () => ({
   },
 }));
 
-vi.mock("../../../../shared/configuration/settings", () => ({
+vi.mock("../../../shared/configuration/settings", () => ({
   getSettings: () => ({
     mcp: {
       user: { path: "user-settings", value: undefined },
@@ -59,7 +59,7 @@ vi.mock("../../../../shared/configuration/settings", () => ({
   invalidateSettingsCache: vi.fn(),
 }));
 
-vi.mock("../../../../shared/mcp/trustRepository", () => ({
+vi.mock("../../../shared/mcp/trustRepository", () => ({
   readMcpTrustGrants: () => [],
   readMcpPersistentPermissions: () => [],
   grantMcpWorkspaceTrust: vi.fn(),
@@ -68,11 +68,11 @@ vi.mock("../../../../shared/mcp/trustRepository", () => ({
   revokeMcpPersistentPermissions: vi.fn(),
 }));
 
-vi.mock("../../../skill-runtime/configuredRuntime", () => ({
+vi.mock("../../skill-runtime/configuredRuntime", () => ({
   buildConfiguredSkillRuntimeSnapshot: runtimeMocks.buildSkillRuntime,
 }));
 
-vi.mock("../../../skill-runtime/startupSummary", () => ({
+vi.mock("../../skill-runtime/startupSummary", () => ({
   formatSkillRuntimeStartupSummary: runtimeMocks.formatSkillSummary,
 }));
 

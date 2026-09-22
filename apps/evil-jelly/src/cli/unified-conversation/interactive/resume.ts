@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import type { Message } from "@rejelly/core";
-import { buildLegacyTranscript } from "../../../../domains/session/projection/sessionHistoryProjection";
+import { buildLegacyTranscript } from "../../../domains/session/projection/sessionHistoryProjection";
 import {
   generateSessionId,
   type LegacyMigrationOptions,
@@ -9,19 +9,19 @@ import {
   type SessionBudget,
   type SessionContextTokenAnchor,
   type SessionRecord,
-} from "../../../../domains/session/repository/sessionStore";
-import { countConversationTurns } from "../../../../shared/conversation/compactionMessages";
-import { getWorkspaceRoot } from "../../../../shared/fs-policy/workspace-context";
-import type { EvilJellyBindings } from "../../../../shared/host/bindings";
+} from "../../../domains/session/repository/sessionStore";
+import { countConversationTurns } from "../../../shared/conversation/compactionMessages";
+import { getWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
+import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import {
   emptySessionMcpState,
   type SessionMcpState,
-} from "../../../../shared/model/mcp/sessionMcpState";
+} from "../../../shared/model/mcp/sessionMcpState";
 import {
   RESUME_VISIBLE_TURNS,
   type TranscriptItem,
   tailTranscriptByInitialTurns,
-} from "../../../../shared/session/transcript";
+} from "../../../shared/session/transcript";
 
 export interface SessionResumeSeed {
   activeContext: Message[];

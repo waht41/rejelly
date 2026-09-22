@@ -1,7 +1,4 @@
-import type {
-  ConversationLoopControl,
-  ConversationLoopIntent,
-} from "../../../unified-conversation/MainCliAgent";
+import type { ConversationLoopControl, ConversationLoopIntent } from "../MainCliAgent";
 
 export type RunLoopIntent = ConversationLoopIntent | { type: "none" };
 

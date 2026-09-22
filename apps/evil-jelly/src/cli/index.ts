@@ -5,8 +5,8 @@
 import { setProfileSelectorOverride } from "../shared/profile/selection";
 import { startupTimeline } from "../shared/profile/startup/timeline";
 import { getCliVersion, parseCliArgs } from "./entry/args";
-import { createInteractiveRunControl } from "./entry/unified-run/interactive/runControl";
 import type { RunUnifiedOptions } from "./entry/unified-run/runUnified";
+import { createInteractiveRunControl } from "./unified-conversation/interactive/runControl";
 
 startupTimeline.mark("cli_module_ready");
 

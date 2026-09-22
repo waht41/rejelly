@@ -20,10 +20,10 @@ The existing top-level areas remain useful:
 - `shared/` contains stable cross-owner contracts and low-level primitives. It is not the default
   destination for code that does not yet have an owner.
 
-The main structural risk is no longer the top-level split. Interactive conversation behavior is
-spread across CLI entry, run-loop, binding, command, dispatch, and session-lifecycle directories,
-and semantic references are implemented as parallel Skill, MCP, and Memory pipelines. Unified
-conversation context policy now lives with its owning feature under
+The main structural risk is no longer the top-level split. Interactive run and session lifecycle
+now live under `cli/unified-conversation/`, while entry and presentation keep narrow integration
+points. Semantic references are still implemented as parallel Skill, MCP, and Memory pipelines.
+Unified conversation context policy lives with its owning feature under
 `features/unified/context-management/`.
 
 ## Target owners
@@ -198,8 +198,8 @@ flow themselves.
 
 1. **Completed:** move unified-conversation context and compaction policy to
    `features/unified/context-management/` without behavior changes.
-2. Physically gather the interactive conversation/session lifecycle while keeping entry and
-   presentation contracts stable.
+2. **Completed:** gather the interactive run and session lifecycle under
+   `cli/unified-conversation/interactive/` while keeping entry and presentation contracts stable.
 3. Extract turn execution and session coordination from the current CLI orchestrator by lifecycle,
    not into generic helpers.
 4. Consolidate repeated operator-manager arbitration only after the common request/action behavior

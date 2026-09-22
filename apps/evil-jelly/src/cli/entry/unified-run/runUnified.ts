@@ -10,12 +10,15 @@ import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import { textPromptInput } from "../../../shared/model/prompt/promptInput";
 import { startupTimeline } from "../../../shared/profile/startup/timeline";
 import { enqueueMainInput } from "../../submission-dispatch/mainInputQueue";
+import { resolveInitialSession } from "../../unified-conversation/interactive/resume";
+import {
+  createInteractiveRunControl,
+  type InteractiveRunControl,
+} from "../../unified-conversation/interactive/runControl";
+import { runInteractiveLoop } from "../../unified-conversation/interactive/runLoop";
+import { loadStartupSnapshot } from "../../unified-conversation/interactive/startupSnapshot";
 import type { RunStartupArgs } from "./args";
 import { runHeadless } from "./headless/runHeadless";
-import { resolveInitialSession } from "./interactive/resume";
-import { createInteractiveRunControl, type InteractiveRunControl } from "./interactive/runControl";
-import { runInteractiveLoop } from "./interactive/runLoop";
-import { loadStartupSnapshot } from "./interactive/startupSnapshot";
 
 export interface RunUnifiedOptions {
   startup: RunStartupArgs;

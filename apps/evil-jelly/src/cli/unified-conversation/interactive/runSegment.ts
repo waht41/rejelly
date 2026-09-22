@@ -3,35 +3,35 @@
 import { OPENAI_CHAT_STATE_KIND, OPENAI_RESPONSES_STATE_KIND } from "@rejelly/adapter-openai";
 import { type AgentSnapshot, isAbortError, type Message, type ModelAdapter } from "@rejelly/core";
 import type { ReviewOptions } from "@rejelly/core/debugger";
-import type { McpSessionControl } from "../../../../domains/mcp/management/sessionControl";
+import type { McpSessionControl } from "../../../domains/mcp/management/sessionControl";
 import {
   MEMORY_RUNTIME_PROVIDER_KEY,
   type SessionMemoryRuntime,
-} from "../../../../domains/memory/runtime/sessionMemoryRuntime";
-import { LazySessionRecorder } from "../../../../domains/session/recorder/lazySessionRecorder";
-import { observeSessionRecorder } from "../../../../domains/session/recorder/sessionObservationRecorder";
+} from "../../../domains/memory/runtime/sessionMemoryRuntime";
+import { LazySessionRecorder } from "../../../domains/session/recorder/lazySessionRecorder";
+import { observeSessionRecorder } from "../../../domains/session/recorder/sessionObservationRecorder";
 import {
   openSessionRecorder,
   type SessionRecorder,
-} from "../../../../domains/session/recorder/sessionRecorder";
-import { materializeMessageHistory } from "../../../../domains/session/repository/sessionMessageMaterializer";
+} from "../../../domains/session/recorder/sessionRecorder";
+import { materializeMessageHistory } from "../../../domains/session/repository/sessionMessageMaterializer";
 import type {
   SessionBudget,
   SessionContextTokenAnchor,
-} from "../../../../domains/session/repository/sessionStore";
+} from "../../../domains/session/repository/sessionStore";
 import {
   SKILL_RUNTIME_PROVIDER_KEY,
   type SkillRuntimeSnapshot,
-} from "../../../../domains/skills/agent/skillRuntime";
-import type { ConversationAgentProps } from "../../../../features/unified/conversationRun";
-import { env } from "../../../../shared/configuration/env";
-import { getWorkspaceRoot } from "../../../../shared/fs-policy/workspace-context";
-import type { EvilJellyBindings } from "../../../../shared/host/bindings";
-import type { SessionMcpState } from "../../../../shared/model/mcp/sessionMcpState";
-import { getSessionModelConfiguration } from "../../../../shared/model/observation/modelConfiguration";
-import { runWithReview } from "../../../runtime/runWithReview";
-import { generateTraceId } from "../../../runtime/traceId";
-import { MainCliAgent, type MainCliAgentProps } from "../../../unified-conversation/MainCliAgent";
+} from "../../../domains/skills/agent/skillRuntime";
+import type { ConversationAgentProps } from "../../../features/unified/conversationRun";
+import { env } from "../../../shared/configuration/env";
+import { getWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
+import type { EvilJellyBindings } from "../../../shared/host/bindings";
+import type { SessionMcpState } from "../../../shared/model/mcp/sessionMcpState";
+import { getSessionModelConfiguration } from "../../../shared/model/observation/modelConfiguration";
+import { runWithReview } from "../../runtime/runWithReview";
+import { generateTraceId } from "../../runtime/traceId";
+import { MainCliAgent, type MainCliAgentProps } from "../MainCliAgent";
 import type { InteractiveRunControl } from "./runControl";
 
 export interface RunEvilJellyHostOptions {

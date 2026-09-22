@@ -1,9 +1,9 @@
 import type { ModelAdapter } from "@rejelly/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SkillRuntimeSnapshot } from "../../../../domains/skills/agent/skillRuntime";
-import { createSkillCatalog } from "../../../../domains/skills/catalog/skillCatalog";
-import { skillOrigin } from "../../../../domains/skills/definition/skillDefinition";
-import type { EvilJellyBindings } from "../../../../shared/host/bindings";
+import type { SkillRuntimeSnapshot } from "../../../domains/skills/agent/skillRuntime";
+import { createSkillCatalog } from "../../../domains/skills/catalog/skillCatalog";
+import { skillOrigin } from "../../../domains/skills/definition/skillDefinition";
+import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import { createInteractiveRunControl } from "./runControl";
 import { runEvilJellyHost } from "./runSegment";
 
@@ -13,24 +13,24 @@ const mocks = vi.hoisted(() => ({
   runWithReview: vi.fn(),
 }));
 
-vi.mock("../../../unified-conversation/MainCliAgent", () => ({
+vi.mock("../MainCliAgent", () => ({
   MainCliAgent: mocks.mainCliAgent,
 }));
 
-vi.mock("../../../../domains/session/recorder/sessionRecorder", () => ({
+vi.mock("../../../domains/session/recorder/sessionRecorder", () => ({
   openSessionRecorder: mocks.openSessionRecorder,
 }));
 
-vi.mock("../../../../shared/fs-policy/workspace-context", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../../shared/fs-policy/workspace-context")>()),
+vi.mock("../../../shared/fs-policy/workspace-context", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../shared/fs-policy/workspace-context")>()),
   getWorkspaceRoot: () => "/workspace",
 }));
 
-vi.mock("../../../runtime/traceId", () => ({
+vi.mock("../../runtime/traceId", () => ({
   generateTraceId: () => "trace-id",
 }));
 
-vi.mock("../../../runtime/runWithReview", () => ({
+vi.mock("../../runtime/runWithReview", () => ({
   runWithReview: mocks.runWithReview,
 }));
 

@@ -22,7 +22,6 @@ import {
   TOOL_FULL_CAP,
   useOutputStore,
 } from "../conversation-display/useOutputStore";
-import type { InteractiveRunControl } from "../entry/unified-run/interactive/runControl";
 import { createInteractiveShell } from "../interactive-shell/inkLifecycle";
 import { createInteractiveSubmission } from "../interactive-shell/submission";
 import { revealMemoryFileInExplorer } from "../memory-manager/openMemoryStore";
@@ -41,6 +40,7 @@ import { openSkillFolderInFileManager } from "../skill-manager/openSkillFolder";
 import { resetSubmissionDispatch } from "../submission-dispatch/dispatcher";
 import { resetModeSession, useModeStore } from "../tool-approval/approvalModeStore";
 import { createToolApproval } from "../tool-approval/createToolApproval";
+import type { InteractiveRunControl } from "../unified-conversation/interactive/runControl";
 import { createInkRequestMemoryConfirmation } from "./memoryConfirmation";
 
 function toDecisionView(view?: PromptChoiceView): DecisionView | undefined {

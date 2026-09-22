@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionMeta } from "../../domains/session/repository/sessionStore";
 import type { EvilJellyBindings } from "../../shared/host/bindings";
 import type { PromptChoiceRequest } from "../../shared/host/inputBindings";
-import { createInteractiveRunControl } from "../entry/unified-run/interactive/runControl";
+import { createInteractiveRunControl } from "./interactive/runControl";
 import { tryRequestResume } from "./MainCliAgent";
 
 const mocks = vi.hoisted(() => ({

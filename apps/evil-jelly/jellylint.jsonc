@@ -225,7 +225,17 @@
           "@domain:mcp",
           "@domain:memory"
         ],
-        "@cli:unified-conversation": ["@feature:unified", "@domain:mcp"],
+        "@cli:unified-conversation": [
+          "@feature:unified",
+          "@feature:replay",
+          "@domain:mcp",
+          "@domain:memory",
+          "@domain:session:projection",
+          "@domain:session:repository",
+          "@domain:session:recorder",
+          "@domain:skills:agent",
+          "@domain:skills:definition"
+        ],
         "@cli:mcp-runtime": ["@domain:mcp"],
         "@feature:unified": [
           "@domain:memory",
@@ -233,7 +243,6 @@
           "@domain:web",
           "@domain:skills:agent",
           "@domain:session:repository",
-          "@domain:policy",
           "@domain:mcp"
         ],
         "@feature:audit": ["@domain:workspace", "@domain:mcp"],
@@ -254,6 +263,7 @@
           "@cli:mcp-run",
           "@cli:skill-run",
           "@cli:unified-run",
+          "@cli:unified-conversation",
           "@cli:bindings",
           "@cli:model-composition"
         ],
@@ -274,7 +284,9 @@
         "@cli:unified-conversation": [
           "@cli:conversation-display",
           "@cli:message-composer",
+          "@cli:mcp-runtime",
           "@cli:runtime",
+          "@cli:skill-runtime",
           "@cli:submission-dispatch",
           "@domain:memory",
           "@domain:session:model",
@@ -284,6 +296,7 @@
         ],
         "@cli:bindings": [
           "@cli:unified-run",
+          "@cli:unified-conversation",
           "@cli:conversation-display",
           "@cli:memory-manager",
           "@cli:skill-manager",
