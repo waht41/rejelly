@@ -55,6 +55,12 @@
       "artifacts": ["apps/evil-jelly/package.json", "package.json"],
       "note": "Product and CLI README. Verify factual command, option, configuration, default, package, adapter, audit, and architecture claims; do not flag intentionally high-level product descriptions or omitted implementation detail. For pnpm script examples, account for pnpm consuming its single `--` separator before forwarding script arguments, and validate the actual invocation before reporting a leading-separator error."
     },
+    "apps/evil-jelly/ARCHITECTURE.md": {
+      "sectionDepth": 3,
+      "paths": ["apps/evil-jelly/src"],
+      "artifacts": ["apps/evil-jelly/jellylint.jsonc"],
+      "note": "Target-state ownership and migration guidance. Distinguish deliberate future direction from claims about the current physical layout; validate current-state examples and dependency-boundary claims against source and Jelly lint configuration."
+    },
     "packages/jelly-lint/README.md": {
       "artifacts": [
         "packages/jelly-lint/jellylint.schema.json",

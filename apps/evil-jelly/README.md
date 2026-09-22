@@ -646,7 +646,7 @@ Ink renders completed turns once in `<Static>` history and keeps the current inp
 
 ### Source organization
 
-Source is organized primarily by ownership and change reason rather than by a universal technical-layer stack:
+Source is organized primarily by ownership and change reason rather than by a universal technical-layer stack. See [ARCHITECTURE.md](./ARCHITECTURE.md) for the target owners, representative change scenarios, and incremental refactoring rules.
 
 | Area | Directory | Responsibility |
 |------|-----------|----------------|
