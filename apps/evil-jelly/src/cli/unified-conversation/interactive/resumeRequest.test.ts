@@ -1,23 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SessionMeta } from "../../domains/session/repository/sessionStore";
-import type { EvilJellyBindings } from "../../shared/host/bindings";
-import type { PromptChoiceRequest } from "../../shared/host/inputBindings";
-import { createInteractiveRunControl } from "./interactive/runControl";
-import { tryRequestResume } from "./MainCliAgent";
+import type { SessionMeta } from "../../../domains/session/repository/sessionStore";
+import type { EvilJellyBindings } from "../../../shared/host/bindings";
+import type { PromptChoiceRequest } from "../../../shared/host/inputBindings";
+import { tryRequestResume } from "./resume";
+import { createInteractiveRunControl } from "./runControl";
 
 const mocks = vi.hoisted(() => ({
   listSessions: vi.fn(),
   loadSession: vi.fn(),
 }));
 
-vi.mock("../../domains/session/repository/sessionStore", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../domains/session/repository/sessionStore")>()),
+vi.mock("../../../domains/session/repository/sessionStore", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../domains/session/repository/sessionStore")>()),
   listSessions: mocks.listSessions,
   loadSession: mocks.loadSession,
 }));
 
-vi.mock("../../shared/fs-policy/workspace-context", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../shared/fs-policy/workspace-context")>()),
+vi.mock("../../../shared/fs-policy/workspace-context", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../shared/fs-policy/workspace-context")>()),
   getWorkspaceRoot: () => "/workspace",
 }));
 

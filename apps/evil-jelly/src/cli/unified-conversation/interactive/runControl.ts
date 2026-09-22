@@ -1,4 +1,11 @@
-import type { ConversationLoopControl, ConversationLoopIntent } from "../MainCliAgent";
+export type ConversationLoopIntent =
+  | { type: "exit" }
+  | { type: "new_session" }
+  | { type: "resume"; sessionId: string };
+
+export interface ConversationLoopControl {
+  request: (intent: ConversationLoopIntent) => void;
+}
 
 export type RunLoopIntent = ConversationLoopIntent | { type: "none" };
 

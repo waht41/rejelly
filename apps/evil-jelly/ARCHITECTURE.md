@@ -200,8 +200,8 @@ flow themselves.
    `features/unified/context-management/` without behavior changes.
 2. **Completed:** gather the interactive run and session lifecycle under
    `cli/unified-conversation/interactive/` while keeping entry and presentation contracts stable.
-3. Extract turn execution and session coordination from the current CLI orchestrator by lifecycle,
-   not into generic helpers.
+3. **Completed:** extract turn execution, live session coordination, and active-turn command
+   arbitration from the CLI router by lifecycle rather than into generic helpers.
 4. Consolidate repeated operator-manager arbitration only after the common request/action behavior
    is explicit.
 5. Consolidate repeated composer reference mechanics while preserving capability-owned resolution.
