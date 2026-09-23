@@ -38,7 +38,7 @@ export type ToolObservationMetrics = GrepSearchToolMetrics;
 
 /** Why and how the host allowed a tool call to proceed. */
 export interface ToolApprovalAnnotation {
-  mode: "auto" | "manual";
+  mode: "policy" | "auto" | "manual";
   basis: string;
   reason?: string;
 }

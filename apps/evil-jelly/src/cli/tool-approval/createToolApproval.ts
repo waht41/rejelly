@@ -156,7 +156,7 @@ function tryAutoAllowFsWrite(
     return null;
   }
   recordAutoAllowed(
-    { mode: "auto", basis: `${params.kind} policy` },
+    { mode: "policy", basis: params.kind },
     `[Auto-allowed] ${params.kind} → ${forNotice(params.filePath)}`,
   );
   return { action: "accept" };
@@ -275,7 +275,7 @@ function tryAutoAllowShellCommand(
   // Read-only commands run in every mode; irreversible (block) ones are never auto-run.
   if (risk === "auto") {
     recordAutoAllowed(
-      { mode: "auto", basis: "safe shell (read-only)" },
+      { mode: "policy", basis: "read_only" },
       "[Auto-allowed] safe shell (read-only)",
     );
     return { result: { action: "accept" }, declaredReason: "", risk };
@@ -287,7 +287,7 @@ function tryAutoAllowShellCommand(
     for (const prefix of shellAutoAllowPrefixes) {
       if (commandMatchesPrefix(params.command, prefix)) {
         recordAutoAllowed(
-          { mode: "auto", basis: `shell prefix: ${prefix}` },
+          { mode: "policy", basis: `shell prefix: ${prefix}` },
           `[Auto-allowed] shell prefix: ${prefix}`,
         );
         return { result: { action: "accept" }, declaredReason: "", risk };

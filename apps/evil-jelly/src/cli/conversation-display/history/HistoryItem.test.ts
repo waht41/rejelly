@@ -56,6 +56,19 @@ describe("HistoryItem tool headline", () => {
     expect(lines).toHaveLength(2);
   });
 
+  it("labels mode-independent safe commands as host policy", () => {
+    const turn = toolTurn("[Tools] run_command → git status");
+    if (turn.type !== "tool") {
+      throw new Error("Expected tool turn");
+    }
+    turn.tool.approval = { mode: "policy", basis: "read_only" };
+
+    expect(renderTurn(turn)).toEqual([
+      "● #3 [Tools] run_command → git status",
+      "  policy · read_only",
+    ]);
+  });
+
   it("labels accepted manual approval and keeps its reason on the same row", () => {
     const turn = toolTurn("[Tools] run_command → pnpm test");
     if (turn.type !== "tool") {

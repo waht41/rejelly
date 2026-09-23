@@ -275,17 +275,28 @@ describe("createToolApproval", () => {
     expect(useDecisionStore.getState().decision).toMatchObject({ type: "idle" });
   });
 
-  it("auto-runs a read-only/safe shell command in any mode (incl. normal)", async () => {
+  it("marks a safe shell command as host policy in any mode (incl. normal)", async () => {
     resetCliStores();
     const confirmTool = createToolApproval({ getMode: () => "normal" });
-
-    const result = await confirmTool({
-      type: "shell_command",
-      command: "git status",
-      supportedActions: ["accept", "reject"],
+    const call = useOutputStore.getState().beginTool({
+      toolName: "run_command",
+      summary: "[Tools] git status",
     });
 
-    expect(result).toEqual({ action: "accept" });
+    const approval = await runWithToolDetailSlot(async () => {
+      setActiveToolCall(call);
+      await expect(
+        confirmTool({
+          type: "shell_command",
+          command: "git status",
+          supportedActions: ["accept", "reject"],
+        }),
+      ).resolves.toEqual({ action: "accept" });
+      return takeActiveToolApproval();
+    });
+
+    expect(approval).toEqual({ mode: "policy", basis: "read_only" });
+    expect(useOutputStore.getState().runningTools[0]?.approval).toEqual(approval);
     expect(useDecisionStore.getState().decision).toMatchObject({ type: "idle" });
   });
 

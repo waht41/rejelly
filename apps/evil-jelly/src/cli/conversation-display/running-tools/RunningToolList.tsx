@@ -37,7 +37,9 @@ export function RunningToolList({
           {tool.approval ? (
             <Text dimColor={!tool.approval.reason} wrap="truncate-end">
               {"  "}
-              <Text dimColor>{tool.approval.mode === "auto" ? "auto · " : "approved · "}</Text>
+              <Text dimColor>
+                {tool.approval.mode === "manual" ? "approved · " : `${tool.approval.mode} · `}
+              </Text>
               <Text
                 color={
                   tool.approval.reason
