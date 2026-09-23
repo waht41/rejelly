@@ -27,46 +27,51 @@
   //     (the ai surface goes route → controller → agents like every other one).
   //   - @cli no longer lives in the same layer as the surfaces; the old @cli/
   //     @entry naming confusion is gone now that @cli is a first-class root.
+  "nodePolicies": {
+    "production": {
+      "default": true,
+      "exclude": ["src/**/__tests__/**/*", "src/**/*.test.*"]
+    }
+  },
   "nodes": {
     // ---- Test specs: live outside production layering ----------------------
-    "@spec:tests": ["src/**/__tests__/**/*", "src/**/*.test.*"],
+    "@spec:tests": {
+      "patterns": ["src/**/__tests__/**/*", "src/**/*.test.*"],
+      "policies": ["!production"]
+    },
 
     // ---- Roots: the two entry binaries -------------------------------------
-    "@server": ["src/server/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"], // boot + Fastify wiring (server/start-server/index)
-    "@cli": ["src/cli/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"], // bin shell (cli-entry) + headless tool harness
+    "@server": "src/server/**/*", // boot + Fastify wiring (server/start-server/index)
+    "@cli": "src/cli/**/*", // bin shell (cli-entry) + headless tool harness
 
     // ---- Transport: Fastify route plugins (HTTP / WS / MCP / AI) ------------
-    "@route": ["src/routes/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@route": "src/routes/**/*",
 
     // ---- Server-internal transport surfaces (no peers) ---------------------
-    "@controller": ["src/controllers/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"], // classic HTTP controllers
-    "@mcp": ["src/mcp/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"], // MCP server adapter
+    "@controller": "src/controllers/**/*", // classic HTTP controllers
+    "@mcp": "src/mcp/**/*", // MCP server adapter
 
     // ---- AI capability layer: orchestrated by @controller, sits over @tools -
-    "@agents": ["src/agents/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"], // AI agents (analyze / filter)
+    "@agents": "src/agents/**/*", // AI agents (analyze / filter)
 
     // ---- Shared capability: portable trace tools + the registry ------------
-    "@tools": ["src/tools/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@tools": "src/tools/**/*",
 
     // ---- Domain logic -------------------------------------------------------
-    "@service": ["src/services/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@service": "src/services/**/*",
 
     // ---- Data access --------------------------------------------------------
-    "@repo": ["src/repositories/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@repo": "src/repositories/**/*",
 
     // ---- Persistence infra (floor): drizzle / schema / migrations -----------
-    "@db": ["src/db/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@db": "src/db/**/*",
 
     // ---- Domain capability kernels -----------------------------------------
-    "@traceFilter": [
-      "src/capabilities/trace-filter/**/*",
-      "!src/**/__tests__/**/*",
-      "!src/**/*.test.*"
-    ],
+    "@traceFilter": "src/capabilities/trace-filter/**/*",
 
     // ---- Leaf / cross-cutting (no upward deps) ------------------------------
-    "@utils": ["src/utils/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"], // leaf utility layer (no internal deps)
-    "@config": ["src/config/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"]
+    "@utils": "src/utils/**/*", // leaf utility layer (no internal deps)
+    "@config": "src/config/**/*"
   },
 
   "graph": {

@@ -6,10 +6,11 @@ JellyLint 用一份声明式配置描述 **逻辑节点**（vertices）、**允�
 
 JSON Schema 定义见仓库内 `packages/jelly-lint/jellylint.schema.json`。
 
-顶层结构固定包含 `nodes` 与 `graph`；`rules` 可选：
+顶层结构固定包含 `nodes` 与 `graph`；`nodePolicies` 与 `rules` 可选：
 
 ```jsonc
 {
+  "nodePolicies": { /* ... */ },
   "nodes": { /* ... */ },
   "graph": { /* ... */ },
   "rules": [ /* ... */ ]
@@ -18,11 +19,54 @@ JSON Schema 定义见仓库内 `packages/jelly-lint/jellylint.schema.json`。
 
 ---
 
-## 1. `nodes`：声明节点（逻辑 ID → 物理归属）
+## 1. `nodePolicies` 与 `nodes`：声明物理归属
+
+### 1.1 具名 node policy
+
+`nodePolicies` 用具名、可组合的排除集合减少生产节点重复声明。第一版 policy 只允许收窄物理归属，不允许增加 include：
+
+```jsonc
+"nodePolicies": {
+  "production": {
+    "default": true,
+    "exclude": [
+      "src/**/__tests__/**/*",
+      "src/**/*.test.*"
+    ]
+  },
+  "generated": {
+    "exclude": ["src/**/*.generated.*"]
+  }
+}
+```
+
+- `default` 默认为 `false`；为 `true` 时自动应用于每个含内部路径的节点。
+- `exclude` 必须非空，且每项写普通路径 glob，不可带 `!`；引擎展开 policy 时会自动添加排除标记。
+- policy 名不可为空或以 `!` 开头。
+- policy 只作用于内部路径；纯 `npm:` / `node:` 节点不会继承默认 policy，也不可显式引用 policy。
+
+节点可用对象形态增加或移除具名 policy：
+
+```jsonc
+"nodes": {
+  "@spec:tests": {
+    "patterns": ["src/**/__tests__/**/*", "src/**/*.test.*"],
+    "policies": ["!production"]
+  },
+  "@feature:audit": {
+    "patterns": "src/features/audit/**/*",
+    "policies": ["generated"]
+  }
+}
+```
+
+有效集合按集合运算计算：`默认 policy ∪ 正向引用 − !负向引用`。它不是顺序覆盖语义；同一节点重复引用、或同时写 `name` 与 `!name` 均为配置错误。正负引用都必须指向已声明的精确 policy 名，不支持 glob。展开后的 policy exclusion 会与节点局部 exclusion 合并并去重，再交给现有 ownership、overlap 与 graph 构建逻辑。
+
+### 1.2 `nodes`：声明节点（逻辑 ID → 物理归属）
 
 `nodes` 是一个对象：**键**为逻辑节点 ID（必须以 `@` 开头），**值**为该节点对应的源码路径模板或外部模块标识。
 
-### 1.1 内部路径（仓库内文件）
+### 1.3 内部路径（仓库内文件）
 
 - 值可以是 **单个字符串**，或 **字符串数组**（按顺序尝试，用于多套路径形状）。
 - 路径中使用 glob：`*`、`**`、`?`，以及段内的 **`[name]` 占位符**（见下文「命名变量」）。
@@ -44,7 +88,7 @@ JSON Schema 定义见仓库内 `packages/jelly-lint/jellylint.schema.json`。
 - 节点路径模式里 **不能** 再写其他节点 ID（不能写 `@...` 去引用别的逻辑节点）；需要重复写 glob 或直接维护 `jellylint.json[c]`。
 - 支持声明 **外部依赖** 作为「只按 import 解析、不扫盘」的节点：见下。
 
-### 1.2 外部依赖（`npm:` / `node:`）
+### 1.4 外部依赖（`npm:` / `node:`）
 
 - `npm:包名`：将逻辑节点绑定到该 npm 包（import 说明符里通常可写作包名或子路径）。
 - `node:模块`：Node 内置模块，如 `node:fs`。
@@ -56,11 +100,11 @@ JSON Schema 定义见仓库内 `packages/jelly-lint/jellylint.schema.json`。
 
 内部路径与外部键可以混在同一份 `nodes` 里，由引擎按文件路径或 import 说明符分别解析。
 
-### 1.3 图拓扑里对 `!` 的限制
+### 1.5 图拓扑里对 `!` 的限制
 
 - **依赖图**（`graph` 里的 `cascade` / `sequence` / `connect`）中，**节点选择子不允许** 使用以 `!` 开头的「否定选择」；否定的语义由 **`rules` 的 `match`** 提供（见第 3 节）。
 
-### 1.4 重叠声明与归属解析（单一归属）
+### 1.6 重叠声明与归属解析（单一归属）
 
 多个节点的路径模式可以物理重叠（例如同时声明 `@cli` = `src/cli/**/*` 与 `@cli:ui` = `src/cli/ui/**/*`）。引擎对此的契约如下（实现见 `graph/query.rs` 的 `resolve_internal_by_rel_path_uncached` 与 `graph/overlap.rs`）：
 

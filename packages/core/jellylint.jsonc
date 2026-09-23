@@ -1,27 +1,32 @@
 {
   // Logical node declarations: map architecture layers to physical paths.
+  "nodePolicies": {
+    "production": {
+      "default": true,
+      "exclude": ["src/**/__tests__/**/*", "src/**/*.test.*"]
+    }
+  },
   "nodes": {
     // Package-level layers outside core internals.
     "@debugger": "src/debugger/**/*",
-    "@testing": ["src/testing/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
-    "@spec:tests": ["src/**/__tests__/**/*", "src/**/*.test.*"],
-    "@utils": ["src/utils/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@testing": "src/testing/**/*",
+    "@spec:tests": {
+      "patterns": ["src/**/__tests__/**/*", "src/**/*.test.*"],
+      "policies": ["!production"]
+    },
+    "@utils": "src/utils/**/*",
 
     // Core target layering (top facade -> bottom foundation).
-    "@core:facade": ["src/core/facade/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
-    "@core:policy": ["src/core/policy/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
-    "@core:engine": ["src/core/engine/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
-    "@core:snapshot": ["src/core/snapshot/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
-    "@core:observability": [
-      "src/core/observability/**/*",
-      "!src/**/__tests__/**/*",
-      "!src/**/*.test.*"
-    ],
-    "@core:context": ["src/core/context/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@core:facade": "src/core/facade/**/*",
+    "@core:policy": "src/core/policy/**/*",
+    "@core:engine": "src/core/engine/**/*",
+    "@core:snapshot": "src/core/snapshot/**/*",
+    "@core:observability": "src/core/observability/**/*",
+    "@core:context": "src/core/context/**/*",
     // domain = the vocabulary layer (Model/Tool/Stream types). Single source of truth.
-    "@core:domain": ["src/core/domain/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
+    "@core:domain": "src/core/domain/**/*",
     // shared = kernel: generic infra only (logger/id/symbols/const/errors). domain excluded.
-    "@core:shared": ["src/core/shared/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"]
+    "@core:shared": "src/core/shared/**/*"
   },
   "graph": {
     // Target architecture (the destination DAG), expressed as one cascade.
