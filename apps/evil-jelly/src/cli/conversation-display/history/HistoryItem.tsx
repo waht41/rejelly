@@ -165,8 +165,18 @@ export function HistoryItem({ turn, columns }: { turn: Turn; columns: number }) 
         {approval ? (
           <Text dimColor={!approval.reason} wrap="truncate-end">
             {"  "}
-            <Text dimColor>auto · </Text>
-            <Text color={approval.reason ? "cyan" : undefined}>{approval.basis}</Text>
+            <Text dimColor>{approval.mode === "auto" ? "auto · " : "approved · "}</Text>
+            <Text
+              color={
+                approval.reason
+                  ? approval.basis === "dangerous" || approval.basis === "needs_confirmation"
+                    ? "yellow"
+                    : "cyan"
+                  : undefined
+              }
+            >
+              {approval.basis}
+            </Text>
             {approval.reason ? (
               <>
                 <Text dimColor>{" — "}</Text>

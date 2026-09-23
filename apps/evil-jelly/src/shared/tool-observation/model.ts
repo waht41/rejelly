@@ -36,9 +36,9 @@ export interface GrepSearchToolMetrics {
 
 export type ToolObservationMetrics = GrepSearchToolMetrics;
 
-/** Why the host allowed a tool call to proceed without asking the operator. */
+/** Why and how the host allowed a tool call to proceed. */
 export interface ToolApprovalAnnotation {
-  mode: "auto";
+  mode: "auto" | "manual";
   basis: string;
   reason?: string;
 }

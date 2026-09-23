@@ -2,4 +2,4 @@
 "@rejelly/evil-jelly": patch
 ---
 
-Attach auto-approval safety and reasons to their tool transcript blocks, including parallel calls, instead of rendering detached system notices.
+Attach automatic and manual approval safety and reasons to their tool transcript blocks, including parallel calls and resumed sessions, instead of rendering detached context.

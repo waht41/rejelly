@@ -410,6 +410,37 @@ describe("createToolApproval", () => {
     await expect(pending).resolves.toEqual({ action: "reject" });
   });
 
+  it("attaches an accepted manual shell reason to the active tool", async () => {
+    resetCliStores();
+    const confirmTool = createToolApproval({ getMode: () => "normal" });
+    const call = useOutputStore.getState().beginTool({
+      toolName: "run_command",
+      summary: "[Tools] pnpm test",
+    });
+
+    const approval = await runWithToolDetailSlot(async () => {
+      setActiveToolCall(call);
+      const pending = confirmTool({
+        type: "shell_command",
+        command: "pnpm test",
+        declaredSafety: "reversible",
+        reason: "Run the package tests.",
+        supportedActions: ["accept", "reject"],
+      });
+      await flushMicrotasks();
+      useDecisionStore.getState().submitChoice("accept");
+      await expect(pending).resolves.toEqual({ action: "accept" });
+      return takeActiveToolApproval();
+    });
+
+    expect(approval).toEqual({
+      mode: "manual",
+      basis: "reversible",
+      reason: "Run the package tests.",
+    });
+    expect(useOutputStore.getState().runningTools[0]?.approval).toEqual(approval);
+  });
+
   it("never auto-runs a block-tier command even when declared read-only", async () => {
     resetCliStores();
     const confirmTool = createToolApproval({ getMode: () => "auto" });

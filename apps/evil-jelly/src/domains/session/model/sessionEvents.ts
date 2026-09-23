@@ -162,7 +162,7 @@ const toolObservationDetailSchema = z
   .passthrough();
 
 const toolApprovalAnnotationSchema = z.object({
-  mode: z.literal("auto"),
+  mode: z.enum(["auto", "manual"]),
   basis: z.string().min(1),
   reason: z.string().optional(),
 });

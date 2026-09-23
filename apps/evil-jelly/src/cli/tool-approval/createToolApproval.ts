@@ -97,15 +97,19 @@ function logNotice(message: string): void {
   useOutputStore.getState().logSystem(message, { oneLine: true });
 }
 
-/** Keep auto-approval context on the tool it explains; fall back only outside a tool invocation. */
-function recordAutoAllowed(approval: ToolApprovalAnnotation, fallbackNotice: string): void {
+function attachToolApproval(approval: ToolApprovalAnnotation): boolean {
   const call = getActiveToolCall();
-  if (!call) {
-    logNotice(fallbackNotice);
-    return;
-  }
+  if (!call) return false;
   recordActiveToolApproval(approval);
   useOutputStore.getState().annotateTool(call.id, approval);
+  return true;
+}
+
+/** Keep auto-approval context on the tool it explains; fall back only outside a tool invocation. */
+function recordAutoAllowed(approval: ToolApprovalAnnotation, fallbackNotice: string): void {
+  if (!attachToolApproval(approval)) {
+    logNotice(fallbackNotice);
+  }
 }
 
 function normalizeShellPrefix(prefix: string): string {
@@ -175,7 +179,11 @@ async function confirmOutsideAccess(
     cancelValue: "reject",
   });
   useOutputStore.getState().resumeWork("Running…");
-  return selected === "accept" ? { action: "accept" } : { action: "reject" };
+  if (selected === "accept") {
+    attachToolApproval({ mode: "manual", basis: `${params.access} outside workspace` });
+    return { action: "accept" };
+  }
+  return { action: "reject" };
 }
 
 async function confirmMcpCall(
@@ -195,9 +203,19 @@ async function confirmMcpCall(
     cancelValue: "reject",
   });
   useOutputStore.getState().resumeWork("Running…");
-  if (selected === "accept_session") return { action: "accept", scope: "session" };
-  if (selected === "accept_always") return { action: "accept", scope: "always" };
-  return selected === "accept" ? { action: "accept", scope: "once" } : { action: "reject" };
+  if (selected === "accept_session") {
+    attachToolApproval({ mode: "manual", basis: "MCP call" });
+    return { action: "accept", scope: "session" };
+  }
+  if (selected === "accept_always") {
+    attachToolApproval({ mode: "manual", basis: "MCP call" });
+    return { action: "accept", scope: "always" };
+  }
+  if (selected === "accept") {
+    attachToolApproval({ mode: "manual", basis: "MCP call" });
+    return { action: "accept", scope: "once" };
+  }
+  return { action: "reject" };
 }
 
 async function confirmMcpAccess(
@@ -223,8 +241,23 @@ async function confirmMcpAccess(
     cancelValue: "reject",
   });
   useOutputStore.getState().resumeWork("Running…");
-  if (selected === "accept_always") return { action: "accept", scope: "always" };
-  return selected === "accept" ? { action: "accept", scope: "session" } : { action: "reject" };
+  if (selected === "accept_always") {
+    attachToolApproval({
+      mode: "manual",
+      basis: "MCP access",
+      reason: params.reason,
+    });
+    return { action: "accept", scope: "always" };
+  }
+  if (selected === "accept") {
+    attachToolApproval({
+      mode: "manual",
+      basis: "MCP access",
+      reason: params.reason,
+    });
+    return { action: "accept", scope: "session" };
+  }
+  return { action: "reject" };
 }
 
 type ShellAutoAllowCheck = {
@@ -315,12 +348,25 @@ async function confirmShellCommand(
   });
   useOutputStore.getState().resumeWork("Running…");
 
+  const manualApproval: ToolApprovalAnnotation = {
+    mode: "manual",
+    basis:
+      risk === "block"
+        ? "dangerous"
+        : (params.declaredSafety ?? (risk === "auto" ? "read_only" : "needs_confirmation")),
+    reason: declaredReason || undefined,
+  };
   if (selected === "accept_shell_prefix") {
+    attachToolApproval(manualApproval);
     shellAutoAllowPrefixes.add(suggestedPrefix);
     logNotice(`[Auto-allow] Enabled shell prefix: ${suggestedPrefix}`);
     return { action: "accept" };
   }
-  return selected === "accept" ? { action: "accept" } : { action: "reject" };
+  if (selected === "accept") {
+    attachToolApproval(manualApproval);
+    return { action: "accept" };
+  }
+  return { action: "reject" };
 }
 
 async function confirmFsWrite(
@@ -368,6 +414,7 @@ async function confirmFsWrite(
   useOutputStore.getState().resumeWork("Running…");
 
   if (selected === "accept_all_session") {
+    attachToolApproval({ mode: "manual", basis: kind });
     policy.create = true;
     policy.edit = true;
     policy.delete = true;
@@ -392,6 +439,7 @@ async function confirmFsWrite(
   }
 
   if (selected === "accept") {
+    attachToolApproval({ mode: "manual", basis: kind });
     return { action: "accept" };
   }
 

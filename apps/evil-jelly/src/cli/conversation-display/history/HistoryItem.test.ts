@@ -56,6 +56,23 @@ describe("HistoryItem tool headline", () => {
     expect(lines).toHaveLength(2);
   });
 
+  it("labels accepted manual approval and keeps its reason on the same row", () => {
+    const turn = toolTurn("[Tools] run_command → pnpm test");
+    if (turn.type !== "tool") {
+      throw new Error("Expected tool turn");
+    }
+    turn.tool.approval = {
+      mode: "manual",
+      basis: "reversible",
+      reason: "Run the package tests.",
+    };
+
+    expect(renderTurn(turn)).toEqual([
+      "● #3 [Tools] run_command → pnpm test",
+      "  approved · reversible — Run the package tests.",
+    ]);
+  });
+
   it("keeps every emitted row inside the terminal width", () => {
     // <Static> sizes children to their content, so an unpinned row is measured
     // against the full width and then pushed past it by its siblings — the
