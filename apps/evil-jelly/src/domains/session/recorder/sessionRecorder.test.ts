@@ -325,7 +325,7 @@ describe("sessionRecorder", () => {
       summary: "[Tools] edit_file → a.ts",
       args: '{"path":"a.ts"}',
       detail: { type: "diff", text: "-old\n+new", phase: "applied" },
-      approval: { mode: "auto", basis: "edit (auto mode)" },
+      approval: { mode: "auto", basis: "workspace write" },
       ok: true,
     });
     await recorder.close();
@@ -340,7 +340,7 @@ describe("sessionRecorder", () => {
         toolCallId: "call-1",
         summary: "[Tools] edit_file → a.ts",
         detail: expect.objectContaining({ type: "diff", phase: "applied" }),
-        approval: { mode: "auto", basis: "edit (auto mode)" },
+        approval: { mode: "auto", basis: "workspace write" },
       }),
     );
   });

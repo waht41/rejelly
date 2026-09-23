@@ -147,7 +147,7 @@ function tryAutoAllowFsWrite(
   // writes have a wider boundary and stay manually gated.
   if (getMode() === "auto") {
     recordAutoAllowed(
-      { mode: "auto", basis: `${params.kind} (auto mode)` },
+      { mode: "auto", basis: "workspace write" },
       `[Auto-allowed] ${params.kind} (auto mode) → ${forNotice(params.filePath)}`,
     );
     return { action: "accept" };
@@ -156,7 +156,7 @@ function tryAutoAllowFsWrite(
     return null;
   }
   recordAutoAllowed(
-    { mode: "policy", basis: params.kind },
+    { mode: "policy", basis: "session writes" },
     `[Auto-allowed] ${params.kind} → ${forNotice(params.filePath)}`,
   );
   return { action: "accept" };

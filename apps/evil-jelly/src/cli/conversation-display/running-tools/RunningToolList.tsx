@@ -34,7 +34,7 @@ export function RunningToolList({
                 : ""}
             </Text>
           </Box>
-          {tool.approval ? (
+          {tool.approval && (tool.approval.mode !== "manual" || tool.approval.reason) ? (
             <Text dimColor={!tool.approval.reason} wrap="truncate-end">
               {"  "}
               <Text dimColor>

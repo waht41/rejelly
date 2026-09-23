@@ -86,6 +86,16 @@ describe("HistoryItem tool headline", () => {
     ]);
   });
 
+  it("omits trivial manual write approval without a reason", () => {
+    const turn = toolTurn("[Tools] edit_file → src/a.ts");
+    if (turn.type !== "tool") {
+      throw new Error("Expected tool turn");
+    }
+    turn.tool.approval = { mode: "manual", basis: "edit" };
+
+    expect(renderTurn(turn)).toEqual(["● #3 [Tools] edit_file → src/a.ts"]);
+  });
+
   it("keeps every emitted row inside the terminal width", () => {
     // <Static> sizes children to their content, so an unpinned row is measured
     // against the full width and then pushed past it by its siblings — the

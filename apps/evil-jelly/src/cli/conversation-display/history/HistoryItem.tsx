@@ -162,7 +162,7 @@ export function HistoryItem({ turn, columns }: { turn: Turn; columns: number }) 
               reprints the whole summary along with the full result. */}
           <Text wrap="truncate-end">{summary}</Text>
         </Box>
-        {approval ? (
+        {approval && (approval.mode !== "manual" || approval.reason) ? (
           <Text dimColor={!approval.reason} wrap="truncate-end">
             {"  "}
             <Text dimColor>
