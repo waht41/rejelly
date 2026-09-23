@@ -202,8 +202,8 @@ flow themselves.
    `cli/unified-conversation/interactive/` while keeping entry and presentation contracts stable.
 3. **Completed:** extract turn execution, live session coordination, and active-turn command
    arbitration from the CLI router by lifecycle rather than into generic helpers.
-4. Consolidate repeated operator-manager arbitration only after the common request/action behavior
-   is explicit.
+4. **Completed:** consolidate MCP, Memory, and Skill manager arbitration behind one explicit
+   discriminated request/action decision channel while preserving capability-specific UI payloads.
 5. Consolidate repeated composer reference mechanics while preserving capability-owned resolution.
 6. Rework Jelly lint boundaries after the physical ownership has stabilized.
 

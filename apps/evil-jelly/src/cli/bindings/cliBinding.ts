@@ -31,7 +31,13 @@ import {
   useComposerSession,
 } from "../message-composer/session/composerSession";
 import { useDecisionStore } from "../operator-decision/decisionStore";
-import type { DecisionView } from "../operator-decision/model";
+import type {
+  DecisionView,
+  ManagerActionFor,
+  ManagerDecisionKind,
+  ManagerDecisionRequest,
+  ManagerRequestFor,
+} from "../operator-decision/model";
 import {
   createOperatorDecision,
   resetOperatorDecisionSession,
@@ -79,37 +85,31 @@ function createInkRequestChoice(): PromptInputBindings["requestChoice"] {
   };
 }
 
-function createInkRequestMemoryManager(): NonNullable<PromptInputBindings["requestMemoryManager"]> {
-  const decision = createOperatorDecision();
-  return async (request) =>
-    decision.run(async (session) => {
-      useOutputStore.getState().setPhase("awaiting_user", "Browsing persistent memory…");
-      const action = await session.requestMemoryManager(request);
-      useOutputStore.getState().resumeWork("Running…");
-      return action;
-    });
-}
+const MANAGER_PHASE_DETAIL: Record<ManagerDecisionKind, string> = {
+  mcp: "Managing MCP servers…",
+  memory: "Browsing persistent memory…",
+  skill: "Browsing local Skills…",
+};
 
-function createInkRequestMcpManager(): NonNullable<PromptInputBindings["requestMcpManager"]> {
+function createInkRequestManager(): <K extends ManagerDecisionKind>(
+  kind: K,
+  request: ManagerRequestFor<K>,
+) => Promise<ManagerActionFor<K>> {
   const decision = createOperatorDecision();
-  return async (request) => {
-    return decision.run(async (session) => {
-      useOutputStore.getState().setPhase("awaiting_user", "Managing MCP servers…");
-      const action = await session.requestMcpManager(request);
-      useOutputStore.getState().resumeWork("Running…");
-      return action;
-    });
-  };
-}
-
-function createInkRequestSkillManager(): NonNullable<PromptInputBindings["requestSkillManager"]> {
-  const decision = createOperatorDecision();
-  return async (request) =>
+  return async <K extends ManagerDecisionKind>(
+    kind: K,
+    request: ManagerRequestFor<K>,
+  ): Promise<ManagerActionFor<K>> =>
     decision.run(async (session) => {
-      useOutputStore.getState().setPhase("awaiting_user", "Browsing local Skills…");
-      const action = await session.requestSkillManager(request);
+      useOutputStore.getState().setPhase("awaiting_user", MANAGER_PHASE_DETAIL[kind]);
+      const result = await session.requestManager({ kind, request } as ManagerDecisionRequest);
       useOutputStore.getState().resumeWork("Running…");
-      return action;
+      if (result.kind !== kind) {
+        throw new Error(
+          `Manager decision kind mismatch: expected ${kind}, received ${result.kind}`,
+        );
+      }
+      return result.action as ManagerActionFor<K>;
     });
 }
 
@@ -195,6 +195,7 @@ function createPromptBindings(options: {
 }): PromptInputBindings & AgentModeBindings & ToolConfirmationBindings {
   const { getInput, suspendInkForExternalProcess } = options;
   const decision = createOperatorDecision();
+  const requestManager = createInkRequestManager();
   return {
     getInput,
     confirmTool: createToolApproval({
@@ -205,9 +206,9 @@ function createPromptBindings(options: {
     requestMemoryConfirmation: createInkRequestMemoryConfirmation(),
     getAgentMode: () => useModeStore.getState().mode,
     requestChoice: createInkRequestChoice(),
-    requestMcpManager: createInkRequestMcpManager(),
-    requestMemoryManager: createInkRequestMemoryManager(),
-    requestSkillManager: createInkRequestSkillManager(),
+    requestMcpManager: (request) => requestManager("mcp", request),
+    requestMemoryManager: (request) => requestManager("memory", request),
+    requestSkillManager: (request) => requestManager("skill", request),
     revealMemoryFile: async (scope) => {
       await suspendInkForExternalProcess(() =>
         revealMemoryFileInExplorer({ scope, workspaceRoot: getWorkspaceRoot() }),
@@ -216,7 +217,8 @@ function createPromptBindings(options: {
     openSkillFolder: async (rootPath) => {
       await suspendInkForExternalProcess(() => openSkillFolderInFileManager(rootPath));
     },
-    dismissMcpManager: () => useDecisionStore.getState().submitMcpManager({ action: "refresh" }),
+    dismissMcpManager: () =>
+      useDecisionStore.getState().submitManager({ kind: "mcp", action: { action: "refresh" } }),
     setAvailableSkills: (skills) => {
       useComposerSession.getState().setAvailableSkills(skills);
     },

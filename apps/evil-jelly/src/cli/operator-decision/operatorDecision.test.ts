@@ -46,55 +46,79 @@ describe("operator decision", () => {
   });
 
   it("routes a rich MCP manager action through the serialized decision channel", async () => {
-    const pending = createOperatorDecision().requestMcpManager({
-      rows: [
-        {
-          serverId: "docs",
-          source: "project",
-          exposure: "explicit",
-          selected: false,
-          persistentAccess: false,
-          routable: false,
-          connection: "ready",
-          toolCount: 2,
-        },
-      ],
+    const pending = createOperatorDecision().requestManager({
+      kind: "mcp",
+      request: {
+        rows: [
+          {
+            serverId: "docs",
+            source: "project",
+            exposure: "explicit",
+            selected: false,
+            persistentAccess: false,
+            routable: false,
+            connection: "ready",
+            toolCount: 2,
+          },
+        ],
+      },
     });
     await Promise.resolve();
 
-    expect(useDecisionStore.getState().decision).toMatchObject({ type: "mcp_manager" });
-    useDecisionStore.getState().submitMcpManager({ action: "toggle", serverId: "docs" });
-
-    await expect(pending).resolves.toEqual({ action: "toggle", serverId: "docs" });
-    expect(useDecisionStore.getState().decision).toMatchObject({ type: "mcp_manager" });
-  });
-
-  it("routes a Skill manager detail action through the serialized decision channel", async () => {
-    const pending = createOperatorDecision().requestSkillManager({
-      entries: [
-        {
-          qualifiedName: "project:review",
-          name: "review",
-          scope: "project",
-          description: "Review changes",
-          resourceCount: 0,
-        },
-      ],
-      canOpenFolder: true,
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      type: "manager",
+      manager: { kind: "mcp" },
     });
-    await Promise.resolve();
-
-    expect(useDecisionStore.getState().decision).toMatchObject({ type: "skill_manager" });
-    useDecisionStore.getState().submitSkillManager({
-      action: "detail",
-      qualifiedName: "project:review",
+    useDecisionStore.getState().submitManager({
+      kind: "mcp",
+      action: { action: "toggle", serverId: "docs" },
     });
 
     await expect(pending).resolves.toEqual({
-      action: "detail",
-      qualifiedName: "project:review",
+      kind: "mcp",
+      action: { action: "toggle", serverId: "docs" },
     });
-    expect(useDecisionStore.getState().decision).toMatchObject({ type: "skill_manager" });
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      type: "manager",
+      manager: { kind: "mcp" },
+    });
+  });
+
+  it("routes a Skill manager detail action through the serialized decision channel", async () => {
+    const pending = createOperatorDecision().requestManager({
+      kind: "skill",
+      request: {
+        entries: [
+          {
+            qualifiedName: "project:review",
+            name: "review",
+            scope: "project",
+            description: "Review changes",
+            resourceCount: 0,
+          },
+        ],
+        canOpenFolder: true,
+      },
+    });
+    await Promise.resolve();
+
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      type: "manager",
+      manager: { kind: "skill" },
+    });
+    useDecisionStore.getState().submitManager({
+      kind: "skill",
+      action: { action: "detail", qualifiedName: "project:review" },
+    });
+
+    await expect(pending).resolves.toEqual({
+      kind: "skill",
+      action: { action: "detail", qualifiedName: "project:review" },
+    });
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      type: "manager",
+      manager: { kind: "skill" },
+    });
   });
 
   it("resolves cancellation only through the explicit cancel value", async () => {
