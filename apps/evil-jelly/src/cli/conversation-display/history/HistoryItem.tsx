@@ -138,7 +138,7 @@ export function HistoryItem({ turn, columns }: { turn: Turn; columns: number }) 
     );
   }
   if (turn.type === "tool") {
-    const { summary, preview, fullResult, ok, ordinal, detail } = turn.tool;
+    const { summary, preview, fullResult, ok, ordinal, detail, approval } = turn.tool;
     const previewLines = compactToolPreview(preview, fullResult, ordinal);
     const inlineDiff =
       detail?.type === "diff" &&
@@ -162,6 +162,31 @@ export function HistoryItem({ turn, columns }: { turn: Turn; columns: number }) 
               reprints the whole summary along with the full result. */}
           <Text wrap="truncate-end">{summary}</Text>
         </Box>
+        {approval && (approval.mode !== "manual" || approval.reason) ? (
+          <Text dimColor={!approval.reason} wrap="truncate-end">
+            {"  "}
+            <Text dimColor>
+              {approval.mode === "manual" ? "approved · " : `${approval.mode} · `}
+            </Text>
+            <Text
+              color={
+                approval.reason
+                  ? approval.basis === "dangerous" || approval.basis === "needs_confirmation"
+                    ? "yellow"
+                    : "cyan"
+                  : undefined
+              }
+            >
+              {approval.basis}
+            </Text>
+            {approval.reason ? (
+              <>
+                <Text dimColor>{" — "}</Text>
+                <Text>{approval.reason}</Text>
+              </>
+            ) : null}
+          </Text>
+        ) : null}
         {previewLines.length > 0 ? (
           <Box flexDirection="column" paddingLeft={2}>
             {previewLines.map((line, index) => (

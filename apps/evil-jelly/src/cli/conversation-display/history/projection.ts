@@ -41,6 +41,7 @@ export function projectTranscriptItem(item: TranscriptItem, sequence: HistorySeq
           summary,
           args: item.arguments,
           detail: item.detail,
+          approval: item.approval,
           preview: fullResult.split("\n").slice(0, 6).join("\n").slice(0, 600),
           fullResult,
           ok: item.ok,

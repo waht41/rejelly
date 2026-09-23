@@ -1,4 +1,8 @@
-import type { ToolCallHandle, ToolObservationStart } from "../../../shared/tool-observation/model";
+import type {
+  ToolApprovalAnnotation,
+  ToolCallHandle,
+  ToolObservationStart,
+} from "../../../shared/tool-observation/model";
 import type { ToolOutputDrain } from "./tailWindow";
 
 export const RUNNING_TOOL_TRANSCRIPT_CAP_BYTES = 96_000;
@@ -14,6 +18,7 @@ export interface RunningTool {
   toolName: string;
   summary: string;
   args?: string;
+  approval?: ToolApprovalAnnotation;
   /** Retained complete output lines, oldest first; the dashboard derives its tail from these. */
   outputLines: string[];
   /** Raw unterminated remainder of the newest line. */
@@ -78,6 +83,14 @@ export function applyRunningToolOutput(
       retainedBytes,
     };
   });
+}
+
+export function annotateRunningTool(
+  tools: RunningTool[],
+  id: string,
+  approval: ToolApprovalAnnotation,
+): RunningTool[] {
+  return tools.map((tool) => (tool.id === id ? { ...tool, approval } : tool));
 }
 
 export function finishRunningTool(tools: RunningTool[], id: string | undefined): RunningTool[] {

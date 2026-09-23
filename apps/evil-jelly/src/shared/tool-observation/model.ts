@@ -36,6 +36,13 @@ export interface GrepSearchToolMetrics {
 
 export type ToolObservationMetrics = GrepSearchToolMetrics;
 
+/** Why and how the host allowed a tool call to proceed. */
+export interface ToolApprovalAnnotation {
+  mode: "policy" | "auto" | "manual";
+  basis: string;
+  reason?: string;
+}
+
 export type ToolExecutionOutcome = "succeeded" | "failed" | "denied" | "aborted" | "timed_out";
 
 export interface ToolExecutionOutcomeRecord {
@@ -51,6 +58,7 @@ export interface ToolObservationBlock extends ToolObservationStart {
   args?: string;
   detail?: ToolObservationDetail;
   metrics?: ToolObservationMetrics;
+  approval?: ToolApprovalAnnotation;
   preview: string;
   fullResult: string;
   /** Transport/handler completion only; business success is represented by `outcome`. */

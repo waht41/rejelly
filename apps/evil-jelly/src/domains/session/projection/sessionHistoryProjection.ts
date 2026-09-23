@@ -366,6 +366,7 @@ export function buildTranscript(
     tool.summary = observation.summary;
     tool.arguments ??= observation.args;
     tool.detail = observation.detail;
+    tool.approval = observation.approval;
     tool.ok = observation.ok;
   }
 

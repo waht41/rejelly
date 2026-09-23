@@ -21,17 +21,45 @@ export function RunningToolList({
   return (
     <Box flexDirection="column" marginBottom={1}>
       {tools.map((tool) => (
-        <Box key={tool.id}>
-          <Box flexShrink={0}>
-            <Text color="green">● </Text>
-            <Text color={toolTailColor(tool.ordinal)}>#{tool.ordinal} </Text>
+        <Box key={tool.id} flexDirection="column">
+          <Box>
+            <Box flexShrink={0}>
+              <Text color="green">● </Text>
+              <Text color={toolTailColor(tool.ordinal)}>#{tool.ordinal} </Text>
+            </Box>
+            <Text dimColor wrap="truncate-end">
+              {tool.summary}
+              {tool.lineCount > 0
+                ? ` (${tool.lineCount} line${tool.lineCount === 1 ? "" : "s"})`
+                : ""}
+            </Text>
           </Box>
-          <Text dimColor wrap="truncate-end">
-            {tool.summary}
-            {tool.lineCount > 0
-              ? ` (${tool.lineCount} line${tool.lineCount === 1 ? "" : "s"})`
-              : ""}
-          </Text>
+          {tool.approval && (tool.approval.mode !== "manual" || tool.approval.reason) ? (
+            <Text dimColor={!tool.approval.reason} wrap="truncate-end">
+              {"  "}
+              <Text dimColor>
+                {tool.approval.mode === "manual" ? "approved · " : `${tool.approval.mode} · `}
+              </Text>
+              <Text
+                color={
+                  tool.approval.reason
+                    ? tool.approval.basis === "dangerous" ||
+                      tool.approval.basis === "needs_confirmation"
+                      ? "yellow"
+                      : "cyan"
+                    : undefined
+                }
+              >
+                {tool.approval.basis}
+              </Text>
+              {tool.approval.reason ? (
+                <>
+                  <Text dimColor>{" — "}</Text>
+                  <Text>{tool.approval.reason}</Text>
+                </>
+              ) : null}
+            </Text>
+          ) : null}
         </Box>
       ))}
       {rows.length > 0 ? (

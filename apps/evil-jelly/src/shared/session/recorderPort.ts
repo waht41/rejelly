@@ -11,6 +11,7 @@
 
 import type { Message } from "@rejelly/core";
 import type {
+  ToolApprovalAnnotation,
   ToolExecutionOutcome,
   ToolObservationDetail,
   ToolObservationMetrics,
@@ -23,6 +24,7 @@ export interface SessionToolObservation {
   args?: string;
   detail?: ToolObservationDetail;
   metrics?: ToolObservationMetrics;
+  approval?: ToolApprovalAnnotation;
   /** Transport/handler completion only. */
   ok: boolean;
   outcome?: ToolExecutionOutcome;

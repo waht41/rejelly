@@ -5,6 +5,7 @@ import { getBinding } from "../host/context";
 import {
   runWithToolDetailSlot,
   setActiveToolCall,
+  takeActiveToolApproval,
   takeActiveToolDetail,
   takeActiveToolMetrics,
   takeActiveToolOutcome,
@@ -54,6 +55,7 @@ export function withToolLogger(): ToolMiddleware {
             args,
             detail: takeActiveToolDetail(),
             metrics: takeActiveToolMetrics(),
+            approval: takeActiveToolApproval(),
             preview: previewToolResult(fullResult),
             fullResult,
             ok: true,
@@ -70,6 +72,7 @@ export function withToolLogger(): ToolMiddleware {
             args,
             detail: takeActiveToolDetail(),
             metrics: takeActiveToolMetrics(),
+            approval: takeActiveToolApproval(),
             preview: message.slice(0, 400),
             fullResult: message,
             ok: false,

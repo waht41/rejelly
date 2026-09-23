@@ -14,7 +14,12 @@ import type {
   ToolConfirmationResult,
   WriteActionType,
 } from "../../shared/host/toolConfirmationBindings";
-import { recordActiveToolDetail } from "../../shared/tool-observation/invocationContext";
+import {
+  getActiveToolCall,
+  recordActiveToolApproval,
+  recordActiveToolDetail,
+} from "../../shared/tool-observation/invocationContext";
+import type { ToolApprovalAnnotation } from "../../shared/tool-observation/model";
 import { useOutputStore } from "../conversation-display/useOutputStore";
 import type {
   DecisionOption,
@@ -92,6 +97,21 @@ function logNotice(message: string): void {
   useOutputStore.getState().logSystem(message, { oneLine: true });
 }
 
+function attachToolApproval(approval: ToolApprovalAnnotation): boolean {
+  const call = getActiveToolCall();
+  if (!call) return false;
+  recordActiveToolApproval(approval);
+  useOutputStore.getState().annotateTool(call.id, approval);
+  return true;
+}
+
+/** Keep auto-approval context on the tool it explains; fall back only outside a tool invocation. */
+function recordAutoAllowed(approval: ToolApprovalAnnotation, fallbackNotice: string): void {
+  if (!attachToolApproval(approval)) {
+    logNotice(fallbackNotice);
+  }
+}
+
 function normalizeShellPrefix(prefix: string): string {
   return prefix.trim().replace(/\s+/g, " ");
 }
@@ -126,13 +146,19 @@ function tryAutoAllowFsWrite(
   // Inside-workspace fs writes are diff-reviewed, so "auto" mode accepts them. Outside-workspace
   // writes have a wider boundary and stay manually gated.
   if (getMode() === "auto") {
-    logNotice(`[Auto-allowed] ${params.kind} (auto mode) → ${forNotice(params.filePath)}`);
+    recordAutoAllowed(
+      { mode: "auto", basis: "workspace write" },
+      `[Auto-allowed] ${params.kind} (auto mode) → ${forNotice(params.filePath)}`,
+    );
     return { action: "accept" };
   }
   if (!policy[params.kind]) {
     return null;
   }
-  logNotice(`[Auto-allowed] ${params.kind} → ${forNotice(params.filePath)}`);
+  recordAutoAllowed(
+    { mode: "policy", basis: "session writes" },
+    `[Auto-allowed] ${params.kind} → ${forNotice(params.filePath)}`,
+  );
   return { action: "accept" };
 }
 
@@ -153,7 +179,11 @@ async function confirmOutsideAccess(
     cancelValue: "reject",
   });
   useOutputStore.getState().resumeWork("Running…");
-  return selected === "accept" ? { action: "accept" } : { action: "reject" };
+  if (selected === "accept") {
+    attachToolApproval({ mode: "manual", basis: `${params.access} outside workspace` });
+    return { action: "accept" };
+  }
+  return { action: "reject" };
 }
 
 async function confirmMcpCall(
@@ -173,9 +203,19 @@ async function confirmMcpCall(
     cancelValue: "reject",
   });
   useOutputStore.getState().resumeWork("Running…");
-  if (selected === "accept_session") return { action: "accept", scope: "session" };
-  if (selected === "accept_always") return { action: "accept", scope: "always" };
-  return selected === "accept" ? { action: "accept", scope: "once" } : { action: "reject" };
+  if (selected === "accept_session") {
+    attachToolApproval({ mode: "manual", basis: "MCP call" });
+    return { action: "accept", scope: "session" };
+  }
+  if (selected === "accept_always") {
+    attachToolApproval({ mode: "manual", basis: "MCP call" });
+    return { action: "accept", scope: "always" };
+  }
+  if (selected === "accept") {
+    attachToolApproval({ mode: "manual", basis: "MCP call" });
+    return { action: "accept", scope: "once" };
+  }
+  return { action: "reject" };
 }
 
 async function confirmMcpAccess(
@@ -201,8 +241,23 @@ async function confirmMcpAccess(
     cancelValue: "reject",
   });
   useOutputStore.getState().resumeWork("Running…");
-  if (selected === "accept_always") return { action: "accept", scope: "always" };
-  return selected === "accept" ? { action: "accept", scope: "session" } : { action: "reject" };
+  if (selected === "accept_always") {
+    attachToolApproval({
+      mode: "manual",
+      basis: "MCP access",
+      reason: params.reason,
+    });
+    return { action: "accept", scope: "always" };
+  }
+  if (selected === "accept") {
+    attachToolApproval({
+      mode: "manual",
+      basis: "MCP access",
+      reason: params.reason,
+    });
+    return { action: "accept", scope: "session" };
+  }
+  return { action: "reject" };
 }
 
 type ShellAutoAllowCheck = {
@@ -219,7 +274,10 @@ function tryAutoAllowShellCommand(
   const risk = classifyShellCommand(params.command);
   // Read-only commands run in every mode; irreversible (block) ones are never auto-run.
   if (risk === "auto") {
-    logNotice("[Auto-allowed] safe shell (read-only)");
+    recordAutoAllowed(
+      { mode: "policy", basis: "read_only" },
+      "[Auto-allowed] safe shell (read-only)",
+    );
     return { result: { action: "accept" }, declaredReason: "", risk };
   }
 
@@ -228,7 +286,10 @@ function tryAutoAllowShellCommand(
   if (risk !== "block" && isSimpleCommand(params.command)) {
     for (const prefix of shellAutoAllowPrefixes) {
       if (commandMatchesPrefix(params.command, prefix)) {
-        logNotice(`[Auto-allowed] shell prefix: ${prefix}`);
+        recordAutoAllowed(
+          { mode: "policy", basis: `shell prefix: ${prefix}` },
+          `[Auto-allowed] shell prefix: ${prefix}`,
+        );
         return { result: { action: "accept" }, declaredReason: "", risk };
       }
     }
@@ -241,7 +302,10 @@ function tryAutoAllowShellCommand(
     (declaredSafety === "read_only" || declaredSafety === "reversible")
   ) {
     const why = params.reason ? ` — ${params.reason}` : "";
-    logNotice(`[Auto-allowed] declared ${declaredSafety}${why}`);
+    recordAutoAllowed(
+      { mode: "auto", basis: declaredSafety, reason: params.reason },
+      `[Auto-allowed] declared ${declaredSafety}${why}`,
+    );
     return { result: { action: "accept" }, declaredReason: "", risk };
   }
 
@@ -284,12 +348,25 @@ async function confirmShellCommand(
   });
   useOutputStore.getState().resumeWork("Running…");
 
+  const manualApproval: ToolApprovalAnnotation = {
+    mode: "manual",
+    basis:
+      risk === "block"
+        ? "dangerous"
+        : (params.declaredSafety ?? (risk === "auto" ? "read_only" : "needs_confirmation")),
+    reason: declaredReason || undefined,
+  };
   if (selected === "accept_shell_prefix") {
+    attachToolApproval(manualApproval);
     shellAutoAllowPrefixes.add(suggestedPrefix);
     logNotice(`[Auto-allow] Enabled shell prefix: ${suggestedPrefix}`);
     return { action: "accept" };
   }
-  return selected === "accept" ? { action: "accept" } : { action: "reject" };
+  if (selected === "accept") {
+    attachToolApproval(manualApproval);
+    return { action: "accept" };
+  }
+  return { action: "reject" };
 }
 
 async function confirmFsWrite(
@@ -337,6 +414,7 @@ async function confirmFsWrite(
   useOutputStore.getState().resumeWork("Running…");
 
   if (selected === "accept_all_session") {
+    attachToolApproval({ mode: "manual", basis: kind });
     policy.create = true;
     policy.edit = true;
     policy.delete = true;
@@ -361,6 +439,7 @@ async function confirmFsWrite(
   }
 
   if (selected === "accept") {
+    attachToolApproval({ mode: "manual", basis: kind });
     return { action: "accept" };
   }
 
@@ -405,14 +484,18 @@ export function createToolApproval(
     }
     if (params.type === "mcp_access") {
       if (getMode() === "auto" && !params.requiresTrust) {
-        logNotice(`[Auto-allowed] MCP server ${params.serverId} for this session (auto mode)`);
+        recordAutoAllowed(
+          { mode: "auto", basis: "MCP access (auto mode)", reason: params.reason },
+          `[Auto-allowed] MCP server ${params.serverId} for this session (auto mode)`,
+        );
         return { action: "accept", scope: "session" };
       }
       return decision.run((session) => confirmMcpAccess(params, session));
     }
     if (params.type === "mcp_call") {
       if (getMode() === "auto") {
-        logNotice(
+        recordAutoAllowed(
+          { mode: "auto", basis: "MCP call (auto mode)" },
           `[Auto-allowed] MCP tool ${params.tool.serverId}/${params.tool.nativeToolName} (auto mode)`,
         );
         return { action: "accept", scope: "once" };
