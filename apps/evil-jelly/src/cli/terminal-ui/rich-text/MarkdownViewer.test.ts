@@ -124,6 +124,25 @@ describe("parseMarkdownBlocks", () => {
     });
   });
 
+  it("keeps fenced code blocks inside list items", () => {
+    const [block] = parseMarkdownBlocks(
+      ["2. Includes:", "", "   ```text", "   first", "   second", "   ```"].join("\n"),
+    );
+
+    expect(block).toMatchObject({
+      type: "list",
+      ordered: true,
+      items: [
+        {
+          depth: 0,
+          marker: 2,
+          text: "Includes:",
+          codeBlocks: [{ language: "text", lines: ["first", "second"] }],
+        },
+      ],
+    });
+  });
+
   it("parses GFM tables with alignment markers", () => {
     expect(
       parseMarkdownBlocks(
@@ -338,6 +357,18 @@ describe("inline emphasis from the block AST", () => {
 });
 
 describe("MarkdownViewer code blocks", () => {
+  it("renders fenced code nested under an ordered list item", () => {
+    const output = renderToString(
+      createElement(MarkdownViewer, {
+        text: ["2. Includes:", "", "   ```text", "   first", "   second", "   ```"].join("\n"),
+        columns: 80,
+      }),
+      { columns: 80 },
+    );
+
+    expect(output).toBe("2. Includes:\n\n   first\n   second");
+  });
+
   it("renders plainly before warmup, then highlights known languages", async () => {
     const code = ["interface User {", "  active: boolean;", '  name: "Alice";', "}"];
     const text = ["```typescript", ...code, "```"].join("\n");

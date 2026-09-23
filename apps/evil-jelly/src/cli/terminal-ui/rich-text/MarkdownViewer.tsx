@@ -728,17 +728,36 @@ export function MarkdownViewer({ text, columns }: { text: string; columns: numbe
         if (block.type === "list") {
           return (
             <Box key={key} flexDirection="column" marginTop={index === 0 ? 0 : 1}>
-              {block.items.map((item, itemIndex) => (
-                <Box key={`${key}-${itemIndex}`} paddingLeft={markdownListItemIndent(item)}>
-                  {/* flexShrink={0}: once the row is width-constrained, Yoga resolves an
-                      over-wide line by squeezing this marker instead of wrapping the text,
-                      which silently eats the space after "1." and misaligns the item. */}
-                  <Box flexShrink={0}>
-                    <Text color="cyan">{markdownListItemPrefix(item)}</Text>
+              {block.items.map((item, itemIndex) => {
+                const itemKey = `${key}-${itemIndex}`;
+                const prefix = markdownListItemPrefix(item);
+                return (
+                  <Box key={itemKey} flexDirection="column">
+                    <Box paddingLeft={markdownListItemIndent(item)}>
+                      {/* flexShrink={0}: once the row is width-constrained, Yoga resolves an
+                          over-wide line by squeezing this marker instead of wrapping the text,
+                          which silently eats the space after "1." and misaligns the item. */}
+                      <Box flexShrink={0}>
+                        <Text color="cyan">{prefix}</Text>
+                      </Box>
+                      <Text wrap="wrap">{renderInlineNodes(item.nodes, itemKey)}</Text>
+                    </Box>
+                    {item.codeBlocks.map((codeBlock, codeIndex) => (
+                      <Box
+                        key={`${itemKey}-code-${codeIndex}`}
+                        paddingLeft={markdownListItemIndent(item) + terminalCellWidth(prefix)}
+                      >
+                        <MarkdownCodeBlock
+                          lines={codeBlock.lines}
+                          language={codeBlock.language}
+                          marginTop={1}
+                          keyPrefix={`${itemKey}-code-${codeIndex}`}
+                        />
+                      </Box>
+                    ))}
                   </Box>
-                  <Text wrap="wrap">{renderInlineNodes(item.nodes, `${key}-${itemIndex}`)}</Text>
-                </Box>
-              ))}
+                );
+              })}
             </Box>
           );
         }

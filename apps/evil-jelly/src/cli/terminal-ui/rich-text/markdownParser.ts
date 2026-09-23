@@ -30,6 +30,7 @@ export type MarkdownInline = {
 export type MarkdownListItem = MarkdownInline & {
   depth: number;
   marker: number | null;
+  codeBlocks: Array<{ language?: string; lines: string[] }>;
 };
 
 export type MarkdownTableCell = MarkdownInline;
@@ -88,6 +89,12 @@ function flattenList(list: List, depth = 0): MarkdownListItem[] {
       marker: list.ordered ? marker : null,
       text: phrasingText(nodes),
       nodes,
+      codeBlocks: item.children
+        .filter((child) => child.type === "code")
+        .map((child) => ({
+          language: child.lang ?? undefined,
+          lines: child.value.split("\n"),
+        })),
     });
     marker++;
 
@@ -198,7 +205,7 @@ function convertBlock(markdown: string, node: RootContent): MarkdownBlock | null
   }
   if (node.type === "list") {
     const items = flattenList(node);
-    if (items.every((item) => item.text.length === 0)) {
+    if (items.every((item) => item.text.length === 0 && item.codeBlocks.length === 0)) {
       return literalParagraph(nodeSource(markdown, node).trim());
     }
     return { type: "list", ordered: Boolean(node.ordered), items };
