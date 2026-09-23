@@ -205,7 +205,9 @@ flow themselves.
 4. **Completed:** consolidate MCP, Memory, and Skill manager arbitration behind one explicit
    discriminated request/action decision channel while preserving capability-specific UI payloads.
 5. Consolidate repeated composer reference mechanics while preserving capability-owned resolution.
-6. Rework Jelly lint boundaries after the physical ownership has stabilized.
+6. **In progress:** simplify Jelly lint after physical ownership stabilization. Manager prompts now
+   share one UI node, host file-manager adapters belong to bindings, and duplicate or stale graph
+   edges are being removed before adding a small set of high-value forbidden-knowledge rules.
 
 Every batch should pass `pnpm verify --filter @rejelly/evil-jelly`. Reduced file count or node count is
 not itself success; representative changes should require fewer unrelated owners and less cross-tree

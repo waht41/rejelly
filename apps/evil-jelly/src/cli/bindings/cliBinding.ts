@@ -24,7 +24,6 @@ import {
 } from "../conversation-display/useOutputStore";
 import { createInteractiveShell } from "../interactive-shell/inkLifecycle";
 import { createInteractiveSubmission } from "../interactive-shell/submission";
-import { revealMemoryFileInExplorer } from "../memory-manager/openMemoryStore";
 import { resetComposerProfiler } from "../message-composer/composerProfiler";
 import {
   resetComposerSession,
@@ -42,12 +41,13 @@ import {
   createOperatorDecision,
   resetOperatorDecisionSession,
 } from "../operator-decision/operatorDecision";
-import { openSkillFolderInFileManager } from "../skill-manager/openSkillFolder";
 import { resetSubmissionDispatch } from "../submission-dispatch/dispatcher";
 import { resetModeSession, useModeStore } from "../tool-approval/approvalModeStore";
 import { createToolApproval } from "../tool-approval/createToolApproval";
 import type { InteractiveRunControl } from "../unified-conversation/interactive/runControl";
 import { createInkRequestMemoryConfirmation } from "./memoryConfirmation";
+import { revealMemoryFileInExplorer } from "./openMemoryStore";
+import { openSkillFolderInFileManager } from "./openSkillFolder";
 
 function toDecisionView(view?: PromptChoiceView): DecisionView | undefined {
   if (view === undefined) {
