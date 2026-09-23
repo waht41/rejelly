@@ -5,23 +5,18 @@
   "additionalProperties": false,
   "required": ["nodes", "graph"],
   "properties": {
+    "nodePolicies": {
+      "type": "object",
+      "description": "Named exclusion policies applied to internal node path declarations. Exclusion values are ordinary path patterns; the engine negates them when expanding a policy. Default policies apply automatically; node object specs may add a policy by name or remove a default policy with !name.",
+      "propertyNames": { "pattern": "^[^!].*$" },
+      "additionalProperties": { "$ref": "#/$defs/nodePolicy" }
+    },
     "nodes": {
       "type": "object",
       "description": "All architecture nodes (vertices). Maps logical node IDs to internal path templates or external identifiers. For internal paths, prefix pattern with `!` to exclude files from the same node mapping. Node path patterns must not reference other node IDs (`@...`); repeat globs explicitly or generate config. Engine warns when one node include pattern fully contains another node include pattern without explicit exclusion boundaries.",
       "patternProperties": {
         "^@[a-zA-Z0-9_:-]+(\\[[a-zA-Z0-9_]+\\])?[a-zA-Z0-9_:-]*$": {
-          "oneOf": [
-            {
-              "type": "string",
-              "description": "Single path template (supports [var], *, **, ?) or external key like npm:react / node:fs."
-            },
-            {
-              "type": "array",
-              "description": "Fallback path templates. Engine tries each template in order.",
-              "minItems": 1,
-              "items": { "type": "string" }
-            }
-          ]
+          "$ref": "#/$defs/nodeSpec"
         }
       },
       "additionalProperties": false
@@ -44,6 +39,61 @@
     }
   },
   "$defs": {
+    "patternSpec": {
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "Single path template (supports [var], *, **, ?) or external key like npm:react / node:fs."
+        },
+        {
+          "type": "array",
+          "description": "Path templates and local exclusions.",
+          "minItems": 1,
+          "items": { "type": "string" }
+        }
+      ]
+    },
+    "nodeSpec": {
+      "oneOf": [
+        { "$ref": "#/$defs/patternSpec" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["patterns"],
+          "properties": {
+            "patterns": { "$ref": "#/$defs/patternSpec" },
+            "policies": {
+              "type": "array",
+              "description": "Exact named policy references. name adds a policy; !name removes a default policy.",
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^!?[^!]+$" }
+            }
+          }
+        }
+      ]
+    },
+    "nodePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exclude"],
+      "properties": {
+        "default": {
+          "type": "boolean",
+          "default": false,
+          "description": "Apply this policy to every node containing internal path patterns unless the node removes it with !name."
+        },
+        "exclude": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[^!].*$",
+            "description": "A non-negated path pattern. The engine adds the exclusion marker when expanding the policy."
+          }
+        }
+      }
+    },
     "targetNode": {
       "type": "string",
       "pattern": "^@[a-zA-Z0-9_:\\-\\[\\]\\*\\?]+$",

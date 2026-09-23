@@ -1,6 +1,6 @@
 //! JellyLint config from `jellylint.json[c]` (JSON with comments).
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -20,6 +20,8 @@ pub struct ResolvedConfig {
 
 #[derive(Debug, Deserialize)]
 struct JellyLintFile {
+    #[serde(default, rename = "nodePolicies")]
+    node_policies: BTreeMap<String, NodePolicySpec>,
     #[serde(default)]
     nodes: HashMap<String, NodePathSpec>,
     graph: serde_json::Value,
@@ -28,19 +30,154 @@ struct JellyLintFile {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NodePolicySpec {
+    #[serde(default)]
+    default: bool,
+    exclude: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
-enum NodePathSpec {
+enum PatternSpec {
     Single(String),
     Multi(Vec<String>),
 }
 
-impl NodePathSpec {
+impl PatternSpec {
     fn into_patterns(self) -> Vec<String> {
         match self {
-            NodePathSpec::Single(s) => vec![s],
-            NodePathSpec::Multi(v) => v,
+            PatternSpec::Single(s) => vec![s],
+            PatternSpec::Multi(v) => v,
         }
     }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NodePathObjectSpec {
+    patterns: PatternSpec,
+    #[serde(default)]
+    policies: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+enum NodePathSpec {
+    Single(String),
+    Multi(Vec<String>),
+    Object(NodePathObjectSpec),
+}
+
+impl NodePathSpec {
+    fn into_parts(self) -> (Vec<String>, Vec<String>) {
+        match self {
+            NodePathSpec::Single(s) => (vec![s], Vec::new()),
+            NodePathSpec::Multi(v) => (v, Vec::new()),
+            NodePathSpec::Object(spec) => (spec.patterns.into_patterns(), spec.policies),
+        }
+    }
+}
+
+fn is_external_pattern(pattern: &str) -> bool {
+    let value = pattern.strip_prefix('!').unwrap_or(pattern);
+    value.starts_with("npm:") || value.starts_with("node:")
+}
+
+fn expand_node_patterns(
+    file_nodes: HashMap<String, NodePathSpec>,
+    policies: &BTreeMap<String, NodePolicySpec>,
+    source_name: &str,
+) -> Result<HashMap<String, Vec<String>>, String> {
+    for (name, policy) in policies {
+        if name.is_empty() || name.starts_with('!') {
+            return Err(format!(
+                "{source_name}: node policy names must be non-empty and must not start with `!`: {name:?}"
+            ));
+        }
+        if policy.exclude.is_empty() {
+            return Err(format!(
+                "{source_name}: node policy {name:?} must contain at least one exclusion"
+            ));
+        }
+        for pattern in &policy.exclude {
+            if pattern.is_empty() || pattern.starts_with('!') {
+                return Err(format!(
+                    "{source_name}: node policy {name:?} exclusion must be a non-negated path pattern: {pattern:?}"
+                ));
+            }
+        }
+    }
+
+    let default_policies: HashSet<&str> = policies
+        .iter()
+        .filter_map(|(name, policy)| policy.default.then_some(name.as_str()))
+        .collect();
+    let mut nodes = HashMap::with_capacity(file_nodes.len());
+
+    for (node_id, spec) in file_nodes {
+        let (mut patterns, references) = spec.into_parts();
+        let has_internal_pattern = patterns.iter().any(|pattern| !is_external_pattern(pattern));
+        if !has_internal_pattern && !references.is_empty() {
+            return Err(format!(
+                "{source_name}: external-only node {node_id:?} cannot reference node policies"
+            ));
+        }
+
+        let mut active: HashSet<&str> = if has_internal_pattern {
+            default_policies.clone()
+        } else {
+            HashSet::new()
+        };
+        let mut seen: HashMap<&str, bool> = HashMap::new();
+        for reference in &references {
+            let (disabled, name) = match reference.strip_prefix('!') {
+                Some(name) => (true, name),
+                None => (false, reference.as_str()),
+            };
+            if name.is_empty() {
+                return Err(format!(
+                    "{source_name}: node {node_id:?} contains an empty node policy reference"
+                ));
+            }
+            if !policies.contains_key(name) {
+                return Err(format!(
+                    "{source_name}: node {node_id:?} references unknown node policy {name:?}"
+                ));
+            }
+            if let Some(previously_disabled) = seen.insert(name, disabled) {
+                let problem = if previously_disabled == disabled {
+                    "duplicates"
+                } else {
+                    "both enables and disables"
+                };
+                return Err(format!(
+                    "{source_name}: node {node_id:?} {problem} node policy {name:?}"
+                ));
+            }
+            if disabled {
+                active.remove(name);
+            } else {
+                active.insert(name);
+            }
+        }
+
+        let mut active_names: Vec<&str> = active.into_iter().collect();
+        active_names.sort_unstable();
+        for name in active_names {
+            patterns.extend(
+                policies[name]
+                    .exclude
+                    .iter()
+                    .map(|pattern| format!("!{pattern}")),
+            );
+        }
+        let mut unique = HashSet::new();
+        patterns.retain(|pattern| unique.insert(pattern.clone()));
+        nodes.insert(node_id, patterns);
+    }
+
+    Ok(nodes)
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -108,7 +245,8 @@ fn parse_graph_specs(
         return Err(format!("{source_name}: `graph` must be an object"));
     };
 
-    let is_flat_graph = obj.contains_key("cascade") || obj.contains_key("sequence") || obj.contains_key("connect");
+    let is_flat_graph =
+        obj.contains_key("cascade") || obj.contains_key("sequence") || obj.contains_key("connect");
     if is_flat_graph {
         let block: GraphBlockSpec = serde_json::from_value(serde_json::Value::Object(obj))
             .map_err(|e| format!("{source_name}: parse graph: {e}"))?;
@@ -120,9 +258,8 @@ fn parse_graph_specs(
 
     let mut out = HashMap::new();
     for (subgraph_name, subgraph_value) in obj {
-        let block: GraphBlockSpec = serde_json::from_value(subgraph_value).map_err(|e| {
-            format!("{source_name}: parse graph.{subgraph_name}: {e}")
-        })?;
+        let block: GraphBlockSpec = serde_json::from_value(subgraph_value)
+            .map_err(|e| format!("{source_name}: parse graph.{subgraph_name}: {e}"))?;
         out.insert(subgraph_name, graph_block_to_spec(block));
     }
     Ok(out)
@@ -168,13 +305,15 @@ pub fn resolve_config(
     let stripped = strip_json_comments_owned(raw)?;
     let file: JellyLintFile =
         serde_json::from_str(&stripped).map_err(|e| format!("parse {}: {e}", path.display()))?;
-    let JellyLintFile { nodes: file_nodes, graph: file_graph, rules } = file;
+    let JellyLintFile {
+        node_policies,
+        nodes: file_nodes,
+        graph: file_graph,
+        rules,
+    } = file;
     let cwd = cwd.to_path_buf();
-    let mut nodes = HashMap::with_capacity(file_nodes.len());
-    for (node_id, spec) in file_nodes {
-        nodes.insert(node_id, spec.into_patterns());
-    }
     let source_name = path.display().to_string();
+    let nodes = expand_node_patterns(file_nodes, &node_policies, &source_name)?;
     let graph_specs = parse_graph_specs(file_graph, &source_name)?;
     let graph = build_graph(&cwd, &nodes, &graph_specs, rules, &source_name)?;
     let source_roots = collect_source_roots(&graph);
@@ -293,7 +432,10 @@ mod tests {
         let file: JellyLintFile = serde_json::from_str(raw).expect("parse");
         let graphs = parse_graph_specs(file.graph, "test").expect("graph parse");
         let graph = graphs.get("admin_panel").expect("admin_panel graph");
-        assert_eq!(graph.cascade.get("default").map(|levels| levels.len()), Some(3));
+        assert_eq!(
+            graph.cascade.get("default").map(|levels| levels.len()),
+            Some(3)
+        );
     }
 
     #[test]
@@ -328,7 +470,10 @@ mod tests {
         let graphs = parse_graph_specs(file.graph, "test").expect("graph parse");
         let graph = graphs.get("frontend_core").expect("frontend_core graph");
         assert_eq!(graph.cascade.len(), 2);
-        assert_eq!(graph.cascade.get("render_flow").map(|levels| levels.len()), Some(3));
+        assert_eq!(
+            graph.cascade.get("render_flow").map(|levels| levels.len()),
+            Some(3)
+        );
         assert_eq!(
             graph
                 .cascade
@@ -336,5 +481,105 @@ mod tests {
                 .map(|levels| levels.len()),
             Some(3)
         );
+    }
+
+    fn expanded_nodes(raw: &str) -> Result<HashMap<String, Vec<String>>, String> {
+        let file: JellyLintFile = serde_json::from_str(raw).expect("parse");
+        expand_node_patterns(file.nodes, &file.node_policies, "test")
+    }
+
+    #[test]
+    fn node_policies_apply_defaults_and_node_set_modifiers() {
+        let raw = r#"{
+            "nodePolicies": {
+                "production": {
+                    "default": true,
+                    "exclude": ["src/**/__tests__/**/*", "src/**/*.test.*"]
+                },
+                "generated": {
+                    "exclude": ["src/**/*.generated.*", "src/**/*.test.*"]
+                }
+            },
+            "nodes": {
+                "@app": {
+                    "patterns": "src/app/**/*",
+                    "policies": ["generated"]
+                },
+                "@spec:tests": {
+                    "patterns": ["src/**/__tests__/**/*", "src/**/*.test.*"],
+                    "policies": ["!production"]
+                },
+                "@ext:react": "npm:react"
+            },
+            "graph": {}
+        }"#;
+        let nodes = expanded_nodes(raw).expect("expand");
+        assert_eq!(
+            nodes["@app"],
+            vec![
+                "src/app/**/*",
+                "!src/**/*.generated.*",
+                "!src/**/*.test.*",
+                "!src/**/__tests__/**/*",
+            ]
+        );
+        assert_eq!(
+            nodes["@spec:tests"],
+            vec!["src/**/__tests__/**/*", "src/**/*.test.*"]
+        );
+        assert_eq!(nodes["@ext:react"], vec!["npm:react"]);
+    }
+
+    #[test]
+    fn node_policies_reject_unknown_duplicate_and_conflicting_references() {
+        for (policies, expected) in [
+            (r#"["missing"]"#, "unknown node policy"),
+            (r#"["production", "production"]"#, "duplicates node policy"),
+            (
+                r#"["production", "!production"]"#,
+                "both enables and disables node policy",
+            ),
+        ] {
+            let raw = format!(
+                r#"{{
+                    "nodePolicies": {{
+                        "production": {{ "exclude": ["src/**/*.test.*"] }}
+                    }},
+                    "nodes": {{
+                        "@app": {{ "patterns": "src/app/**/*", "policies": {policies} }}
+                    }},
+                    "graph": {{}}
+                }}"#
+            );
+            let error = expanded_nodes(&raw).expect_err("invalid policy reference");
+            assert!(error.contains(expected), "unexpected error: {error}");
+        }
+    }
+
+    #[test]
+    fn node_policies_reject_invalid_definitions_and_external_references() {
+        let invalid_exclusion = r#"{
+            "nodePolicies": {
+                "production": { "exclude": ["!src/**/*.test.*"] }
+            },
+            "nodes": { "@app": "src/app/**/*" },
+            "graph": {}
+        }"#;
+        assert!(expanded_nodes(invalid_exclusion)
+            .expect_err("invalid exclusion")
+            .contains("must be a non-negated path pattern"));
+
+        let external_reference = r#"{
+            "nodePolicies": {
+                "production": { "exclude": ["src/**/*.test.*"] }
+            },
+            "nodes": {
+                "@ext:react": { "patterns": "npm:react", "policies": ["production"] }
+            },
+            "graph": {}
+        }"#;
+        assert!(expanded_nodes(external_reference)
+            .expect_err("external policy reference")
+            .contains("external-only node"));
     }
 }

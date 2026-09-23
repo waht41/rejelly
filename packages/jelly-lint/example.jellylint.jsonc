@@ -1,6 +1,18 @@
 {
+  // Named node membership filters. Default policies apply to every internal node unless removed.
+  "nodePolicies": {
+    "production": {
+      "default": true,
+      "exclude": ["src/**/__tests__/**/*", "src/**/*.test.*"]
+    }
+  },
+
   // Node definition: logical ID -> internal path template / external module key.
   "nodes": {
+    "@spec:tests": {
+      "patterns": ["src/**/__tests__/**/*", "src/**/*.test.*"],
+      "policies": ["!production"]
+    },
     "@app:[name]": "src/apps/[name]/**/*",
     "@feature:[feat]:ui": "src/features/[feat]/ui/**/*",
     "@feature:[feat]:db": ["src/features/[feat]/db/**/*", "!src/features/[feat]/db/**/*.mock.ts"],
