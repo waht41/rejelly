@@ -14,7 +14,12 @@ import type {
   ToolConfirmationResult,
   WriteActionType,
 } from "../../shared/host/toolConfirmationBindings";
-import { recordActiveToolDetail } from "../../shared/tool-observation/invocationContext";
+import {
+  getActiveToolCall,
+  recordActiveToolApproval,
+  recordActiveToolDetail,
+} from "../../shared/tool-observation/invocationContext";
+import type { ToolApprovalAnnotation } from "../../shared/tool-observation/model";
 import { useOutputStore } from "../conversation-display/useOutputStore";
 import type {
   DecisionOption,
@@ -92,6 +97,17 @@ function logNotice(message: string): void {
   useOutputStore.getState().logSystem(message, { oneLine: true });
 }
 
+/** Keep auto-approval context on the tool it explains; fall back only outside a tool invocation. */
+function recordAutoAllowed(approval: ToolApprovalAnnotation, fallbackNotice: string): void {
+  const call = getActiveToolCall();
+  if (!call) {
+    logNotice(fallbackNotice);
+    return;
+  }
+  recordActiveToolApproval(approval);
+  useOutputStore.getState().annotateTool(call.id, approval);
+}
+
 function normalizeShellPrefix(prefix: string): string {
   return prefix.trim().replace(/\s+/g, " ");
 }
@@ -126,13 +142,19 @@ function tryAutoAllowFsWrite(
   // Inside-workspace fs writes are diff-reviewed, so "auto" mode accepts them. Outside-workspace
   // writes have a wider boundary and stay manually gated.
   if (getMode() === "auto") {
-    logNotice(`[Auto-allowed] ${params.kind} (auto mode) → ${forNotice(params.filePath)}`);
+    recordAutoAllowed(
+      { mode: "auto", basis: `${params.kind} (auto mode)` },
+      `[Auto-allowed] ${params.kind} (auto mode) → ${forNotice(params.filePath)}`,
+    );
     return { action: "accept" };
   }
   if (!policy[params.kind]) {
     return null;
   }
-  logNotice(`[Auto-allowed] ${params.kind} → ${forNotice(params.filePath)}`);
+  recordAutoAllowed(
+    { mode: "auto", basis: `${params.kind} policy` },
+    `[Auto-allowed] ${params.kind} → ${forNotice(params.filePath)}`,
+  );
   return { action: "accept" };
 }
 
@@ -219,7 +241,10 @@ function tryAutoAllowShellCommand(
   const risk = classifyShellCommand(params.command);
   // Read-only commands run in every mode; irreversible (block) ones are never auto-run.
   if (risk === "auto") {
-    logNotice("[Auto-allowed] safe shell (read-only)");
+    recordAutoAllowed(
+      { mode: "auto", basis: "safe shell (read-only)" },
+      "[Auto-allowed] safe shell (read-only)",
+    );
     return { result: { action: "accept" }, declaredReason: "", risk };
   }
 
@@ -228,7 +253,10 @@ function tryAutoAllowShellCommand(
   if (risk !== "block" && isSimpleCommand(params.command)) {
     for (const prefix of shellAutoAllowPrefixes) {
       if (commandMatchesPrefix(params.command, prefix)) {
-        logNotice(`[Auto-allowed] shell prefix: ${prefix}`);
+        recordAutoAllowed(
+          { mode: "auto", basis: `shell prefix: ${prefix}` },
+          `[Auto-allowed] shell prefix: ${prefix}`,
+        );
         return { result: { action: "accept" }, declaredReason: "", risk };
       }
     }
@@ -241,7 +269,10 @@ function tryAutoAllowShellCommand(
     (declaredSafety === "read_only" || declaredSafety === "reversible")
   ) {
     const why = params.reason ? ` — ${params.reason}` : "";
-    logNotice(`[Auto-allowed] declared ${declaredSafety}${why}`);
+    recordAutoAllowed(
+      { mode: "auto", basis: declaredSafety, reason: params.reason },
+      `[Auto-allowed] declared ${declaredSafety}${why}`,
+    );
     return { result: { action: "accept" }, declaredReason: "", risk };
   }
 
@@ -405,14 +436,18 @@ export function createToolApproval(
     }
     if (params.type === "mcp_access") {
       if (getMode() === "auto" && !params.requiresTrust) {
-        logNotice(`[Auto-allowed] MCP server ${params.serverId} for this session (auto mode)`);
+        recordAutoAllowed(
+          { mode: "auto", basis: "MCP access (auto mode)", reason: params.reason },
+          `[Auto-allowed] MCP server ${params.serverId} for this session (auto mode)`,
+        );
         return { action: "accept", scope: "session" };
       }
       return decision.run((session) => confirmMcpAccess(params, session));
     }
     if (params.type === "mcp_call") {
       if (getMode() === "auto") {
-        logNotice(
+        recordAutoAllowed(
+          { mode: "auto", basis: "MCP call (auto mode)" },
           `[Auto-allowed] MCP tool ${params.tool.serverId}/${params.tool.nativeToolName} (auto mode)`,
         );
         return { action: "accept", scope: "once" };

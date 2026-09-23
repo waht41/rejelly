@@ -161,6 +161,12 @@ const toolObservationDetailSchema = z
   })
   .passthrough();
 
+const toolApprovalAnnotationSchema = z.object({
+  mode: z.literal("auto"),
+  basis: z.string().min(1),
+  reason: z.string().optional(),
+});
+
 export const toolObservationRecordedEventSchema = z
   .object({
     ...eventBaseFields,
@@ -172,6 +178,7 @@ export const toolObservationRecordedEventSchema = z
     args: z.string().optional(),
     detail: toolObservationDetailSchema.optional(),
     metrics: toolObservationMetricsSchema.optional(),
+    approval: toolApprovalAnnotationSchema.optional(),
     /** Transport/handler completion only; do not interpret as business success. */
     ok: z.boolean(),
     outcome: z.enum(["succeeded", "failed", "denied", "aborted", "timed_out"]).optional(),

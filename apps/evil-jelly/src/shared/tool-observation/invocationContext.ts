@@ -3,14 +3,14 @@
  * wrapped it, carried in `AsyncLocalStorage` so parallel tool calls each get
  * their own slot without threading an argument through every handler.
  *
- * Four things travel through it: the handle identifying this call (so a handler
- * streaming live output can say which tool the bytes belong to), an observation
- * detail produced along the way (currently a reviewed diff), structured metrics,
- * and an optional owner-reported business outcome distinct from transport completion.
+ * The slot carries the call handle, observation detail, structured metrics,
+ * auto-approval context, and an optional owner-reported business outcome. Keeping
+ * them per async branch prevents parallel tool calls from exchanging metadata.
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import type {
+  ToolApprovalAnnotation,
   ToolCallHandle,
   ToolExecutionOutcomeRecord,
   ToolObservationDetail,
@@ -21,6 +21,7 @@ type ToolCallSlot = {
   call?: ToolCallHandle;
   detail?: ToolObservationDetail;
   metrics?: ToolObservationMetrics;
+  approval?: ToolApprovalAnnotation;
   outcome?: ToolExecutionOutcomeRecord;
 };
 
@@ -93,6 +94,20 @@ export function takeActiveToolMetrics(): ToolObservationMetrics | undefined {
   const metrics = slot.metrics;
   slot.metrics = undefined;
   return metrics;
+}
+
+export function recordActiveToolApproval(approval: ToolApprovalAnnotation): void {
+  const slot = callStorage.getStore();
+  if (!slot) return;
+  slot.approval = approval;
+}
+
+export function takeActiveToolApproval(): ToolApprovalAnnotation | undefined {
+  const slot = callStorage.getStore();
+  if (!slot) return undefined;
+  const approval = slot.approval;
+  slot.approval = undefined;
+  return approval;
 }
 
 export function recordActiveToolOutcome(outcome: ToolExecutionOutcomeRecord): void {

@@ -11,7 +11,11 @@ import {
   type TranscriptItem,
   tailTranscriptByInitialTurns,
 } from "../../shared/session/transcript";
-import type { ToolCallHandle, ToolObservationStart } from "../../shared/tool-observation/model";
+import type {
+  ToolApprovalAnnotation,
+  ToolCallHandle,
+  ToolObservationStart,
+} from "../../shared/tool-observation/model";
 import { AssistantStreamBuffer } from "./assistant-stream/buffer";
 import {
   assistantCompletionTurns,
@@ -28,6 +32,7 @@ import { projectTranscriptHistory } from "./history/projection";
 import { HistorySequence } from "./history/sequence";
 import { RunningToolOutputBuffer } from "./running-tools/outputBuffer";
 import {
+  annotateRunningTool,
   applyRunningToolOutput,
   finishRunningTool,
   type RunningToolsState,
@@ -77,6 +82,7 @@ interface OutputState extends RunningToolsState, RuntimeStatusState {
   appendStream: (text: string) => void;
   beginTool: (start: ToolObservationStart) => ToolCallHandle;
   appendToolOutput: (toolCallId: string, chunk: string) => void;
+  annotateTool: (toolCallId: string, approval: ToolApprovalAnnotation) => void;
   setDetail: (detail: string) => void;
   setToolCallGeneration: (progress: ToolCallGenerationProgress | null) => void;
   setReconnectProgress: (progress: ReconnectProgress) => void;
@@ -167,6 +173,11 @@ export const useOutputStore = create<OutputState>((set) => ({
   appendToolOutput: (toolCallId, chunk) => {
     runningToolOutput.append(toolCallId, chunk);
   },
+
+  annotateTool: (toolCallId, approval) =>
+    set((state) => ({
+      runningTools: annotateRunningTool(state.runningTools, toolCallId, approval),
+    })),
 
   setDetail: (detail) => set((state) => ({ runtime: withRuntimeDetail(state.runtime, detail) })),
 
@@ -298,11 +309,10 @@ export const useOutputStore = create<OutputState>((set) => ({
     })),
 
   logSystem: (content, options) => {
-    // A system line is a notice, not a turn boundary. Most of them are emitted
-    // while a tool is mid-flight — every `[Auto-allowed]` confirmation, `/mode`,
-    // `/expand-tool` — so it must not retire the running tools or report the
-    // agent idle. The real boundaries (logAssistant, clearStream, clearHistory)
-    // still reset both.
+    // A system line is a notice, not a turn boundary. Some are emitted while a
+    // tool is mid-flight — policy changes, `/mode`, `/expand-tool` — so it must
+    // not retire the running tools or report the agent idle. The real boundaries
+    // (logAssistant, clearStream, clearHistory) still reset both.
     //
     // The stream it interrupts must be committed rather than dropped: text the model
     // wrote before calling a tool is on screen only as the transient tail, and the

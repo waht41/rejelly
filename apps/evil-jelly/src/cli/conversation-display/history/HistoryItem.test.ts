@@ -39,6 +39,23 @@ describe("HistoryItem tool headline", () => {
     expect(lines[0]).toMatch(/^● #3 \[Tools\] run_command → x+…$/);
   });
 
+  it("keeps auto-approval safety and reason on one row inside the tool block", () => {
+    const turn = toolTurn("[Tools] run_command → rg declaredSafety");
+    if (turn.type !== "tool") {
+      throw new Error("Expected tool turn");
+    }
+    turn.tool.approval = {
+      mode: "auto",
+      basis: "read_only",
+      reason: "Find where shell safety metadata is processed.",
+    };
+
+    const lines = renderTurn(turn);
+    expect(lines[0]).toBe("● #3 [Tools] run_command → rg declaredSafety");
+    expect(lines[1]).toMatch(/^ {2}auto · read_only — Find where shell safety metadata is pr…$/);
+    expect(lines).toHaveLength(2);
+  });
+
   it("keeps every emitted row inside the terminal width", () => {
     // <Static> sizes children to their content, so an unpinned row is measured
     // against the full width and then pushed past it by its siblings — the

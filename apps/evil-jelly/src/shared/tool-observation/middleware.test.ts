@@ -17,6 +17,7 @@ vi.mock("../host/context", () => ({
 
 import {
   getActiveToolCall,
+  recordActiveToolApproval,
   recordActiveToolDetail,
   recordActiveToolOutcome,
 } from "./invocationContext";
@@ -291,6 +292,11 @@ describe("withToolLogger", () => {
     let seen: ReturnType<typeof getActiveToolCall>;
     const next = vi.fn().mockImplementation(async () => {
       seen = getActiveToolCall();
+      recordActiveToolApproval({
+        mode: "auto",
+        basis: "reversible",
+        reason: "Run the build.",
+      });
       return "ok";
     });
 
@@ -304,7 +310,11 @@ describe("withToolLogger", () => {
     );
     // A streaming handler reads this to attribute its output to the right tool.
     expect(seen).toEqual({ id: "tc_1", ordinal: 7 });
-    expect(bindings.toolBlocks[0]).toMatchObject({ id: "tc_1", ordinal: 7 });
+    expect(bindings.toolBlocks[0]).toMatchObject({
+      id: "tc_1",
+      ordinal: 7,
+      approval: { mode: "auto", basis: "reversible", reason: "Run the build." },
+    });
     // The live view replaces the one-line announcement.
     expect(bindings.printed).toHaveLength(0);
   });

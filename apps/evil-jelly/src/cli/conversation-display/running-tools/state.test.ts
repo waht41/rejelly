@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  annotateRunningTool,
   applyRunningToolOutput,
   finishRunningTool,
   RUNNING_TOOL_TRANSCRIPT_CAP_BYTES,
@@ -26,6 +27,32 @@ describe("running tool state", () => {
       retainedBytes: 0,
     });
     expect(finishRunningTool(tools, "tool-1")).toEqual([]);
+  });
+
+  it("attaches approval context to the matching parallel tool", () => {
+    const first = startRunningTool(
+      [],
+      { id: "tool-1", ordinal: 1 },
+      { toolName: "run_command", summary: "first" },
+    );
+    const tools = startRunningTool(
+      first,
+      { id: "tool-2", ordinal: 2 },
+      { toolName: "run_command", summary: "second" },
+    );
+
+    const next = annotateRunningTool(tools, "tool-2", {
+      mode: "auto",
+      basis: "read_only",
+      reason: "Inspect policy metadata.",
+    });
+
+    expect(next[0]?.approval).toBeUndefined();
+    expect(next[1]?.approval).toEqual({
+      mode: "auto",
+      basis: "read_only",
+      reason: "Inspect policy metadata.",
+    });
   });
 
   it("retains running output beyond the dashboard viewport", () => {

@@ -40,6 +40,7 @@ describe("projectTranscriptItem", () => {
         toolCallId: "call-1",
         toolName: "shell",
         arguments: "  pnpm   test  ",
+        approval: { mode: "auto", basis: "read_only", reason: "Inspect results." },
         result: "1\n2\n3\n4\n5\n6\n7",
         ok: true,
       },
@@ -50,6 +51,11 @@ describe("projectTranscriptItem", () => {
     if (turn.type === "tool") {
       expect(turn.content).toBe("[Tools] shell pnpm test (resumed)");
       expect(turn.tool.preview).toBe("1\n2\n3\n4\n5\n6");
+      expect(turn.tool.approval).toEqual({
+        mode: "auto",
+        basis: "read_only",
+        reason: "Inspect results.",
+      });
       expect(turn.tool.ordinal).toBe(1);
     }
   });

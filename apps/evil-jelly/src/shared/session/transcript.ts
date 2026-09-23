@@ -7,7 +7,7 @@
  */
 
 import type { UserInputAttachmentDisplay } from "../model/prompt/frozenUserInput";
-import type { ToolObservationDetail } from "../tool-observation/model";
+import type { ToolApprovalAnnotation, ToolObservationDetail } from "../tool-observation/model";
 import type { SessionBlobMetadata, SessionBlobRef } from "./blobContract";
 
 export const RESUME_VISIBLE_TURNS = 10;
@@ -51,6 +51,7 @@ export type TranscriptItem =
       arguments?: string;
       summary?: string;
       detail?: ToolObservationDetail;
+      approval?: ToolApprovalAnnotation;
       result?: string;
       resultImages?: TranscriptImage[];
       ok: boolean;

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   recordAppliedToolDiff,
   runWithToolDetailSlot,
+  setActiveToolCall,
+  takeActiveToolApproval,
   takeActiveToolDetail,
 } from "../../shared/tool-observation/invocationContext";
 import { resetOutputSession, useOutputStore } from "../conversation-display/useOutputStore";
@@ -303,28 +305,46 @@ describe("createToolApproval", () => {
     expect(useDecisionStore.getState().decision).toMatchObject({ type: "idle" });
   });
 
-  it("states why a shell command was auto-allowed without repeating it", async () => {
+  it("attaches each parallel shell reason to its own tool instead of logging notices", async () => {
     resetCliStores();
     const confirmTool = createToolApproval({ getMode: () => "auto" });
-    const command = `node -e "let a = 1;\n  let b = 2;\n  console.log(a + b);"`;
-
-    await confirmTool({
-      type: "shell_command",
-      command,
-      declaredSafety: "read_only",
-      reason: "Inspect a JSON field.",
-      supportedActions: ["accept", "reject"],
+    const first = useOutputStore.getState().beginTool({
+      toolName: "run_command",
+      summary: "[Tools] first",
+    });
+    const second = useOutputStore.getState().beginTool({
+      toolName: "run_command",
+      summary: "[Tools] second",
     });
 
-    const notice = useOutputStore
-      .getState()
-      .history.find((turn) => turn.type === "system" && turn.content.includes("[Auto-allowed]"));
-    expect(notice).toBeDefined();
-    const content = notice?.type === "system" ? notice.content : "";
-    // The reason is the only thing this line says that the tool block does not.
-    expect(content).toBe("[Auto-allowed] declared read_only — Inspect a JSON field.");
-    expect(content).not.toContain("node -e");
-    expect(notice?.type === "system" && notice.oneLine).toBe(true);
+    const approve = (
+      call: typeof first,
+      declaredSafety: "read_only" | "reversible",
+      reason: string,
+    ) =>
+      runWithToolDetailSlot(async () => {
+        setActiveToolCall(call);
+        await confirmTool({
+          type: "shell_command",
+          command: "pnpm test",
+          declaredSafety,
+          reason,
+          supportedActions: ["accept", "reject"],
+        });
+        return takeActiveToolApproval();
+      });
+
+    const approvals = await Promise.all([
+      approve(first, "read_only", "Inspect the first policy."),
+      approve(second, "reversible", "Update the second policy."),
+    ]);
+
+    expect(approvals).toEqual([
+      { mode: "auto", basis: "read_only", reason: "Inspect the first policy." },
+      { mode: "auto", basis: "reversible", reason: "Update the second policy." },
+    ]);
+    expect(useOutputStore.getState().runningTools.map((tool) => tool.approval)).toEqual(approvals);
+    expect(useOutputStore.getState().history).toEqual([]);
   });
 
   it("still names the target in a filesystem auto-allow notice", async () => {

@@ -1,4 +1,7 @@
-import type { ToolObservationDetail } from "../../../shared/tool-observation/model";
+import type {
+  ToolApprovalAnnotation,
+  ToolObservationDetail,
+} from "../../../shared/tool-observation/model";
 
 export type ToolBlock = {
   id?: string;
@@ -6,6 +9,7 @@ export type ToolBlock = {
   summary: string;
   args?: string;
   detail?: ToolObservationDetail;
+  approval?: ToolApprovalAnnotation;
   preview: string;
   fullResult: string;
   ok: boolean;

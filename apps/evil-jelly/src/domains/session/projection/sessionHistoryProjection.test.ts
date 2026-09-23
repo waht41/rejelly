@@ -298,6 +298,7 @@ describe("session history projections", () => {
           phase: "applied",
           presentation: "inline",
         },
+        approval: { mode: "auto", basis: "edit (auto mode)" },
         ok: false,
       },
       event(
@@ -317,6 +318,7 @@ describe("session history projections", () => {
         toolCallId: "call-1",
         summary: "[Tools] edit_file → a.ts",
         detail: expect.objectContaining({ type: "diff", phase: "applied" }),
+        approval: { mode: "auto", basis: "edit (auto mode)" },
         result: "updated",
         ok: false,
       }),
