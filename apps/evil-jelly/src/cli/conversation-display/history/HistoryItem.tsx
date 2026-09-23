@@ -163,8 +163,16 @@ export function HistoryItem({ turn, columns }: { turn: Turn; columns: number }) 
           <Text wrap="truncate-end">{summary}</Text>
         </Box>
         {approval ? (
-          <Text dimColor wrap="truncate-end">
-            {`  auto · ${approval.basis}${approval.reason ? ` — ${approval.reason}` : ""}`}
+          <Text dimColor={!approval.reason} wrap="truncate-end">
+            {"  "}
+            <Text dimColor>auto · </Text>
+            <Text color={approval.reason ? "cyan" : undefined}>{approval.basis}</Text>
+            {approval.reason ? (
+              <>
+                <Text dimColor>{" — "}</Text>
+                <Text>{approval.reason}</Text>
+              </>
+            ) : null}
           </Text>
         ) : null}
         {previewLines.length > 0 ? (
