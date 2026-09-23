@@ -9,11 +9,11 @@ import {
 } from "@rejelly/core";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { COMPACTION_STREAM_CHANNEL } from "../../domains/policy/compactionChannel";
 import type { EvilJellyBindings } from "../../shared/host/bindings";
 import { setBinding } from "../../shared/host/context";
 import type { RuntimePhase } from "../../shared/host/presentationBindings";
 import { textPromptInput } from "../../shared/model/prompt/promptInput";
+import { COMPACTION_STREAM_CHANNEL } from "./context-management/compactionChannel";
 import {
   phaseForStreamEvent,
   type StreamTurnProgress,

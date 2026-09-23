@@ -1,27 +1,80 @@
 import { createInterface } from "node:readline/promises";
 import type { Message } from "@rejelly/core";
-import { buildLegacyTranscript } from "../../../../domains/session/projection/sessionHistoryProjection";
+import { buildLegacyTranscript } from "../../../domains/session/projection/sessionHistoryProjection";
 import {
   generateSessionId,
   type LegacyMigrationOptions,
   listSessions,
+  loadSession,
   resumeSession,
   type SessionBudget,
   type SessionContextTokenAnchor,
   type SessionRecord,
-} from "../../../../domains/session/repository/sessionStore";
-import { countConversationTurns } from "../../../../shared/conversation/compactionMessages";
-import { getWorkspaceRoot } from "../../../../shared/fs-policy/workspace-context";
-import type { EvilJellyBindings } from "../../../../shared/host/bindings";
+} from "../../../domains/session/repository/sessionStore";
+import { countConversationTurns } from "../../../shared/conversation/compactionMessages";
+import { getWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
+import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import {
   emptySessionMcpState,
   type SessionMcpState,
-} from "../../../../shared/model/mcp/sessionMcpState";
+} from "../../../shared/model/mcp/sessionMcpState";
 import {
   RESUME_VISIBLE_TURNS,
   type TranscriptItem,
   tailTranscriptByInitialTurns,
-} from "../../../../shared/session/transcript";
+} from "../../../shared/session/transcript";
+import type { ConversationLoopControl } from "./runControl";
+
+/** Request an in-run session switch, resolving an optional session picker first. */
+export async function tryRequestResume(
+  rawInput: string,
+  currentSessionId: string | undefined,
+  host: EvilJellyBindings,
+  runLoopControl: ConversationLoopControl,
+): Promise<boolean> {
+  const arg = rawInput.slice("/resume".length).trim();
+  const workspaceRoot = getWorkspaceRoot();
+
+  if (arg) {
+    if (arg === currentSessionId) {
+      host.logSystemEvent(`Session ${arg} is already current.\n`);
+      return false;
+    }
+    if (!(await loadSession(workspaceRoot, arg))) {
+      host.logSystemEvent(`No saved session "${arg}" for this workspace.\n`);
+      return false;
+    }
+    host.logSystemEvent(`Switching to session ${arg}…\n`);
+    runLoopControl.request({ type: "resume", sessionId: arg });
+    return true;
+  }
+
+  const sessions = (await listSessions(workspaceRoot)).filter(
+    (session) => session.id !== currentSessionId,
+  );
+  if (sessions.length === 0) {
+    host.logSystemEvent("No other saved sessions for this workspace.\n");
+    return false;
+  }
+  const options = sessions.map((session, index) => ({
+    key: index < 9 ? String(index + 1) : "",
+    label: `${new Date(session.updatedAt).toLocaleString()}  (${session.turns} turns)  ${session.title}`,
+    value: session.id,
+  }));
+  options.push({ key: "x", label: "Cancel", value: "" });
+  const chosen = await host.requestChoice({
+    message: "Resume which session?",
+    options,
+    cancelValue: "",
+  });
+  if (!chosen) {
+    host.logSystemEvent("Resume cancelled.\n");
+    return false;
+  }
+  host.logSystemEvent(`Switching to session ${chosen}…\n`);
+  runLoopControl.request({ type: "resume", sessionId: chosen });
+  return true;
+}
 
 export interface SessionResumeSeed {
   activeContext: Message[];

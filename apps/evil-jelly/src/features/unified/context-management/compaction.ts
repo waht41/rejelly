@@ -8,24 +8,24 @@ import {
   isCompactionBridgeMessage,
   PRIOR_USER_MESSAGE_TAG,
   unwrapPriorUserMessageText,
-} from "../../shared/conversation/compactionMessages";
-import { fileLocatorAttributes } from "../../shared/fs-policy/file-locator";
+} from "../../../shared/conversation/compactionMessages";
+import { fileLocatorAttributes } from "../../../shared/fs-policy/file-locator";
 import {
   estimateMessageContentTokens,
   estimateMessagesTokens,
   estimateTokens,
-} from "../../shared/model/budget/tokenEstimate";
-import { messageContentToText } from "../../shared/model/message/content";
+} from "../../../shared/model/budget/tokenEstimate";
+import { messageContentToText } from "../../../shared/model/message/content";
 import {
   copyFrozenUserInputOrigin,
   getFrozenUserInputOrigin,
   projectFrozenUserInputDisplay,
   type UserInputAttachmentDisplay,
-} from "../../shared/model/prompt/frozenUserInput";
+} from "../../../shared/model/prompt/frozenUserInput";
 import {
   renderPseudoXmlElement,
   renderPseudoXmlEmptyElement,
-} from "../../shared/model/prompt/pseudoXml";
+} from "../../../shared/model/prompt/pseudoXml";
 import { COMPACTION_STREAM_CHANNEL } from "./compactionChannel";
 
 /**

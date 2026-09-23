@@ -5,8 +5,8 @@ import {
   estimateMessagesTokens,
   estimateTokens,
   IMAGE_CONTENT_TOKEN_ESTIMATE,
-} from "../../shared/model/budget/tokenEstimate";
-import { registerFrozenUserInputOrigin } from "../../shared/model/prompt/frozenUserInput";
+} from "../../../shared/model/budget/tokenEstimate";
+import { registerFrozenUserInputOrigin } from "../../../shared/model/prompt/frozenUserInput";
 import { selectRecentUserMessages, truncateToolOutputsToFit } from "./compaction";
 import { sanitizeInterruptedDelta } from "./interruptedDelta";
 

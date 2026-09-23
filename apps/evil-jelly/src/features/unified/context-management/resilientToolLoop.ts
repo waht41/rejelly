@@ -10,9 +10,9 @@ import {
 import {
   estimateMessagesTokens,
   estimateMessagesTokensFromAnchor,
-} from "../../shared/model/budget/tokenEstimate";
-import { appendMessageContentSuffix } from "../../shared/model/message/content";
-import type { SessionMessageSink } from "../../shared/session/recorderPort";
+} from "../../../shared/model/budget/tokenEstimate";
+import { appendMessageContentSuffix } from "../../../shared/model/message/content";
+import type { SessionMessageSink } from "../../../shared/session/recorderPort";
 import {
   DEFAULT_COMPACTION_MAX_ROUNDS,
   DEFAULT_WARN_RATIO,

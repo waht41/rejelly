@@ -1,18 +1,15 @@
 import type { AgentSnapshot, ModelAdapter } from "@rejelly/core";
-import type { McpDesiredServer } from "../../../../domains/mcp/contracts";
-import { createSessionMemoryRuntime } from "../../../../domains/memory/runtime/sessionMemoryRuntime";
-import { createPersistentMemoryService } from "../../../../domains/memory/service/persistentMemoryServiceImpl";
-import {
-  generateSessionId,
-  resumeSession,
-} from "../../../../domains/session/repository/sessionStore";
-import { qualifiedSkillName } from "../../../../domains/skills/definition/skillDefinition";
-import { getWorkspaceRoot } from "../../../../shared/fs-policy/workspace-context";
-import type { EvilJellyBindings } from "../../../../shared/host/bindings";
-import { startupTimeline } from "../../../../shared/profile/startup/timeline";
-import { createMcpChatRuntime } from "../../../mcp-runtime/mcpChatRuntime";
-import { buildConfiguredSkillRuntimeSnapshot } from "../../../skill-runtime/configuredRuntime";
-import { formatSkillRuntimeStartupSummary } from "../../../skill-runtime/startupSummary";
+import type { McpDesiredServer } from "../../../domains/mcp/contracts";
+import { createSessionMemoryRuntime } from "../../../domains/memory/runtime/sessionMemoryRuntime";
+import { createPersistentMemoryService } from "../../../domains/memory/service/persistentMemoryServiceImpl";
+import { generateSessionId, resumeSession } from "../../../domains/session/repository/sessionStore";
+import { qualifiedSkillName } from "../../../domains/skills/definition/skillDefinition";
+import { getWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
+import type { EvilJellyBindings } from "../../../shared/host/bindings";
+import { startupTimeline } from "../../../shared/profile/startup/timeline";
+import { createMcpChatRuntime } from "../../mcp-runtime/mcpChatRuntime";
+import { buildConfiguredSkillRuntimeSnapshot } from "../../skill-runtime/configuredRuntime";
+import { formatSkillRuntimeStartupSummary } from "../../skill-runtime/startupSummary";
 import { buildSessionResumeSeed, hydrateResumeSeed, type SessionResumeSeed } from "./resume";
 import type { InteractiveRunControl } from "./runControl";
 import { type RunEvilJellyHostOptions, runEvilJellyHost } from "./runSegment";

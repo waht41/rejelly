@@ -646,16 +646,16 @@ Ink renders completed turns once in `<Static>` history and keeps the current inp
 
 ### Source organization
 
-Source is organized primarily by ownership and change reason rather than by a universal technical-layer stack:
+Source is organized primarily by ownership and change reason rather than by a universal technical-layer stack.
 
 | Area | Directory | Responsibility |
 |------|-----------|----------------|
 | **shared** | `shared/` | Foundation utilities, configuration, filesystem policy, model/prompt types, session ports, and the host capability contracts. |
-| **domains** | `domains/` | Cohesive capabilities owned by MCP, Memory, policy, sessions, Skills, web access, and workspace operations. Workspace read/write/AST/execute tools live under `domains/workspace/`. |
-| **features** | `features/` | Cross-domain product flows: unified coding conversations, one-shot audits, and replay/snapshot support. |
+| **domains** | `domains/` | Cohesive capabilities owned by MCP, Memory, sessions, Skills, web access, and workspace operations. Workspace read/write/AST/execute tools live under `domains/workspace/`. |
+| **features** | `features/` | Cross-domain product flows: unified coding conversations, their context-management policy, one-shot audits, and replay/snapshot support. |
 | **cli** | `cli/` | Process entry and argument dispatch, runtime composition, Ink presentation, interactive decisions, and headless/background host adapters. |
 
-`MainCliAgent` in `cli/unified-conversation/` routes local slash commands such as `/skills`, `/memory`, `/mcp`, `/resume`, and `/status` without a model call; ordinary messages are forwarded to `UnifiedAgent` in `features/unified/`. One-shot audits bypass the interactive conversation and invoke `AuditAgent` from the `evil audit` entry flow.
+`cli/unified-conversation/` owns the interactive run and session lifecycle. Its `MainCliAgent` routes local slash commands such as `/skills`, `/memory`, `/mcp`, `/resume`, and `/status` without a model call; ordinary messages are forwarded to `UnifiedAgent` in `features/unified/`. One-shot audits bypass the interactive conversation and invoke `AuditAgent` from the `evil audit` entry flow.
 
 Workspace writes are implemented by the workspace domain and cross the host's `confirmTool` boundary when confirmation is required. The CLI supplies either an Ink-backed interactive binding or a restricted background/headless binding; verification remains an explicit Agent-selected command rather than an automatic post-write pipeline.
 

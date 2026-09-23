@@ -3,12 +3,12 @@
  */
 
 import { type AgentStreamEvent, onStream } from "@rejelly/core";
-import { COMPACTION_STREAM_CHANNEL } from "../../domains/policy/compactionChannel";
 import { getBinding } from "../../shared/host/context";
 import type {
   RuntimePhase,
   ToolCallGenerationProgress,
 } from "../../shared/host/presentationBindings";
+import { COMPACTION_STREAM_CHANNEL } from "./context-management/compactionChannel";
 
 type StandardStreamingTextMode = "none" | "tool-preamble" | "plain";
 

@@ -126,9 +126,7 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
   const decision = useDecisionStore((state) => state.decision);
   const submitChoice = useDecisionStore((state) => state.submitChoice);
   const cancelChoice = useDecisionStore((state) => state.cancelChoice);
-  const submitMcpManager = useDecisionStore((state) => state.submitMcpManager);
-  const submitMemoryManager = useDecisionStore((state) => state.submitMemoryManager);
-  const submitSkillManager = useDecisionStore((state) => state.submitSkillManager);
+  const submitManager = useDecisionStore((state) => state.submitManager);
   const [pendingSubmissions, setPendingSubmissions] = useState<PendingSubmission[]>(() =>
     getPendingSubmissions(),
   );
@@ -212,16 +210,24 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
             <Box marginTop={1}>
               <RuntimeStatusLine />
             </Box>
-            {decision.type === "mcp_manager" ? (
-              <McpManagerPrompt
-                request={decision.request}
-                onAction={submitMcpManager}
-                copyText={copyTextToClipboard}
-              />
-            ) : decision.type === "memory_manager" ? (
-              <MemoryManagerPrompt request={decision.request} onAction={submitMemoryManager} />
-            ) : decision.type === "skill_manager" ? (
-              <SkillManagerPrompt request={decision.request} onAction={submitSkillManager} />
+            {decision.type === "manager" ? (
+              decision.manager.kind === "mcp" ? (
+                <McpManagerPrompt
+                  request={decision.manager.request}
+                  onAction={(action) => submitManager({ kind: "mcp", action })}
+                  copyText={copyTextToClipboard}
+                />
+              ) : decision.manager.kind === "memory" ? (
+                <MemoryManagerPrompt
+                  request={decision.manager.request}
+                  onAction={(action) => submitManager({ kind: "memory", action })}
+                />
+              ) : (
+                <SkillManagerPrompt
+                  request={decision.manager.request}
+                  onAction={(action) => submitManager({ kind: "skill", action })}
+                />
+              )
             ) : decision.type === "confirm" ? (
               <ConfirmPrompt message={decision.message} defaultYes={decision.defaultYes} />
             ) : decision.type === "choice" ? (

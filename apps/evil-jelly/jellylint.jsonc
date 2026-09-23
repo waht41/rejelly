@@ -35,13 +35,9 @@
       "!src/**/*.test.*"
     ],
     "@cli:mcp-runtime": ["src/cli/mcp-runtime/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
-    "@cli:mcp-manager": ["src/cli/mcp-manager/**/*", "!src/**/__tests__/**/*", "!src/**/*.test.*"],
-    "@cli:memory-manager": [
+    "@cli:manager-ui": [
+      "src/cli/mcp-manager/**/*",
       "src/cli/memory-manager/**/*",
-      "!src/**/__tests__/**/*",
-      "!src/**/*.test.*"
-    ],
-    "@cli:skill-manager": [
       "src/cli/skill-manager/**/*",
       "!src/**/__tests__/**/*",
       "!src/**/*.test.*"
@@ -197,9 +193,7 @@
             "@cli:conversation-display",
             "@cli:terminal-ui",
             "@cli:message-composer",
-            "@cli:mcp-manager",
-            "@cli:memory-manager",
-            "@cli:skill-manager",
+            "@cli:manager-ui",
             "@cli:operator-decision",
             "@cli:tool-approval"
           ],
@@ -207,13 +201,16 @@
         ]
       },
       "connect": {
+        "@cli:bindings": ["@domain:memory"],
         "@cli:audit-run": ["@feature:audit", "@domain:mcp"],
         "@cli:inspect-run": [
           "@feature:inspect",
           "@domain:session:journal",
           "@domain:session:repository"
         ],
+        "@cli:mcp-run": ["@domain:mcp"],
         "@cli:skill-run": ["@domain:skills:agent"],
+        "@cli:skill-runtime": ["@domain:skills:*"],
         "@cli:unified-run": [
           "@feature:unified",
           "@feature:replay",
@@ -225,7 +222,18 @@
           "@domain:mcp",
           "@domain:memory"
         ],
-        "@cli:unified-conversation": ["@feature:unified", "@domain:mcp"],
+        "@cli:unified-conversation": [
+          "@feature:unified",
+          "@feature:replay",
+          "@domain:mcp",
+          "@domain:memory",
+          "@domain:session:model",
+          "@domain:session:projection",
+          "@domain:session:repository",
+          "@domain:session:recorder",
+          "@domain:skills:agent",
+          "@domain:skills:definition"
+        ],
         "@cli:mcp-runtime": ["@domain:mcp"],
         "@feature:unified": [
           "@domain:memory",
@@ -233,11 +241,10 @@
           "@domain:web",
           "@domain:skills:agent",
           "@domain:session:repository",
-          "@domain:policy",
           "@domain:mcp"
         ],
         "@feature:audit": ["@domain:workspace", "@domain:mcp"],
-        "@feature:inspect": ["@domain:session:model", "@shared:model"],
+        "@feature:inspect": ["@domain:session:model"],
         "@cli:message-composer": [
           "@domain:workspace",
           "@domain:skills:agent",
@@ -254,39 +261,32 @@
           "@cli:mcp-run",
           "@cli:skill-run",
           "@cli:unified-run",
+          "@cli:unified-conversation",
           "@cli:bindings",
           "@cli:model-composition"
         ],
         "@cli:audit-run": ["@cli:runtime"],
-        "@cli:mcp-run": ["@domain:mcp"],
-        "@cli:skill-run": ["@cli:skill-runtime", "@domain:skills:agent"],
+        "@cli:skill-run": ["@cli:skill-runtime"],
         "@cli:unified-run": [
           "@cli:runtime",
           "@cli:message-composer",
           "@cli:submission-dispatch",
           "@cli:mcp-runtime",
           "@cli:skill-runtime",
-          "@cli:unified-conversation",
-          "@domain:memory"
+          "@cli:unified-conversation"
         ],
-        "@cli:skill-runtime": ["@domain:skills:*"],
-        "@cli:mcp-runtime": ["@domain:mcp"],
         "@cli:unified-conversation": [
           "@cli:conversation-display",
           "@cli:message-composer",
+          "@cli:mcp-runtime",
           "@cli:runtime",
-          "@cli:submission-dispatch",
-          "@domain:memory",
-          "@domain:session:model",
-          "@domain:session:recorder",
-          "@domain:session:repository",
-          "@domain:skills:agent"
+          "@cli:skill-runtime",
+          "@cli:submission-dispatch"
         ],
         "@cli:bindings": [
           "@cli:unified-run",
+          "@cli:unified-conversation",
           "@cli:conversation-display",
-          "@cli:memory-manager",
-          "@cli:skill-manager",
           "@cli:message-composer",
           "@cli:interactive-shell",
           "@cli:submission-dispatch",
@@ -295,18 +295,14 @@
         ],
         "@cli:interactive-shell": [
           "@cli:conversation-display",
-          "@cli:mcp-manager",
-          "@cli:memory-manager",
-          "@cli:skill-manager",
+          "@cli:manager-ui",
           "@cli:operator-decision",
           "@cli:tool-approval",
           "@cli:message-composer",
           "@cli:submission-dispatch"
         ],
         "@cli:conversation-display": ["@cli:terminal-ui"],
-        "@cli:mcp-manager": ["@cli:terminal-ui"],
-        "@cli:memory-manager": ["@cli:terminal-ui", "@domain:memory"],
-        "@cli:skill-manager": ["@cli:terminal-ui"],
+        "@cli:manager-ui": ["@cli:terminal-ui"],
         "@cli:message-composer": ["@cli:terminal-ui"],
         "@cli:operator-decision": ["@cli:conversation-display", "@cli:terminal-ui"],
         "@cli:tool-approval": ["@cli:conversation-display", "@cli:operator-decision"]

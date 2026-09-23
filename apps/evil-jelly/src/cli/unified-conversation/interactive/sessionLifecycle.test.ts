@@ -4,25 +4,25 @@ import path from "node:path";
 import { AbortError, type Message, type ModelAdapter, type StreamEvent } from "@rejelly/core";
 import { createMockModel } from "@rejelly/core/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { recordInitialTextInput } from "../../../../domains/session/__tests__/sessionTestInput";
+import { recordInitialTextInput } from "../../../domains/session/__tests__/sessionTestInput";
 import {
   readSessionEvents,
   resolveV3SessionPath,
-} from "../../../../domains/session/journal/sessionJsonlStore";
-import { isKnownSessionEvent } from "../../../../domains/session/model/sessionEvents";
-import { openSessionRecorder } from "../../../../domains/session/recorder/sessionRecorder";
-import { resumeSession } from "../../../../domains/session/repository/sessionStore";
-import { isCompactionBridgeMessage } from "../../../../shared/conversation/compactionMessages";
-import { setWorkspaceRoot } from "../../../../shared/fs-policy/workspace-context";
-import type { EvilJellyBindings } from "../../../../shared/host/bindings";
-import { messageContentToText } from "../../../../shared/model/message/content";
-import { projectFrozenUserInputMessage } from "../../../../shared/model/prompt/frozenUserInput";
-import { textPromptInput } from "../../../../shared/model/prompt/promptInput";
-import type { TranscriptItem } from "../../../../shared/session/transcript";
+} from "../../../domains/session/journal/sessionJsonlStore";
+import { isKnownSessionEvent } from "../../../domains/session/model/sessionEvents";
+import { openSessionRecorder } from "../../../domains/session/recorder/sessionRecorder";
+import { resumeSession } from "../../../domains/session/repository/sessionStore";
+import { isCompactionBridgeMessage } from "../../../shared/conversation/compactionMessages";
+import { setWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
+import type { EvilJellyBindings } from "../../../shared/host/bindings";
+import { messageContentToText } from "../../../shared/model/message/content";
+import { projectFrozenUserInputMessage } from "../../../shared/model/prompt/frozenUserInput";
+import { textPromptInput } from "../../../shared/model/prompt/promptInput";
+import type { TranscriptItem } from "../../../shared/session/transcript";
 import {
   interruptActiveTask,
   resetInterruptibleTaskStack,
-} from "../../../../shared/task-interruption/taskStack";
+} from "../../../shared/task-interruption/taskStack";
 import { createInteractiveRunControl } from "./runControl";
 import { runEvilJellyHost } from "./runSegment";
 
