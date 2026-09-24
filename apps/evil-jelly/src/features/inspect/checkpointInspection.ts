@@ -17,12 +17,20 @@ export interface InitialContextComponentInspection {
   /** Independent local estimate before reconciliation. */
   estimatedTokens: number;
   share: number;
+  sha256?: string;
+}
+
+export interface SystemInstructionInspection {
+  address: string;
+  chars: number;
+  sha256: string;
 }
 
 export interface ToolDefinitionInspection {
   name: string;
   tokens: number;
   share: number;
+  sha256?: string;
 }
 
 export interface InitialContextInspection {
@@ -38,6 +46,7 @@ export interface InitialContextInspection {
   estimatedNamedComponentTokens: number;
   reconciliationDeltaTokens: number;
   components: InitialContextComponentInspection[];
+  systemInstructions?: SystemInstructionInspection[];
   toolDefinitions?: ToolDefinitionInspection[];
   warnings: string[];
 }
@@ -139,6 +148,7 @@ function projectToolDefinitions(
         name: definition.name,
         tokens,
         share: share(tokens, totalTokens),
+        ...(definition.schemaSha256 ? { sha256: definition.schemaSha256 } : {}),
       };
     })
     .sort((left, right) => right.tokens - left.tokens);
@@ -163,11 +173,13 @@ export function projectInitialContextInspection(
       kind: "system_instructions" as const,
       label: "system instructions",
       estimatedTokens: estimateAsciiTokens(input?.systemPromptChars ?? 0),
+      ...(input?.systemPromptSha256 ? { sha256: input.systemPromptSha256 } : {}),
     },
     {
       kind: "tool_definitions" as const,
       label: "tool definitions",
       estimatedTokens: estimateAsciiTokens(input?.toolSchemaBytes ?? 0),
+      ...(input?.toolSchemaSha256 ? { sha256: input.toolSchemaSha256 } : {}),
     },
     {
       kind: "prior_conversation" as const,
@@ -223,6 +235,15 @@ export function projectInitialContextInspection(
     estimatedNamedComponentTokens,
     reconciliationDeltaTokens,
     components,
+    ...(input?.systemInstructions
+      ? {
+          systemInstructions: input.systemInstructions.map((instruction, index) => ({
+            address: `S${index + 1}`,
+            chars: instruction.chars,
+            sha256: instruction.sha256,
+          })),
+        }
+      : {}),
     ...(toolDefinitions ? { toolDefinitions } : {}),
     warnings,
   };

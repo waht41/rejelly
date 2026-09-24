@@ -191,6 +191,7 @@ describe("Model Call inspection", () => {
     );
     expect(partial.notableCalls.find(({ call }) => call.address === "M1")).toBeUndefined();
     expect(renderModelCallList(partial)).toContain("uncached input");
+    expect(renderModelCallInspection(partial.calls[0], { input: true })).toContain("system sha256");
 
     const withoutCache = events.map((entry) =>
       entry.type === "model_call_completed" && entry.spanId === "model-1"

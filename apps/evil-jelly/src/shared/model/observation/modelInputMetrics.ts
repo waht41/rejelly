@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   equipTraceAttr,
   isContextNotFoundError,
@@ -16,10 +17,25 @@ export interface ModelInputMetrics {
   messagesByRole: Record<Message["role"], number>;
   messageChars: number;
   systemPromptChars: number;
+  systemPromptSha256?: string;
+  systemInstructions?: Array<{ chars: number; sha256: string }>;
   toolResultChars: number;
   toolDefinitionCount: number;
   toolSchemaBytes: number;
-  toolDefinitions?: Array<{ name: string; schemaBytes: number }>;
+  toolSchemaSha256?: string;
+  toolDefinitions?: Array<{ name: string; schemaBytes: number; schemaSha256?: string }>;
+}
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function serializeContent(content: Message["content"]): string {
+  try {
+    return JSON.stringify(content) ?? "null";
+  } catch {
+    return "[unserializable]";
+  }
 }
 
 function contentChars(content: Message["content"]): number {
@@ -73,30 +89,47 @@ export function projectModelInputMetrics(
   let messageChars = 0;
   let systemPromptChars = 0;
   let toolResultChars = 0;
+  const systemContents: Message["content"][] = [];
+  const systemInstructions: Array<{ chars: number; sha256: string }> = [];
   for (const message of messages) {
     messagesByRole[message.role] += 1;
     const chars = contentChars(message.content);
     messageChars += chars;
-    if (message.role === "system") systemPromptChars += chars;
+    if (message.role === "system") {
+      systemPromptChars += chars;
+      systemContents.push(message.content);
+      systemInstructions.push({ chars, sha256: sha256(serializeContent(message.content)) });
+    }
     if (message.role === "tool") toolResultChars += chars;
   }
 
   const toolSchemas = projectToolSchemas(options);
-  const toolDefinitions = toolSchemas.map((schema) => ({
-    name: schema.name,
-    schemaBytes: new TextEncoder().encode(JSON.stringify(schema)).byteLength,
-  }));
+  const serializedToolSchemas = JSON.stringify(toolSchemas);
+  const toolDefinitions = toolSchemas.map((schema) => {
+    const serialized = JSON.stringify(schema);
+    return {
+      name: schema.name,
+      schemaBytes: new TextEncoder().encode(serialized).byteLength,
+      schemaSha256: sha256(serialized),
+    };
+  });
   return {
     messagesByRole,
     messageChars,
     systemPromptChars,
+    ...(systemInstructions.length > 0
+      ? {
+          systemPromptSha256: sha256(JSON.stringify(systemContents)),
+          systemInstructions,
+        }
+      : {}),
     toolResultChars,
     toolDefinitionCount: toolSchemas.length,
     toolSchemaBytes:
-      toolSchemas.length === 0
-        ? 0
-        : new TextEncoder().encode(JSON.stringify(toolSchemas)).byteLength,
-    ...(toolDefinitions.length > 0 ? { toolDefinitions } : {}),
+      toolSchemas.length === 0 ? 0 : new TextEncoder().encode(serializedToolSchemas).byteLength,
+    ...(toolDefinitions.length > 0
+      ? { toolSchemaSha256: sha256(serializedToolSchemas), toolDefinitions }
+      : {}),
   };
 }
 
@@ -111,7 +144,10 @@ export function readModelInputMetrics(
   if (typeof value !== "object" || value === null) return undefined;
   const metrics = value as Partial<ModelInputMetrics>;
   const roles = metrics.messagesByRole;
+  const systemInstructions = metrics.systemInstructions;
   const toolDefinitions = metrics.toolDefinitions;
+  const isSha256 = (candidate: unknown): candidate is string =>
+    typeof candidate === "string" && /^[a-f0-9]{64}$/.test(candidate);
   if (
     typeof roles !== "object" ||
     roles === null ||
@@ -121,9 +157,20 @@ export function readModelInputMetrics(
     !isNonNegativeInteger(roles.tool) ||
     !isNonNegativeInteger(metrics.messageChars) ||
     !isNonNegativeInteger(metrics.systemPromptChars) ||
+    (metrics.systemPromptSha256 !== undefined && !isSha256(metrics.systemPromptSha256)) ||
+    (systemInstructions !== undefined &&
+      (!Array.isArray(systemInstructions) ||
+        systemInstructions.some(
+          (instruction) =>
+            typeof instruction !== "object" ||
+            instruction === null ||
+            !isNonNegativeInteger(instruction.chars) ||
+            !isSha256(instruction.sha256),
+        ))) ||
     !isNonNegativeInteger(metrics.toolResultChars) ||
     !isNonNegativeInteger(metrics.toolDefinitionCount) ||
     !isNonNegativeInteger(metrics.toolSchemaBytes) ||
+    (metrics.toolSchemaSha256 !== undefined && !isSha256(metrics.toolSchemaSha256)) ||
     (toolDefinitions !== undefined &&
       (!Array.isArray(toolDefinitions) ||
         toolDefinitions.some(
@@ -132,7 +179,8 @@ export function readModelInputMetrics(
             tool === null ||
             typeof tool.name !== "string" ||
             tool.name.length === 0 ||
-            !isNonNegativeInteger(tool.schemaBytes),
+            !isNonNegativeInteger(tool.schemaBytes) ||
+            (tool.schemaSha256 !== undefined && !isSha256(tool.schemaSha256)),
         )))
   ) {
     return undefined;

@@ -36,10 +36,12 @@ describe("modelInputMetrics", () => {
       { role: "tool", tool_call_id: "call-1", content: "result" },
     ]);
 
-    expect(metrics).toEqual({
+    expect(metrics).toMatchObject({
       messagesByRole: { system: 1, user: 1, assistant: 1, tool: 1 },
       messageChars: 23,
       systemPromptChars: 5,
+      systemPromptSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+      systemInstructions: [{ chars: 5, sha256: expect.stringMatching(/^[a-f0-9]{64}$/) }],
       toolResultChars: 6,
       toolDefinitionCount: 0,
       toolSchemaBytes: 0,
@@ -60,10 +62,26 @@ describe("modelInputMetrics", () => {
       ],
     });
 
-    expect(metrics.toolDefinitions).toEqual([{ name: "grep", schemaBytes: expect.any(Number) }]);
+    expect(metrics.toolDefinitions).toEqual([
+      {
+        name: "grep",
+        schemaBytes: expect.any(Number),
+        schemaSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+      },
+    ]);
+    expect(metrics.toolSchemaSha256).toMatch(/^[a-f0-9]{64}$/);
     expect(metrics.toolSchemaBytes).toBeGreaterThan(metrics.toolDefinitions?.[0].schemaBytes ?? 0);
     expect(JSON.stringify(metrics)).not.toContain("Search files");
     expect(JSON.stringify(metrics)).not.toContain("query");
+  });
+
+  it("keeps hashes stable for equal input and changes them with the input", () => {
+    const first = projectModelInputMetrics([{ role: "system", content: "rules" }]);
+    const repeated = projectModelInputMetrics([{ role: "system", content: "rules" }]);
+    const changed = projectModelInputMetrics([{ role: "system", content: "updated rules" }]);
+
+    expect(first.systemPromptSha256).toBe(repeated.systemPromptSha256);
+    expect(first.systemPromptSha256).not.toBe(changed.systemPromptSha256);
   });
 
   it("attaches metrics to the matching model-call end span", async () => {

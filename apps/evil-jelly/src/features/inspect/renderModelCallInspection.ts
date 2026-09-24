@@ -27,6 +27,10 @@ function percentage(value: number | undefined): string {
   return value === undefined ? "-" : `${(value * 100).toFixed(1)}%`;
 }
 
+function shortSha256(value: string | undefined): string {
+  return value?.slice(0, 12) ?? "-";
+}
+
 function row(values: readonly string[], widths: readonly number[]): string {
   return values.map((value, index) => value.padStart(widths[index])).join("  ");
 }
@@ -267,18 +271,31 @@ export function renderModelCallInspection(
       lines.push(
         detailLine("message chars", integer(input.messageChars)),
         detailLine("system prompt", `${integer(input.systemPromptChars)} chars`),
+        detailLine("system sha256", shortSha256(input.systemPromptSha256)),
         detailLine("tool results", `${integer(input.toolResultChars)} chars`),
         detailLine("tool schemas", `${integer(input.toolSchemaBytes)} bytes`),
+        detailLine("tool sha256", shortSha256(input.toolSchemaSha256)),
         detailLine("tool definitions", integer(input.toolDefinitionCount)),
         detailLine(
           "messages by role",
           `system ${input.messagesByRole.system}, user ${input.messagesByRole.user}, assistant ${input.messagesByRole.assistant}, tool ${input.messagesByRole.tool}`,
         ),
       );
+      if (input.systemInstructions?.length) {
+        lines.push("", "  System instructions");
+        for (const [index, instruction] of input.systemInstructions.entries()) {
+          lines.push(
+            `    S${index + 1}`.padEnd(32) +
+              `${integer(instruction.chars).padStart(8)} chars  ${shortSha256(instruction.sha256)}`,
+          );
+        }
+      }
       if (input.toolDefinitions?.length) {
         lines.push("", "  Tool definitions");
         for (const tool of input.toolDefinitions)
-          lines.push(`    ${tool.name.padEnd(28)} ${integer(tool.schemaBytes)} bytes`);
+          lines.push(
+            `    ${tool.name.padEnd(28)} ${integer(tool.schemaBytes).padStart(8)} bytes  ${shortSha256(tool.schemaSha256)}`,
+          );
       }
     }
   }

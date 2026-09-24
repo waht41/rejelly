@@ -16,6 +16,7 @@ export type SessionSchemaVersion =
   | typeof SESSION_SCHEMA_VERSION;
 
 const nonNegativeIntSchema = z.number().int().nonnegative();
+const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 
 export const sessionBudgetSchema = z.object({
   totalTokens: nonNegativeIntSchema,
@@ -231,14 +232,20 @@ export const modelCallCompletedEventSchema = z
         }),
         messageChars: nonNegativeIntSchema,
         systemPromptChars: nonNegativeIntSchema,
+        systemPromptSha256: sha256Schema.optional(),
+        systemInstructions: z
+          .array(z.object({ chars: nonNegativeIntSchema, sha256: sha256Schema }))
+          .optional(),
         toolResultChars: nonNegativeIntSchema,
         toolDefinitionCount: nonNegativeIntSchema,
         toolSchemaBytes: nonNegativeIntSchema,
+        toolSchemaSha256: sha256Schema.optional(),
         toolDefinitions: z
           .array(
             z.object({
               name: z.string().min(1),
               schemaBytes: nonNegativeIntSchema,
+              schemaSha256: sha256Schema.optional(),
             }),
           )
           .optional(),
@@ -489,10 +496,13 @@ export interface ModelCallCompletedInput {
     messagesByRole: { system: number; user: number; assistant: number; tool: number };
     messageChars: number;
     systemPromptChars: number;
+    systemPromptSha256?: string;
+    systemInstructions?: Array<{ chars: number; sha256: string }>;
     toolResultChars: number;
     toolDefinitionCount: number;
     toolSchemaBytes: number;
-    toolDefinitions?: Array<{ name: string; schemaBytes: number }>;
+    toolSchemaSha256?: string;
+    toolDefinitions?: Array<{ name: string; schemaBytes: number; schemaSha256?: string }>;
   };
   usedTools: boolean;
   durationMs: number;

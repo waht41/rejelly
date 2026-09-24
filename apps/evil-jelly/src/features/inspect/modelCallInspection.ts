@@ -12,10 +12,13 @@ export interface ModelCallInputInspection {
   messagesByRole: { system: number; user: number; assistant: number; tool: number };
   messageChars: number;
   systemPromptChars: number;
+  systemPromptSha256?: string;
+  systemInstructions?: Array<{ chars: number; sha256: string }>;
   toolResultChars: number;
   toolDefinitionCount: number;
   toolSchemaBytes: number;
-  toolDefinitions?: Array<{ name: string; schemaBytes: number }>;
+  toolSchemaSha256?: string;
+  toolDefinitions?: Array<{ name: string; schemaBytes: number; schemaSha256?: string }>;
 }
 
 export interface ModelCallInspection {
