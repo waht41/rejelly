@@ -177,8 +177,10 @@ describe("Model Call inspection", () => {
     const rendered = renderModelCallList(inspection);
     expect(rendered).toContain("Model calls");
     expect(rendered).toContain("Notable calls");
+    expect(rendered).toContain("duration  uncached  notes");
     expect(rendered).toContain("M2");
     expect(rendered).toContain("rate_limit, 2 retries");
+    expect(rendered).not.toMatch(/\d(?:\.\d+)?k uncached/);
     expect(rendered).not.toContain("Model: gpt-test");
   });
 

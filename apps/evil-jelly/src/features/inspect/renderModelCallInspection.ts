@@ -184,11 +184,16 @@ export function renderModelCallList(
     );
     if (inspection.notableCalls.length === 0) lines.push("  (none)");
     else {
+      const widths = [5, 5, 8, 8];
+      lines.push(`  ${row(["#", "turn", "duration", "uncached"], widths)}  notes`);
       for (const notable of inspection.notableCalls) {
         const call = notable.call;
         const turn = call.turnNumber ? `T${call.turnNumber}` : "-";
         lines.push(
-          `  ${call.address.padEnd(5)} ${turn.padEnd(5)} ${duration(call.durationMs).padStart(8)}  ${compact(call.uncachedTokens).padStart(8)} uncached  ${notable.reasons.join(", ")}`,
+          `  ${row(
+            [call.address, turn, duration(call.durationMs), compact(call.uncachedTokens)],
+            widths,
+          )}  ${notable.reasons.join(", ")}`,
         );
       }
     }
