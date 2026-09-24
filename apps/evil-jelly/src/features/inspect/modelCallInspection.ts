@@ -236,7 +236,9 @@ function notableCalls(
     .filter((candidate) => (candidate.uncachedTokens ?? 0) > 0)
     .sort((left, right) => (right.uncachedTokens ?? 0) - (left.uncachedTokens ?? 0))
     .slice(0, 3)) {
-    if ((call.cacheHitRate ?? 1) < 0.8) add(call, "cache miss");
+    if ((call.usage?.cacheReadTokens ?? 0) === 0) add(call, "cache miss");
+    else if ((call.cacheHitRate ?? 1) < 0.8)
+      add(call, `low cache hit (${((call.cacheHitRate ?? 0) * 100).toFixed(1)}%)`);
   }
 
   return [...selected.values()]

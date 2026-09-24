@@ -172,7 +172,7 @@ export function renderModelCallList(
       "",
       `  cache read            ${compact(summary.cacheReadTokens)}`,
       `  cache write           ${compact(summary.cacheWriteTokens)}`,
-      `  uncached              ${compact(summary.prompt.uncachedTokens)}`,
+      `  uncached input        ${compact(summary.prompt.uncachedTokens)}`,
       `  weighted hit          ${percentage(summary.cacheHitRate)}`,
       "",
       `  duration              ${duration(summary.durationMs)}`,

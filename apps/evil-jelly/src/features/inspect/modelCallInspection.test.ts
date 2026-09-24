@@ -182,6 +182,26 @@ describe("Model Call inspection", () => {
     expect(rendered).not.toContain("Model: gpt-test");
   });
 
+  it("distinguishes partial cache hits from full cache misses in notable calls", () => {
+    const partial = projectModelCallList(meta, events);
+    expect(partial.notableCalls.find(({ call }) => call.address === "M3")?.reasons).toContain(
+      "low cache hit (20.0%)",
+    );
+    expect(partial.notableCalls.find(({ call }) => call.address === "M1")).toBeUndefined();
+    expect(renderModelCallList(partial)).toContain("uncached input");
+
+    const withoutCache = events.map((entry) =>
+      entry.type === "model_call_completed" && entry.spanId === "model-1"
+        ? { ...entry, usage: { ...entry.usage!, cacheReadTokens: 0 } }
+        : entry,
+    );
+    const missed = projectModelCallList(meta, withoutCache);
+    expect(missed.notableCalls.find(({ call }) => call.address === "M1")?.reasons).toContain(
+      "cache miss",
+    );
+    expect(renderModelCallList(missed)).toContain("low cache hit (20.0%)");
+  });
+
   it("lists every Turn call and supports Session-global ranges and profiles", () => {
     const turn = projectModelCallList(meta, events, { turnId: "turn-1" });
     expect(turn.calls.map((call) => call.address)).toEqual(["M1", "M2"]);
