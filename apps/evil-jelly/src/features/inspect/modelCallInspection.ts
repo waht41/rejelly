@@ -11,6 +11,9 @@ export type ModelCallView = "balanced" | "tokens" | "latency" | "transport";
 export interface ModelCallInputInspection {
   messagesByRole: { system: number; user: number; assistant: number; tool: number };
   messageChars: number;
+  promptPrefixSha256?: string;
+  staticPromptSha256?: string;
+  messageHistorySha256?: string;
   systemPromptChars: number;
   systemPromptSha256?: string;
   systemInstructions?: Array<{ chars: number; sha256: string }>;

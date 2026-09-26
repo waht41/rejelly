@@ -270,6 +270,9 @@ export function renderModelCallInspection(
       const input = call.input;
       lines.push(
         detailLine("message chars", integer(input.messageChars)),
+        detailLine("prompt prefix", shortSha256(input.promptPrefixSha256)),
+        detailLine("static prompt", shortSha256(input.staticPromptSha256)),
+        detailLine("message history", shortSha256(input.messageHistorySha256)),
         detailLine("system prompt", `${integer(input.systemPromptChars)} chars`),
         detailLine("system sha256", shortSha256(input.systemPromptSha256)),
         detailLine("tool results", `${integer(input.toolResultChars)} chars`),

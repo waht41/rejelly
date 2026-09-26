@@ -39,6 +39,9 @@ describe("modelInputMetrics", () => {
     expect(metrics).toMatchObject({
       messagesByRole: { system: 1, user: 1, assistant: 1, tool: 1 },
       messageChars: 23,
+      promptPrefixSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+      staticPromptSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+      messageHistorySha256: expect.stringMatching(/^[a-f0-9]{64}$/),
       systemPromptChars: 5,
       systemPromptSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
       systemInstructions: [{ chars: 5, sha256: expect.stringMatching(/^[a-f0-9]{64}$/) }],
@@ -75,13 +78,45 @@ describe("modelInputMetrics", () => {
     expect(JSON.stringify(metrics)).not.toContain("query");
   });
 
-  it("keeps hashes stable for equal input and changes them with the input", () => {
-    const first = projectModelInputMetrics([{ role: "system", content: "rules" }]);
-    const repeated = projectModelInputMetrics([{ role: "system", content: "rules" }]);
-    const changed = projectModelInputMetrics([{ role: "system", content: "updated rules" }]);
+  it("fingerprints stable prompt, message history, and the combined cache prefix independently", () => {
+    const messages = [
+      { role: "system" as const, content: "rules" },
+      { role: "user" as const, content: "hello" },
+    ];
+    const first = projectModelInputMetrics(messages);
+    const repeated = projectModelInputMetrics(messages);
+    const changedSystem = projectModelInputMetrics([
+      { role: "system", content: "updated rules" },
+      messages[1],
+    ]);
+    const changedHistory = projectModelInputMetrics([
+      messages[0],
+      { role: "user", content: "goodbye" },
+    ]);
+    const withTool = projectModelInputMetrics(messages, {
+      tools: [
+        {
+          name: "grep",
+          description: "Search files",
+          parameters: z.object({ query: z.string() }),
+          handler: async () => "ok",
+        },
+      ],
+    });
 
-    expect(first.systemPromptSha256).toBe(repeated.systemPromptSha256);
-    expect(first.systemPromptSha256).not.toBe(changed.systemPromptSha256);
+    expect(first).toMatchObject({
+      promptPrefixSha256: repeated.promptPrefixSha256,
+      staticPromptSha256: repeated.staticPromptSha256,
+      messageHistorySha256: repeated.messageHistorySha256,
+    });
+    expect(changedSystem.staticPromptSha256).not.toBe(first.staticPromptSha256);
+    expect(changedSystem.messageHistorySha256).toBe(first.messageHistorySha256);
+    expect(changedHistory.staticPromptSha256).toBe(first.staticPromptSha256);
+    expect(changedHistory.messageHistorySha256).not.toBe(first.messageHistorySha256);
+    expect(withTool.staticPromptSha256).not.toBe(first.staticPromptSha256);
+    expect(changedSystem.promptPrefixSha256).not.toBe(first.promptPrefixSha256);
+    expect(changedHistory.promptPrefixSha256).not.toBe(first.promptPrefixSha256);
+    expect(withTool.promptPrefixSha256).not.toBe(first.promptPrefixSha256);
   });
 
   it("attaches metrics to the matching model-call end span", async () => {

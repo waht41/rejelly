@@ -231,6 +231,9 @@ export const modelCallCompletedEventSchema = z
           tool: nonNegativeIntSchema,
         }),
         messageChars: nonNegativeIntSchema,
+        promptPrefixSha256: sha256Schema.optional(),
+        staticPromptSha256: sha256Schema.optional(),
+        messageHistorySha256: sha256Schema.optional(),
         systemPromptChars: nonNegativeIntSchema,
         systemPromptSha256: sha256Schema.optional(),
         systemInstructions: z
@@ -495,6 +498,9 @@ export interface ModelCallCompletedInput {
   input?: {
     messagesByRole: { system: number; user: number; assistant: number; tool: number };
     messageChars: number;
+    promptPrefixSha256?: string;
+    staticPromptSha256?: string;
+    messageHistorySha256?: string;
     systemPromptChars: number;
     systemPromptSha256?: string;
     systemInstructions?: Array<{ chars: number; sha256: string }>;

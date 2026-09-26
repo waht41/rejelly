@@ -60,6 +60,9 @@ describe("sessionObservationRecorder", () => {
           [MODEL_INPUT_METRICS_TRACE_ATTRIBUTE]: {
             messagesByRole: { system: 1, user: 1, assistant: 1, tool: 1 },
             messageChars: 80,
+            promptPrefixSha256: "a".repeat(64),
+            staticPromptSha256: "b".repeat(64),
+            messageHistorySha256: "c".repeat(64),
             systemPromptChars: 20,
             toolResultChars: 30,
             toolDefinitionCount: 2,
@@ -180,6 +183,9 @@ describe("sessionObservationRecorder", () => {
       durationMs: 125,
       input: {
         messagesByRole: { system: 1, user: 1, assistant: 1, tool: 1 },
+        promptPrefixSha256: "a".repeat(64),
+        staticPromptSha256: "b".repeat(64),
+        messageHistorySha256: "c".repeat(64),
         toolResultChars: 30,
         toolSchemaBytes: 400,
       },

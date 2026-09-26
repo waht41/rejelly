@@ -48,6 +48,9 @@ const events: SessionEvent[] = [
       input: {
         messagesByRole: { system: 1, user: 1, assistant: 0, tool: 0 },
         messageChars: 800,
+        promptPrefixSha256: "a".repeat(64),
+        staticPromptSha256: "b".repeat(64),
+        messageHistorySha256: "c".repeat(64),
         systemPromptChars: 500,
         toolResultChars: 0,
         toolDefinitionCount: 1,
@@ -191,7 +194,11 @@ describe("Model Call inspection", () => {
     );
     expect(partial.notableCalls.find(({ call }) => call.address === "M1")).toBeUndefined();
     expect(renderModelCallList(partial)).toContain("uncached input");
-    expect(renderModelCallInspection(partial.calls[0], { input: true })).toContain("system sha256");
+    const renderedInput = renderModelCallInspection(partial.calls[0], { input: true });
+    expect(renderedInput).toContain("prompt prefix");
+    expect(renderedInput).toContain("static prompt");
+    expect(renderedInput).toContain("message history");
+    expect(renderedInput).toContain("system sha256");
 
     const withoutCache = events.map((entry) =>
       entry.type === "model_call_completed" && entry.spanId === "model-1"

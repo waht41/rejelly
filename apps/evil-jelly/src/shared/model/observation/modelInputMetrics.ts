@@ -16,6 +16,12 @@ export const MODEL_INPUT_METRICS_TRACE_ATTRIBUTE = "evil_jelly.model_input";
 export interface ModelInputMetrics {
   messagesByRole: Record<Message["role"], number>;
   messageChars: number;
+  /** Fingerprint of the full normalized cache-eligible prompt prefix. */
+  promptPrefixSha256?: string;
+  /** Fingerprint of the stable system-instructions and Tool-schema prefix. */
+  staticPromptSha256?: string;
+  /** Fingerprint of the ordered non-system message history. */
+  messageHistorySha256?: string;
   systemPromptChars: number;
   systemPromptSha256?: string;
   systemInstructions?: Array<{ chars: number; sha256: string }>;
@@ -105,6 +111,10 @@ export function projectModelInputMetrics(
 
   const toolSchemas = projectToolSchemas(options);
   const serializedToolSchemas = JSON.stringify(toolSchemas);
+  const serializedStaticPrompt = JSON.stringify({ system: systemContents, tools: toolSchemas });
+  const serializedMessageHistory = JSON.stringify(
+    messages.filter((message) => message.role !== "system"),
+  );
   const toolDefinitions = toolSchemas.map((schema) => {
     const serialized = JSON.stringify(schema);
     return {
@@ -116,6 +126,9 @@ export function projectModelInputMetrics(
   return {
     messagesByRole,
     messageChars,
+    promptPrefixSha256: sha256(JSON.stringify([serializedStaticPrompt, serializedMessageHistory])),
+    staticPromptSha256: sha256(serializedStaticPrompt),
+    messageHistorySha256: sha256(serializedMessageHistory),
     systemPromptChars,
     ...(systemInstructions.length > 0
       ? {
@@ -156,6 +169,9 @@ export function readModelInputMetrics(
     !isNonNegativeInteger(roles.assistant) ||
     !isNonNegativeInteger(roles.tool) ||
     !isNonNegativeInteger(metrics.messageChars) ||
+    (metrics.promptPrefixSha256 !== undefined && !isSha256(metrics.promptPrefixSha256)) ||
+    (metrics.staticPromptSha256 !== undefined && !isSha256(metrics.staticPromptSha256)) ||
+    (metrics.messageHistorySha256 !== undefined && !isSha256(metrics.messageHistorySha256)) ||
     !isNonNegativeInteger(metrics.systemPromptChars) ||
     (metrics.systemPromptSha256 !== undefined && !isSha256(metrics.systemPromptSha256)) ||
     (systemInstructions !== undefined &&
