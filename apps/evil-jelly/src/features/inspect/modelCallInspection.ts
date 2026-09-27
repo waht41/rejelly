@@ -11,11 +11,17 @@ export type ModelCallView = "balanced" | "tokens" | "latency" | "transport";
 export interface ModelCallInputInspection {
   messagesByRole: { system: number; user: number; assistant: number; tool: number };
   messageChars: number;
+  promptPrefixSha256?: string;
+  staticPromptSha256?: string;
+  messageHistorySha256?: string;
   systemPromptChars: number;
+  systemPromptSha256?: string;
+  systemInstructions?: Array<{ chars: number; sha256: string }>;
   toolResultChars: number;
   toolDefinitionCount: number;
   toolSchemaBytes: number;
-  toolDefinitions?: Array<{ name: string; schemaBytes: number }>;
+  toolSchemaSha256?: string;
+  toolDefinitions?: Array<{ name: string; schemaBytes: number; schemaSha256?: string }>;
 }
 
 export interface ModelCallInspection {
@@ -236,7 +242,9 @@ function notableCalls(
     .filter((candidate) => (candidate.uncachedTokens ?? 0) > 0)
     .sort((left, right) => (right.uncachedTokens ?? 0) - (left.uncachedTokens ?? 0))
     .slice(0, 3)) {
-    if ((call.cacheHitRate ?? 1) < 0.8) add(call, "cache miss");
+    if ((call.usage?.cacheReadTokens ?? 0) === 0) add(call, "cache miss");
+    else if ((call.cacheHitRate ?? 1) < 0.8)
+      add(call, `low cache hit (${((call.cacheHitRate ?? 0) * 100).toFixed(1)}%)`);
   }
 
   return [...selected.values()]

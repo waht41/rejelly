@@ -48,6 +48,9 @@ const events: SessionEvent[] = [
       input: {
         messagesByRole: { system: 1, user: 1, assistant: 0, tool: 0 },
         messageChars: 800,
+        promptPrefixSha256: "a".repeat(64),
+        staticPromptSha256: "b".repeat(64),
+        messageHistorySha256: "c".repeat(64),
         systemPromptChars: 500,
         toolResultChars: 0,
         toolDefinitionCount: 1,
@@ -177,9 +180,36 @@ describe("Model Call inspection", () => {
     const rendered = renderModelCallList(inspection);
     expect(rendered).toContain("Model calls");
     expect(rendered).toContain("Notable calls");
+    expect(rendered).toContain("duration  uncached  notes");
     expect(rendered).toContain("M2");
     expect(rendered).toContain("rate_limit, 2 retries");
+    expect(rendered).not.toMatch(/\d(?:\.\d+)?k uncached/);
     expect(rendered).not.toContain("Model: gpt-test");
+  });
+
+  it("distinguishes partial cache hits from full cache misses in notable calls", () => {
+    const partial = projectModelCallList(meta, events);
+    expect(partial.notableCalls.find(({ call }) => call.address === "M3")?.reasons).toContain(
+      "low cache hit (20.0%)",
+    );
+    expect(partial.notableCalls.find(({ call }) => call.address === "M1")).toBeUndefined();
+    expect(renderModelCallList(partial)).toContain("uncached input");
+    const renderedInput = renderModelCallInspection(partial.calls[0], { input: true });
+    expect(renderedInput).toContain("prompt prefix");
+    expect(renderedInput).toContain("static prompt");
+    expect(renderedInput).toContain("message history");
+    expect(renderedInput).toContain("system sha256");
+
+    const withoutCache = events.map((entry) =>
+      entry.type === "model_call_completed" && entry.spanId === "model-1"
+        ? { ...entry, usage: { ...entry.usage!, cacheReadTokens: 0 } }
+        : entry,
+    );
+    const missed = projectModelCallList(meta, withoutCache);
+    expect(missed.notableCalls.find(({ call }) => call.address === "M1")?.reasons).toContain(
+      "cache miss",
+    );
+    expect(renderModelCallList(missed)).toContain("low cache hit (20.0%)");
   });
 
   it("lists every Turn call and supports Session-global ranges and profiles", () => {

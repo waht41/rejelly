@@ -166,12 +166,15 @@ describe("Segment inspection", () => {
             messagesByRole: { system: 1, user: 2, assistant: 1, tool: 0 },
             messageChars: 417,
             systemPromptChars: 400,
+            systemPromptSha256: "a".repeat(64),
+            systemInstructions: [{ chars: 400, sha256: "b".repeat(64) }],
             toolResultChars: 0,
             toolDefinitionCount: 2,
             toolSchemaBytes: 800,
+            toolSchemaSha256: "c".repeat(64),
             toolDefinitions: [
-              { name: "edit_file", schemaBytes: 500 },
-              { name: "read_file", schemaBytes: 300 },
+              { name: "edit_file", schemaBytes: 500, schemaSha256: "d".repeat(64) },
+              { name: "read_file", schemaBytes: 300, schemaSha256: "e".repeat(64) },
             ],
           },
           usedTools: true,
@@ -198,16 +201,21 @@ describe("Segment inspection", () => {
         { kind: "tool_definitions", tokens: 131, estimatedTokens: 200, share: 0.655 },
         { kind: "prior_conversation", tokens: 3, estimatedTokens: 4, share: 0.015 },
       ],
+      systemInstructions: [{ address: "S1", chars: 400, sha256: "b".repeat(64) }],
       toolDefinitions: [
-        { name: "edit_file", tokens: 82 },
-        { name: "read_file", tokens: 49 },
+        { name: "edit_file", tokens: 82, sha256: "d".repeat(64) },
+        { name: "read_file", tokens: 49, sha256: "e".repeat(64) },
       ],
     });
     if (inspection.type !== "initial_context_inspection_v1") {
       throw new Error("expected Initial context inspection");
     }
     const rendered = renderInitialContextInspection(inspection);
+    expect(rendered).toContain("System instructions");
+    expect(rendered).toContain("aaaaaaaaaaaa");
+    expect(rendered).toContain("bbbbbbbbbbbb");
     expect(rendered).toContain("Tool definitions (share of reconciled Tool definitions)");
+    expect(rendered).toContain("dddddddddddd");
     expect(rendered).toContain("Reconciliation delta: -104 tokens");
     expect(rendered).not.toMatch(/-\d+\.\d+%/);
     expect(inspection.components.reduce((sum, component) => sum + component.tokens, 0)).toBe(200);

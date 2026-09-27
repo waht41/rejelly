@@ -27,6 +27,10 @@ function percentage(value: number | undefined): string {
   return value === undefined ? "-" : `${(value * 100).toFixed(1)}%`;
 }
 
+function shortSha256(value: string | undefined): string {
+  return value?.slice(0, 12) ?? "-";
+}
+
 function row(values: readonly string[], widths: readonly number[]): string {
   return values.map((value, index) => value.padStart(widths[index])).join("  ");
 }
@@ -172,7 +176,7 @@ export function renderModelCallList(
       "",
       `  cache read            ${compact(summary.cacheReadTokens)}`,
       `  cache write           ${compact(summary.cacheWriteTokens)}`,
-      `  uncached              ${compact(summary.prompt.uncachedTokens)}`,
+      `  uncached input        ${compact(summary.prompt.uncachedTokens)}`,
       `  weighted hit          ${percentage(summary.cacheHitRate)}`,
       "",
       `  duration              ${duration(summary.durationMs)}`,
@@ -184,11 +188,16 @@ export function renderModelCallList(
     );
     if (inspection.notableCalls.length === 0) lines.push("  (none)");
     else {
+      const widths = [5, 5, 8, 8];
+      lines.push(`  ${row(["#", "turn", "duration", "uncached"], widths)}  notes`);
       for (const notable of inspection.notableCalls) {
         const call = notable.call;
         const turn = call.turnNumber ? `T${call.turnNumber}` : "-";
         lines.push(
-          `  ${call.address.padEnd(5)} ${turn.padEnd(5)} ${duration(call.durationMs).padStart(8)}  ${compact(call.uncachedTokens).padStart(8)} uncached  ${notable.reasons.join(", ")}`,
+          `  ${row(
+            [call.address, turn, duration(call.durationMs), compact(call.uncachedTokens)],
+            widths,
+          )}  ${notable.reasons.join(", ")}`,
         );
       }
     }
@@ -261,19 +270,35 @@ export function renderModelCallInspection(
       const input = call.input;
       lines.push(
         detailLine("message chars", integer(input.messageChars)),
+        detailLine("prompt prefix", shortSha256(input.promptPrefixSha256)),
+        detailLine("static prompt", shortSha256(input.staticPromptSha256)),
+        detailLine("message history", shortSha256(input.messageHistorySha256)),
         detailLine("system prompt", `${integer(input.systemPromptChars)} chars`),
+        detailLine("system sha256", shortSha256(input.systemPromptSha256)),
         detailLine("tool results", `${integer(input.toolResultChars)} chars`),
         detailLine("tool schemas", `${integer(input.toolSchemaBytes)} bytes`),
+        detailLine("tool sha256", shortSha256(input.toolSchemaSha256)),
         detailLine("tool definitions", integer(input.toolDefinitionCount)),
         detailLine(
           "messages by role",
           `system ${input.messagesByRole.system}, user ${input.messagesByRole.user}, assistant ${input.messagesByRole.assistant}, tool ${input.messagesByRole.tool}`,
         ),
       );
+      if (input.systemInstructions?.length) {
+        lines.push("", "  System instructions");
+        for (const [index, instruction] of input.systemInstructions.entries()) {
+          lines.push(
+            `    S${index + 1}`.padEnd(32) +
+              `${integer(instruction.chars).padStart(8)} chars  ${shortSha256(instruction.sha256)}`,
+          );
+        }
+      }
       if (input.toolDefinitions?.length) {
         lines.push("", "  Tool definitions");
         for (const tool of input.toolDefinitions)
-          lines.push(`    ${tool.name.padEnd(28)} ${integer(tool.schemaBytes)} bytes`);
+          lines.push(
+            `    ${tool.name.padEnd(28)} ${integer(tool.schemaBytes).padStart(8)} bytes  ${shortSha256(tool.schemaSha256)}`,
+          );
       }
     }
   }
