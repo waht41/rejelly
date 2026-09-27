@@ -2,4 +2,4 @@
 "@rejelly/evil-jelly": patch
 ---
 
-Clarify model-call cache reporting in `evil inspect --models`: reserve "cache miss" for zero cache reads, show the hit rate for partial low-cache-hit calls, and label the summary's uncached tokens as uncached input.
+Improve model-call diagnostics in `evil inspect --models`: distinguish zero cache reads from partial low-cache hits, clarify table labels and headings, and record and display SHA-256 fingerprints for prompt prefixes, message history, system instructions, and tool schemas.
