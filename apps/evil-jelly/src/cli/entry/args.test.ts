@@ -621,6 +621,46 @@ describe("parseCliArgs", () => {
     ).toMatchObject({ kind: "inspect", sessionStore: expected });
   });
 
+  it("parses --result-json for a durable headless run", () => {
+    const args = parseCliArgs([
+      "node",
+      "evil",
+      "--headless",
+      "--input",
+      "hello",
+      "--session-store",
+      "portable-session-store",
+      "--result-json",
+      "run-result.json",
+    ]);
+    expect(args).toMatchObject({
+      kind: "unified",
+      headless: true,
+      sessionStore: path.resolve("portable-session-store"),
+      resultJson: path.resolve("run-result.json"),
+    });
+  });
+
+  it("requires --session-store when --result-json is selected", () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+
+    expect(() =>
+      parseCliArgs([
+        "node",
+        "evil",
+        "--headless",
+        "--input",
+        "hello",
+        "--result-json",
+        "run-result.json",
+      ]),
+    ).toThrow("exit 1");
+    expect(console.error).toHaveBeenLastCalledWith("--result-json requires --session-store <dir>");
+  });
+
   it("allows --session-store to opt headless runs into durable recording", () => {
     const args = parseCliArgs([
       "node",

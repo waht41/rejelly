@@ -200,6 +200,26 @@ async function main() {
           appVersion: getCliVersion(),
           devtool: args.devtool,
           sessionStore: args.sessionStore,
+          resultJsonPath: args.resultJson,
+          writeResultFile: async (filePath, content) => {
+            const [{ mkdir, rename, rm, writeFile }, path, { randomUUID }] = await Promise.all([
+              import("node:fs/promises"),
+              import("node:path"),
+              import("node:crypto"),
+            ]);
+            await mkdir(path.dirname(filePath), { recursive: true });
+            const temporaryPath = path.join(
+              path.dirname(filePath),
+              `.${path.basename(filePath)}.${randomUUID()}.tmp`,
+            );
+            try {
+              await writeFile(temporaryPath, content, "utf8");
+              await rename(temporaryPath, filePath);
+            } catch (error) {
+              await rm(temporaryPath, { force: true }).catch(() => undefined);
+              throw error;
+            }
+          },
           createModel: () =>
             createOpenAIModelFromEnv({
               connectionRetry: args.headless ? "bounded" : "unbounded",

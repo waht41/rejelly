@@ -366,6 +366,7 @@ pnpm typecheck      # TypeScript checking
 - `--mock-inputs`: with `--mock`, enqueue user inputs recovered from the trace. Requires `--mock` and cannot be combined with `--input`.
 - `--headless`: run UnifiedAgent once without Ink. Requires `--input` and cannot be combined with `--resume`, `--snapshot`, or `--mock`.
 - `--auto-accept`: accept tool confirmations in headless test/evaluation runs. Requires `--headless`.
+- `--result-json <path>`: write a versioned machine-readable headless run summary with Session, model, token, tool, output, and error facts. Requires `--headless` and `--session-store`.
 - `--resume [sessionId]`: resume a saved local session by id, or omit the id to choose from this workspace's sessions. Cannot be combined with `--snapshot`, `--mock`, or `--headless`.
 - `--input <text>`: supply the first user input without prompting; required by `--headless`.
 - **`init --base-url <url>`**: save `OPENAI_BASE_URL` alongside the API key in `~/.evil-jelly/.env`.

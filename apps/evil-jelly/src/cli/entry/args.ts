@@ -220,6 +220,9 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
   if (runArgs.headless && profileSelectors?.includes("composer")) {
     failArgs("--profile composer requires the interactive Ink interface");
   }
+  if (runArgs.resultJson && !common.sessionStore) {
+    failArgs("--result-json requires --session-store <dir>");
+  }
   return {
     ...common,
     ...runArgs,

@@ -29,6 +29,8 @@ export interface RunUnifiedOptions {
   appVersion: string;
   devtool: boolean;
   sessionStore?: string;
+  resultJsonPath?: string;
+  writeResultFile: (filePath: string, content: string) => Promise<void>;
   createModel: () => ModelAdapter;
   createBackgroundBindings: (options?: { autoAcceptWrite?: boolean }) => EvilJellyBindings;
   createInteractiveBindings: (options: {
@@ -76,6 +78,9 @@ export async function runUnified(options: RunUnifiedOptions): Promise<void> {
       enableReview: options.review || env.REJELLY_ENABLE_REVIEW,
       appVersion,
       sessionStorage,
+      sessionStoreRoot: options.sessionStore,
+      resultJsonPath: options.resultJsonPath,
+      writeResultFile: options.writeResultFile,
     });
     process.exit(process.exitCode ?? 0);
   }
