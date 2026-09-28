@@ -67,6 +67,29 @@ describe("runtime session resume", () => {
     expect(runControl.loop.take()).toEqual({ type: "none" });
   });
 
+  it("uses the selected Session store for explicit and picker resumes", async () => {
+    mocks.loadSession.mockResolvedValue(session("other", 1));
+    mocks.listSessions.mockResolvedValue([session("current", 2), session("other", 1)]);
+    const { host } = createHost("other");
+    const storage = { sessionsRoot: "/portable/sessions", blobRoot: "/portable/blobs" };
+
+    await expect(
+      tryRequestResume(
+        "/resume other",
+        "current",
+        host,
+        createInteractiveRunControl().loop,
+        storage,
+      ),
+    ).resolves.toBe(true);
+    expect(mocks.loadSession).toHaveBeenCalledWith("/workspace", "other", storage);
+
+    await expect(
+      tryRequestResume("/resume", "current", host, createInteractiveRunControl().loop, storage),
+    ).resolves.toBe(true);
+    expect(mocks.listSessions).toHaveBeenCalledWith("/workspace", storage);
+  });
+
   it("excludes the current session from the picker", async () => {
     mocks.listSessions.mockResolvedValue([session("current", 2), session("other", 1)]);
     const { host, requestChoice } = createHost("other");

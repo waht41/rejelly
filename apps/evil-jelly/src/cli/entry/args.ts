@@ -104,6 +104,13 @@ function registerSharedCommandArgs(commands: {
     );
   }
 
+  for (const command of [unified, inspect]) {
+    command.option(
+      "--session-store <dir>",
+      "Session store root containing sessions/ and blobs/; defaults to ~/.evil-jelly",
+    );
+  }
+
   for (const command of [unified, audit]) {
     command
       .option(
@@ -176,6 +183,7 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
     envFile: resolveOptionalString(options.env),
     review: Boolean(options.review),
     workspace: resolveOptionalPath(options.workspace),
+    sessionStore: resolveOptionalPath(options.sessionStore),
     profileSelectors,
     settings: {
       ...auditSettingsOverrides(options),
@@ -211,6 +219,9 @@ export function parseCliArgs(argv: string[] = process.argv): ParsedEvilJellyArgs
   const runArgs = parseUnifiedRunArgs(args, options);
   if (runArgs.headless && profileSelectors?.includes("composer")) {
     failArgs("--profile composer requires the interactive Ink interface");
+  }
+  if (runArgs.headless && common.sessionStore) {
+    failArgs("--session-store is not yet supported with --headless session recording");
   }
   return {
     ...common,

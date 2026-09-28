@@ -9,6 +9,17 @@ export function resolveSessionsRoot(): string {
   return path.join(resolveGlobalJellyDir(), "sessions");
 }
 
+/** Resolve the journal and content-addressed blob roots inside one portable Session store. */
+export function resolveSessionStorePaths(sessionStoreRoot: string): {
+  sessionsRoot: string;
+  blobRoot: string;
+} {
+  return {
+    sessionsRoot: path.join(sessionStoreRoot, "sessions"),
+    blobRoot: path.join(sessionStoreRoot, "blobs"),
+  };
+}
+
 /**
  * Per-workspace bucket: <sanitized-basename>-<sha1(absRoot)[0..8]>.
  * The naming format matches memory buckets, but the identity stays workspace-local.

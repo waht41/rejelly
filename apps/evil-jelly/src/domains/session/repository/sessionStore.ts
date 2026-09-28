@@ -8,7 +8,12 @@
 
 import fs from "node:fs";
 import type { SessionStoragePaths } from "../journal/sessionJsonlReader";
-import { generateSessionId, isValidSessionId, resolveWorkspaceDir } from "../journal/sessionPaths";
+import {
+  generateSessionId,
+  isValidSessionId,
+  resolveSessionStorePaths,
+  resolveWorkspaceDir,
+} from "../journal/sessionPaths";
 import type {
   SessionBudget,
   SessionContextTokenAnchor,
@@ -25,9 +30,10 @@ import { type SessionReadResult, SessionStoreReadError } from "./sessionReadResu
 import { readV2Session, readV2SessionMetaFast, readV2SessionMetaFull } from "./sessionV2Store";
 import { readV3Session, readV3SessionMetaFast, readV3SessionMetaFull } from "./sessionV3Store";
 
-export { generateSessionId };
+export { generateSessionId, resolveSessionStorePaths };
 export type {
   LegacyMigrationOptions,
+  SessionStoragePaths,
   SessionBudget,
   SessionContextTokenAnchor,
   SessionMeta,

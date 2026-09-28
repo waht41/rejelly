@@ -10,6 +10,7 @@ import type { SessionRecorder } from "../../domains/session/recorder/sessionReco
 import type {
   SessionBudget,
   SessionContextTokenAnchor,
+  SessionStoragePaths,
 } from "../../domains/session/repository/sessionStore";
 import {
   SKILL_RUNTIME_PROVIDER_KEY,
@@ -62,6 +63,8 @@ export interface MainCliAgentProps extends EvilJellyBindings {
   seedContext?: Message[];
   /** Session image store consulted only when a model policy materializes durable locators. */
   sessionBlobRoot?: string;
+  /** Journal/blob roots used by runtime /resume discovery and loading. */
+  sessionStorage?: SessionStoragePaths;
   /** Cumulative usage carried back from a resumed session, used as the /status base. */
   seedBudget?: SessionBudget;
   /** Resume-validated association between seedContext and the latest provider prompt count. */
@@ -236,6 +239,7 @@ async function handleResume(runtime: RouterRuntime, rawInput: string): Promise<b
       runtime.props.sessionId,
       runtime.host,
       runtime.props.runLoopControl,
+      runtime.props.sessionStorage,
     ))
   ) {
     return false;

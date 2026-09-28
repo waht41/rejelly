@@ -38,6 +38,7 @@ async function main() {
     const { runInspect } = await import("./entry/inspect-run/runInspect");
     await runInspect({
       sessionId: args.inspectSessionId,
+      sessionStore: args.sessionStore,
       json: args.inspectJson,
       allWorkspaces: args.inspectAllWorkspaces,
       turnId: args.inspectTurnId,
@@ -198,6 +199,7 @@ async function main() {
           review: args.review,
           appVersion: getCliVersion(),
           devtool: args.devtool,
+          sessionStore: args.sessionStore,
           createModel: () =>
             createOpenAIModelFromEnv({
               connectionRetry: args.headless ? "bounded" : "unbounded",
