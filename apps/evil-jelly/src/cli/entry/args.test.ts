@@ -621,26 +621,21 @@ describe("parseCliArgs", () => {
     ).toMatchObject({ kind: "inspect", sessionStore: expected });
   });
 
-  it("rejects --session-store in headless mode until durable recording is supported", () => {
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
-    vi.spyOn(process, "exit").mockImplementation((code) => {
-      throw new Error(`exit ${String(code)}`);
+  it("allows --session-store to opt headless runs into durable recording", () => {
+    const args = parseCliArgs([
+      "node",
+      "evil",
+      "--headless",
+      "--input",
+      "hello",
+      "--session-store",
+      "portable-session-store",
+    ]);
+    expect(args).toMatchObject({
+      kind: "unified",
+      headless: true,
+      sessionStore: path.resolve("portable-session-store"),
     });
-
-    expect(() =>
-      parseCliArgs([
-        "node",
-        "evil",
-        "--headless",
-        "--input",
-        "hello",
-        "--session-store",
-        "portable-session-store",
-      ]),
-    ).toThrow("exit 1");
-    expect(console.error).toHaveBeenLastCalledWith(
-      "--session-store is not yet supported with --headless session recording",
-    );
   });
 
   it("parses --headless --input as the direct UnifiedAgent headless mode", () => {

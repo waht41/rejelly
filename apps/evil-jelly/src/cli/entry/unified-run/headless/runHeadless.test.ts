@@ -10,8 +10,20 @@ const mocks = vi.hoisted(() => ({
   runWithReview: vi.fn(),
   buildSkillRuntime: vi.fn(),
   formatSkillSummary: vi.fn(),
+  openSessionRecorder: vi.fn(),
+  observeSessionRecorder: vi.fn(),
 }));
 
+vi.mock("../../../../domains/session/repository/sessionStore", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../../domains/session/repository/sessionStore")>()),
+  generateSessionId: () => "session-id",
+}));
+vi.mock("../../../../domains/session/recorder/sessionRecorder", () => ({
+  openSessionRecorder: mocks.openSessionRecorder,
+}));
+vi.mock("../../../../domains/session/recorder/sessionObservationRecorder", () => ({
+  observeSessionRecorder: mocks.observeSessionRecorder,
+}));
 vi.mock("../../../runtime/traceId", () => ({ generateTraceId: () => "trace-id" }));
 vi.mock("../../../skill-runtime/configuredRuntime", () => ({
   buildConfiguredSkillRuntimeSnapshot: mocks.buildSkillRuntime,
@@ -56,6 +68,48 @@ describe("runHeadless", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.formatSkillSummary.mockReturnValue("Loaded 1 local Skill.");
+  });
+
+  it("records headless runs in the selected portable Session store", async () => {
+    mocks.runWithReview.mockResolvedValue(undefined);
+    mocks.buildSkillRuntime.mockResolvedValue({ snapshot: skillSnapshot(), diagnostics: [] });
+    const recorder = {
+      ended: false,
+      endSegment: vi.fn(),
+      close: vi.fn(),
+    };
+    mocks.openSessionRecorder.mockResolvedValue(recorder);
+    mocks.observeSessionRecorder.mockReturnValue(recorder);
+    const logSystemEvent = vi.fn();
+
+    await runHeadless({ logSystemEvent } as unknown as EvilJellyBindings, {
+      model: { id: "test-model", provider: "openai" } as ModelAdapter,
+      userInput: "hello",
+      appVersion: "1.2.3",
+      sessionStorage: {
+        sessionsRoot: "/portable/sessions",
+        blobRoot: "/portable/blobs",
+      },
+    });
+
+    expect(mocks.openSessionRecorder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "session-id",
+        traceId: "trace-id",
+        appVersion: "1.2.3",
+        modelId: "test-model",
+        provider: "openai",
+        sessionsRoot: "/portable/sessions",
+        blobRoot: "/portable/blobs",
+      }),
+    );
+    expect(logSystemEvent).toHaveBeenCalledWith("[Headless] Session ID: session-id\n");
+    expect(recorder.endSegment).toHaveBeenCalledWith({ status: "completed", reason: "exit" });
+    expect(recorder.close).toHaveBeenCalledOnce();
+    expect(mocks.runWithReview.mock.calls[0]?.[0].runWithOptions.trace.attributes).toMatchObject({
+      "evil_jelly.headless": true,
+      "session.id": "session-id",
+    });
   });
 
   it("uses the configured Skill snapshot for a direct headless run", async () => {

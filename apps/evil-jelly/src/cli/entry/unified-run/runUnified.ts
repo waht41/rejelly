@@ -74,6 +74,8 @@ export async function runUnified(options: RunUnifiedOptions): Promise<void> {
       model: options.createModel(),
       userInput: seedInput,
       enableReview: options.review || env.REJELLY_ENABLE_REVIEW,
+      appVersion,
+      sessionStorage,
     });
     process.exit(process.exitCode ?? 0);
   }
