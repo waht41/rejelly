@@ -10,6 +10,8 @@ export interface CommonParsedArgs {
   review: boolean;
   /** Resolved absolute path when --workspace is set (agent workspace fs policy root). */
   workspace: string | undefined;
+  /** Optional portable Session store root containing sessions/ and blobs/. */
+  sessionStore: string | undefined;
   /** Per-invocation settings overrides (seeded into initSettings at the composition root). */
   settings: SettingsCliOverrides;
   /** Explicit profile views selected for this invocation; undefined defers to the environment. */

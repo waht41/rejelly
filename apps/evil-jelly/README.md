@@ -359,12 +359,14 @@ pnpm typecheck      # TypeScript checking
 - `--profile <selector>`: enable comma-separated diagnostic views. Startup selectors are `startup`, `startup:bootstrap`, `startup:imports`, and `startup:ink`. Interactive `composer` profiling shows a throttled summary for the current Left Arrow input burst below the prompt, separates the initial key-repeat delay from steady-state gaps, retains the last completed burst while freezing its displayed idle age after ten seconds, and emits a machine-readable report after Ink exits; Audit and headless runs reject it.
 - `--devtool`: compatibility shortcut that adds the dynamic `evil.devtool` server to the interactive coding run. It uses the same MCP runtime and gateway as configured servers; Audit and headless runs reject it.
 - `--doc-map <path>`: workspace-relative doc-map for doc-drift validation. Defaults to `.evil-jelly/doc-map.jsonc`.
-- `--workspace <dir>`: workspace root for `.evil-jelly/` configuration, audit output, session data, and relative Agent tool paths. Defaults to the current working directory; relative paths are resolved from the process startup directory. File tools can use outside paths when the filesystem access policy grants or approves them.
+- `--workspace <dir>`: workspace root for `.evil-jelly/` configuration, audit output, session identity, and relative Agent tool paths. Defaults to the current working directory; relative paths are resolved from the process startup directory. File tools can use outside paths when the filesystem access policy grants or approves them.
+- `--session-store <dir>`: portable Session store root containing `sessions/` and `blobs/`. Interactive runs and `evil inspect` default to `~/.evil-jelly`; passing it to `--headless` enables durable recording for that one-shot run.
 - `--snapshot <traceId>`: restore a snapshot from a Review trace before entering the session. Mutually exclusive with `--mock`, `--resume`, and `--headless`.
 - `--mock <traceId>`: replay an interactive session from a Review trace's model output and snapshot cache. Mutually exclusive with `--snapshot`, `--resume`, and `--headless`.
 - `--mock-inputs`: with `--mock`, enqueue user inputs recovered from the trace. Requires `--mock` and cannot be combined with `--input`.
 - `--headless`: run UnifiedAgent once without Ink. Requires `--input` and cannot be combined with `--resume`, `--snapshot`, or `--mock`.
 - `--auto-accept`: accept tool confirmations in headless test/evaluation runs. Requires `--headless`.
+- `--result-json <path>`: write a versioned machine-readable headless run summary with Session, model, token, tool, output, and error facts. Requires `--headless` and `--session-store`.
 - `--resume [sessionId]`: resume a saved local session by id, or omit the id to choose from this workspace's sessions. Cannot be combined with `--snapshot`, `--mock`, or `--headless`.
 - `--input <text>`: supply the first user input without prompting; required by `--headless`.
 - **`init --base-url <url>`**: save `OPENAI_BASE_URL` alongside the API key in `~/.evil-jelly/.env`.

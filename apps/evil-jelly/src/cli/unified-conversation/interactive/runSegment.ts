@@ -245,6 +245,14 @@ export async function runEvilJellyHost(
           seedMcpState: options.seedMcpState,
           resolveMcpUserInput: options.resolveMcpUserInput,
           sessionBlobRoot: options.session?.blobRoot,
+          sessionStorage: options.session
+            ? {
+                ...(options.session.sessionsRoot
+                  ? { sessionsRoot: options.session.sessionsRoot }
+                  : {}),
+                ...(options.session.blobRoot ? { blobRoot: options.session.blobRoot } : {}),
+              }
+            : undefined,
           isolateSessionState: options.isolateSessionState,
           sessionRecorder: recorder,
           mcpBindingFactory: options.mcpBindingFactory,

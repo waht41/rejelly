@@ -1,5 +1,6 @@
 import type { ModelAdapter } from "@rejelly/core";
 import { createDevtoolMcpDesiredServer } from "../../../domains/mcp/configuration/configuration";
+import { resolveSessionStorePaths } from "../../../domains/session/repository/sessionStore";
 import { loadMockReplayFromTraceId } from "../../../features/replay/mock/mockFromTrace";
 import {
   env,
@@ -27,6 +28,9 @@ export interface RunUnifiedOptions {
   review: boolean;
   appVersion: string;
   devtool: boolean;
+  sessionStore?: string;
+  resultJsonPath?: string;
+  writeResultFile: (filePath: string, content: string) => Promise<void>;
   createModel: () => ModelAdapter;
   createBackgroundBindings: (options?: { autoAcceptWrite?: boolean }) => EvilJellyBindings;
   createInteractiveBindings: (options: {
@@ -51,6 +55,9 @@ export interface RunUnifiedOptions {
 export async function runUnified(options: RunUnifiedOptions): Promise<void> {
   startupTimeline.mark("unified_run_entered");
   const { startup, appVersion } = options;
+  const sessionStorage = options.sessionStore
+    ? resolveSessionStorePaths(options.sessionStore)
+    : undefined;
   const dynamicMcpServers = options.devtool
     ? [createDevtoolMcpDesiredServer(`${new URL(getReviewEndpointFromEnv()).origin}/mcp`)]
     : [];
@@ -69,6 +76,11 @@ export async function runUnified(options: RunUnifiedOptions): Promise<void> {
       model: options.createModel(),
       userInput: seedInput,
       enableReview: options.review || env.REJELLY_ENABLE_REVIEW,
+      appVersion,
+      sessionStorage,
+      sessionStoreRoot: options.sessionStore,
+      resultJsonPath: options.resultJsonPath,
+      writeResultFile: options.writeResultFile,
     });
     process.exit(process.exitCode ?? 0);
   }
@@ -79,6 +91,7 @@ export async function runUnified(options: RunUnifiedOptions): Promise<void> {
       resume: startup.kind === "resume",
       resumeSessionId: startup.kind === "resume" ? startup.sessionId : undefined,
       appVersion,
+      sessionStorage,
     });
     startupTimeline.mark("session_resolved");
 
@@ -131,7 +144,7 @@ export async function runUnified(options: RunUnifiedOptions): Promise<void> {
       resumeSeed,
       mockSourceTraceId: mockReplay ? mockTraceId : undefined,
       isolateSessionState: Boolean(mockReplay),
-      session: { enabled: true, appVersion },
+      session: { enabled: true, appVersion, ...sessionStorage },
       dynamicMcpServers,
     });
   } finally {

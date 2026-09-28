@@ -99,6 +99,8 @@ describe("parseCliArgs", () => {
     expect(help).toContain("--top <number>");
     expect(help).toContain("--all-workspaces");
     expect(help).toContain("--workspace <dir>");
+    expect(help).toContain("--session-store <dir>");
+    expect(help).toContain("Session store root containing sessions/ and blobs/");
     expect(help).not.toContain("--api-key");
     expect(help).not.toContain("--env");
     expect(help).not.toContain("--profile");
@@ -600,6 +602,80 @@ describe("parseCliArgs", () => {
     expect(parseCliArgs(["node", "evil", "--env", "luna"]).envFile).toBe("luna");
     expect(parseCliArgs(["node", "evil", "init", "--env", "luna"]).envFile).toBe("luna");
     expect(parseCliArgs(["node", "evil"]).envFile).toBeUndefined();
+  });
+
+  it("resolves --session-store for interactive runs and Session inspection", () => {
+    const expected = path.resolve("portable-session-store");
+    expect(
+      parseCliArgs(["node", "evil", "--session-store", "portable-session-store"]),
+    ).toMatchObject({ kind: "unified", sessionStore: expected });
+    expect(
+      parseCliArgs([
+        "node",
+        "evil",
+        "inspect",
+        "session-1",
+        "--session-store",
+        "portable-session-store",
+      ]),
+    ).toMatchObject({ kind: "inspect", sessionStore: expected });
+  });
+
+  it("parses --result-json for a durable headless run", () => {
+    const args = parseCliArgs([
+      "node",
+      "evil",
+      "--headless",
+      "--input",
+      "hello",
+      "--session-store",
+      "portable-session-store",
+      "--result-json",
+      "run-result.json",
+    ]);
+    expect(args).toMatchObject({
+      kind: "unified",
+      headless: true,
+      sessionStore: path.resolve("portable-session-store"),
+      resultJson: path.resolve("run-result.json"),
+    });
+  });
+
+  it("requires --session-store when --result-json is selected", () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+
+    expect(() =>
+      parseCliArgs([
+        "node",
+        "evil",
+        "--headless",
+        "--input",
+        "hello",
+        "--result-json",
+        "run-result.json",
+      ]),
+    ).toThrow("exit 1");
+    expect(console.error).toHaveBeenLastCalledWith("--result-json requires --session-store <dir>");
+  });
+
+  it("allows --session-store to opt headless runs into durable recording", () => {
+    const args = parseCliArgs([
+      "node",
+      "evil",
+      "--headless",
+      "--input",
+      "hello",
+      "--session-store",
+      "portable-session-store",
+    ]);
+    expect(args).toMatchObject({
+      kind: "unified",
+      headless: true,
+      sessionStore: path.resolve("portable-session-store"),
+    });
   });
 
   it("parses --headless --input as the direct UnifiedAgent headless mode", () => {

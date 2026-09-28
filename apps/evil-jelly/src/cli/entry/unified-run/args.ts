@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { CAC, Command } from "cac";
 export type RunStartupArgs =
   | { kind: "fresh"; seedInput: string | undefined }
@@ -14,6 +15,8 @@ export type UnifiedRunCommandArgs = {
   autoAccept: boolean;
   /** Compatibility flag mapped to an ordinary dynamic MCP server at the composition root. */
   devtool: boolean;
+  /** Machine-readable headless invocation result path. */
+  resultJson?: string;
 };
 
 function failArgs(message: string): never {
@@ -50,6 +53,10 @@ export function registerUnifiedRunArgs(cli: CAC): Command {
     .option(
       "--auto-accept",
       "Accept tool confirmations; requires --headless (test/eval harness only)",
+    )
+    .option(
+      "--result-json <path>",
+      "Write a versioned machine-readable headless run result; requires --headless and --session-store",
     )
     .option(
       "--resume [sessionId]",
@@ -104,11 +111,16 @@ export function parseUnifiedRunArgs(
   const startup = resolveRunStartup(options);
   const headless = Boolean(options.headless);
   const autoAccept = Boolean(options.autoAccept);
+  const resultJsonValue = resolveOptionalString(options.resultJson);
+  const resultJson = resultJsonValue ? path.resolve(resultJsonValue) : undefined;
   if (headless && startup.kind !== "fresh") {
     failArgs("--headless cannot be combined with --resume, --snapshot, or --mock");
   }
   if (autoAccept && !headless) {
     failArgs("--auto-accept requires --headless");
+  }
+  if (resultJson && !headless) {
+    failArgs("--result-json requires --headless");
   }
   if (headless && options.devtool) {
     failArgs("--devtool is supported only by the interactive coding run");
@@ -123,5 +135,6 @@ export function parseUnifiedRunArgs(
     headless,
     autoAccept,
     devtool: Boolean(options.devtool),
+    ...(resultJson ? { resultJson } : {}),
   };
 }

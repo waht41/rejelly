@@ -3,7 +3,10 @@ import {
   findInspectSessionAcrossWorkspaces,
   locateInspectSession,
 } from "../../../domains/session/repository/sessionLocator";
-import { listSessions } from "../../../domains/session/repository/sessionStore";
+import {
+  listSessions,
+  resolveSessionStorePaths,
+} from "../../../domains/session/repository/sessionStore";
 import {
   type ModelCallView,
   projectModelCallInspection,
@@ -45,6 +48,7 @@ import { getWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
 
 export interface RunInspectOptions {
   sessionId?: string;
+  sessionStore?: string;
   json: boolean;
   allWorkspaces: boolean;
   turnId?: string;
@@ -117,15 +121,17 @@ async function printSegment(
 
 export async function runInspect(options: RunInspectOptions): Promise<void> {
   const currentWorkspaceRoot = getWorkspaceRoot();
-  const sessionId = options.sessionId ?? (await listSessions(currentWorkspaceRoot))[0]?.id;
+  const storage = options.sessionStore ? resolveSessionStorePaths(options.sessionStore) : undefined;
+  const sessionId = options.sessionId ?? (await listSessions(currentWorkspaceRoot, storage))[0]?.id;
   if (!sessionId) {
     throw new Error(`No durable Sessions found for workspace: ${currentWorkspaceRoot}`);
   }
 
   const location = options.allWorkspaces
-    ? await findInspectSessionAcrossWorkspaces(sessionId)
-    : await locateInspectSession(currentWorkspaceRoot, sessionId);
+    ? await findInspectSessionAcrossWorkspaces(sessionId, storage?.sessionsRoot)
+    : await locateInspectSession(currentWorkspaceRoot, sessionId, storage?.sessionsRoot);
   const stored = await readSessionEvents(location.workspaceRoot, location.sessionId, {
+    ...storage,
     journalVersion: location.journalVersion,
   });
   const inspection = projectSessionInspection(

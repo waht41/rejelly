@@ -10,6 +10,7 @@ import {
   type SessionBudget,
   type SessionContextTokenAnchor,
   type SessionRecord,
+  type SessionStoragePaths,
 } from "../../../domains/session/repository/sessionStore";
 import { countConversationTurns } from "../../../shared/conversation/compactionMessages";
 import { getWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
@@ -31,6 +32,7 @@ export async function tryRequestResume(
   currentSessionId: string | undefined,
   host: EvilJellyBindings,
   runLoopControl: ConversationLoopControl,
+  storage: SessionStoragePaths = {},
 ): Promise<boolean> {
   const arg = rawInput.slice("/resume".length).trim();
   const workspaceRoot = getWorkspaceRoot();
@@ -40,7 +42,7 @@ export async function tryRequestResume(
       host.logSystemEvent(`Session ${arg} is already current.\n`);
       return false;
     }
-    if (!(await loadSession(workspaceRoot, arg))) {
+    if (!(await loadSession(workspaceRoot, arg, storage))) {
       host.logSystemEvent(`No saved session "${arg}" for this workspace.\n`);
       return false;
     }
@@ -49,7 +51,7 @@ export async function tryRequestResume(
     return true;
   }
 
-  const sessions = (await listSessions(workspaceRoot)).filter(
+  const sessions = (await listSessions(workspaceRoot, storage)).filter(
     (session) => session.id !== currentSessionId,
   );
   if (sessions.length === 0) {
@@ -247,6 +249,7 @@ export async function resolveInitialSession(options: {
   resume: boolean;
   resumeSessionId: string | undefined;
   appVersion: string;
+  sessionStorage?: SessionStoragePaths;
 }): Promise<InitialSessionState> {
   let sessionId = generateSessionId();
   let resumeSeed: SessionResumeSeed | undefined;
@@ -256,6 +259,7 @@ export async function resolveInitialSession(options: {
     const record = await resolveResumeSession(workspaceRoot, options.resumeSessionId, {
       originator: "evil-jelly-cli",
       appVersion: options.appVersion,
+      ...options.sessionStorage,
     });
     if (record) {
       sessionId = record.meta.id;

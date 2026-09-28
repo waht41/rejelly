@@ -7,8 +7,14 @@
  */
 
 import fs from "node:fs";
-import type { SessionStoragePaths } from "../journal/sessionJsonlReader";
-import { generateSessionId, isValidSessionId, resolveWorkspaceDir } from "../journal/sessionPaths";
+import { readSessionEvents, type SessionStoragePaths } from "../journal/sessionJsonlReader";
+import {
+  generateSessionId,
+  isValidSessionId,
+  resolveSessionStorePaths,
+  resolveWorkspaceDir,
+} from "../journal/sessionPaths";
+import { isKnownSessionEvent } from "../model/sessionEvents";
 import type {
   SessionBudget,
   SessionContextTokenAnchor,
@@ -25,9 +31,10 @@ import { type SessionReadResult, SessionStoreReadError } from "./sessionReadResu
 import { readV2Session, readV2SessionMetaFast, readV2SessionMetaFull } from "./sessionV2Store";
 import { readV3Session, readV3SessionMetaFast, readV3SessionMetaFull } from "./sessionV3Store";
 
-export { generateSessionId };
+export { generateSessionId, resolveSessionStorePaths };
 export type {
   LegacyMigrationOptions,
+  SessionStoragePaths,
   SessionBudget,
   SessionContextTokenAnchor,
   SessionMeta,
@@ -35,6 +42,22 @@ export type {
 };
 
 export type LoadSessionOptions = SessionStoragePaths;
+
+/** Read the authoritative V3 event facts used by machine-readable run projections. */
+export async function readSessionFacts(
+  workspaceRoot: string,
+  sessionId: string,
+  options: SessionStoragePaths = {},
+) {
+  const stored = await readSessionEvents(workspaceRoot, sessionId, {
+    ...options,
+    journalVersion: 3,
+  });
+  return {
+    ...stored,
+    events: stored.events.filter(isKnownSessionEvent),
+  };
+}
 
 function throwReadFailure(
   result: Exclude<SessionReadResult<unknown>, { kind: "found" }>,
