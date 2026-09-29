@@ -32,7 +32,10 @@ export interface RunUnifiedOptions {
   resultJsonPath?: string;
   writeResultFile: (filePath: string, content: string) => Promise<void>;
   createModel: () => ModelAdapter;
-  createBackgroundBindings: (options?: { autoAcceptWrite?: boolean }) => EvilJellyBindings;
+  createBackgroundBindings: (options?: {
+    autoAcceptWrite?: boolean;
+    liveOutput?: "stream" | "committed-only";
+  }) => EvilJellyBindings;
   createInteractiveBindings: (options: {
     version: string;
     seedInput?: string;
@@ -72,16 +75,22 @@ export async function runUnified(options: RunUnifiedOptions): Promise<void> {
       process.exit(1);
     }
     await options.proxyReady;
-    await runHeadless(options.createBackgroundBindings({ autoAcceptWrite: options.autoAccept }), {
-      model: options.createModel(),
-      userInput: seedInput,
-      enableReview: options.review || env.REJELLY_ENABLE_REVIEW,
-      appVersion,
-      sessionStorage,
-      sessionStoreRoot: options.sessionStore,
-      resultJsonPath: options.resultJsonPath,
-      writeResultFile: options.writeResultFile,
-    });
+    await runHeadless(
+      options.createBackgroundBindings({
+        autoAcceptWrite: options.autoAccept,
+        liveOutput: "committed-only",
+      }),
+      {
+        model: options.createModel(),
+        userInput: seedInput,
+        enableReview: options.review || env.REJELLY_ENABLE_REVIEW,
+        appVersion,
+        sessionStorage,
+        sessionStoreRoot: options.sessionStore,
+        resultJsonPath: options.resultJsonPath,
+        writeResultFile: options.writeResultFile,
+      },
+    );
     process.exit(process.exitCode ?? 0);
   }
 

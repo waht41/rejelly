@@ -11,6 +11,8 @@ export interface BackgroundBindingsOptions {
   autoAcceptWrite?: boolean;
   /** Accept shell commands classified as read-only/auto; reject writes and higher-risk shell commands. */
   allowReadonlyShellCommands?: boolean;
+  /** Control whether transient assistant/tool output is written before committed log events. */
+  liveOutput?: "stream" | "committed-only";
   /** Pre-seeded getInput values for headless loops; falls back to empty string. */
   scriptedInputs?: string[];
 }
@@ -22,13 +24,15 @@ function createStubHostBindings(
   const {
     autoAcceptWrite = false,
     allowReadonlyShellCommands = false,
+    liveOutput = "stream",
     scriptedInputs = [],
   } = options;
   const inputQueue = [...scriptedInputs];
+  const streamLiveOutput = liveOutput === "stream";
   return {
     getInput: async () => textPromptInput(inputQueue.shift() ?? ""),
     printOut: (message: string) => {
-      process.stdout.write(message);
+      if (streamLiveOutput) process.stdout.write(message);
     },
     logUserMessage: (message: string) => {
       console.log(`[${logPrefix}][user] ${message}`);
@@ -36,10 +40,10 @@ function createStubHostBindings(
     logAssistantMessage: (message: string) => {
       console.log(`[${logPrefix}][assistant] ${message}`);
     },
-    // No live view to attribute output to, so shell chunks just go to stdout as
-    // they arrive — which is what a headless run wants anyway.
+    // Streaming hosts expose command chunks immediately. Committed-only hosts retain
+    // complete tool output in durable observations without duplicating it on stdout.
     appendToolOutput: (_toolCallId: string, chunk: string) => {
-      process.stdout.write(chunk);
+      if (streamLiveOutput) process.stdout.write(chunk);
     },
     logToolBlock: (block) => {
       console.log(`[${logPrefix}][tool] ${block.summary}`);
@@ -59,20 +63,18 @@ function createStubHostBindings(
     confirmTool: async (params) => {
       if (autoAcceptWrite) {
         if (params.type === "fs_write") {
-          console.log(
-            `[${logPrefix}] tool approval auto-accept: ${params.kind} ${params.filePath}`,
-          );
+          console.log(`[${logPrefix}][approval] auto-accept: ${params.kind} ${params.filePath}`);
         } else if (params.type === "fs_outside_access") {
           console.log(
-            `[${logPrefix}] tool approval auto-accept: outside ${params.access} ${params.targetPath}`,
+            `[${logPrefix}][approval] auto-accept: outside ${params.access} ${params.targetPath}`,
           );
         } else if (params.type === "shell_command") {
-          console.log(`[${logPrefix}] tool approval auto-accept: shell ${params.command}`);
+          console.log(`[${logPrefix}][approval] auto-accept: shell ${params.command}`);
         } else if (params.type === "mcp_access") {
-          console.log(`[${logPrefix}] tool approval auto-accept: MCP access ${params.serverId}`);
+          console.log(`[${logPrefix}][approval] auto-accept: MCP access ${params.serverId}`);
         } else {
           console.log(
-            `[${logPrefix}] tool approval auto-accept: MCP ${params.tool.serverId}/${params.tool.nativeToolName}`,
+            `[${logPrefix}][approval] auto-accept: MCP ${params.tool.serverId}/${params.tool.nativeToolName}`,
           );
         }
         return { action: "accept" };
@@ -82,22 +84,22 @@ function createStubHostBindings(
         params.type === "shell_command" &&
         classifyShellCommand(params.command) === "auto"
       ) {
-        console.log(`[${logPrefix}] tool approval auto-accept readonly shell: ${params.command}`);
+        console.log(`[${logPrefix}][approval] auto-accept readonly shell: ${params.command}`);
         return { action: "accept" };
       }
       if (params.type === "fs_write") {
-        console.warn(`[${logPrefix}] tool approval auto-reject: ${params.kind} ${params.filePath}`);
+        console.warn(`[${logPrefix}][approval] auto-reject: ${params.kind} ${params.filePath}`);
       } else if (params.type === "fs_outside_access") {
         console.warn(
-          `[${logPrefix}] tool approval auto-reject: outside ${params.access} ${params.targetPath}`,
+          `[${logPrefix}][approval] auto-reject: outside ${params.access} ${params.targetPath}`,
         );
       } else if (params.type === "shell_command") {
-        console.warn(`[${logPrefix}] tool approval auto-reject: shell ${params.command}`);
+        console.warn(`[${logPrefix}][approval] auto-reject: shell ${params.command}`);
       } else if (params.type === "mcp_access") {
-        console.warn(`[${logPrefix}] tool approval auto-reject: MCP access ${params.serverId}`);
+        console.warn(`[${logPrefix}][approval] auto-reject: MCP access ${params.serverId}`);
       } else {
         console.warn(
-          `[${logPrefix}] tool approval auto-reject: MCP ${params.tool.serverId}/${params.tool.nativeToolName}`,
+          `[${logPrefix}][approval] auto-reject: MCP ${params.tool.serverId}/${params.tool.nativeToolName}`,
         );
       }
       return { action: "reject" };
