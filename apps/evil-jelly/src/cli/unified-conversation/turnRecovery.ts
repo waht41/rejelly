@@ -15,7 +15,13 @@ export interface TurnRecoveryState {
 
 export type TurnExecutionResult =
   | { status: "completed" }
-  | { status: "failed" | "interrupted"; recovery: TurnRecoveryState };
+  | { status: "recoverable" | "interrupted"; recovery: TurnRecoveryState }
+  | {
+      status: "blocked";
+      message: string;
+      suggestedCommand?: string;
+      suggestedAction?: string;
+    };
 
 export const CONTINUE_PROMPT =
   "Continue the previous task using the available conversation and tool history. Verify the current state before repeating any action.";

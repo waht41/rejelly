@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { isAbortError, type Message } from "@rejelly/core";
+import { isAbortError, isModelCallError, type Message } from "@rejelly/core";
 import { createAuthorizedMcpBindingFactory } from "../../domains/mcp/management/chatAuthorization";
 import type { McpSessionControl } from "../../domains/mcp/management/sessionControl";
 import { memoryIdSchema } from "../../domains/memory/model/memorySchema";
@@ -294,16 +294,40 @@ export async function executeConversationTurn(
     if (runtime.sessionRecorder && activeTurnId && !turnClosureAttempted) {
       await closeTurnAfterFailure(runtime, activeTurnId, "error");
     }
-    return {
-      status: "failed",
-      recovery: {
-        status: "failed",
-        stage: recoveryStage,
-        message: formatPersistenceError(error),
-        toolActivity: recoveryStage === "agent" ? "unknown" : "none",
-        ...(activeTurnId ? { turnId: activeTurnId } : {}),
-        userMessage,
-      },
-    };
+    if (!isModelCallError(error)) {
+      throw error;
+    }
+    switch (error.code) {
+      case "connection_error":
+      case "timeout":
+      case "server_error":
+      case "rate_limit":
+        return {
+          status: "recoverable",
+          recovery: {
+            status: "failed",
+            stage: recoveryStage,
+            message: error.message,
+            toolActivity: recoveryStage === "agent" ? "unknown" : "none",
+            ...(activeTurnId ? { turnId: activeTurnId } : {}),
+            userMessage,
+          },
+        };
+      case "context_length":
+        return {
+          status: "blocked",
+          message: error.message,
+          suggestedCommand: "/compress",
+        };
+      case "auth_error":
+        return {
+          status: "blocked",
+          message: error.message,
+          suggestedAction:
+            "Fix the model credentials or endpoint configuration, then restart Evil.",
+        };
+      case "unknown":
+        throw error;
+    }
   }
 }

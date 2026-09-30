@@ -1,7 +1,13 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { AbortError, type Message, type ModelAdapter, type StreamEvent } from "@rejelly/core";
+import {
+  AbortError,
+  type Message,
+  type ModelAdapter,
+  ModelCallError,
+  type StreamEvent,
+} from "@rejelly/core";
 import { createMockModel } from "@rejelly/core/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { recordInitialTextInput } from "../../../domains/session/__tests__/sessionTestInput";
@@ -395,7 +401,10 @@ describe("non-TTY session lifecycle", () => {
       async *stream(messages): AsyncGenerator<StreamEvent> {
         modelCalls.push(messages.map((message) => ({ ...message })));
         if (callIndex++ === 0) {
-          throw new Error("provider unavailable");
+          throw new ModelCallError("provider unavailable", {
+            modelId: "recoverable-error-model",
+            code: "timeout",
+          });
         }
         yield { type: "text", content: "Recovered on the next turn." };
       },
@@ -436,6 +445,38 @@ describe("non-TTY session lifecycle", () => {
       ),
     ).toBe(true);
     expect(assistantMessages).toContain("Recovered on the next turn.");
+    expect(systemEvents).toContain("No failed or interrupted task is available to continue.\n");
+  });
+
+  it("keeps blocked model configuration failures in the router without offering recovery", async () => {
+    const systemEvents: string[] = [];
+    const bindings = createMemoryBindings(["Use the model", "/continue", "/exit"]);
+    bindings.logSystemEvent = (message) => systemEvents.push(message);
+    let callCount = 0;
+    const model: ModelAdapter = {
+      id: "blocked-auth-model",
+      async *stream(): AsyncGenerator<StreamEvent> {
+        yield* [] as StreamEvent[];
+        callCount += 1;
+        throw new ModelCallError("invalid API key", {
+          modelId: "blocked-auth-model",
+          code: "auth_error",
+        });
+      },
+    };
+
+    await runEvilJellyHost(bindings, {
+      runControl: createInteractiveRunControl(),
+      model,
+      sessionId: "blocked-auth",
+      sessionStartMode: "new",
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+    });
+
+    expect(callCount).toBe(1);
+    expect(systemEvents).toContain(
+      "\n[System] Current task cannot continue: invalid API key. Fix the model credentials or endpoint configuration, then restart Evil.\n",
+    );
     expect(systemEvents).toContain("No failed or interrupted task is available to continue.\n");
   });
 

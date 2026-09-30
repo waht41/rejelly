@@ -319,9 +319,21 @@ function applyTurnResult(runtime: RouterRuntime, result: TurnExecutionResult): v
     runtime.session.clearRecoveryState();
     return;
   }
+  if (result.status === "blocked") {
+    runtime.session.clearRecoveryState();
+    const nextStep = result.suggestedCommand
+      ? ` Run ${result.suggestedCommand} before trying again.`
+      : result.suggestedAction
+        ? ` ${result.suggestedAction}`
+        : "";
+    runtime.host.logSystemEvent(
+      `\n[System] Current task cannot continue: ${result.message}.${nextStep}\n`,
+    );
+    return;
+  }
   runtime.session.setRecoveryState(result.recovery);
   const label =
-    result.status === "failed" ? `failed: ${result.recovery.message}` : "was interrupted";
+    result.status === "recoverable" ? `failed: ${result.recovery.message}` : "was interrupted";
   const activityWarning =
     result.recovery.toolActivity === "unknown"
       ? " Some tool activity may have occurred; verify current state before repeating actions."
