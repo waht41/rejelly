@@ -27,6 +27,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     description:
       "Open the tool result picker; add a number to print one directly, e.g. /expand-tool #5",
   },
+  { name: "/continue", description: "Continue the latest failed or interrupted task" },
   { name: "/stop", description: "Interrupt the running task" },
   { name: "/exit", description: "Quit evil-jelly" },
 ];

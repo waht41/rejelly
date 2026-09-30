@@ -118,6 +118,7 @@ export function createSubmissionDispatcher(
       if (
         command === "/clear" ||
         command === "/compress" ||
+        command === "/continue" ||
         command === "/resume" ||
         command?.startsWith("/resume ")
       ) {
