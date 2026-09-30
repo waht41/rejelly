@@ -32,6 +32,7 @@ import {
   type PromptInput,
   promptInputCommandText,
   promptInputPlainText,
+  textPromptInput,
 } from "../../shared/model/prompt/promptInput";
 import { startupTimeline } from "../../shared/profile/startup/timeline";
 import { registerInterruptibleTask } from "../../shared/task-interruption/taskStack";
@@ -52,6 +53,7 @@ import {
   type SkillDoctorReport,
 } from "./skillsCommands";
 import { executeConversationTurn, type ResolveMcpUserInput } from "./turnExecution";
+import { CONTINUE_PROMPT, type TurnExecutionResult } from "./turnRecovery";
 
 export interface MainCliAgentProps extends EvilJellyBindings {
   runLoopControl: ConversationLoopControl;
@@ -90,6 +92,7 @@ type RouterIntent =
   | { kind: "clear" }
   | { kind: "status" }
   | { kind: "compress" }
+  | { kind: "continue" }
   | { kind: "resume"; rawInput: string }
   | { kind: "mcp"; rawInput: string }
   | { kind: "memory"; rawInput: string }
@@ -114,6 +117,7 @@ function classifyRouterIntent(promptInput: PromptInput): RouterIntent {
   if (normalized === "/clear") return { kind: "clear" };
   if (normalized === "/status") return { kind: "status" };
   if (normalized === "/compress") return { kind: "compress" };
+  if (normalized === "/continue") return { kind: "continue" };
   if (normalized === "/resume" || normalized?.startsWith("/resume ")) {
     return { kind: "resume", rawInput: commandText! };
   }
@@ -310,6 +314,67 @@ function formatPersistenceError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function applyTurnResult(runtime: RouterRuntime, result: TurnExecutionResult): void {
+  if (result.status === "completed") {
+    runtime.session.clearRecoveryState();
+    return;
+  }
+  runtime.session.setRecoveryState(result.recovery);
+  const label =
+    result.status === "failed" ? `failed: ${result.recovery.message}` : "was interrupted";
+  const activityWarning =
+    result.recovery.toolActivity === "unknown"
+      ? " Some tool activity may have occurred; verify current state before repeating actions."
+      : "";
+  runtime.host.logSystemEvent(
+    `\n[System] Current task ${label}. Returning to router.${activityWarning} Use /continue to continue the task.\n`,
+  );
+}
+
+async function runConversationTurn(
+  runtime: RouterRuntime,
+  promptInput: PromptInput,
+  userInput: string,
+): Promise<void> {
+  const activeCommands = createActiveTurnCommands({
+    showStatus: () => handleStatus(runtime),
+    handleSkills: (commandText) => handleSkills(runtime, commandText),
+    handleMemory: (commandText) => handleMemory(runtime, commandText),
+    handleMcp: (commandText) => handleMcp(runtime, commandText),
+    runAtSafeOutputBoundary: runtime.host.runAtSafeOutputBoundary,
+    logFailure: (error) =>
+      runtime.host.logSystemEvent(`Background command failed: ${formatPersistenceError(error)}\n`),
+  });
+  const disposeRunningCommands = setRunningCommandHandler(activeCommands.handle);
+  try {
+    const result = await executeConversationTurn(
+      {
+        host: runtime.host,
+        session: runtime.session,
+        sessionRecorder: runtime.props.sessionRecorder,
+        sessionId: runtime.props.sessionId,
+        sessionBlobRoot: runtime.props.sessionBlobRoot,
+        skillSnapshot: runtime.skillSnapshot,
+        memoryRuntime: runtime.memoryRuntime,
+        resolveMcpUserInput: runtime.props.resolveMcpUserInput,
+        mcpBindingFactory: runtime.props.mcpBindingFactory,
+        mcpSessionControl: runtime.props.mcpSessionControl,
+        runInterruptibleOperation: runInterruptibleConversationOperation,
+      },
+      promptInput,
+      userInput,
+    );
+    if (result.status === "completed") {
+      await activeCommands.waitForPending();
+      activeCommands.flushDeferred();
+    }
+    applyTurnResult(runtime, result);
+  } finally {
+    activeCommands.dispose();
+    disposeRunningCommands();
+  }
+}
+
 export const MainCliAgent = createAgent<MainCliAgentProps, void>({
   id: "evil_jelly_cli_router",
   handler: async (props) => {
@@ -367,6 +432,17 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
         case "compress":
           await handleCompress(runtime);
           return reborn();
+        case "continue": {
+          const recovery = session.recoveryState();
+          if (!recovery) {
+            host.logSystemEvent("No failed or interrupted task is available to continue.\n");
+            return reborn();
+          }
+          session.ensureHistoryIncludes(recovery.userMessage);
+          session.clearRecoveryState();
+          await runConversationTurn(runtime, textPromptInput(CONTINUE_PROMPT), CONTINUE_PROMPT);
+          return reborn();
+        }
         case "resume":
           if (await handleResume(runtime, intent.rawInput)) return;
           return reborn();
@@ -379,43 +455,9 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
         case "skills":
           await handleSkills(runtime, intent.rawInput);
           return reborn();
-        case "message": {
-          const activeCommands = createActiveTurnCommands({
-            showStatus: () => handleStatus(runtime),
-            handleSkills: (commandText) => handleSkills(runtime, commandText),
-            handleMemory: (commandText) => handleMemory(runtime, commandText),
-            handleMcp: (commandText) => handleMcp(runtime, commandText),
-            runAtSafeOutputBoundary: host.runAtSafeOutputBoundary,
-            logFailure: (error) =>
-              host.logSystemEvent(`Background command failed: ${formatPersistenceError(error)}\n`),
-          });
-          const disposeRunningCommands = setRunningCommandHandler(activeCommands.handle);
-          try {
-            await executeConversationTurn(
-              {
-                host,
-                session,
-                sessionRecorder: props.sessionRecorder,
-                sessionId: props.sessionId,
-                sessionBlobRoot: props.sessionBlobRoot,
-                skillSnapshot: runtime.skillSnapshot,
-                memoryRuntime,
-                resolveMcpUserInput: props.resolveMcpUserInput,
-                mcpBindingFactory: props.mcpBindingFactory,
-                mcpSessionControl: props.mcpSessionControl,
-                runInterruptibleOperation: runInterruptibleConversationOperation,
-              },
-              intent.promptInput,
-              intent.userInput,
-            );
-            await activeCommands.waitForPending();
-            activeCommands.flushDeferred();
-          } finally {
-            activeCommands.dispose();
-            disposeRunningCommands();
-          }
+        case "message":
+          await runConversationTurn(runtime, intent.promptInput, intent.userInput);
           return reborn();
-        }
       }
     } catch (error) {
       if (isAbortError(error)) {

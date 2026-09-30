@@ -26,6 +26,7 @@ import { materializeSkillAwareUserInput } from "../message-composer/message-mate
 import { memoryReferenceName } from "../message-composer/suggestions/semantic-reference/referenceNaming";
 import { drainSteers } from "../submission-dispatch/steerQueue";
 import type { ConversationSession } from "./conversationSession";
+import type { TurnExecutionResult, TurnRecoveryStage } from "./turnRecovery";
 
 export type ResolveMcpUserInput = (serverId: string) => {
   status: "selected" | "unavailable" | "disabled" | "untrusted";
@@ -174,9 +175,10 @@ export async function executeConversationTurn(
   runtime: ConversationTurnRuntime,
   promptInput: PromptInput,
   fallbackUserText: string,
-): Promise<void> {
+): Promise<TurnExecutionResult> {
   let submittedUserMessage: Message | undefined;
   let activeTurnId: string | undefined;
+  let recoveryStage: TurnRecoveryStage = "preparation";
   // Set before awaiting completeTurn: a partial append must not be retried as a second closure.
   let turnClosureAttempted = false;
 
@@ -215,6 +217,7 @@ export async function executeConversationTurn(
         })
       : undefined;
 
+    recoveryStage = "agent";
     const result = await runtime.runInterruptibleOperation("conversation_turn", (operationSignal) =>
       UnifiedAgent({
         message: submittedUserMessage!,
@@ -254,27 +257,53 @@ export async function executeConversationTurn(
       );
     }
     runtime.host.logAssistantMessage(result.reply);
+    if (result.interrupted) {
+      return {
+        status: "interrupted",
+        recovery: {
+          status: "interrupted",
+          stage: "agent",
+          message: "Task was interrupted before completion.",
+          toolActivity: "unknown",
+          turnId: activeTurnId,
+          userMessage: submittedUserMessage,
+        },
+      };
+    }
+    return { status: "completed" };
   } catch (error) {
+    const userMessage = submittedUserMessage ?? { role: "user", content: fallbackUserText };
     if (isAbortError(error)) {
-      const abortedReply = "Task has been interrupted by user.";
-      if (runtime.sessionRecorder && activeTurnId) {
-        if (!turnClosureAttempted) {
-          await closeTurnAfterFailure(runtime, activeTurnId, "interrupted");
-        }
-      } else {
-        runtime.session.appendTurn(
-          submittedUserMessage ?? { role: "user", content: fallbackUserText },
-          abortedReply,
-        );
+      if (runtime.sessionRecorder && activeTurnId && !turnClosureAttempted) {
+        await closeTurnAfterFailure(runtime, activeTurnId, "interrupted");
       }
-      runtime.host.logAssistantMessage(abortedReply);
-      runtime.host.logSystemEvent("\n[System] Current task aborted. Returning to router.\n");
-      return;
+      runtime.host.logAssistantMessage("Task has been interrupted by user.");
+      return {
+        status: "interrupted",
+        recovery: {
+          status: "interrupted",
+          stage: recoveryStage,
+          message: "Task was interrupted before completion.",
+          toolActivity: recoveryStage === "agent" ? "unknown" : "none",
+          ...(activeTurnId ? { turnId: activeTurnId } : {}),
+          userMessage,
+        },
+      };
     }
 
     if (runtime.sessionRecorder && activeTurnId && !turnClosureAttempted) {
       await closeTurnAfterFailure(runtime, activeTurnId, "error");
     }
-    throw error;
+    return {
+      status: "failed",
+      recovery: {
+        status: "failed",
+        stage: recoveryStage,
+        message: formatPersistenceError(error),
+        toolActivity: recoveryStage === "agent" ? "unknown" : "none",
+        ...(activeTurnId ? { turnId: activeTurnId } : {}),
+        userMessage,
+      },
+    };
   }
 }

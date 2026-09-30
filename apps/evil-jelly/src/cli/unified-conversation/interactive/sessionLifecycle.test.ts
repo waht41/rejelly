@@ -382,6 +382,63 @@ describe("non-TTY session lifecycle", () => {
     expect(compact?.seq).toBeLessThan(completed?.seq ?? 0);
   });
 
+  it("returns to the interactive router and continues from a task error", async () => {
+    const systemEvents: string[] = [];
+    const assistantMessages: string[] = [];
+    const modelCalls: Message[][] = [];
+    const bindings = createMemoryBindings(["Fail this turn", "/continue", "/continue", "/exit"]);
+    bindings.logSystemEvent = (message) => systemEvents.push(message);
+    bindings.logAssistantMessage = (message) => assistantMessages.push(message);
+    let callIndex = 0;
+    const model: ModelAdapter = {
+      id: "recoverable-error-model",
+      async *stream(messages): AsyncGenerator<StreamEvent> {
+        modelCalls.push(messages.map((message) => ({ ...message })));
+        if (callIndex++ === 0) {
+          throw new Error("provider unavailable");
+        }
+        yield { type: "text", content: "Recovered on the next turn." };
+      },
+    };
+
+    await runEvilJellyHost(bindings, {
+      runControl: createInteractiveRunControl(),
+      model,
+      sessionId: "recoverable-error",
+      sessionStartMode: "new",
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+    });
+
+    expect(callIndex).toBe(2);
+    expect(systemEvents).toContain(
+      "\n[System] Current task failed: provider unavailable. Returning to router. Some tool activity may have occurred; verify current state before repeating actions. Use /continue to continue the task.\n",
+    );
+    const continuedCall = modelCalls[1] ?? [];
+    expect(
+      continuedCall.some(
+        (message) =>
+          message.role === "user" && messageContentToText(message.content) === "Fail this turn",
+      ),
+    ).toBe(true);
+    expect(
+      continuedCall.some(
+        (message) =>
+          message.role === "assistant" &&
+          messageContentToText(message.content).includes("Task failed before completion"),
+      ),
+    ).toBe(false);
+    expect(
+      continuedCall.some(
+        (message) =>
+          message.role === "user" &&
+          messageContentToText(message.content) ===
+            "Continue the previous task using the available conversation and tool history. Verify the current state before repeating any action.",
+      ),
+    ).toBe(true);
+    expect(assistantMessages).toContain("Recovered on the next turn.");
+    expect(systemEvents).toContain("No failed or interrupted task is available to continue.\n");
+  });
+
   it("keeps an interrupted multi-round turn in live and resumed context", async () => {
     const modelCalls: Message[][] = [];
     let callIndex = 0;

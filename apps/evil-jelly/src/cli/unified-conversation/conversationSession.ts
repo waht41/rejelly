@@ -9,6 +9,7 @@ import {
   type SessionMcpState,
 } from "../../shared/model/mcp/sessionMcpState";
 import { combineSessionBudget } from "./budget";
+import type { TurnRecoveryState } from "./turnRecovery";
 
 export interface ConversationSessionSeed {
   seedContext?: Message[];
@@ -31,6 +32,10 @@ export interface ConversationSession {
   contextTokenAnchor: () => SessionContextTokenAnchor | undefined;
   clearContextTokenAnchor: () => void;
   clearLastContextUsage: () => void;
+  recoveryState: () => TurnRecoveryState | undefined;
+  setRecoveryState: (state: TurnRecoveryState) => void;
+  clearRecoveryState: () => void;
+  ensureHistoryIncludes: (message: Message) => void;
 }
 
 /** Equip the state whose lifetime is one logical interactive session segment. */
@@ -60,14 +65,20 @@ export function equipConversationSession(
       "main_cli:context_token_anchor",
       seed.seedContextTokenAnchor ?? null,
     );
+  const [storedRecoveryState, storeRecoveryState] = equipMemory<TurnRecoveryState | null>(
+    "main_cli:turn_recovery",
+    null,
+  );
 
   // equipMemory getters are frozen at handler entry, so same-turn consumers use live mirrors.
+  let liveHistory = history;
   let liveContextTokens = storedContextTokens;
   let liveCacheTokens = storedCacheTokens;
   let liveRunAggregate = getUsageStats().aggregate;
   let liveSessionMcpState = storedSessionMcpState;
   let liveNextImageOrdinal = storedNextImageOrdinal;
   let liveContextTokenAnchor = storedContextTokenAnchor ?? undefined;
+  let liveRecoveryState = storedRecoveryState ?? undefined;
 
   equipBudget({
     onUpdate: ({ delta, aggregate }) => {
@@ -89,7 +100,9 @@ export function equipConversationSession(
   host.setNextImageOrdinal?.(liveNextImageOrdinal);
 
   return {
-    history,
+    get history() {
+      return liveHistory;
+    },
     currentBudget: () =>
       combineSessionBudget(seed.seedBudget, liveRunAggregate, {
         contextTokens: liveContextTokens,
@@ -98,9 +111,13 @@ export function equipConversationSession(
     appendTurn: (userMessage, reply, delta) => {
       const assistantDelta =
         delta && delta.length > 0 ? delta : [{ role: "assistant" as const, content: reply }];
-      setHistory([...history, userMessage, ...assistantDelta]);
+      liveHistory = [...liveHistory, userMessage, ...assistantDelta];
+      setHistory(liveHistory);
     },
-    replaceHistory: setHistory,
+    replaceHistory: (messages) => {
+      liveHistory = messages;
+      setHistory(messages);
+    },
     mcpState: () => liveSessionMcpState,
     setMcpState: (state) => {
       liveSessionMcpState = state;
@@ -118,6 +135,21 @@ export function equipConversationSession(
       liveCacheTokens = 0;
       setLastContextTokens(0);
       setLastCacheTokens(0);
+    },
+    recoveryState: () => liveRecoveryState,
+    setRecoveryState: (state) => {
+      liveRecoveryState = state;
+      storeRecoveryState(state);
+    },
+    clearRecoveryState: () => {
+      liveRecoveryState = undefined;
+      storeRecoveryState(null);
+    },
+    ensureHistoryIncludes: (message) => {
+      const serialized = JSON.stringify(message);
+      if (liveHistory.some((candidate) => JSON.stringify(candidate) === serialized)) return;
+      liveHistory = [...liveHistory, message];
+      setHistory(liveHistory);
     },
   };
 }
