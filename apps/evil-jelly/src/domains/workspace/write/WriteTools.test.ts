@@ -308,6 +308,174 @@ describe("createEditFileTool", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("edits a unique exact block in a source file above the read response limit", async () => {
+    const dir = createTempWorkspace();
+    try {
+      const filePath = "large.py";
+      const filler = Array.from(
+        { length: 4_000 },
+        (_, index) => `value_${index} = ${index}\n`,
+      ).join("");
+      const original = `${filler}target_value = "before"\n${filler}`;
+      expect(Buffer.byteLength(original, "utf8")).toBeGreaterThan(100 * 1024);
+      writeFileSync(join(dir, filePath), original, "utf8");
+      setWorkspaceRoot(dir);
+
+      const seen: FsWritePayload[] = [];
+      const tool = createEditFileTool(async (params) => {
+        if (params.type !== "fs_write") {
+          throw new Error(`Unexpected payload type: ${params.type}`);
+        }
+        seen.push(params);
+        return { action: "accept" };
+      });
+
+      const result = await tool.handler({
+        targets: [
+          {
+            filePath,
+            edits: [
+              {
+                searchBlock: 'target_value = "before"',
+                replaceBlock: 'target_value = "after"',
+              },
+            ],
+          },
+        ],
+      });
+
+      expect(result).toBe("Updated large.py (1 edit(s)).");
+      expect(await readFile(join(dir, filePath), "utf8")).toBe(
+        original.replace('target_value = "before"', 'target_value = "after"'),
+      );
+      expect(seen[0]?.unifiedDiff).toContain('+target_value = "after"');
+      expect(seen[0]?.unifiedDiff).not.toContain("value_1000");
+      expect(seen[0]?.unifiedDiff.length).toBeLessThan(2_000);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("applies a bounded edit in a large source file", async () => {
+    const dir = createTempWorkspace();
+    try {
+      const filePath = "large.ts";
+      const filler = Array.from(
+        { length: 8_000 },
+        (_, index) => `export const value${index} = ${index};\n`,
+      ).join("");
+      const original = `${filler}// region:start\nold one\nold two\n// region:end\n${filler}`;
+      expect(Buffer.byteLength(original, "utf8")).toBeGreaterThan(300 * 1024);
+      writeFileSync(join(dir, filePath), original, "utf8");
+      setWorkspaceRoot(dir);
+
+      const tool = createEditFileTool(async () => ({ action: "accept" }));
+      const result = await tool.handler({
+        targets: [
+          {
+            filePath,
+            edits: [
+              {
+                searchBlock: {
+                  kind: "bounded",
+                  startBlock: "// region:start",
+                  endBlock: "// region:end",
+                },
+                replaceBlock: "const replacement = true;",
+              },
+            ],
+          },
+        ],
+      });
+
+      expect(result).toBe("Updated large.ts (1 edit(s)).");
+      const updated = await readFile(join(dir, filePath), "utf8");
+      expect(updated).toContain("const replacement = true;");
+      expect(updated).not.toContain("old one");
+      expect(updated.startsWith(filler)).toBe(true);
+      expect(updated.endsWith(filler)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps whole-file replacement under its independent size budget", async () => {
+    const dir = createTempWorkspace();
+    try {
+      const filePath = "large.txt";
+      const original = "small line\n".repeat(12_000);
+      writeFileSync(join(dir, filePath), original, "utf8");
+      setWorkspaceRoot(dir);
+
+      let confirmed = false;
+      const tool = createEditFileTool(async () => {
+        confirmed = true;
+        return { action: "accept" };
+      });
+      const result = await tool.handler({
+        targets: [{ filePath, edits: [{ searchBlock: "", replaceBlock: "replacement\n" }] }],
+      });
+
+      expect(result).toContain("Whole-file edit exceeds");
+      expect(result).toContain("use a unique exact searchBlock or bounded anchors");
+      expect(confirmed).toBe(false);
+      expect(await readFile(join(dir, filePath), "utf8")).toBe(original);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses pathological single-line and binary files without confirmation", async () => {
+    const dir = createTempWorkspace();
+    try {
+      writeFileSync(join(dir, "minified.js"), "x".repeat(40 * 1024), "utf8");
+      writeFileSync(join(dir, "binary.dat"), Buffer.from([0xff, 0xfe, 0x00, 0x01]));
+      setWorkspaceRoot(dir);
+
+      let confirmations = 0;
+      const tool = createEditFileTool(async () => {
+        confirmations += 1;
+        return { action: "accept" };
+      });
+      const result = await tool.handler({
+        targets: [
+          {
+            filePath: "minified.js",
+            edits: [{ searchBlock: "xxx", replaceBlock: "yyy" }],
+          },
+          {
+            filePath: "binary.dat",
+            edits: [{ searchBlock: "anything", replaceBlock: "text" }],
+          },
+        ],
+      });
+
+      expect(result).toContain("single-line edit limit");
+      expect(result).toContain("not valid UTF-8 text");
+      expect(confirmations).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves CRLF and the trailing newline for targeted edits", async () => {
+    const dir = createTempWorkspace();
+    try {
+      const filePath = "windows.py";
+      writeFileSync(join(dir, filePath), "first\r\ntarget = 1\r\nlast\r\n", "utf8");
+      setWorkspaceRoot(dir);
+
+      const tool = createEditFileTool(async () => ({ action: "accept" }));
+      await tool.handler({
+        targets: [{ filePath, edits: [{ searchBlock: "target = 1", replaceBlock: "target = 2" }] }],
+      });
+
+      expect(await readFile(join(dir, filePath), "utf8")).toBe("first\r\ntarget = 2\r\nlast\r\n");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("createDeleteFileTool", () => {
