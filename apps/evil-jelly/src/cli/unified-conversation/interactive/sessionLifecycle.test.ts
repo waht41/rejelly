@@ -1,7 +1,14 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { AbortError, type Message, type ModelAdapter, type StreamEvent } from "@rejelly/core";
+import {
+  AbortError,
+  augmentModel,
+  type Message,
+  type ModelAdapter,
+  ModelCallError,
+  type StreamEvent,
+} from "@rejelly/core";
 import { createMockModel } from "@rejelly/core/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { recordInitialTextInput } from "../../../domains/session/__tests__/sessionTestInput";
@@ -23,6 +30,8 @@ import {
   interruptActiveTask,
   resetInterruptibleTaskStack,
 } from "../../../shared/task-interruption/taskStack";
+import { withRetry } from "../../model-composition/withRetry";
+import { buildSessionResumeSeed } from "./resume";
 import { createInteractiveRunControl } from "./runControl";
 import { runEvilJellyHost } from "./runSegment";
 
@@ -382,6 +391,296 @@ describe("non-TTY session lifecycle", () => {
     expect(compact?.seq).toBeLessThan(completed?.seq ?? 0);
   });
 
+  it("returns to the interactive router and continues from a task error", async () => {
+    const systemEvents: string[] = [];
+    const assistantMessages: string[] = [];
+    const modelCalls: Message[][] = [];
+    const bindings = createMemoryBindings(["Fail this turn", "/continue", "/continue", "/exit"]);
+    bindings.logSystemEvent = (message) => systemEvents.push(message);
+    bindings.logAssistantMessage = (message) => assistantMessages.push(message);
+    let callIndex = 0;
+    const adapter: ModelAdapter = {
+      id: "recoverable-error-model",
+      async *stream(messages): AsyncGenerator<StreamEvent> {
+        modelCalls.push(messages.map((message) => ({ ...message })));
+        if (callIndex++ === 0) {
+          throw new ModelCallError("provider unavailable", {
+            modelId: "recoverable-error-model",
+            code: "timeout",
+          });
+        }
+        yield { type: "text", content: "Recovered on the next turn." };
+      },
+    };
+    const model = augmentModel(adapter, [
+      withRetry({ maxAttempts: 1, connectionRetry: "bounded" }),
+    ]);
+
+    await runEvilJellyHost(bindings, {
+      runControl: createInteractiveRunControl(),
+      model,
+      sessionId: "recoverable-error",
+      sessionStartMode: "new",
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+    });
+
+    expect(callIndex).toBe(2);
+    expect(systemEvents).toContain(
+      "\n[System] Current task failed: provider unavailable. Returning to router. Use /continue to continue the task.\n",
+    );
+    expect(systemEvents).toContain("Retrying the previous model request…\n");
+    const continuedCall = modelCalls[1] ?? [];
+    expect(
+      continuedCall.some(
+        (message) =>
+          message.role === "user" && messageContentToText(message.content) === "Fail this turn",
+      ),
+    ).toBe(true);
+    expect(
+      continuedCall.some(
+        (message) =>
+          message.role === "assistant" &&
+          messageContentToText(message.content).includes("Task failed before completion"),
+      ),
+    ).toBe(false);
+    expect(
+      continuedCall.some((message) =>
+        messageContentToText(message.content).includes("Continue the previous task"),
+      ),
+    ).toBe(false);
+    expect(
+      continuedCall.some((message) =>
+        messageContentToText(message.content).includes("provider unavailable"),
+      ),
+    ).toBe(false);
+    expect(assistantMessages).toContain("Recovered on the next turn.");
+    expect(systemEvents).toContain("No failed or interrupted task is available to continue.\n");
+
+    const stored = await readSessionEvents(workspaceRoot, "recoverable-error", { sessionsRoot });
+    expect(
+      stored.events.filter(
+        (event) => isKnownSessionEvent(event) && event.type === "user_input_recorded",
+      ),
+    ).toHaveLength(1);
+    expect(
+      stored.events
+        .filter((event) => isKnownSessionEvent(event) && event.type === "turn_completed")
+        .map((event) => (event.type === "turn_completed" ? event.status : undefined)),
+    ).toEqual(["completed"]);
+  });
+
+  it("continues from a completed tool result when the next model response fails pre-output", async () => {
+    const systemEvents: string[] = [];
+    const modelCalls: Message[][] = [];
+    const bindings = createMemoryBindings(["Inspect before failure", "/continue", "/exit"]);
+    bindings.logSystemEvent = (message) => systemEvents.push(message);
+    let callIndex = 0;
+    const adapter: ModelAdapter = {
+      id: "post-tool-failure-model",
+      async *stream(messages): AsyncGenerator<StreamEvent> {
+        modelCalls.push(messages.map((message) => ({ ...message })));
+        const currentCall = callIndex++;
+        if (currentCall === 0) {
+          yield {
+            type: "tool_call",
+            toolCall: {
+              index: 0,
+              id: "completed-before-failure",
+              name: "list_directory",
+              arguments: JSON.stringify({ dirPath: ".", depth: 1 }),
+            },
+          };
+          return;
+        }
+        if (currentCall === 1) {
+          throw new ModelCallError("provider unavailable after tool", {
+            modelId: "post-tool-failure-model",
+            code: "server_error",
+          });
+        }
+        yield { type: "text", content: "Continued from the recorded tool result." };
+      },
+    };
+    const model = augmentModel(adapter, [
+      withRetry({ maxAttempts: 1, connectionRetry: "bounded" }),
+    ]);
+
+    await runEvilJellyHost(bindings, {
+      runControl: createInteractiveRunControl(),
+      model,
+      sessionId: "post-tool-failure",
+      sessionStartMode: "new",
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+    });
+
+    expect(callIndex).toBe(3);
+    expect(systemEvents).toContain(
+      "\n[System] Current task failed: provider unavailable after tool. Returning to router. A tool completed before the failure; continue from its recorded result. Use /continue to continue the task.\n",
+    );
+    expect(systemEvents).not.toContain("Retrying the previous model request…\n");
+    const continuedCall = modelCalls[2] ?? [];
+    expect(
+      continuedCall.some(
+        (message) => message.role === "tool" && message.tool_call_id === "completed-before-failure",
+      ),
+    ).toBe(true);
+    expect(
+      continuedCall.some(
+        (message) =>
+          message.role === "user" &&
+          messageContentToText(message.content).includes(
+            "Completed tool results are already present in the conversation history.",
+          ),
+      ),
+    ).toBe(true);
+
+    const stored = await readSessionEvents(workspaceRoot, "post-tool-failure", { sessionsRoot });
+    expect(
+      stored.events.filter(
+        (event) => isKnownSessionEvent(event) && event.type === "user_input_recorded",
+      ),
+    ).toHaveLength(2);
+    expect(
+      stored.events
+        .filter((event) => isKnownSessionEvent(event) && event.type === "turn_completed")
+        .map((event) => (event.type === "turn_completed" ? event.status : undefined)),
+    ).toEqual(["error", "completed"]);
+  });
+
+  it("closes a pending transparent retry when the user exits", async () => {
+    const adapter: ModelAdapter = {
+      id: "abandoned-retry-model",
+      async *stream(): AsyncGenerator<StreamEvent> {
+        yield* [] as StreamEvent[];
+        throw new ModelCallError("gateway unavailable", {
+          modelId: "abandoned-retry-model",
+          code: "server_error",
+        });
+      },
+    };
+    const model = augmentModel(adapter, [
+      withRetry({ maxAttempts: 1, connectionRetry: "bounded" }),
+    ]);
+
+    await runEvilJellyHost(createMemoryBindings(["Try once", "/exit"]), {
+      runControl: createInteractiveRunControl(),
+      model,
+      sessionId: "abandoned-retry",
+      sessionStartMode: "new",
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+    });
+
+    const stored = await readSessionEvents(workspaceRoot, "abandoned-retry", { sessionsRoot });
+    expect(
+      stored.events
+        .filter((event) => isKnownSessionEvent(event) && event.type === "turn_completed")
+        .map((event) => (event.type === "turn_completed" ? event.status : undefined)),
+    ).toEqual(["error"]);
+  });
+
+  it("keeps blocked model configuration failures in the router without offering recovery", async () => {
+    const systemEvents: string[] = [];
+    const bindings = createMemoryBindings(["Use the model", "/continue", "/exit"]);
+    bindings.logSystemEvent = (message) => systemEvents.push(message);
+    let callCount = 0;
+    const model: ModelAdapter = {
+      id: "blocked-auth-model",
+      async *stream(): AsyncGenerator<StreamEvent> {
+        yield* [] as StreamEvent[];
+        callCount += 1;
+        throw new ModelCallError("invalid API key", {
+          modelId: "blocked-auth-model",
+          code: "auth_error",
+        });
+      },
+    };
+
+    await runEvilJellyHost(bindings, {
+      runControl: createInteractiveRunControl(),
+      model,
+      sessionId: "blocked-auth",
+      sessionStartMode: "new",
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+    });
+
+    expect(callCount).toBe(1);
+    expect(systemEvents).toContain(
+      "\n[System] Current task cannot continue: invalid API key. Fix the model credentials or endpoint configuration, then restart Evil.\n",
+    );
+    expect(systemEvents).toContain("No failed or interrupted task is available to continue.\n");
+  });
+
+  it("restores /continue recovery after exiting and resuming an interrupted session", async () => {
+    const interruptedModel: ModelAdapter = {
+      id: "durable-recovery-model",
+      async *stream(): AsyncGenerator<StreamEvent> {
+        yield* [] as StreamEvent[];
+        throw new AbortError("user interrupted");
+      },
+    };
+    await runEvilJellyHost(createMemoryBindings(["Recover after restart", "/exit"]), {
+      runControl: createInteractiveRunControl(),
+      model: interruptedModel,
+      sessionId: "durable-recovery",
+      sessionStartMode: "new",
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+    });
+
+    const record = await resumeSession(workspaceRoot, "durable-recovery", {
+      originator: "evil-jelly-cli",
+      appVersion: "1.0.0",
+      sessionsRoot,
+    });
+    expect(record?.recovery).toMatchObject({
+      status: "interrupted",
+      reason: "user_abort",
+      hasUnknownToolOutcome: false,
+    });
+    const seed = buildSessionResumeSeed(record!);
+    expect(seed.recovery).toMatchObject({
+      status: "interrupted",
+      strategy: "resume_with_context",
+    });
+
+    const resumedCalls: Message[][] = [];
+    const resumedModel: ModelAdapter = {
+      id: "durable-recovery-model",
+      async *stream(messages): AsyncGenerator<StreamEvent> {
+        resumedCalls.push(messages.map((message) => ({ ...message })));
+        yield { type: "text", content: "Recovered after restart." };
+      },
+    };
+    await runEvilJellyHost(createMemoryBindings(["/continue", "/exit"]), {
+      runControl: createInteractiveRunControl(),
+      model: resumedModel,
+      sessionId: "durable-recovery",
+      sessionStartMode: "resumed",
+      seedContext: seed.activeContext,
+      seedBudget: seed.budget,
+      seedMcpState: seed.mcp,
+      seedRecovery: seed.recovery,
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+    });
+
+    const resumedCall = resumedCalls[0] ?? [];
+    expect(
+      resumedCall.some(
+        (message) =>
+          message.role === "user" &&
+          messageContentToText(message.content).includes("Recover after restart"),
+      ),
+    ).toBe(true);
+    expect(
+      resumedCall.some(
+        (message) =>
+          message.role === "user" &&
+          messageContentToText(message.content).includes(
+            "The previous task was interrupted by the user.",
+          ),
+      ),
+    ).toBe(true);
+  });
+
   it("keeps an interrupted multi-round turn in live and resumed context", async () => {
     const modelCalls: Message[][] = [];
     let callIndex = 0;
@@ -421,7 +720,7 @@ describe("non-TTY session lifecycle", () => {
     };
 
     await runEvilJellyHost(
-      createMemoryBindings(["Inspect before interruption", "Continue after interruption", "/exit"]),
+      createMemoryBindings(["Inspect before interruption", "/continue", "/exit"]),
       {
         runControl: createInteractiveRunControl(),
         model,
@@ -446,7 +745,13 @@ describe("non-TTY session lifecycle", () => {
     expect(modelCalls).toHaveLength(3);
     const continuedCall = modelCalls[2] ?? [];
     expect(hasText(continuedCall, "user", "Inspect before interruption")).toBe(true);
-    expect(hasText(continuedCall, "user", "Continue after interruption")).toBe(true);
+    expect(
+      hasText(
+        continuedCall,
+        "user",
+        "The previous task was interrupted by the user. Continue from the available conversation and tool history.",
+      ),
+    ).toBe(true);
     expect(
       continuedCall.some((message) =>
         message.tool_calls?.some((call) => call.id === "interrupted-list-call"),
@@ -465,7 +770,13 @@ describe("non-TTY session lifecycle", () => {
     });
     const resumedMessages = resumed?.messages ?? [];
     expect(hasText(resumedMessages, "user", "Inspect before interruption")).toBe(true);
-    expect(hasText(resumedMessages, "user", "Continue after interruption")).toBe(true);
+    expect(
+      hasText(
+        resumedMessages,
+        "user",
+        "The previous task was interrupted by the user. Continue from the available conversation and tool history.",
+      ),
+    ).toBe(true);
     expect(hasText(resumedMessages, "assistant", "Continued with the interrupted work")).toBe(true);
     expect(
       resumedMessages.some((message) =>

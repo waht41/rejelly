@@ -123,18 +123,20 @@ describe("submission dispatcher", () => {
     expect(logs).toEqual([]);
   });
 
-  it("continues to reject clear, resume, and compression while the agent is running", () => {
+  it("continues to reject session-control commands while the agent is running", () => {
     const { ports, logs } = createPorts();
     const dispatcher = createSubmissionDispatcher(ports);
 
     dispatcher.submit(textPromptInput("/clear"));
     dispatcher.submit(textPromptInput("/resume session-1"));
     dispatcher.submit(textPromptInput("/compress"));
+    dispatcher.submit(textPromptInput("/continue"));
 
     expect(logs).toEqual([
       "/clear is not available while the agent is running.",
       "/resume session-1 is not available while the agent is running.",
       "/compress is not available while the agent is running.",
+      "/continue is not available while the agent is running.",
     ]);
   });
 

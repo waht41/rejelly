@@ -3,6 +3,12 @@ import type { McpDispatchBindingFactory } from "../../domains/mcp/gateway/dispat
 import type { SessionMessageSink } from "../../shared/session/recorderPort";
 import type { UserReplySurface } from "./outputSurface";
 
+export type TurnProgressEvent =
+  | "model_output"
+  | "tool_requested"
+  | "tool_execution_started"
+  | "tool_result_committed";
+
 interface ConversationAgentBaseProps {
   /** Prior conversation as model messages. */
   history?: Message[];
@@ -22,6 +28,8 @@ interface ConversationAgentBaseProps {
   mcpBindingFactory?: McpDispatchBindingFactory;
   /** Cancels this chat/compression operation without aborting the owning agent run. */
   operationSignal?: AbortSignal;
+  /** Host-owned progress observer used to choose a safe recovery strategy. */
+  onTurnProgress?: (event: TurnProgressEvent) => void;
 }
 
 export type ConversationAgentProps =

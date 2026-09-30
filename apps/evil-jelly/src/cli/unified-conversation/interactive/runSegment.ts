@@ -63,6 +63,8 @@ export interface RunEvilJellyHostOptions {
   seedContextTokenAnchor?: SessionContextTokenAnchor;
   /** Session MCP state recovered independently of compacted model history. */
   seedMcpState?: SessionMcpState;
+  /** Latest durable interrupted/error Turn available to `/continue`. */
+  seedRecovery?: MainCliAgentProps["seedRecovery"];
   /** Resolve non-secret token metadata at submit time. */
   resolveMcpUserInput?: MainCliAgentProps["resolveMcpUserInput"];
   /** Single process-owned MCP runtime provider, borrowed across run segments. */
@@ -243,6 +245,7 @@ export async function runEvilJellyHost(
           seedBudget,
           seedContextTokenAnchor: options.seedContextTokenAnchor,
           seedMcpState: options.seedMcpState,
+          seedRecovery: options.seedRecovery,
           resolveMcpUserInput: options.resolveMcpUserInput,
           sessionBlobRoot: options.session?.blobRoot,
           sessionStorage: options.session
@@ -253,6 +256,7 @@ export async function runEvilJellyHost(
                 ...(options.session.blobRoot ? { blobRoot: options.session.blobRoot } : {}),
               }
             : undefined,
+          sessionAppVersion: options.session?.appVersion,
           isolateSessionState: options.isolateSessionState,
           sessionRecorder: recorder,
           mcpBindingFactory: options.mcpBindingFactory,

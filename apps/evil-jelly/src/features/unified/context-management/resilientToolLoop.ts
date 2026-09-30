@@ -13,6 +13,7 @@ import {
 } from "../../../shared/model/budget/tokenEstimate";
 import { appendMessageContentSuffix } from "../../../shared/model/message/content";
 import type { SessionMessageSink } from "../../../shared/session/recorderPort";
+import type { TurnProgressEvent } from "../conversationRun";
 import {
   DEFAULT_COMPACTION_MAX_ROUNDS,
   DEFAULT_WARN_RATIO,
@@ -41,6 +42,7 @@ export interface ToolCallLoopPolicySnapshot {
   promptTokenUsage?: PromptTokenUsageReader;
   sessionRecorder?: SessionMessageSink;
   turnId?: string;
+  onTurnProgress?: (event: TurnProgressEvent) => void;
   signal?: AbortSignal;
 }
 
@@ -237,6 +239,8 @@ export async function runResilientToolCallLoopPolicy<T = unknown>(
         );
       }
 
+      if (result.deltaMessages.length > 0) snapshot.onTurnProgress?.("model_output");
+      if (result.kind !== "content") snapshot.onTurnProgress?.("tool_requested");
       deltaMessages.push(...result.deltaMessages);
       if (snapshot.sessionRecorder && snapshot.turnId) {
         await snapshot.sessionRecorder.recordMessages(
@@ -261,6 +265,7 @@ export async function runResilientToolCallLoopPolicy<T = unknown>(
       }
 
       const toolRuntime = dispatchRuntime.fork({ messages: compaction.messages(deltaMessages) });
+      snapshot.onTurnProgress?.("tool_execution_started");
       const toolOutputs = await executeTools(result.calls, { runtime: toolRuntime });
       deltaMessages.push(...toolOutputs);
       if (snapshot.sessionRecorder && snapshot.turnId) {
@@ -269,6 +274,7 @@ export async function runResilientToolCallLoopPolicy<T = unknown>(
           toolOutputs.map((message) => ({ source: { kind: "tool" } as const, message })),
         );
       }
+      snapshot.onTurnProgress?.("tool_result_committed");
       step++;
 
       compaction.maybeAppendWarnHint(deltaMessages, toolOutputs);

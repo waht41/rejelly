@@ -26,6 +26,15 @@ export interface SessionContextTokenAnchor {
 /** Storage-version-independent picker/resume metadata projected from V1, V2, or V3. */
 export type SessionMeta = LegacySessionMeta;
 
+/** Latest durable Turn that can be continued after resuming a Session. */
+export interface SessionRecoveryCandidate {
+  turnId: string;
+  status: "interrupted" | "error";
+  reason: "user_abort" | "process_interrupted" | "session_error";
+  userMessage: Message;
+  hasUnknownToolOutcome: boolean;
+}
+
 export interface SessionRecord {
   /** Storage-version-independent metadata consumed by picker and resume flows. */
   meta: SessionMeta;
@@ -37,6 +46,8 @@ export interface SessionRecord {
   transcript?: TranscriptItem[];
   /** Canonical Session MCP projection; V1/V2 sources project an empty state. */
   mcp: SessionMcpState;
+  /** Latest non-completed Turn, derived from durable events rather than stored separately. */
+  recovery?: SessionRecoveryCandidate;
   /** Non-blocking compatibility notices to show when hydrating a resumed session. */
   warnings?: string[];
 }

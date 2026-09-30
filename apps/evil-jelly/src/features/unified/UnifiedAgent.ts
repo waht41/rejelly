@@ -256,6 +256,7 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
         promptTokenUsage,
         sessionRecorder: props.sessionRecorder,
         turnId: props.turnId,
+        onTurnProgress: props.onTurnProgress,
         signal: props.operationSignal,
       });
 

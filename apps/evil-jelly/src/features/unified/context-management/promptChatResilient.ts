@@ -7,6 +7,7 @@ import {
 } from "@rejelly/core/policy";
 import type { z } from "zod";
 import type { SessionMessageSink } from "../../../shared/session/recorderPort";
+import type { TurnProgressEvent } from "../conversationRun";
 import type { PromptChatCompactionConfig, PromptTokenUsageReader } from "./compaction";
 import {
   runResilientToolCallLoopPolicy,
@@ -55,6 +56,7 @@ export interface PromptChatResilientOptions<TSchema extends z.ZodTypeAny = z.Zod
   promptTokenUsage?: PromptTokenUsageReader;
   sessionRecorder?: SessionMessageSink;
   turnId?: string;
+  onTurnProgress?: (event: TurnProgressEvent) => void;
   /** Cancellation scoped to this chat loop rather than its owning agent context. */
   signal?: AbortSignal;
 }
@@ -113,6 +115,7 @@ export const promptChatResilient = createAgentPolicy({
       promptTokenUsage: options?.promptTokenUsage,
       sessionRecorder: options?.sessionRecorder,
       turnId: options?.turnId,
+      onTurnProgress: options?.onTurnProgress,
       signal: options?.signal,
     };
 

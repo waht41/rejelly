@@ -160,6 +160,7 @@ export async function runInteractiveLoop(params: RunInteractiveLoopParams): Prom
             ? state.resumeSeed.contextTokenAnchor
             : undefined,
         seedMcpState: state.resumeSeed?.mcp,
+        seedRecovery: state.resumeSeed?.recovery,
         mcpProviders: mcp.providers,
         mcpBindingFactory: mcp.bindingFactory,
         mcpSessionControl: mcp.sessionControl,

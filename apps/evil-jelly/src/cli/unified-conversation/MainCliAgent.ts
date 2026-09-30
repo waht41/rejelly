@@ -7,11 +7,13 @@ import {
   type SessionMemoryRuntime,
 } from "../../domains/memory/runtime/sessionMemoryRuntime";
 import type { SessionRecorder } from "../../domains/session/recorder/sessionRecorder";
+import { materializeMessageHistory } from "../../domains/session/repository/sessionMessageMaterializer";
 import type {
   SessionBudget,
   SessionContextTokenAnchor,
   SessionStoragePaths,
 } from "../../domains/session/repository/sessionStore";
+import { resumeSession } from "../../domains/session/repository/sessionStore";
 import {
   SKILL_RUNTIME_PROVIDER_KEY,
   type SkillRuntimeSnapshot,
@@ -32,6 +34,7 @@ import {
   type PromptInput,
   promptInputCommandText,
   promptInputPlainText,
+  textPromptInput,
 } from "../../shared/model/prompt/promptInput";
 import { startupTimeline } from "../../shared/profile/startup/timeline";
 import { registerInterruptibleTask } from "../../shared/task-interruption/taskStack";
@@ -51,7 +54,19 @@ import {
   isSkillsLocalCommand,
   type SkillDoctorReport,
 } from "./skillsCommands";
-import { executeConversationTurn, type ResolveMcpUserInput } from "./turnExecution";
+import {
+  abandonPendingConversationTurn,
+  type ConversationTurnRuntime,
+  executeConversationTurn,
+  type ResolveMcpUserInput,
+  retryConversationTurn,
+} from "./turnExecution";
+import {
+  continuationPromptForRecovery,
+  recoveryActivityWarning,
+  type TurnExecutionResult,
+  type TurnRecoveryState,
+} from "./turnRecovery";
 
 export interface MainCliAgentProps extends EvilJellyBindings {
   runLoopControl: ConversationLoopControl;
@@ -65,12 +80,16 @@ export interface MainCliAgentProps extends EvilJellyBindings {
   sessionBlobRoot?: string;
   /** Journal/blob roots used by runtime /resume discovery and loading. */
   sessionStorage?: SessionStoragePaths;
+  /** App version used when refreshing the current durable Session after interruption. */
+  sessionAppVersion?: string;
   /** Cumulative usage carried back from a resumed session, used as the /status base. */
   seedBudget?: SessionBudget;
   /** Resume-validated association between seedContext and the latest provider prompt count. */
   seedContextTokenAnchor?: SessionContextTokenAnchor;
   /** Session-level MCP authorization state recovered from its V3 projection. */
   seedMcpState?: SessionMcpState;
+  /** Latest durable interrupted/error Turn available to `/continue` after resume. */
+  seedRecovery?: TurnRecoveryState;
   resolveMcpUserInput?: ResolveMcpUserInput;
   /** Replay-only mode: do not read from or write to durable local sessions. */
   isolateSessionState?: boolean;
@@ -90,6 +109,7 @@ type RouterIntent =
   | { kind: "clear" }
   | { kind: "status" }
   | { kind: "compress" }
+  | { kind: "continue" }
   | { kind: "resume"; rawInput: string }
   | { kind: "mcp"; rawInput: string }
   | { kind: "memory"; rawInput: string }
@@ -114,6 +134,7 @@ function classifyRouterIntent(promptInput: PromptInput): RouterIntent {
   if (normalized === "/clear") return { kind: "clear" };
   if (normalized === "/status") return { kind: "status" };
   if (normalized === "/compress") return { kind: "compress" };
+  if (normalized === "/continue") return { kind: "continue" };
   if (normalized === "/resume" || normalized?.startsWith("/resume ")) {
     return { kind: "resume", rawInput: commandText! };
   }
@@ -130,6 +151,7 @@ function classifyRouterIntent(promptInput: PromptInput): RouterIntent {
 }
 
 async function handleExit(runtime: RouterRuntime): Promise<void> {
+  await abandonCurrentRecovery(runtime);
   await runtime.props.sessionRecorder?.endSegment({
     status: "completed",
     reason: "exit",
@@ -139,6 +161,7 @@ async function handleExit(runtime: RouterRuntime): Promise<void> {
 }
 
 async function handleClear(runtime: RouterRuntime): Promise<void> {
+  await abandonCurrentRecovery(runtime);
   const previousBudget = runtime.session.currentBudget();
   runtime.host.clearHistory?.();
   runtime.host.clearScreen?.();
@@ -244,6 +267,7 @@ async function handleResume(runtime: RouterRuntime, rawInput: string): Promise<b
   ) {
     return false;
   }
+  await abandonCurrentRecovery(runtime);
   await runtime.props.sessionRecorder?.endSegment({
     status: "completed",
     reason: "switch_session",
@@ -310,6 +334,116 @@ function formatPersistenceError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function applyTurnResult(runtime: RouterRuntime, result: TurnExecutionResult): void {
+  if (result.status === "completed") {
+    runtime.session.clearRecoveryState();
+    return;
+  }
+  if (result.status === "blocked") {
+    runtime.session.clearRecoveryState();
+    const nextStep = result.suggestedCommand
+      ? ` Run ${result.suggestedCommand} before trying again.`
+      : result.suggestedAction
+        ? ` ${result.suggestedAction}`
+        : "";
+    runtime.host.logSystemEvent(
+      `\n[System] Current task cannot continue: ${result.message}.${nextStep}\n`,
+    );
+    return;
+  }
+  runtime.session.setRecoveryState(result.recovery);
+  const label =
+    result.status === "recoverable" ? `failed: ${result.recovery.message}` : "was interrupted";
+  const activityWarning = recoveryActivityWarning(result.recovery.toolActivity);
+  runtime.host.logSystemEvent(
+    `\n[System] Current task ${label}. Returning to router.${activityWarning} Use /continue to continue the task.\n`,
+  );
+}
+
+function conversationTurnRuntime(runtime: RouterRuntime): ConversationTurnRuntime {
+  return {
+    host: runtime.host,
+    session: runtime.session,
+    sessionRecorder: runtime.props.sessionRecorder,
+    sessionId: runtime.props.sessionId,
+    sessionBlobRoot: runtime.props.sessionBlobRoot,
+    skillSnapshot: runtime.skillSnapshot,
+    memoryRuntime: runtime.memoryRuntime,
+    resolveMcpUserInput: runtime.props.resolveMcpUserInput,
+    mcpBindingFactory: runtime.props.mcpBindingFactory,
+    mcpSessionControl: runtime.props.mcpSessionControl,
+    runInterruptibleOperation: runInterruptibleConversationOperation,
+  };
+}
+
+async function runConversationOperation(
+  runtime: RouterRuntime,
+  operation: (turnRuntime: ConversationTurnRuntime) => Promise<TurnExecutionResult>,
+): Promise<void> {
+  const activeCommands = createActiveTurnCommands({
+    showStatus: () => handleStatus(runtime),
+    handleSkills: (commandText) => handleSkills(runtime, commandText),
+    handleMemory: (commandText) => handleMemory(runtime, commandText),
+    handleMcp: (commandText) => handleMcp(runtime, commandText),
+    runAtSafeOutputBoundary: runtime.host.runAtSafeOutputBoundary,
+    logFailure: (error) =>
+      runtime.host.logSystemEvent(`Background command failed: ${formatPersistenceError(error)}\n`),
+  });
+  const disposeRunningCommands = setRunningCommandHandler(activeCommands.handle);
+  try {
+    const result = await operation(conversationTurnRuntime(runtime));
+    if (result.status === "completed") {
+      await activeCommands.waitForPending();
+      activeCommands.flushDeferred();
+    }
+    applyTurnResult(runtime, result);
+  } finally {
+    activeCommands.dispose();
+    disposeRunningCommands();
+  }
+}
+
+async function runConversationTurn(
+  runtime: RouterRuntime,
+  promptInput: PromptInput,
+  userInput: string,
+): Promise<void> {
+  await runConversationOperation(runtime, (turnRuntime) =>
+    executeConversationTurn(turnRuntime, promptInput, userInput),
+  );
+}
+
+async function runRetriedConversationTurn(
+  runtime: RouterRuntime,
+  recovery: NonNullable<ReturnType<ConversationSession["recoveryState"]>>,
+): Promise<void> {
+  await runConversationOperation(runtime, (turnRuntime) =>
+    retryConversationTurn(turnRuntime, recovery),
+  );
+}
+
+async function abandonCurrentRecovery(runtime: RouterRuntime): Promise<void> {
+  const recovery = runtime.session.recoveryState();
+  await abandonPendingConversationTurn(conversationTurnRuntime(runtime), recovery);
+  runtime.session.clearRecoveryState();
+}
+
+async function refreshInterruptedSessionContext(runtime: RouterRuntime): Promise<void> {
+  const { sessionId, sessionAppVersion, sessionStorage } = runtime.props;
+  if (!sessionId || !sessionAppVersion) return;
+  const record = await resumeSession(getWorkspaceRoot(), sessionId, {
+    originator: "evil-jelly-cli",
+    appVersion: sessionAppVersion,
+    ...sessionStorage,
+  });
+  if (!record) return;
+  runtime.session.replaceHistory(
+    await materializeMessageHistory(record.messages, {
+      ...(sessionStorage?.blobRoot ? { blobRoot: sessionStorage.blobRoot } : {}),
+    }),
+  );
+}
+
 export const MainCliAgent = createAgent<MainCliAgentProps, void>({
   id: "evil_jelly_cli_router",
   handler: async (props) => {
@@ -321,6 +455,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
         seedBudget: props.seedBudget,
         seedContextTokenAnchor: props.seedContextTokenAnchor,
         seedMcpState: props.seedMcpState,
+        seedRecovery: props.seedRecovery,
         initialImageOrdinal: props.sessionRecorder?.nextImageOrdinal,
       },
       host,
@@ -367,6 +502,23 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
         case "compress":
           await handleCompress(runtime);
           return reborn();
+        case "continue": {
+          const recovery = session.recoveryState();
+          if (!recovery) {
+            host.logSystemEvent("No failed or interrupted task is available to continue.\n");
+            return reborn();
+          }
+          session.clearRecoveryState();
+          if (recovery.strategy === "retry_same_turn") {
+            await runRetriedConversationTurn(runtime, recovery);
+            return reborn();
+          }
+          await refreshInterruptedSessionContext(runtime);
+          session.ensureHistoryIncludes(recovery.userMessage);
+          const continuePrompt = continuationPromptForRecovery(recovery);
+          await runConversationTurn(runtime, textPromptInput(continuePrompt), continuePrompt);
+          return reborn();
+        }
         case "resume":
           if (await handleResume(runtime, intent.rawInput)) return;
           return reborn();
@@ -379,43 +531,10 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
         case "skills":
           await handleSkills(runtime, intent.rawInput);
           return reborn();
-        case "message": {
-          const activeCommands = createActiveTurnCommands({
-            showStatus: () => handleStatus(runtime),
-            handleSkills: (commandText) => handleSkills(runtime, commandText),
-            handleMemory: (commandText) => handleMemory(runtime, commandText),
-            handleMcp: (commandText) => handleMcp(runtime, commandText),
-            runAtSafeOutputBoundary: host.runAtSafeOutputBoundary,
-            logFailure: (error) =>
-              host.logSystemEvent(`Background command failed: ${formatPersistenceError(error)}\n`),
-          });
-          const disposeRunningCommands = setRunningCommandHandler(activeCommands.handle);
-          try {
-            await executeConversationTurn(
-              {
-                host,
-                session,
-                sessionRecorder: props.sessionRecorder,
-                sessionId: props.sessionId,
-                sessionBlobRoot: props.sessionBlobRoot,
-                skillSnapshot: runtime.skillSnapshot,
-                memoryRuntime,
-                resolveMcpUserInput: props.resolveMcpUserInput,
-                mcpBindingFactory: props.mcpBindingFactory,
-                mcpSessionControl: props.mcpSessionControl,
-                runInterruptibleOperation: runInterruptibleConversationOperation,
-              },
-              intent.promptInput,
-              intent.userInput,
-            );
-            await activeCommands.waitForPending();
-            activeCommands.flushDeferred();
-          } finally {
-            activeCommands.dispose();
-            disposeRunningCommands();
-          }
+        case "message":
+          await abandonCurrentRecovery(runtime);
+          await runConversationTurn(runtime, intent.promptInput, intent.userInput);
           return reborn();
-        }
       }
     } catch (error) {
       if (isAbortError(error)) {

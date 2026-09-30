@@ -12,6 +12,7 @@ import { isKnownSessionEvent } from "../model/sessionEvents";
 import type { SessionMeta, SessionRecord } from "../model/sessionTypes";
 import {
   buildContextTokenAnchor,
+  buildLatestRecoveryCandidate,
   buildStoredActiveContext,
   buildTranscript,
 } from "../projection/sessionHistoryProjection";
@@ -100,6 +101,7 @@ export async function readV3Session(
     const fileStat = await fs.promises.stat(resolveV3SessionPath(workspaceRoot, sessionId, routed));
     const summary = projectSessionSummary(stored.meta, replay, { mtimeMs: fileStat.mtimeMs });
     const contextTokenAnchor = buildContextTokenAnchor(replay);
+    const recovery = buildLatestRecoveryCandidate(replay);
     const warnings = stored.events.some(
       (event) =>
         isKnownSessionEvent(event) &&
@@ -118,6 +120,7 @@ export async function readV3Session(
         ...(contextTokenAnchor ? { contextTokenAnchor } : {}),
         transcript: buildTranscript(replay),
         mcp: projectSessionMcpState(replay),
+        ...(recovery ? { recovery } : {}),
         ...(warnings ? { warnings } : {}),
       },
     };

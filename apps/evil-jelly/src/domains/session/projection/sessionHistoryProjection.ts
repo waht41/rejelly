@@ -16,7 +16,7 @@ import {
 } from "../../../shared/session/transcript";
 import { getLegacyUserInputDisplay } from "../model/frozenUserInput";
 import type { SessionBudgetData, ToolObservationRecordedEvent } from "../model/sessionEvents";
-import type { SessionContextTokenAnchor } from "../model/sessionTypes";
+import type { SessionContextTokenAnchor, SessionRecoveryCandidate } from "../model/sessionTypes";
 import {
   getSessionImageBlobMetadata,
   type StoredSessionMessage,
@@ -71,6 +71,71 @@ function closeDanglingToolCalls(messages: StoredSessionMessage[]): StoredSession
   }
   appendUnknownOutcomes();
   return output;
+}
+
+export function buildLatestRecoveryCandidate(
+  replay: PreparedSessionReplay,
+): SessionRecoveryCandidate | undefined {
+  let latest:
+    | {
+        turnId: string;
+        userMessage: StoredSessionMessage;
+        status?: "completed" | "interrupted" | "error";
+        recovered?: boolean;
+        pendingToolCalls: Set<string>;
+      }
+    | undefined;
+
+  for (const event of replay.events) {
+    if (event.type === "user_input_recorded" && event.inputKind === "initial") {
+      latest = {
+        turnId: event.turnId,
+        userMessage: event.runtimeMessage,
+        pendingToolCalls: new Set(),
+      };
+      continue;
+    }
+    if (
+      event.type === "message_recorded" &&
+      event.source.kind === "user_input" &&
+      event.source.inputKind === "initial"
+    ) {
+      latest = {
+        turnId: event.turnId,
+        userMessage: event.message,
+        pendingToolCalls: new Set(),
+      };
+      continue;
+    }
+    if (!latest || event.turnId !== latest.turnId) continue;
+    if (event.type === "message_recorded") {
+      if (event.message.role === "assistant") {
+        for (const call of event.message.tool_calls ?? []) latest.pendingToolCalls.add(call.id);
+      } else if (event.message.role === "tool" && event.message.tool_call_id) {
+        latest.pendingToolCalls.delete(event.message.tool_call_id);
+      }
+      continue;
+    }
+    if (event.type === "turn_completed") {
+      latest.status = event.status;
+      latest.recovered = event.recovered;
+    }
+  }
+
+  if (!latest || latest.status === "completed") return undefined;
+  const status = latest.status ?? "interrupted";
+  return {
+    turnId: latest.turnId,
+    status,
+    reason:
+      latest.status === "error"
+        ? "session_error"
+        : latest.status === undefined || latest.recovered
+          ? "process_interrupted"
+          : "user_abort",
+    userMessage: latest.userMessage,
+    hasUnknownToolOutcome: latest.pendingToolCalls.size > 0,
+  };
 }
 
 export function buildStoredActiveContext(replay: PreparedSessionReplay): StoredSessionMessage[] {
