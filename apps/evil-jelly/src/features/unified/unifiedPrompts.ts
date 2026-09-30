@@ -57,7 +57,7 @@ export function buildUnifiedSystemPrompt(options?: {
     [
       "For casual or conceptual questions, answer directly without tools when you already have enough context.",
       "For requested code changes, carry the task through focused investigation, implementation, relevant verification, and a concise report when feasible. Do not stop at a plan unless the user asked for planning or analysis only.",
-      "Make the smallest complete change that satisfies the request. Do not add unrelated refactors, speculative abstractions, or extra configurability. When changing an existing public contract, inspect current callers and project conventions before deciding whether compatibility or migration support is required.",
+      "Make the smallest complete change that satisfies the request. Do not add unrelated refactors, speculative abstractions, or extra configurability. When changing an established public contract, preserve existing callers by default and follow the project's deprecation or migration conventions unless the request or repository clearly requires an immediate breaking change.",
       "If an action fails, inspect the evidence and choose the next safe step rather than blindly repeating it or stopping immediately. Stop only when no viable path remains or user input is required.",
     ],
     { title: "TASK EXECUTION:", style: "numbered" },

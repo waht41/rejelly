@@ -50,7 +50,10 @@ describe("buildUnifiedSystemPrompt", () => {
 
     expect(prompt).toContain("Make the smallest complete change that satisfies the request.");
     expect(prompt).toContain(
-      "inspect current callers and project conventions before deciding whether compatibility or migration support is required",
+      "When changing an established public contract, preserve existing callers by default",
+    );
+    expect(prompt).toContain(
+      "unless the request or repository clearly requires an immediate breaking change",
     );
     expect(prompt).not.toContain("compatibility shims");
     expect(prompt).toContain("Never revert, overwrite, or delete unrelated changes.");
