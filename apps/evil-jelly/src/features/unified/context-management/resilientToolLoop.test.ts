@@ -1,4 +1,4 @@
-import type { Message } from "@rejelly/core";
+import { AbortError, type Message } from "@rejelly/core";
 import type { PromptContext } from "@rejelly/core/policy";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -108,6 +108,77 @@ describe("runResilientToolCallLoopPolicy session recorder", () => {
       "dispatch_2",
     );
     expect(toolsForDispatch).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports a requested tool before local execution starts", async () => {
+    const modelCall: Message = {
+      role: "assistant",
+      content: null,
+      tool_calls: [{ id: "call-requested", name: "read_file", arguments: "{}" }],
+    };
+    policyMocks.executeValidatedLoopTurn.mockResolvedValueOnce({
+      kind: "tool_calls",
+      calls: modelCall.tool_calls,
+      deltaMessages: [modelCall],
+    });
+    const recorder = {
+      recordMessages: vi.fn(async () => {
+        throw new AbortError("interrupted before tool execution");
+      }),
+    } as unknown as SessionRecorder;
+    const ctx = {
+      maxTurnSteps: 3,
+      maxRetries: 0,
+      messages: [],
+      tools: [],
+      fork: vi.fn(function (this: PromptContext, overrides) {
+        return { ...this, ...overrides };
+      }),
+      span: { setAttribute: vi.fn() },
+    } as unknown as PromptContext;
+    const progress: string[] = [];
+
+    await expect(
+      runResilientToolCallLoopPolicy(ctx, {
+        turnId: "turn-requested",
+        sessionRecorder: recorder,
+        onTurnProgress: (event) => progress.push(event),
+      }),
+    ).resolves.toMatchObject({ aborted: true });
+    expect(progress).toEqual(["model_output", "tool_requested"]);
+    expect(policyMocks.executeTools).not.toHaveBeenCalled();
+  });
+
+  it("reports a running tool when local execution is interrupted", async () => {
+    const modelCall: Message = {
+      role: "assistant",
+      content: null,
+      tool_calls: [{ id: "call-running", name: "read_file", arguments: "{}" }],
+    };
+    policyMocks.executeValidatedLoopTurn.mockResolvedValueOnce({
+      kind: "tool_calls",
+      calls: modelCall.tool_calls,
+      deltaMessages: [modelCall],
+    });
+    policyMocks.executeTools.mockRejectedValueOnce(new AbortError("interrupted during tool"));
+    const ctx = {
+      maxTurnSteps: 3,
+      maxRetries: 0,
+      messages: [],
+      tools: [],
+      fork: vi.fn(function (this: PromptContext, overrides) {
+        return { ...this, ...overrides };
+      }),
+      span: { setAttribute: vi.fn() },
+    } as unknown as PromptContext;
+    const progress: string[] = [];
+
+    await expect(
+      runResilientToolCallLoopPolicy(ctx, {
+        onTurnProgress: (event) => progress.push(event),
+      }),
+    ).resolves.toMatchObject({ aborted: true });
+    expect(progress).toEqual(["model_output", "tool_requested", "tool_execution_started"]);
   });
 
   it("uses a resumed provider anchor instead of re-estimating the whole context", async () => {

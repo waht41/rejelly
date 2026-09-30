@@ -10,7 +10,10 @@ import {
   materializeFrozenUserInputMessage,
 } from "../../domains/session/repository/userInputRepository";
 import type { SkillRuntimeSnapshot } from "../../domains/skills/agent/skillRuntime";
-import type { ConversationAgentProps } from "../../features/unified/conversationRun";
+import type {
+  ConversationAgentProps,
+  TurnProgressEvent,
+} from "../../features/unified/conversationRun";
 import { UnifiedAgent } from "../../features/unified/UnifiedAgent";
 import type { EvilJellyBindings } from "../../shared/host/bindings";
 import { releasePromptResources } from "../../shared/host/promptResourceLifecycle";
@@ -27,7 +30,12 @@ import { materializeSkillAwareUserInput } from "../message-composer/message-mate
 import { memoryReferenceName } from "../message-composer/suggestions/semantic-reference/referenceNaming";
 import { drainSteers } from "../submission-dispatch/steerQueue";
 import type { ConversationSession } from "./conversationSession";
-import type { TurnExecutionResult, TurnRecoveryStage, TurnRecoveryState } from "./turnRecovery";
+import type {
+  TurnExecutionResult,
+  TurnRecoveryStage,
+  TurnRecoveryState,
+  TurnToolActivity,
+} from "./turnRecovery";
 
 export type ResolveMcpUserInput = (serverId: string) => {
   status: "selected" | "unavailable" | "disabled" | "untrusted";
@@ -221,6 +229,24 @@ async function runCommittedConversationTurn(
   input: CommittedConversationTurn,
 ): Promise<TurnExecutionResult> {
   let turnClosureAttempted = false;
+  let modelOutputReceived = false;
+  let toolActivity: TurnToolActivity = "none";
+  const observeProgress = (event: TurnProgressEvent): void => {
+    switch (event) {
+      case "model_output":
+        modelOutputReceived = true;
+        break;
+      case "tool_requested":
+        toolActivity = "requested";
+        break;
+      case "tool_execution_started":
+        toolActivity = "running";
+        break;
+      case "tool_result_committed":
+        toolActivity = "completed";
+        break;
+    }
+  };
   const turnMcpSelection = new Set(input.mcpServerIds);
   try {
     const result = await runtime.runInterruptibleOperation("conversation_turn", (operationSignal) =>
@@ -236,6 +262,7 @@ async function runCommittedConversationTurn(
         mcpBindingFactory: createTurnMcpBindingFactory(runtime, turnMcpSelection),
         initialTokenAnchor: runtime.session.contextTokenAnchor(),
         operationSignal,
+        onTurnProgress: observeProgress,
       }),
     );
 
@@ -270,7 +297,7 @@ async function runCommittedConversationTurn(
           reason: "user_abort",
           strategy: "resume_with_context",
           message: "Task was interrupted before completion.",
-          toolActivity: "unknown",
+          toolActivity,
         }),
       };
     }
@@ -288,7 +315,7 @@ async function runCommittedConversationTurn(
           reason: "user_abort",
           strategy: "resume_with_context",
           message: "Task was interrupted before completion.",
-          toolActivity: "unknown",
+          toolActivity,
         }),
       };
     }
@@ -306,7 +333,7 @@ async function runCommittedConversationTurn(
       case "server_error":
       case "rate_limit": {
         const yielded = modelFailureYielded(error);
-        if (yielded === false) {
+        if (yielded === false && !modelOutputReceived && toolActivity === "none") {
           return {
             status: "recoverable",
             recovery: recoveryState(input, {
@@ -328,7 +355,7 @@ async function runCommittedConversationTurn(
             reason: "transient_model_failure",
             strategy: "resume_with_context",
             message: error.message,
-            toolActivity: "unknown",
+            toolActivity,
           }),
         };
       }

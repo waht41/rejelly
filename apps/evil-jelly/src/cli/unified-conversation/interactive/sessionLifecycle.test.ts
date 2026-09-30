@@ -469,6 +469,84 @@ describe("non-TTY session lifecycle", () => {
     ).toEqual(["completed"]);
   });
 
+  it("continues from a completed tool result when the next model response fails pre-output", async () => {
+    const systemEvents: string[] = [];
+    const modelCalls: Message[][] = [];
+    const bindings = createMemoryBindings(["Inspect before failure", "/continue", "/exit"]);
+    bindings.logSystemEvent = (message) => systemEvents.push(message);
+    let callIndex = 0;
+    const adapter: ModelAdapter = {
+      id: "post-tool-failure-model",
+      async *stream(messages): AsyncGenerator<StreamEvent> {
+        modelCalls.push(messages.map((message) => ({ ...message })));
+        const currentCall = callIndex++;
+        if (currentCall === 0) {
+          yield {
+            type: "tool_call",
+            toolCall: {
+              index: 0,
+              id: "completed-before-failure",
+              name: "list_directory",
+              arguments: JSON.stringify({ dirPath: ".", depth: 1 }),
+            },
+          };
+          return;
+        }
+        if (currentCall === 1) {
+          throw new ModelCallError("provider unavailable after tool", {
+            modelId: "post-tool-failure-model",
+            code: "server_error",
+          });
+        }
+        yield { type: "text", content: "Continued from the recorded tool result." };
+      },
+    };
+    const model = augmentModel(adapter, [
+      withRetry({ maxAttempts: 1, connectionRetry: "bounded" }),
+    ]);
+
+    await runEvilJellyHost(bindings, {
+      runControl: createInteractiveRunControl(),
+      model,
+      sessionId: "post-tool-failure",
+      sessionStartMode: "new",
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+    });
+
+    expect(callIndex).toBe(3);
+    expect(systemEvents).toContain(
+      "\n[System] Current task failed: provider unavailable after tool. Returning to router. A tool completed before the failure; continue from its recorded result. Use /continue to continue the task.\n",
+    );
+    expect(systemEvents).not.toContain("Retrying the previous model request…\n");
+    const continuedCall = modelCalls[2] ?? [];
+    expect(
+      continuedCall.some(
+        (message) => message.role === "tool" && message.tool_call_id === "completed-before-failure",
+      ),
+    ).toBe(true);
+    expect(
+      continuedCall.some(
+        (message) =>
+          message.role === "user" &&
+          messageContentToText(message.content).includes(
+            "Completed tool results are already present in the conversation history.",
+          ),
+      ),
+    ).toBe(true);
+
+    const stored = await readSessionEvents(workspaceRoot, "post-tool-failure", { sessionsRoot });
+    expect(
+      stored.events.filter(
+        (event) => isKnownSessionEvent(event) && event.type === "user_input_recorded",
+      ),
+    ).toHaveLength(2);
+    expect(
+      stored.events
+        .filter((event) => isKnownSessionEvent(event) && event.type === "turn_completed")
+        .map((event) => (event.type === "turn_completed" ? event.status : undefined)),
+    ).toEqual(["error", "completed"]);
+  });
+
   it("closes a pending transparent retry when the user exits", async () => {
     const adapter: ModelAdapter = {
       id: "abandoned-retry-model",

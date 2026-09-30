@@ -62,8 +62,8 @@ import {
   retryConversationTurn,
 } from "./turnExecution";
 import {
-  ABORT_CONTINUE_PROMPT,
-  TRANSIENT_CONTINUE_PROMPT,
+  continuationPromptForRecovery,
+  recoveryActivityWarning,
   type TurnExecutionResult,
   type TurnRecoveryState,
 } from "./turnRecovery";
@@ -354,10 +354,7 @@ function applyTurnResult(runtime: RouterRuntime, result: TurnExecutionResult): v
   runtime.session.setRecoveryState(result.recovery);
   const label =
     result.status === "recoverable" ? `failed: ${result.recovery.message}` : "was interrupted";
-  const activityWarning =
-    result.recovery.toolActivity === "unknown"
-      ? " Some tool activity may have occurred; verify current state before repeating actions."
-      : "";
+  const activityWarning = recoveryActivityWarning(result.recovery.toolActivity);
   runtime.host.logSystemEvent(
     `\n[System] Current task ${label}. Returning to router.${activityWarning} Use /continue to continue the task.\n`,
   );
@@ -518,8 +515,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
           }
           await refreshInterruptedSessionContext(runtime);
           session.ensureHistoryIncludes(recovery.userMessage);
-          const continuePrompt =
-            recovery.reason === "user_abort" ? ABORT_CONTINUE_PROMPT : TRANSIENT_CONTINUE_PROMPT;
+          const continuePrompt = continuationPromptForRecovery(recovery);
           await runConversationTurn(runtime, textPromptInput(continuePrompt), continuePrompt);
           return reborn();
         }
