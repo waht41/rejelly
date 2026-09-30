@@ -16,6 +16,7 @@ export interface ConversationSessionSeed {
   seedBudget?: SessionBudget;
   seedContextTokenAnchor?: SessionContextTokenAnchor;
   seedMcpState?: SessionMcpState;
+  seedRecovery?: TurnRecoveryState;
   initialImageOrdinal?: number;
 }
 
@@ -67,7 +68,7 @@ export function equipConversationSession(
     );
   const [storedRecoveryState, storeRecoveryState] = equipMemory<TurnRecoveryState | null>(
     "main_cli:turn_recovery",
-    null,
+    seed.seedRecovery ?? null,
   );
 
   // equipMemory getters are frozen at handler entry, so same-turn consumers use live mirrors.

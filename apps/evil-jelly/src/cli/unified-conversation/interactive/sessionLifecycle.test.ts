@@ -31,6 +31,7 @@ import {
   resetInterruptibleTaskStack,
 } from "../../../shared/task-interruption/taskStack";
 import { withRetry } from "../../model-composition/withRetry";
+import { buildSessionResumeSeed } from "./resume";
 import { createInteractiveRunControl } from "./runControl";
 import { runEvilJellyHost } from "./runSegment";
 
@@ -529,6 +530,77 @@ describe("non-TTY session lifecycle", () => {
       "\n[System] Current task cannot continue: invalid API key. Fix the model credentials or endpoint configuration, then restart Evil.\n",
     );
     expect(systemEvents).toContain("No failed or interrupted task is available to continue.\n");
+  });
+
+  it("restores /continue recovery after exiting and resuming an interrupted session", async () => {
+    const interruptedModel: ModelAdapter = {
+      id: "durable-recovery-model",
+      async *stream(): AsyncGenerator<StreamEvent> {
+        yield* [] as StreamEvent[];
+        throw new AbortError("user interrupted");
+      },
+    };
+    await runEvilJellyHost(createMemoryBindings(["Recover after restart", "/exit"]), {
+      runControl: createInteractiveRunControl(),
+      model: interruptedModel,
+      sessionId: "durable-recovery",
+      sessionStartMode: "new",
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+    });
+
+    const record = await resumeSession(workspaceRoot, "durable-recovery", {
+      originator: "evil-jelly-cli",
+      appVersion: "1.0.0",
+      sessionsRoot,
+    });
+    expect(record?.recovery).toMatchObject({
+      status: "interrupted",
+      reason: "user_abort",
+      hasUnknownToolOutcome: false,
+    });
+    const seed = buildSessionResumeSeed(record!);
+    expect(seed.recovery).toMatchObject({
+      status: "interrupted",
+      strategy: "resume_with_context",
+    });
+
+    const resumedCalls: Message[][] = [];
+    const resumedModel: ModelAdapter = {
+      id: "durable-recovery-model",
+      async *stream(messages): AsyncGenerator<StreamEvent> {
+        resumedCalls.push(messages.map((message) => ({ ...message })));
+        yield { type: "text", content: "Recovered after restart." };
+      },
+    };
+    await runEvilJellyHost(createMemoryBindings(["/continue", "/exit"]), {
+      runControl: createInteractiveRunControl(),
+      model: resumedModel,
+      sessionId: "durable-recovery",
+      sessionStartMode: "resumed",
+      seedContext: seed.activeContext,
+      seedBudget: seed.budget,
+      seedMcpState: seed.mcp,
+      seedRecovery: seed.recovery,
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+    });
+
+    const resumedCall = resumedCalls[0] ?? [];
+    expect(
+      resumedCall.some(
+        (message) =>
+          message.role === "user" &&
+          messageContentToText(message.content).includes("Recover after restart"),
+      ),
+    ).toBe(true);
+    expect(
+      resumedCall.some(
+        (message) =>
+          message.role === "user" &&
+          messageContentToText(message.content).includes(
+            "The previous task was interrupted by the user.",
+          ),
+      ),
+    ).toBe(true);
   });
 
   it("keeps an interrupted multi-round turn in live and resumed context", async () => {

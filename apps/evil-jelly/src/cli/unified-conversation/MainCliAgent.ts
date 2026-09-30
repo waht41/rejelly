@@ -7,11 +7,13 @@ import {
   type SessionMemoryRuntime,
 } from "../../domains/memory/runtime/sessionMemoryRuntime";
 import type { SessionRecorder } from "../../domains/session/recorder/sessionRecorder";
+import { materializeMessageHistory } from "../../domains/session/repository/sessionMessageMaterializer";
 import type {
   SessionBudget,
   SessionContextTokenAnchor,
   SessionStoragePaths,
 } from "../../domains/session/repository/sessionStore";
+import { resumeSession } from "../../domains/session/repository/sessionStore";
 import {
   SKILL_RUNTIME_PROVIDER_KEY,
   type SkillRuntimeSnapshot,
@@ -63,6 +65,7 @@ import {
   ABORT_CONTINUE_PROMPT,
   TRANSIENT_CONTINUE_PROMPT,
   type TurnExecutionResult,
+  type TurnRecoveryState,
 } from "./turnRecovery";
 
 export interface MainCliAgentProps extends EvilJellyBindings {
@@ -77,12 +80,16 @@ export interface MainCliAgentProps extends EvilJellyBindings {
   sessionBlobRoot?: string;
   /** Journal/blob roots used by runtime /resume discovery and loading. */
   sessionStorage?: SessionStoragePaths;
+  /** App version used when refreshing the current durable Session after interruption. */
+  sessionAppVersion?: string;
   /** Cumulative usage carried back from a resumed session, used as the /status base. */
   seedBudget?: SessionBudget;
   /** Resume-validated association between seedContext and the latest provider prompt count. */
   seedContextTokenAnchor?: SessionContextTokenAnchor;
   /** Session-level MCP authorization state recovered from its V3 projection. */
   seedMcpState?: SessionMcpState;
+  /** Latest durable interrupted/error Turn available to `/continue` after resume. */
+  seedRecovery?: TurnRecoveryState;
   resolveMcpUserInput?: ResolveMcpUserInput;
   /** Replay-only mode: do not read from or write to durable local sessions. */
   isolateSessionState?: boolean;
@@ -424,6 +431,22 @@ async function abandonCurrentRecovery(runtime: RouterRuntime): Promise<void> {
   runtime.session.clearRecoveryState();
 }
 
+async function refreshInterruptedSessionContext(runtime: RouterRuntime): Promise<void> {
+  const { sessionId, sessionAppVersion, sessionStorage } = runtime.props;
+  if (!sessionId || !sessionAppVersion) return;
+  const record = await resumeSession(getWorkspaceRoot(), sessionId, {
+    originator: "evil-jelly-cli",
+    appVersion: sessionAppVersion,
+    ...sessionStorage,
+  });
+  if (!record) return;
+  runtime.session.replaceHistory(
+    await materializeMessageHistory(record.messages, {
+      ...(sessionStorage?.blobRoot ? { blobRoot: sessionStorage.blobRoot } : {}),
+    }),
+  );
+}
+
 export const MainCliAgent = createAgent<MainCliAgentProps, void>({
   id: "evil_jelly_cli_router",
   handler: async (props) => {
@@ -435,6 +458,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
         seedBudget: props.seedBudget,
         seedContextTokenAnchor: props.seedContextTokenAnchor,
         seedMcpState: props.seedMcpState,
+        seedRecovery: props.seedRecovery,
         initialImageOrdinal: props.sessionRecorder?.nextImageOrdinal,
       },
       host,
@@ -492,6 +516,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
             await runRetriedConversationTurn(runtime, recovery);
             return reborn();
           }
+          await refreshInterruptedSessionContext(runtime);
           session.ensureHistoryIncludes(recovery.userMessage);
           const continuePrompt =
             recovery.reason === "user_abort" ? ABORT_CONTINUE_PROMPT : TRANSIENT_CONTINUE_PROMPT;

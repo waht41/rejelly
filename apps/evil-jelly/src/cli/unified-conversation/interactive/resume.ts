@@ -24,6 +24,7 @@ import {
   type TranscriptItem,
   tailTranscriptByInitialTurns,
 } from "../../../shared/session/transcript";
+import type { TurnRecoveryState } from "../turnRecovery";
 import type { ConversationLoopControl } from "./runControl";
 
 /** Request an in-run session switch, resolving an optional session picker first. */
@@ -85,6 +86,7 @@ export interface SessionResumeSeed {
   budget: SessionBudget | undefined;
   contextTokenAnchor?: SessionContextTokenAnchor;
   mcp: SessionMcpState;
+  recovery?: TurnRecoveryState;
   warnings?: string[];
 }
 
@@ -176,6 +178,24 @@ export function buildSessionResumeSeed(record: SessionRecord): SessionResumeSeed
     ...(record.transcript ? { transcript: record.transcript } : {}),
     ...(record.contextTokenAnchor ? { contextTokenAnchor: record.contextTokenAnchor } : {}),
     ...(record.warnings ? { warnings: record.warnings } : {}),
+    ...(record.recovery
+      ? {
+          recovery: {
+            status: record.recovery.status === "error" ? "failed" : "interrupted",
+            reason: record.recovery.reason === "user_abort" ? "user_abort" : "session_recovery",
+            strategy: "resume_with_context",
+            stage: "agent",
+            message:
+              record.recovery.status === "error"
+                ? "The latest saved Turn ended with an error."
+                : "The latest saved Turn was interrupted.",
+            toolActivity: record.recovery.hasUnknownToolOutcome ? "unknown" : "none",
+            turnId: record.recovery.turnId,
+            userMessage: record.recovery.userMessage,
+            mcpServerIds: [],
+          },
+        }
+      : {}),
     mcp: record.mcp,
   };
 }
@@ -238,6 +258,13 @@ export function hydrateResumeSeed(
     bindings.logSystemEvent(`Session warning: ${warning}\n`);
   }
   bindings.logSystemEvent(`Resumed session ${sessionId} (${priorTurns} prior turns).\n`);
+  if (seed.recovery) {
+    const toolWarning =
+      seed.recovery.toolActivity === "unknown" ? " A tool outcome may be unknown." : "";
+    bindings.logSystemEvent(
+      `The latest Turn was ${seed.recovery.status}.${toolWarning} Use /continue to continue it.\n`,
+    );
+  }
 }
 
 export interface InitialSessionState {

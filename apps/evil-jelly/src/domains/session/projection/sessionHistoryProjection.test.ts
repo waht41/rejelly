@@ -10,6 +10,7 @@ import { materializeActiveContext } from "../repository/sessionMessageMaterializ
 import {
   buildContextTokenAnchor,
   buildLatestBudget,
+  buildLatestRecoveryCandidate,
   buildStoredActiveContext,
   buildTranscript,
 } from "./sessionHistoryProjection";
@@ -371,7 +372,8 @@ describe("session history projections", () => {
       },
     ];
 
-    expect(buildStoredActiveContext(replay(events))).toEqual([
+    const prepared = replay(events);
+    expect(buildStoredActiveContext(prepared)).toEqual([
       expect.objectContaining({ role: "user", content: "run tool" }),
       expect.objectContaining({ role: "assistant" }),
       expect.objectContaining({
@@ -380,6 +382,13 @@ describe("session history projections", () => {
         content: expect.stringContaining("outcome is unknown"),
       }),
     ]);
+    expect(buildLatestRecoveryCandidate(prepared)).toMatchObject({
+      turnId: "turn-1",
+      status: "interrupted",
+      reason: "user_abort",
+      hasUnknownToolOutcome: true,
+      userMessage: expect.objectContaining({ role: "user", content: "run tool" }),
+    });
   });
 
   it("uses structured attachment display while leaving legacy text untouched", () => {
