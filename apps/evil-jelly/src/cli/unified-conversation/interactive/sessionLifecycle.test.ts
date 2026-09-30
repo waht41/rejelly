@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   AbortError,
+  augmentModel,
   type Message,
   type ModelAdapter,
   ModelCallError,
@@ -29,6 +30,7 @@ import {
   interruptActiveTask,
   resetInterruptibleTaskStack,
 } from "../../../shared/task-interruption/taskStack";
+import { withRetry } from "../../model-composition/withRetry";
 import { createInteractiveRunControl } from "./runControl";
 import { runEvilJellyHost } from "./runSegment";
 
@@ -396,7 +398,7 @@ describe("non-TTY session lifecycle", () => {
     bindings.logSystemEvent = (message) => systemEvents.push(message);
     bindings.logAssistantMessage = (message) => assistantMessages.push(message);
     let callIndex = 0;
-    const model: ModelAdapter = {
+    const adapter: ModelAdapter = {
       id: "recoverable-error-model",
       async *stream(messages): AsyncGenerator<StreamEvent> {
         modelCalls.push(messages.map((message) => ({ ...message })));
@@ -409,6 +411,9 @@ describe("non-TTY session lifecycle", () => {
         yield { type: "text", content: "Recovered on the next turn." };
       },
     };
+    const model = augmentModel(adapter, [
+      withRetry({ maxAttempts: 1, connectionRetry: "bounded" }),
+    ]);
 
     await runEvilJellyHost(bindings, {
       runControl: createInteractiveRunControl(),
@@ -420,8 +425,9 @@ describe("non-TTY session lifecycle", () => {
 
     expect(callIndex).toBe(2);
     expect(systemEvents).toContain(
-      "\n[System] Current task failed: provider unavailable. Returning to router. Some tool activity may have occurred; verify current state before repeating actions. Use /continue to continue the task.\n",
+      "\n[System] Current task failed: provider unavailable. Returning to router. Use /continue to continue the task.\n",
     );
+    expect(systemEvents).toContain("Retrying the previous model request…\n");
     const continuedCall = modelCalls[1] ?? [];
     expect(
       continuedCall.some(
@@ -437,13 +443,10 @@ describe("non-TTY session lifecycle", () => {
       ),
     ).toBe(false);
     expect(
-      continuedCall.some(
-        (message) =>
-          message.role === "user" &&
-          messageContentToText(message.content) ===
-            "Continue the previous task using the available conversation and tool history. Verify the current state before repeating any action.",
+      continuedCall.some((message) =>
+        messageContentToText(message.content).includes("Continue the previous task"),
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       continuedCall.some((message) =>
         messageContentToText(message.content).includes("provider unavailable"),
@@ -451,6 +454,49 @@ describe("non-TTY session lifecycle", () => {
     ).toBe(false);
     expect(assistantMessages).toContain("Recovered on the next turn.");
     expect(systemEvents).toContain("No failed or interrupted task is available to continue.\n");
+
+    const stored = await readSessionEvents(workspaceRoot, "recoverable-error", { sessionsRoot });
+    expect(
+      stored.events.filter(
+        (event) => isKnownSessionEvent(event) && event.type === "user_input_recorded",
+      ),
+    ).toHaveLength(1);
+    expect(
+      stored.events
+        .filter((event) => isKnownSessionEvent(event) && event.type === "turn_completed")
+        .map((event) => (event.type === "turn_completed" ? event.status : undefined)),
+    ).toEqual(["completed"]);
+  });
+
+  it("closes a pending transparent retry when the user exits", async () => {
+    const adapter: ModelAdapter = {
+      id: "abandoned-retry-model",
+      async *stream(): AsyncGenerator<StreamEvent> {
+        yield* [] as StreamEvent[];
+        throw new ModelCallError("gateway unavailable", {
+          modelId: "abandoned-retry-model",
+          code: "server_error",
+        });
+      },
+    };
+    const model = augmentModel(adapter, [
+      withRetry({ maxAttempts: 1, connectionRetry: "bounded" }),
+    ]);
+
+    await runEvilJellyHost(createMemoryBindings(["Try once", "/exit"]), {
+      runControl: createInteractiveRunControl(),
+      model,
+      sessionId: "abandoned-retry",
+      sessionStartMode: "new",
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+    });
+
+    const stored = await readSessionEvents(workspaceRoot, "abandoned-retry", { sessionsRoot });
+    expect(
+      stored.events
+        .filter((event) => isKnownSessionEvent(event) && event.type === "turn_completed")
+        .map((event) => (event.type === "turn_completed" ? event.status : undefined)),
+    ).toEqual(["error"]);
   });
 
   it("keeps blocked model configuration failures in the router without offering recovery", async () => {

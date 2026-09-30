@@ -3,16 +3,19 @@ import type { Message } from "@rejelly/core";
 export type TurnRecoveryStatus = "failed" | "interrupted";
 export type TurnRecoveryStage = "preparation" | "agent";
 export type TurnRecoveryReason = "user_abort" | "transient_model_failure";
+export type TurnRecoveryStrategy = "retry_same_turn" | "resume_with_context";
 
 /** One-shot recovery state for the latest failed or interrupted conversation turn. */
 export interface TurnRecoveryState {
   status: TurnRecoveryStatus;
   reason: TurnRecoveryReason;
+  strategy: TurnRecoveryStrategy;
   stage: TurnRecoveryStage;
   message: string;
   toolActivity: "none" | "unknown";
   turnId?: string;
   userMessage: Message;
+  mcpServerIds: readonly string[];
 }
 
 export type TurnExecutionResult =

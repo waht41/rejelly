@@ -52,7 +52,13 @@ import {
   isSkillsLocalCommand,
   type SkillDoctorReport,
 } from "./skillsCommands";
-import { executeConversationTurn, type ResolveMcpUserInput } from "./turnExecution";
+import {
+  abandonPendingConversationTurn,
+  type ConversationTurnRuntime,
+  executeConversationTurn,
+  type ResolveMcpUserInput,
+  retryConversationTurn,
+} from "./turnExecution";
 import {
   ABORT_CONTINUE_PROMPT,
   TRANSIENT_CONTINUE_PROMPT,
@@ -138,6 +144,7 @@ function classifyRouterIntent(promptInput: PromptInput): RouterIntent {
 }
 
 async function handleExit(runtime: RouterRuntime): Promise<void> {
+  await abandonCurrentRecovery(runtime);
   await runtime.props.sessionRecorder?.endSegment({
     status: "completed",
     reason: "exit",
@@ -147,6 +154,7 @@ async function handleExit(runtime: RouterRuntime): Promise<void> {
 }
 
 async function handleClear(runtime: RouterRuntime): Promise<void> {
+  await abandonCurrentRecovery(runtime);
   const previousBudget = runtime.session.currentBudget();
   runtime.host.clearHistory?.();
   runtime.host.clearScreen?.();
@@ -252,6 +260,7 @@ async function handleResume(runtime: RouterRuntime, rawInput: string): Promise<b
   ) {
     return false;
   }
+  await abandonCurrentRecovery(runtime);
   await runtime.props.sessionRecorder?.endSegment({
     status: "completed",
     reason: "switch_session",
@@ -347,10 +356,25 @@ function applyTurnResult(runtime: RouterRuntime, result: TurnExecutionResult): v
   );
 }
 
-async function runConversationTurn(
+function conversationTurnRuntime(runtime: RouterRuntime): ConversationTurnRuntime {
+  return {
+    host: runtime.host,
+    session: runtime.session,
+    sessionRecorder: runtime.props.sessionRecorder,
+    sessionId: runtime.props.sessionId,
+    sessionBlobRoot: runtime.props.sessionBlobRoot,
+    skillSnapshot: runtime.skillSnapshot,
+    memoryRuntime: runtime.memoryRuntime,
+    resolveMcpUserInput: runtime.props.resolveMcpUserInput,
+    mcpBindingFactory: runtime.props.mcpBindingFactory,
+    mcpSessionControl: runtime.props.mcpSessionControl,
+    runInterruptibleOperation: runInterruptibleConversationOperation,
+  };
+}
+
+async function runConversationOperation(
   runtime: RouterRuntime,
-  promptInput: PromptInput,
-  userInput: string,
+  operation: (turnRuntime: ConversationTurnRuntime) => Promise<TurnExecutionResult>,
 ): Promise<void> {
   const activeCommands = createActiveTurnCommands({
     showStatus: () => handleStatus(runtime),
@@ -363,23 +387,7 @@ async function runConversationTurn(
   });
   const disposeRunningCommands = setRunningCommandHandler(activeCommands.handle);
   try {
-    const result = await executeConversationTurn(
-      {
-        host: runtime.host,
-        session: runtime.session,
-        sessionRecorder: runtime.props.sessionRecorder,
-        sessionId: runtime.props.sessionId,
-        sessionBlobRoot: runtime.props.sessionBlobRoot,
-        skillSnapshot: runtime.skillSnapshot,
-        memoryRuntime: runtime.memoryRuntime,
-        resolveMcpUserInput: runtime.props.resolveMcpUserInput,
-        mcpBindingFactory: runtime.props.mcpBindingFactory,
-        mcpSessionControl: runtime.props.mcpSessionControl,
-        runInterruptibleOperation: runInterruptibleConversationOperation,
-      },
-      promptInput,
-      userInput,
-    );
+    const result = await operation(conversationTurnRuntime(runtime));
     if (result.status === "completed") {
       await activeCommands.waitForPending();
       activeCommands.flushDeferred();
@@ -389,6 +397,31 @@ async function runConversationTurn(
     activeCommands.dispose();
     disposeRunningCommands();
   }
+}
+
+async function runConversationTurn(
+  runtime: RouterRuntime,
+  promptInput: PromptInput,
+  userInput: string,
+): Promise<void> {
+  await runConversationOperation(runtime, (turnRuntime) =>
+    executeConversationTurn(turnRuntime, promptInput, userInput),
+  );
+}
+
+async function runRetriedConversationTurn(
+  runtime: RouterRuntime,
+  recovery: NonNullable<ReturnType<ConversationSession["recoveryState"]>>,
+): Promise<void> {
+  await runConversationOperation(runtime, (turnRuntime) =>
+    retryConversationTurn(turnRuntime, recovery),
+  );
+}
+
+async function abandonCurrentRecovery(runtime: RouterRuntime): Promise<void> {
+  const recovery = runtime.session.recoveryState();
+  await abandonPendingConversationTurn(conversationTurnRuntime(runtime), recovery);
+  runtime.session.clearRecoveryState();
 }
 
 export const MainCliAgent = createAgent<MainCliAgentProps, void>({
@@ -454,8 +487,12 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
             host.logSystemEvent("No failed or interrupted task is available to continue.\n");
             return reborn();
           }
-          session.ensureHistoryIncludes(recovery.userMessage);
           session.clearRecoveryState();
+          if (recovery.strategy === "retry_same_turn") {
+            await runRetriedConversationTurn(runtime, recovery);
+            return reborn();
+          }
+          session.ensureHistoryIncludes(recovery.userMessage);
           const continuePrompt =
             recovery.reason === "user_abort" ? ABORT_CONTINUE_PROMPT : TRANSIENT_CONTINUE_PROMPT;
           await runConversationTurn(runtime, textPromptInput(continuePrompt), continuePrompt);
@@ -474,6 +511,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
           await handleSkills(runtime, intent.rawInput);
           return reborn();
         case "message":
+          await abandonCurrentRecovery(runtime);
           await runConversationTurn(runtime, intent.promptInput, intent.userInput);
           return reborn();
       }

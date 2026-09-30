@@ -14,6 +14,7 @@ import type { ConversationAgentProps } from "../../features/unified/conversation
 import { UnifiedAgent } from "../../features/unified/UnifiedAgent";
 import type { EvilJellyBindings } from "../../shared/host/bindings";
 import { releasePromptResources } from "../../shared/host/promptResourceLifecycle";
+import { modelFailureYielded } from "../../shared/model/modelFailureProgress";
 import {
   type FrozenUserInputV1,
   frozenUserInputMcpServerIds,
@@ -26,7 +27,7 @@ import { materializeSkillAwareUserInput } from "../message-composer/message-mate
 import { memoryReferenceName } from "../message-composer/suggestions/semantic-reference/referenceNaming";
 import { drainSteers } from "../submission-dispatch/steerQueue";
 import type { ConversationSession } from "./conversationSession";
-import type { TurnExecutionResult, TurnRecoveryStage } from "./turnRecovery";
+import type { TurnExecutionResult, TurnRecoveryStage, TurnRecoveryState } from "./turnRecovery";
 
 export type ResolveMcpUserInput = (serverId: string) => {
   status: "selected" | "unavailable" | "disabled" | "untrusted";
@@ -170,65 +171,69 @@ async function closeTurnAfterFailure(
     );
 }
 
-/** Execute one submitted prompt from durable input commit through turn closure. */
-export async function executeConversationTurn(
+interface CommittedConversationTurn {
+  turnId: string;
+  userMessage: Message;
+  mcpServerIds: readonly string[];
+}
+
+function createTurnMcpBindingFactory(
   runtime: ConversationTurnRuntime,
-  promptInput: PromptInput,
-  fallbackUserText: string,
+  turnMcpSelection: Set<string>,
+): ConversationAgentProps["mcpBindingFactory"] {
+  if (!runtime.mcpBindingFactory) return undefined;
+  const selectedServerIds = () =>
+    [...new Set([...runtime.session.mcpState().selectedServerIds, ...turnMcpSelection])].sort();
+  return createAuthorizedMcpBindingFactory({
+    bindingFactory: runtime.mcpBindingFactory,
+    control: runtime.mcpSessionControl,
+    confirmTool: runtime.host.confirmTool,
+    state: {
+      get: runtime.session.mcpState,
+      commitSelection: async (next) => {
+        await runtime.sessionRecorder?.recordMcpSelection(next.selectedServerIds, "tool");
+        runtime.session.setMcpState(next);
+      },
+      commitToolGrants: async (next) => {
+        await runtime.sessionRecorder?.recordMcpToolGrants(next.toolGrants, "tool");
+        runtime.session.setMcpState(next);
+      },
+    },
+    effectiveSelectedServerIds: selectedServerIds,
+  });
+}
+
+function recoveryState(
+  input: CommittedConversationTurn,
+  fields: Pick<TurnRecoveryState, "status" | "reason" | "strategy" | "message" | "toolActivity">,
+): TurnRecoveryState {
+  return {
+    ...fields,
+    stage: "agent",
+    turnId: input.turnId,
+    userMessage: input.userMessage,
+    mcpServerIds: input.mcpServerIds,
+  };
+}
+
+async function runCommittedConversationTurn(
+  runtime: ConversationTurnRuntime,
+  input: CommittedConversationTurn,
 ): Promise<TurnExecutionResult> {
-  let submittedUserMessage: Message | undefined;
-  let activeTurnId: string | undefined;
-  let recoveryStage: TurnRecoveryStage = "preparation";
-  // Set before awaiting completeTurn: a partial append must not be retried as a second closure.
   let turnClosureAttempted = false;
-
+  const turnMcpSelection = new Set(input.mcpServerIds);
   try {
-    const resolved = await materializePromptInput(runtime, promptInput).finally(() =>
-      releasePromptResources(promptInput).catch((error) =>
-        runtime.host.logSystemEvent(
-          `Prompt resource cleanup failed: ${formatPersistenceError(error)}\n`,
-        ),
-      ),
-    );
-    activeTurnId = createTurnId();
-    runtime.host.onTurnStart?.();
-    const committed = await commitUserInput(runtime, activeTurnId, "initial", resolved);
-    submittedUserMessage = committed.message;
-    const turnMcpSelection = new Set(frozenUserInputMcpServerIds(committed.frozen));
-    const selectedServerIds = () =>
-      [...new Set([...runtime.session.mcpState().selectedServerIds, ...turnMcpSelection])].sort();
-    const mcpBindingFactory = runtime.mcpBindingFactory
-      ? createAuthorizedMcpBindingFactory({
-          bindingFactory: runtime.mcpBindingFactory,
-          control: runtime.mcpSessionControl,
-          confirmTool: runtime.host.confirmTool,
-          state: {
-            get: runtime.session.mcpState,
-            commitSelection: async (next) => {
-              await runtime.sessionRecorder?.recordMcpSelection(next.selectedServerIds, "tool");
-              runtime.session.setMcpState(next);
-            },
-            commitToolGrants: async (next) => {
-              await runtime.sessionRecorder?.recordMcpToolGrants(next.toolGrants, "tool");
-              runtime.session.setMcpState(next);
-            },
-          },
-          effectiveSelectedServerIds: selectedServerIds,
-        })
-      : undefined;
-
-    recoveryStage = "agent";
     const result = await runtime.runInterruptibleOperation("conversation_turn", (operationSignal) =>
       UnifiedAgent({
-        message: submittedUserMessage!,
+        message: input.userMessage,
         history: runtime.session.history,
         pendingUserMessages: () =>
-          drainAndPrepareSteerMessages(runtime, activeTurnId!, turnMcpSelection),
+          drainAndPrepareSteerMessages(runtime, input.turnId, turnMcpSelection),
         sessionBlobRoot: runtime.sessionBlobRoot,
         sessionRecorder: runtime.sessionRecorder,
         sessionId: runtime.sessionId,
-        turnId: activeTurnId,
-        mcpBindingFactory,
+        turnId: input.turnId,
+        mcpBindingFactory: createTurnMcpBindingFactory(runtime, turnMcpSelection),
         initialTokenAnchor: runtime.session.contextTokenAnchor(),
         operationSignal,
       }),
@@ -238,20 +243,20 @@ export async function executeConversationTurn(
       runtime.session.replaceHistory(result.compactHistory);
       runtime.session.clearContextTokenAnchor();
     } else {
-      runtime.session.appendTurn(submittedUserMessage, result.reply, result.delta);
+      runtime.session.appendTurn(input.userMessage, result.reply, result.delta);
     }
 
     if (runtime.sessionRecorder) {
       if (!result.interrupted && (!result.delta || result.delta.length === 0) && result.reply) {
         await runtime.sessionRecorder.recordMessage(
-          activeTurnId,
+          input.turnId,
           { kind: "agent_runtime" },
           { role: "assistant", content: result.reply },
         );
       }
       turnClosureAttempted = true;
       await runtime.sessionRecorder.completeTurn(
-        activeTurnId,
+        input.turnId,
         result.interrupted ? "interrupted" : "completed",
         runtime.session.currentBudget(),
       );
@@ -260,69 +265,86 @@ export async function executeConversationTurn(
     if (result.interrupted) {
       return {
         status: "interrupted",
-        recovery: {
+        recovery: recoveryState(input, {
           status: "interrupted",
           reason: "user_abort",
-          stage: "agent",
+          strategy: "resume_with_context",
           message: "Task was interrupted before completion.",
           toolActivity: "unknown",
-          turnId: activeTurnId,
-          userMessage: submittedUserMessage,
-        },
+        }),
       };
     }
     return { status: "completed" };
   } catch (error) {
-    const userMessage = submittedUserMessage ?? { role: "user", content: fallbackUserText };
     if (isAbortError(error)) {
-      if (runtime.sessionRecorder && activeTurnId && !turnClosureAttempted) {
-        await closeTurnAfterFailure(runtime, activeTurnId, "interrupted");
+      if (runtime.sessionRecorder && !turnClosureAttempted) {
+        await closeTurnAfterFailure(runtime, input.turnId, "interrupted");
       }
       runtime.host.logAssistantMessage("Task has been interrupted by user.");
       return {
         status: "interrupted",
-        recovery: {
+        recovery: recoveryState(input, {
           status: "interrupted",
           reason: "user_abort",
-          stage: recoveryStage,
+          strategy: "resume_with_context",
           message: "Task was interrupted before completion.",
-          toolActivity: recoveryStage === "agent" ? "unknown" : "none",
-          ...(activeTurnId ? { turnId: activeTurnId } : {}),
-          userMessage,
-        },
+          toolActivity: "unknown",
+        }),
       };
     }
 
-    if (runtime.sessionRecorder && activeTurnId && !turnClosureAttempted) {
-      await closeTurnAfterFailure(runtime, activeTurnId, "error");
-    }
     if (!isModelCallError(error)) {
+      if (runtime.sessionRecorder && !turnClosureAttempted) {
+        await closeTurnAfterFailure(runtime, input.turnId, "error");
+      }
       throw error;
     }
+
     switch (error.code) {
       case "connection_error":
       case "timeout":
       case "server_error":
-      case "rate_limit":
+      case "rate_limit": {
+        const yielded = modelFailureYielded(error);
+        if (yielded === false) {
+          return {
+            status: "recoverable",
+            recovery: recoveryState(input, {
+              status: "failed",
+              reason: "transient_model_failure",
+              strategy: "retry_same_turn",
+              message: error.message,
+              toolActivity: "none",
+            }),
+          };
+        }
+        if (runtime.sessionRecorder && !turnClosureAttempted) {
+          await closeTurnAfterFailure(runtime, input.turnId, "error");
+        }
         return {
           status: "recoverable",
-          recovery: {
+          recovery: recoveryState(input, {
             status: "failed",
             reason: "transient_model_failure",
-            stage: recoveryStage,
+            strategy: "resume_with_context",
             message: error.message,
-            toolActivity: recoveryStage === "agent" ? "unknown" : "none",
-            ...(activeTurnId ? { turnId: activeTurnId } : {}),
-            userMessage,
-          },
+            toolActivity: "unknown",
+          }),
         };
+      }
       case "context_length":
+        if (runtime.sessionRecorder && !turnClosureAttempted) {
+          await closeTurnAfterFailure(runtime, input.turnId, "error");
+        }
         return {
           status: "blocked",
           message: error.message,
           suggestedCommand: "/compress",
         };
       case "auth_error":
+        if (runtime.sessionRecorder && !turnClosureAttempted) {
+          await closeTurnAfterFailure(runtime, input.turnId, "error");
+        }
         return {
           status: "blocked",
           message: error.message,
@@ -330,7 +352,78 @@ export async function executeConversationTurn(
             "Fix the model credentials or endpoint configuration, then restart Evil.",
         };
       case "unknown":
+        if (runtime.sessionRecorder && !turnClosureAttempted) {
+          await closeTurnAfterFailure(runtime, input.turnId, "error");
+        }
         throw error;
     }
   }
+}
+
+/** Execute one submitted prompt from durable input commit through turn closure. */
+export async function executeConversationTurn(
+  runtime: ConversationTurnRuntime,
+  promptInput: PromptInput,
+  fallbackUserText: string,
+): Promise<TurnExecutionResult> {
+  let recoveryStage: TurnRecoveryStage = "preparation";
+  try {
+    const resolved = await materializePromptInput(runtime, promptInput).finally(() =>
+      releasePromptResources(promptInput).catch((error) =>
+        runtime.host.logSystemEvent(
+          `Prompt resource cleanup failed: ${formatPersistenceError(error)}\n`,
+        ),
+      ),
+    );
+    const turnId = createTurnId();
+    runtime.host.onTurnStart?.();
+    const committed = await commitUserInput(runtime, turnId, "initial", resolved);
+    recoveryStage = "agent";
+    return await runCommittedConversationTurn(runtime, {
+      turnId,
+      userMessage: committed.message,
+      mcpServerIds: frozenUserInputMcpServerIds(committed.frozen),
+    });
+  } catch (error) {
+    if (recoveryStage === "agent" || !isAbortError(error)) throw error;
+    runtime.host.logAssistantMessage("Task has been interrupted by user.");
+    return {
+      status: "interrupted",
+      recovery: {
+        status: "interrupted",
+        reason: "user_abort",
+        strategy: "resume_with_context",
+        stage: "preparation",
+        message: "Task was interrupted before input commit completed.",
+        toolActivity: "none",
+        userMessage: { role: "user", content: fallbackUserText },
+        mcpServerIds: [],
+      },
+    };
+  }
+}
+
+/** Retry a pre-output transient model failure without recording another user input or Turn. */
+export async function retryConversationTurn(
+  runtime: ConversationTurnRuntime,
+  recovery: TurnRecoveryState,
+): Promise<TurnExecutionResult> {
+  if (recovery.strategy !== "retry_same_turn" || !recovery.turnId) {
+    throw new Error("Conversation recovery is not eligible for same-Turn retry");
+  }
+  runtime.host.logSystemEvent("Retrying the previous model request…\n");
+  return runCommittedConversationTurn(runtime, {
+    turnId: recovery.turnId,
+    userMessage: recovery.userMessage,
+    mcpServerIds: recovery.mcpServerIds,
+  });
+}
+
+/** Close a pending same-Turn retry when the operator chooses another action. */
+export async function abandonPendingConversationTurn(
+  runtime: ConversationTurnRuntime,
+  recovery: TurnRecoveryState | undefined,
+): Promise<void> {
+  if (recovery?.strategy !== "retry_same_turn" || !recovery.turnId) return;
+  await closeTurnAfterFailure(runtime, recovery.turnId, "error");
 }

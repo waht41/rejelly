@@ -6,6 +6,7 @@ import {
   type ModelStreamOptions,
   type StreamEvent,
 } from "@rejelly/core";
+import { recordModelFailureProgress } from "../../shared/model/modelFailureProgress";
 import {
   type ModelAttemptMetrics,
   recordModelRetryMetrics,
@@ -278,6 +279,7 @@ export function withRetry(options: WithRetryOptions = {}): ModelMiddleware {
                 shouldRetryTransient(error);
               if (!canRetryConnection && !canRetryTransient) {
                 publishMetrics();
+                recordModelFailureProgress(error, yielded);
                 throw error;
               }
 
