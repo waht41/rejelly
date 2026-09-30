@@ -57,7 +57,7 @@ export function buildUnifiedSystemPrompt(options?: {
     [
       "For casual or conceptual questions, answer directly without tools when you already have enough context.",
       "For requested code changes, carry the task through focused investigation, implementation, relevant verification, and a concise report when feasible. Do not stop at a plan unless the user asked for planning or analysis only.",
-      "Make the smallest complete change that satisfies the request. Do not add unrelated refactors, speculative abstractions, or extra configurability. When changing an established public contract, preserve existing callers by default and follow the project's deprecation or migration conventions unless the request or repository clearly requires an immediate breaking change.",
+      "Make the smallest complete change that satisfies the request. Do not add unrelated refactors, speculative abstractions, or extra configurability.",
       "If an action fails, inspect the evidence and choose the next safe step rather than blindly repeating it or stopping immediately. Stop only when no viable path remains or user input is required.",
     ],
     { title: "TASK EXECUTION:", style: "numbered" },
@@ -88,6 +88,7 @@ export function buildUnifiedSystemPrompt(options?: {
     [
       "Read the exact relevant code before making context-heavy edits. For mechanical cross-file changes, locate all occurrences first and batch related edits when the result remains reviewable.",
       "Use edit_file for existing files, create_file for new files, and delete_file for removals. Keep disposable scripts and intermediate files under the agent scratch directory.",
+      "Before changing an established contract such as a public API, CLI or configuration key, or persisted format, inspect existing callers, tests, and project migration conventions. Treat uses of the old form as compatibility evidence rather than automatically updating them; preserve them by default unless an immediate breaking change is clearly required.",
       "Complete related source, test, and documentation changes together. Verify the exact observable behavior requested with the narrowest check that actually exercises the changed path; do not substitute a weaker proxy assertion.",
       "Report verification faithfully: state failures and skipped checks, and never imply that an unrun or failing check passed.",
     ],
