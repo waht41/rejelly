@@ -53,7 +53,11 @@ import {
   type SkillDoctorReport,
 } from "./skillsCommands";
 import { executeConversationTurn, type ResolveMcpUserInput } from "./turnExecution";
-import { CONTINUE_PROMPT, type TurnExecutionResult } from "./turnRecovery";
+import {
+  ABORT_CONTINUE_PROMPT,
+  TRANSIENT_CONTINUE_PROMPT,
+  type TurnExecutionResult,
+} from "./turnRecovery";
 
 export interface MainCliAgentProps extends EvilJellyBindings {
   runLoopControl: ConversationLoopControl;
@@ -452,7 +456,9 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
           }
           session.ensureHistoryIncludes(recovery.userMessage);
           session.clearRecoveryState();
-          await runConversationTurn(runtime, textPromptInput(CONTINUE_PROMPT), CONTINUE_PROMPT);
+          const continuePrompt =
+            recovery.reason === "user_abort" ? ABORT_CONTINUE_PROMPT : TRANSIENT_CONTINUE_PROMPT;
+          await runConversationTurn(runtime, textPromptInput(continuePrompt), continuePrompt);
           return reborn();
         }
         case "resume":

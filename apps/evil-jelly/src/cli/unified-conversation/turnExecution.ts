@@ -262,6 +262,7 @@ export async function executeConversationTurn(
         status: "interrupted",
         recovery: {
           status: "interrupted",
+          reason: "user_abort",
           stage: "agent",
           message: "Task was interrupted before completion.",
           toolActivity: "unknown",
@@ -282,6 +283,7 @@ export async function executeConversationTurn(
         status: "interrupted",
         recovery: {
           status: "interrupted",
+          reason: "user_abort",
           stage: recoveryStage,
           message: "Task was interrupted before completion.",
           toolActivity: recoveryStage === "agent" ? "unknown" : "none",
@@ -306,6 +308,7 @@ export async function executeConversationTurn(
           status: "recoverable",
           recovery: {
             status: "failed",
+            reason: "transient_model_failure",
             stage: recoveryStage,
             message: error.message,
             toolActivity: recoveryStage === "agent" ? "unknown" : "none",

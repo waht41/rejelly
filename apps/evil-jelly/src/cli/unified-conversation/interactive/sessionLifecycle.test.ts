@@ -444,6 +444,11 @@ describe("non-TTY session lifecycle", () => {
             "Continue the previous task using the available conversation and tool history. Verify the current state before repeating any action.",
       ),
     ).toBe(true);
+    expect(
+      continuedCall.some((message) =>
+        messageContentToText(message.content).includes("provider unavailable"),
+      ),
+    ).toBe(false);
     expect(assistantMessages).toContain("Recovered on the next turn.");
     expect(systemEvents).toContain("No failed or interrupted task is available to continue.\n");
   });
@@ -519,7 +524,7 @@ describe("non-TTY session lifecycle", () => {
     };
 
     await runEvilJellyHost(
-      createMemoryBindings(["Inspect before interruption", "Continue after interruption", "/exit"]),
+      createMemoryBindings(["Inspect before interruption", "/continue", "/exit"]),
       {
         runControl: createInteractiveRunControl(),
         model,
@@ -544,7 +549,13 @@ describe("non-TTY session lifecycle", () => {
     expect(modelCalls).toHaveLength(3);
     const continuedCall = modelCalls[2] ?? [];
     expect(hasText(continuedCall, "user", "Inspect before interruption")).toBe(true);
-    expect(hasText(continuedCall, "user", "Continue after interruption")).toBe(true);
+    expect(
+      hasText(
+        continuedCall,
+        "user",
+        "The previous task was interrupted by the user. Continue from the available conversation and tool history.",
+      ),
+    ).toBe(true);
     expect(
       continuedCall.some((message) =>
         message.tool_calls?.some((call) => call.id === "interrupted-list-call"),
@@ -563,7 +574,13 @@ describe("non-TTY session lifecycle", () => {
     });
     const resumedMessages = resumed?.messages ?? [];
     expect(hasText(resumedMessages, "user", "Inspect before interruption")).toBe(true);
-    expect(hasText(resumedMessages, "user", "Continue after interruption")).toBe(true);
+    expect(
+      hasText(
+        resumedMessages,
+        "user",
+        "The previous task was interrupted by the user. Continue from the available conversation and tool history.",
+      ),
+    ).toBe(true);
     expect(hasText(resumedMessages, "assistant", "Continued with the interrupted work")).toBe(true);
     expect(
       resumedMessages.some((message) =>

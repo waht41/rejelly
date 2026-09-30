@@ -240,6 +240,7 @@ evil skills doctor                         # Scan Skills and report loader diagn
 
 # Interactive recovery command (inside an `evil` session)
 /continue                                # Continue the latest failed/interrupted task after checking current state
+                                         # User aborts are disclosed to the model; transient provider details are not
 
 # Interactive local memory commands (inside an `evil` session)
 /memory
