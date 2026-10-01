@@ -1,8 +1,10 @@
+import path from "node:path";
 import type { CAC, Command } from "cac";
 
 export interface InspectCommandArgs {
   readonly kind: "inspect";
   readonly inspectSessionId?: string;
+  readonly inspectFile?: string;
   readonly inspectJson: boolean;
   readonly inspectAllWorkspaces: boolean;
   readonly inspectTurnId?: string;
@@ -42,6 +44,7 @@ function resolvePositiveInteger(raw: unknown, option: string): number | undefine
 export function registerInspectArgs(cli: CAC): Command {
   return cli
     .command("inspect [sessionId]", "Inspect durable Session and Turn usage")
+    .option("--file <path>", "Inspect a Session JSONL file directly in read-only mode")
     .option("--json", "Print the versioned inspection projection as JSON")
     .option(
       "--turn <selector>",
@@ -64,7 +67,7 @@ export function registerInspectArgs(cli: CAC): Command {
     .option("--top <number>", "Limit largest segments or Tool calls in the selected scope")
     .option("--all-workspaces", "Find the Session id across all Evil Jelly workspaces")
     .usage(
-      "inspect [sessionId] [--turn <number-or-id>] [--tools [selector] | --models [selector] | --segment <address>] [--tokens | --latency | --transport] [--input | --attempts] [--full | --json | --payload] [--output <path>] [--top <number>] [--all-workspaces]",
+      "inspect [sessionId] [--file <path>] [--turn <number-or-id>] [--tools [selector] | --models [selector] | --segment <address>] [--tokens | --latency | --transport] [--input | --attempts] [--full | --json | --payload] [--output <path>] [--top <number>] [--all-workspaces]",
     );
 }
 
@@ -75,6 +78,8 @@ export function parseInspectArgs(
   const [rawSessionId, ...rest] = args;
   if (rest.length > 0) failArgs(`Unknown inspect argument: ${rest[0]}`);
   const inspectSessionId = resolveOptionalString(rawSessionId);
+  const inspectFileValue = resolveOptionalString(options.file);
+  const inspectFile = inspectFileValue ? path.resolve(inspectFileValue) : undefined;
   const inspectAllWorkspaces = Boolean(options.allWorkspaces);
   const inspectTurnId = resolveOptionalString(options.turn);
   const inspectSegment = resolveOptionalString(options.segment);
@@ -100,6 +105,12 @@ export function parseInspectArgs(
   const inspectJson = Boolean(options.json);
   const inspectOutput = resolveOptionalString(options.output);
   const inspectTop = resolvePositiveInteger(options.top, "--top");
+  if (inspectSessionId && inspectFile) {
+    failArgs("sessionId and --file cannot be combined");
+  }
+  if (inspectAllWorkspaces && inspectFile) {
+    failArgs("--all-workspaces cannot be combined with --file");
+  }
   if (inspectAllWorkspaces && !inspectSessionId) {
     failArgs("--all-workspaces requires a sessionId");
   }
@@ -137,6 +148,7 @@ export function parseInspectArgs(
   return {
     kind: "inspect",
     ...(inspectSessionId ? { inspectSessionId } : {}),
+    ...(inspectFile ? { inspectFile } : {}),
     inspectJson,
     inspectAllWorkspaces,
     ...(inspectTurnId ? { inspectTurnId } : {}),

@@ -38,6 +38,7 @@ async function main() {
     const { runInspect } = await import("./entry/inspect-run/runInspect");
     await runInspect({
       sessionId: args.inspectSessionId,
+      filePath: args.inspectFile,
       sessionStore: args.sessionStore,
       json: args.inspectJson,
       allWorkspaces: args.inspectAllWorkspaces,

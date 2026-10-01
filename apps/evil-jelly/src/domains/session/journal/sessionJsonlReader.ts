@@ -348,6 +348,32 @@ export async function readSessionEvents(
   return result;
 }
 
+/** Read and validate one Session JSONL file without requiring its recorded workspace to be active. */
+export async function readSessionEventsFromFile(
+  filePath: string,
+): Promise<ReadSessionEventsResult> {
+  const resolvedPath = path.resolve(filePath);
+  const buffer = await readFile(resolvedPath);
+  const parsed = completeLines(buffer, resolvedPath);
+  const first = parsed.lines[0];
+  if (!first || first.line !== 1 || first.offset !== 0) {
+    throw new SessionCorruptionError(
+      "Session file must start with session_meta",
+      resolvedPath,
+      first?.line ?? 1,
+      first?.offset ?? 0,
+    );
+  }
+
+  let meta: SessionMetaLine;
+  try {
+    meta = parseSessionMetaLine(first.value);
+  } catch (error) {
+    throw new SessionCorruptionError("Invalid session_meta", resolvedPath, 1, 0, error);
+  }
+  return parseSessionBuffer(buffer, resolvedPath, meta.schemaVersion);
+}
+
 export async function readSessionMetaLine(
   workspaceRoot: string,
   sessionId: string,
