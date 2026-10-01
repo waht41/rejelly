@@ -3,6 +3,7 @@
  */
 
 import path from "node:path";
+import { TextDecoder } from "node:util";
 import type { ToolDefinition } from "@rejelly/core";
 import { z } from "zod";
 import { getErrnoCode } from "../../../shared/foundation/errno";
@@ -18,11 +19,83 @@ import type {
   WriteActionType,
 } from "../../../shared/host/toolConfirmationBindings";
 import { resolveFileToolPath } from "../file-access/resolveFileToolPath";
-import { MAX_READ_BYTES_PER_CALL } from "../read/FileSystemTools";
+import {
+  MAX_RANGED_READ_SOURCE_BYTES,
+  MAX_READ_BYTES_PER_CALL,
+  MAX_READ_LINE_BYTES,
+} from "../read/FileSystemTools";
 import { applyBlockEdits, type SearchBlock } from "./blockReplace";
 import { createTwoFilesPatch } from "./unifiedDiff";
 
 const MAX_WRITE_BYTES = MAX_READ_BYTES_PER_CALL;
+const MAX_WHOLE_FILE_REPLACE_BYTES = MAX_WRITE_BYTES;
+const MAX_EDIT_SOURCE_BYTES = MAX_RANGED_READ_SOURCE_BYTES;
+const MAX_NON_TEXT_CHARACTER_RATIO = 0.05;
+const MIN_NON_TEXT_CHARACTERS = 4;
+
+function decodeEditableText(
+  source: Buffer,
+): { ok: true; text: string } | { ok: false; reason: string } {
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(source);
+  } catch {
+    return {
+      ok: false,
+      reason: "File is not valid UTF-8 text; binary or undecodable files cannot be edited.",
+    };
+  }
+
+  let line = 1;
+  let lineStart = 0;
+  for (let index = 0; index <= source.length; index += 1) {
+    if (index < source.length && source[index] !== 0x0a) {
+      continue;
+    }
+    const lineBytes = index - lineStart;
+    if (lineBytes > MAX_READ_LINE_BYTES) {
+      return {
+        ok: false,
+        reason:
+          `Line ${line} is ${lineBytes} bytes, above the ${MAX_READ_LINE_BYTES / 1024} KB ` +
+          "single-line edit limit; minified or pathological files cannot be edited.",
+      };
+    }
+    line += 1;
+    lineStart = index + 1;
+  }
+
+  let nulBytes = 0;
+  let controlCharacters = 0;
+  for (const character of text) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code === 0) {
+      nulBytes += 1;
+    } else if ((code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) || code === 0x7f) {
+      controlCharacters += 1;
+    }
+  }
+  if (nulBytes > 0) {
+    return { ok: false, reason: "File contains NUL bytes and appears to be binary." };
+  }
+  if (
+    controlCharacters >= MIN_NON_TEXT_CHARACTERS &&
+    controlCharacters / Math.max(1, text.length) > MAX_NON_TEXT_CHARACTER_RATIO
+  ) {
+    return {
+      ok: false,
+      reason: "File contains too many control characters and does not appear to be normal text.",
+    };
+  }
+
+  return { ok: true, text };
+}
+
+function preserveSourceNewlineStyle(source: string, editedLf: string): string {
+  const withoutCrlf = source.replaceAll("\r\n", "");
+  const usesCrlfOnly = source.includes("\r\n") && !withoutCrlf.includes("\n");
+  return usesCrlfOnly ? editedLf.replaceAll("\n", "\r\n") : editedLf;
+}
 
 /** Refactor tools expose full host actions (binary-only callers omit or narrow supportedActions). */
 const REFACTOR_WRITE_ACTIONS: WriteActionType[] = ["accept", "reject", "edit", "retry"];
@@ -275,6 +348,7 @@ export function createEditFileTool(
     description:
       "Apply search/replace edits to one or many files in one reviewed write. A string searchBlock uses exact match, or line-trim when only indentation differs; " +
       "a bounded matcher replaces the inclusive range between independently unique anchors, with @head/@end available as positional file boundaries. " +
+      "Large normal UTF-8 source files are scanned host-side; binary files, pathological long lines, and oversized whole-file replacements are refused. " +
       "Sentinels: empty string searchBlock = whole-file replace (single edit only); '@head' / '@end' prepend or append. " +
       "Multiple edits run in order: prefer bottom-to-top and anchor searchBlocks on the original file to avoid offset drift. " +
       "Every target is validated before writing. Files with any invalid edit are left unchanged and reported with all block failures; " +
@@ -333,23 +407,67 @@ export function createEditFileTool(
         let raw: string;
         try {
           const stat = await policy.statResolved(resolved);
-          if (stat.size > MAX_WRITE_BYTES) {
+          if (hasWholeFileReplace && stat.size > MAX_WHOLE_FILE_REPLACE_BYTES) {
             failedTargets.push({
               filePath: normalizedPath,
               problems: [
                 {
-                  reason: `File too large (${stat.size} bytes); max ${MAX_WRITE_BYTES} for edits.`,
+                  reason:
+                    `Whole-file edit exceeds the ${MAX_WHOLE_FILE_REPLACE_BYTES} byte limit ` +
+                    `(${stat.size} bytes); use a unique exact searchBlock or bounded anchors.`,
                 },
               ],
             });
             continue;
           }
-          raw = await policy.readResolved(resolved);
+          if (stat.size > MAX_EDIT_SOURCE_BYTES) {
+            failedTargets.push({
+              filePath: normalizedPath,
+              problems: [
+                {
+                  reason:
+                    `File is too large to scan safely (${stat.size} bytes; max ${MAX_EDIT_SOURCE_BYTES}). ` +
+                    "Use a smaller source file or another reviewed editing workflow.",
+                },
+              ],
+            });
+            continue;
+          }
+
+          const source = await policy.readResolvedBinary(resolved);
+          const decoded = decodeEditableText(source);
+          if (!decoded.ok) {
+            failedTargets.push({
+              filePath: normalizedPath,
+              problems: [{ reason: decoded.reason }],
+            });
+            continue;
+          }
+          raw = decoded.text;
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : String(e);
           failedTargets.push({
             filePath: normalizedPath,
             problems: [{ reason: `Failed to read file: ${msg}` }],
+          });
+          continue;
+        }
+
+        if (
+          hasWholeFileReplace &&
+          Buffer.byteLength(edits[0]!.replaceBlock, "utf8") > MAX_WHOLE_FILE_REPLACE_BYTES
+        ) {
+          failedTargets.push({
+            filePath: normalizedPath,
+            problems: [
+              {
+                editIndex: 0,
+                searchBlock: edits[0]!.searchBlock,
+                reason:
+                  `Whole-file replacement exceeds the ${MAX_WHOLE_FILE_REPLACE_BYTES} byte limit; ` +
+                  "use a targeted exact or bounded edit instead.",
+              },
+            ],
           });
           continue;
         }
@@ -373,7 +491,9 @@ export function createEditFileTool(
           filePath: resolved.displayPath,
           resolved,
           raw,
-          newContent: editResult.text,
+          newContent: hasWholeFileReplace
+            ? editResult.text
+            : preserveSourceNewlineStyle(raw, editResult.text),
           editsCount: edits.length,
         });
       }
