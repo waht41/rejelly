@@ -73,7 +73,9 @@ describe("parseCliArgs", () => {
 
     expect(() => parseCliArgs(["node", "evil", "inspect", "--help"])).toThrow("exit 0");
     const help = log.mock.calls.flat().join("\n");
-    expect(help).toContain("$ evil inspect [sessionId] [--turn <number-or-id>]");
+    expect(help).toContain("$ evil inspect [sessionId] [--file <path>] [--turn <number-or-id>]");
+    expect(help).toContain("--file <path>");
+    expect(help).toContain("Inspect a Session JSONL file directly in read-only mode");
     expect(help).toContain("--json");
     expect(help).toContain("--turn <selector>");
     expect(help).toContain("--segment <address>");
@@ -270,6 +272,32 @@ describe("parseCliArgs", () => {
     expect(selected.inspectJson).toBe(true);
     expect(selected.inspectAllWorkspaces).toBe(true);
     expect(selected.inspectTurnId).toBe("1");
+
+    const filePath = path.resolve("portable-session.v3.jsonl");
+    expect(parseCliArgs(["node", "evil", "inspect", "--file", filePath])).toMatchObject({
+      kind: "inspect",
+      inspectFile: filePath,
+      inspectAllWorkspaces: false,
+    });
+  });
+
+  it("rejects ambiguous Session inspection sources", () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${String(code)}`);
+    });
+
+    expect(() =>
+      parseCliArgs(["node", "evil", "inspect", "session-1", "--file", "session.v3.jsonl"]),
+    ).toThrow("exit 1");
+    expect(console.error).toHaveBeenLastCalledWith("sessionId and --file cannot be combined");
+
+    expect(() =>
+      parseCliArgs(["node", "evil", "inspect", "--file", "session.v3.jsonl", "--all-workspaces"]),
+    ).toThrow("exit 1");
+    expect(console.error).toHaveBeenLastCalledWith(
+      "--all-workspaces cannot be combined with --file",
+    );
   });
 
   it("parses Tool drill-down and top-contributor inspection options", () => {

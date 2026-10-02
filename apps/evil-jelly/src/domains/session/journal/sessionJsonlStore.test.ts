@@ -9,6 +9,7 @@ import {
   openSessionWriter,
   readEventAtOffset,
   readSessionEvents,
+  readSessionEventsFromFile,
   readSessionMetaLine,
   resolveV3SessionPath,
   SessionCorruptionError,
@@ -79,6 +80,30 @@ describe("sessionJsonlStore", () => {
     await expect(
       readSessionMetaLine(workspaceRoot, "session-1", { sessionsRoot }),
     ).resolves.toMatchObject({ sessionId: "session-1", createdAt: 100 });
+  });
+
+  it("reads a Session JSONL file directly without requiring its workspace bucket", async () => {
+    const writer = await openSessionWriter(meta("portable-session"), { sessionsRoot });
+    await writer.append(
+      {
+        type: "turn_completed",
+        turnId: "turn-1",
+        status: "completed",
+      },
+      { timestamp: 101 },
+    );
+    await writer.close();
+
+    const copiedPath = path.join(tmpDir, "portable-session.v3.jsonl");
+    await fs.copyFile(writer.filePath, copiedPath);
+    const result = await readSessionEventsFromFile(copiedPath);
+
+    expect(result.meta).toMatchObject({
+      sessionId: "portable-session",
+      workspaceRoot,
+      schemaVersion: 3,
+    });
+    expect(result.events).toMatchObject([{ type: "turn_completed", seq: 1 }]);
   });
 
   it("round-trips durable provider state without changing opaque payloads", async () => {
