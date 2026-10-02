@@ -36,6 +36,7 @@ export {
   findLatestSessionStateFromTail,
   readEventAtOffset,
   readSessionEvents,
+  readSessionEventsFromFile,
   readSessionMetaLine,
   resolveV2SessionPath,
   resolveV3SessionPath,

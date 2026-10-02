@@ -366,6 +366,7 @@ pnpm typecheck      # TypeScript checking
 - `--doc-map <path>`: workspace-relative doc-map for doc-drift validation. Defaults to `.evil-jelly/doc-map.jsonc`.
 - `--workspace <dir>`: workspace root for `.evil-jelly/` configuration, audit output, session identity, and relative Agent tool paths. Defaults to the current working directory; relative paths are resolved from the process startup directory. File tools can use outside paths when the filesystem access policy grants or approves them.
 - `--session-store <dir>`: portable Session store root containing `sessions/` and `blobs/`. Interactive runs and `evil inspect` default to `~/.evil-jelly`; passing it to `--headless` enables durable recording for that one-shot run.
+- **`inspect --file <path>`**: inspect a Session V2/V3 JSONL file directly in read-only mode without requiring its recorded workspace to be active. It cannot be combined with a positional Session id or `--all-workspaces`.
 - `--snapshot <traceId>`: restore a snapshot from a Review trace before entering the session. Mutually exclusive with `--mock`, `--resume`, and `--headless`.
 - `--mock <traceId>`: replay an interactive session from a Review trace's model output and snapshot cache. Mutually exclusive with `--snapshot`, `--resume`, and `--headless`.
 - `--mock-inputs`: with `--mock`, enqueue user inputs recovered from the trace. Requires `--mock` and cannot be combined with `--input`.

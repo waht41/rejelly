@@ -1,4 +1,7 @@
-import { readSessionEvents } from "../../../domains/session/journal/sessionJsonlReader";
+import {
+  readSessionEvents,
+  readSessionEventsFromFile,
+} from "../../../domains/session/journal/sessionJsonlReader";
 import {
   findInspectSessionAcrossWorkspaces,
   locateInspectSession,
@@ -48,6 +51,7 @@ import { getWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
 
 export interface RunInspectOptions {
   sessionId?: string;
+  filePath?: string;
   sessionStore?: string;
   json: boolean;
   allWorkspaces: boolean;
@@ -122,18 +126,22 @@ async function printSegment(
 export async function runInspect(options: RunInspectOptions): Promise<void> {
   const currentWorkspaceRoot = getWorkspaceRoot();
   const storage = options.sessionStore ? resolveSessionStorePaths(options.sessionStore) : undefined;
-  const sessionId = options.sessionId ?? (await listSessions(currentWorkspaceRoot, storage))[0]?.id;
-  if (!sessionId) {
-    throw new Error(`No durable Sessions found for workspace: ${currentWorkspaceRoot}`);
-  }
-
-  const location = options.allWorkspaces
-    ? await findInspectSessionAcrossWorkspaces(sessionId, storage?.sessionsRoot)
-    : await locateInspectSession(currentWorkspaceRoot, sessionId, storage?.sessionsRoot);
-  const stored = await readSessionEvents(location.workspaceRoot, location.sessionId, {
-    ...storage,
-    journalVersion: location.journalVersion,
-  });
+  const stored = options.filePath
+    ? await readSessionEventsFromFile(options.filePath)
+    : await (async () => {
+        const sessionId =
+          options.sessionId ?? (await listSessions(currentWorkspaceRoot, storage))[0]?.id;
+        if (!sessionId) {
+          throw new Error(`No durable Sessions found for workspace: ${currentWorkspaceRoot}`);
+        }
+        const location = options.allWorkspaces
+          ? await findInspectSessionAcrossWorkspaces(sessionId, storage?.sessionsRoot)
+          : await locateInspectSession(currentWorkspaceRoot, sessionId, storage?.sessionsRoot);
+        return readSessionEvents(location.workspaceRoot, location.sessionId, {
+          ...storage,
+          journalVersion: location.journalVersion,
+        });
+      })();
   const inspection = projectSessionInspection(
     stored.meta,
     stored.events,
