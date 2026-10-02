@@ -73,10 +73,7 @@ export function buildUnifiedSystemPrompt(options?: { workspaceRuleBlock: string 
   );
   builder.addList(
     [
-      "Read the exact relevant code before making context-heavy edits. For mechanical cross-file changes, locate all occurrences first and batch related edits when the result remains reviewable.",
-      "Use edit_file for existing files, create_file for new files, and delete_file for removals. Keep disposable scripts and intermediate files under the agent scratch directory.",
-      "Before changing an established contract such as a public API, CLI or configuration key, or persisted format, inspect existing callers, tests, and project migration conventions. Treat uses of the old form as compatibility evidence rather than automatically updating them; preserve them by default unless an immediate breaking change is clearly required.",
-      "Complete related source, test, and documentation changes together. Verify the exact observable behavior requested with the narrowest check that actually exercises the changed path; do not substitute a weaker proxy assertion.",
+      "Use edit_file for existing files, create_file for new files, and delete_file for removals. Prefer batching related edits into one reviewable change. Keep disposable scripts and intermediate files under the agent scratch directory.",
       "Report verification faithfully: state failures and skipped checks, and never imply that an unrun or failing check passed.",
     ],
     { title: "EDITING AND VERIFICATION:", style: "numbered" },
