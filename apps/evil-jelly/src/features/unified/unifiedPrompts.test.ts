@@ -35,14 +35,15 @@ describe("buildUnifiedSystemPrompt", () => {
     );
   });
 
-  it("uses breadth-first structured workspace exploration without embedding MCP routing", () => {
+  it("uses structured and complementary workspace exploration without embedding MCP routing", () => {
     const prompt = buildDefaultSystemPrompt();
 
     for (const tool of ["list_directory", "fuzzy_search_paths", "grep", "AST tools"]) {
       expect(prompt).toContain(tool);
     }
-    expect(prompt).toMatch(/breadth before depth/i);
-    expect(prompt).toMatch(/multiple plausible hypotheses or code paths/i);
+    expect(prompt).toMatch(/multiple complementary methods/i);
+    expect(prompt).toMatch(/a small number of plausible locations or code paths/i);
+    expect(prompt).toMatch(/without materially new evidence/i);
     expect(prompt).not.toMatch(/\bMCP\b|mcp_/);
   });
 });

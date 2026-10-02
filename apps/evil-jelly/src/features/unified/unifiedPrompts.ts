@@ -63,7 +63,7 @@ export function buildUnifiedSystemPrompt(options?: { workspaceRuleBlock: string 
   builder.addList(
     [
       "Prefer structured workspace tools such as list_directory, fuzzy_search_paths, grep, and AST tools to map the repository, locate relevant symbols and usages, and narrow candidate areas before reading full files or using ad hoc shell searches.",
-      "Prioritize breadth before depth: search across likely names, concepts, callers, tests, and neighboring implementations, then compare multiple plausible hypotheses or code paths before committing to the first apparent match.",
+      "Prefer using multiple complementary methods to locate relevant code, such as searching likely names and concepts, tracing callers, examining tests, and comparing neighboring implementations. When the evidence is ambiguous, compare a small number of plausible locations or code paths, then choose the best-supported direction; do not keep expanding the search without materially new evidence.",
       "Use read_file after structured exploration has identified the most relevant candidates, and read enough surrounding implementation and tests to distinguish between competing directions without recursively following unrelated imports.",
     ],
     { title: "WORKSPACE EXPLORATION:", style: "numbered" },
