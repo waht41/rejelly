@@ -1,19 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { buildUnifiedSystemPrompt } from "./unifiedPrompts";
+import { buildUnifiedInstruction, buildUnifiedSystemPrompt } from "./unifiedPrompts";
+
+const buildDefaultSystemPrompt = () => buildUnifiedSystemPrompt({ workspaceRuleBlock: "" });
 
 describe("buildUnifiedSystemPrompt", () => {
-  it("identifies as Evil Jelly and can discover its CLI capabilities", () => {
-    const prompt = buildUnifiedSystemPrompt({ workspaceRuleBlock: "" });
+  it("builds the application framework in a stable order", () => {
+    const prompt = buildDefaultSystemPrompt();
+    const sectionPositions = [
+      "TASK EXECUTION:",
+      "SAFETY AND EXISTING WORK:",
+      "WORKSPACE EXPLORATION:",
+      "EDITING AND VERIFICATION:",
+      "COMPLETION AND REPORTING:",
+    ].map((title) => prompt.indexOf(title));
 
-    expect(prompt).toMatch(
-      /^You are Evil Jelly, also called Evil, a senior coding agent running inside the Evil Jelly application\./,
-    );
-    expect(prompt).toContain("use run_command to execute `evil --help`");
-    expect(prompt).toContain("execute `evil <subcommand> --help`");
-    expect(prompt).toContain("Treat the help output as the source of truth instead of guessing.");
+    expect(prompt).toMatch(/^You are Evil Jelly, also called Evil,/);
+    expect(sectionPositions.every((position) => position >= 0)).toBe(true);
+    expect(sectionPositions).toEqual([...sectionPositions].sort((a, b) => a - b));
+    expect(prompt).toBe(prompt.trim());
   });
 
-  it("places workspace instructions after the stable application framework", () => {
+  it("appends non-empty workspace instructions after the application framework", () => {
     const workspaceRuleBlock = [
       '<workspace-instructions source="AGENTS.md">',
       "Run the focused tests.",
@@ -22,38 +29,48 @@ describe("buildUnifiedSystemPrompt", () => {
 
     const prompt = buildUnifiedSystemPrompt({ workspaceRuleBlock });
 
-    expect(prompt).toMatch(
-      /^You are Evil Jelly, also called Evil, a senior coding agent running inside the Evil Jelly application\./,
-    );
-    expect(prompt.indexOf("CRITICAL RULES:")).toBeLessThan(prompt.indexOf(workspaceRuleBlock));
     expect(prompt.endsWith(workspaceRuleBlock)).toBe(true);
+    expect(prompt.indexOf("COMPLETION AND REPORTING:")).toBeLessThan(
+      prompt.indexOf(workspaceRuleBlock),
+    );
   });
 
-  it("uses MCP before workspace fallback for explicit and semantic requests", () => {
-    const prompt = buildUnifiedSystemPrompt({ workspaceRuleBlock: "" });
+  it("uses structured and complementary workspace exploration without embedding MCP routing", () => {
+    const prompt = buildDefaultSystemPrompt();
 
-    expect(prompt).toContain(
-      "When the user explicitly asks to use or search MCP, call mcp_reference before inspecting the workspace.",
-    );
-    expect(prompt).toContain(
-      "For semantic TypeScript tasks such as references, definitions, hover, and implementations, call mcp_reference first.",
-    );
-    expect(prompt).toContain("matching callable MCP tool");
-    expect(prompt).toContain(
-      'If mcp_reference returns suggested_action="request_access" or a relevant server with callable="false", call mcp_request once',
-    );
-    expect(prompt).toContain("do not ask the user to run /mcp manually");
-    expect(prompt).toContain("Do not retry synonyms");
-    expect(prompt).toContain("otherwise fall back to grep + read_file");
-    expect(prompt).not.toContain("There is no language-server/`ts_` tool available");
+    for (const tool of ["list_directory", "fuzzy_search_paths", "grep", "AST tools"]) {
+      expect(prompt).toContain(tool);
+    }
+    expect(prompt).toMatch(/multiple complementary methods/i);
+    expect(prompt).toMatch(/a small number of plausible locations or code paths/i);
+    expect(prompt).toMatch(/without materially new evidence/i);
+    expect(prompt).not.toMatch(/\bMCP\b|mcp_/);
+  });
+});
+
+describe("buildUnifiedInstruction", () => {
+  it("adds terminal reply guidance only to terminal instructions", () => {
+    const terminalInstruction = buildUnifiedInstruction({
+      artifactSummary: "",
+      useTerminalUserReplyRule: true,
+    });
+    const documentInstruction = buildUnifiedInstruction({
+      artifactSummary: "",
+      useTerminalUserReplyRule: false,
+    });
+
+    expect(buildDefaultSystemPrompt()).not.toContain("Terminal user reply format:");
+    expect(terminalInstruction).toContain("Terminal user reply format:");
+    expect(documentInstruction).not.toContain("Terminal user reply format:");
   });
 
-  it("does not add an empty trailing workspace block", () => {
-    const prompt = buildUnifiedSystemPrompt({ workspaceRuleBlock: "  \n" });
+  it("mentions artifact recovery only when artifacts are present", () => {
+    const withoutArtifacts = buildUnifiedInstruction({ artifactSummary: "" });
+    const withArtifacts = buildUnifiedInstruction({
+      artifactSummary: "- artifact_1234: truncated output",
+    });
 
-    expect(prompt).toMatch(
-      /^You are Evil Jelly, also called Evil, a senior coding agent running inside the Evil Jelly application\./,
-    );
-    expect(prompt).toMatch(/before deciding\.$/);
+    expect(withoutArtifacts).not.toContain("readArtifact");
+    expect(withArtifacts).toContain("readArtifact");
   });
 });

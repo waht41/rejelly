@@ -156,13 +156,13 @@ async function useUnifiedPrompts(props: ConversationAgentProps): Promise<void> {
   const artifactSummary = formatArtifactSummaryForInstruction(artifacts);
   const workspaceRuleBlock = await buildWorkspaceRuleInstructionBlock();
 
-  equipSystem(
-    buildUnifiedSystemPrompt({
-      workspaceRuleBlock,
+  equipSystem(buildUnifiedSystemPrompt({ workspaceRuleBlock }));
+  equipInstruction(
+    buildUnifiedInstruction({
+      artifactSummary,
       useTerminalUserReplyRule: shouldUseTerminalUserReplyRule(props.replySurface),
     }),
   );
-  equipInstruction(buildUnifiedInstruction({ artifactSummary }));
   if (memoryRuntime?.epoch.instruction) {
     equipInstruction(memoryRuntime.epoch.instruction);
   }
