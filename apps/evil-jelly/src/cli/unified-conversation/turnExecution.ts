@@ -233,6 +233,7 @@ async function runCommittedConversationTurn(
   let turnClosureAttempted = false;
   let modelOutputReceived = false;
   let retryHistory: Message[] | undefined;
+  let failureHistory: Message[] | undefined;
   let toolActivity: TurnToolActivity = "none";
   const observeProgress = (event: TurnProgressEvent): void => {
     switch (event) {
@@ -269,6 +270,9 @@ async function runCommittedConversationTurn(
         retryHistory: input.retryHistory,
         onModelRetryCheckpoint: (history) => {
           retryHistory = history;
+        },
+        onModelFailureHistory: (history) => {
+          failureHistory = history;
         },
       }),
     );
@@ -399,10 +403,26 @@ async function runCommittedConversationTurn(
             "Fix the model credentials or endpoint configuration, then restart Evil.",
         };
       case "unknown":
+        // Unclassified model errors end this turn, not the interactive session. Preserve only
+        // committed context; partial streamed output is not a completed assistant message.
+        if (failureHistory) {
+          runtime.session.replaceHistory(failureHistory);
+          runtime.session.clearContextTokenAnchor();
+        }
         if (runtime.sessionRecorder && !turnClosureAttempted) {
           await closeTurnAfterFailure(runtime, input.turnId, "error");
         }
-        throw error;
+        return {
+          status: "recoverable",
+          recovery: recoveryState(input, {
+            status: "failed",
+            reason: "unknown_model_failure",
+            strategy: "resume_with_context",
+            message: error.message,
+            toolActivity,
+            mcpServerIds: [...turnMcpSelection],
+          }),
+        };
     }
   }
 }

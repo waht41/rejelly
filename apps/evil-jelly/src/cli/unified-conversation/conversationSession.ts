@@ -1,4 +1,5 @@
 import { equipBudget, equipMemory, getUsageStats, type Message } from "@rejelly/core";
+import { normalizeMessages } from "@rejelly/core/policy";
 import {
   getSessionImageBlobMetadata,
   registerRuntimeSessionImageBlobs,
@@ -205,8 +206,12 @@ export function equipConversationSession(
       storeRecoveryState(null);
     },
     ensureHistoryIncludes: (message) => {
-      const serialized = JSON.stringify(message);
-      if (liveHistory.some((candidate) => JSON.stringify(candidate) === serialized)) return;
+      // Model policy normalizes user text to content parts. Compare the same representation
+      // so recovery does not append a second copy of an already committed user input.
+      const serialize = (candidate: Message) =>
+        JSON.stringify(candidate.role === "user" ? normalizeMessages([candidate])[0] : candidate);
+      const serialized = serialize(message);
+      if (liveHistory.some((candidate) => serialize(candidate) === serialized)) return;
       liveHistory = [...liveHistory, message];
       setHistory(liveHistory.map(snapshotMessage));
     },

@@ -45,6 +45,7 @@ export interface ToolCallLoopPolicySnapshot {
   turnId?: string;
   onTurnProgress?: (event: TurnProgressEvent) => void;
   onModelRetryCheckpoint?: (history: Message[]) => void;
+  onModelFailureHistory?: (history: Message[]) => void;
   signal?: AbortSignal;
 }
 
@@ -235,8 +236,12 @@ export async function runResilientToolCallLoopPolicy<T = unknown>(
       } catch (error) {
         // Only a model dispatch with no emitted output has a safe transparent retry boundary.
         // Tool execution and persistence failures must not be mistaken for model failures.
-        if (isModelCallError(error) && modelFailureYielded(error) === false) {
-          snapshot.onModelRetryCheckpoint?.(withoutEquippedPrefix(dispatchRuntime.messages));
+        if (isModelCallError(error)) {
+          const history = withoutEquippedPrefix(dispatchRuntime.messages);
+          snapshot.onModelFailureHistory?.(history);
+          if (modelFailureYielded(error) === false) {
+            snapshot.onModelRetryCheckpoint?.(history);
+          }
         }
         throw error;
       }
