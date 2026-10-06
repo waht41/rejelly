@@ -610,6 +610,121 @@ describe("non-TTY session lifecycle", () => {
     expect(systemEvents).toContain("No failed or interrupted task is available to continue.\n");
   });
 
+  it.each([
+    "retry",
+    "interrupted",
+    "resumed",
+  ] as const)("preserves image metadata through /continue (%s) and subsequent turns", async (mode) => {
+    const imagePath = path.join(workspaceRoot, "recovery.png");
+    const bytes = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=",
+      "base64",
+    );
+    await fs.writeFile(imagePath, bytes);
+    const imageInput: MemoryInput = {
+      document: [
+        { type: "text", text: "Inspect the recovery image " },
+        { type: "token", kind: "image", attachmentId: "recovery-image" },
+      ],
+      attachments: [
+        {
+          id: "recovery-image",
+          kind: "image",
+          path: imagePath,
+          mimeType: "image/png",
+          detail: "high",
+          ownership: "borrowed",
+        },
+      ],
+    };
+    const calls: Message[][] = [];
+    const systemEvents: string[] = [];
+    let callIndex = 0;
+    const adapter: ModelAdapter = {
+      id: "image-recovery-model",
+      async *stream(messages): AsyncGenerator<StreamEvent> {
+        calls.push(messages.map((message) => ({ ...message })));
+        if (callIndex++ === 0) {
+          if (mode === "retry") {
+            throw new ModelCallError("provider unavailable", {
+              modelId: "image-recovery-model",
+              code: "timeout",
+            });
+          }
+          throw new AbortError("user interrupted");
+        }
+        yield { type: "text", content: "Image recovered." };
+      },
+    };
+    const model = augmentModel(adapter, [
+      withRetry({ maxAttempts: 1, connectionRetry: "bounded" }),
+    ]);
+    const session = { enabled: true as const, appVersion: "1.0.0", sessionsRoot, blobRoot };
+    const bindings = createMemoryBindings(
+      mode === "resumed"
+        ? [imageInput, "/exit"]
+        : [imageInput, "/continue", "Inspect it again", "/exit"],
+    );
+    bindings.logSystemEvent = (message) => systemEvents.push(message);
+    await runEvilJellyHost(bindings, {
+      runControl: createInteractiveRunControl(),
+      model,
+      sessionId: "image-recovery",
+      sessionStartMode: "new",
+      session,
+    });
+    if (mode === "resumed") {
+      const record = await resumeSession(workspaceRoot, "image-recovery", {
+        originator: "evil-jelly-cli",
+        appVersion: "1.0.0",
+        sessionsRoot,
+        blobRoot,
+      });
+      const seed = buildSessionResumeSeed(record!);
+      const resumedBindings = createMemoryBindings(["/continue", "Inspect it again", "/exit"]);
+      resumedBindings.logSystemEvent = (message) => systemEvents.push(message);
+      await runEvilJellyHost(resumedBindings, {
+        runControl: createInteractiveRunControl(),
+        model,
+        sessionId: "image-recovery",
+        sessionStartMode: "resumed",
+        seedContext: seed.activeContext,
+        seedRecovery: seed.recovery,
+        session,
+      });
+    }
+    expect(calls).toHaveLength(3);
+    for (const call of calls) {
+      const images = call.flatMap((message) =>
+        Array.isArray(message.content)
+          ? message.content.filter((part) => part.type === "image")
+          : [],
+      );
+      expect(images).toEqual([
+        {
+          type: "image",
+          image: { url: `data:image/png;base64,${bytes.toString("base64")}`, detail: "high" },
+        },
+      ]);
+      for (const message of call) {
+        if (
+          Array.isArray(message.content) &&
+          message.content.some((part) => part.type === "image")
+        ) {
+          expect(message.extra).toBeUndefined();
+        }
+      }
+    }
+    expect(systemEvents.join("\n")).not.toContain("Missing image media type");
+    const record = await resumeSession(workspaceRoot, "image-recovery", {
+      originator: "evil-jelly-cli",
+      appVersion: "1.0.0",
+      sessionsRoot,
+      blobRoot,
+    });
+    expect(record?.recovery).toBeUndefined();
+  });
+
   it("restores /continue recovery after exiting and resuming an interrupted session", async () => {
     const interruptedModel: ModelAdapter = {
       id: "durable-recovery-model",
