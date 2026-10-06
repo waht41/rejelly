@@ -16,6 +16,8 @@ export interface TurnRecoveryState {
   toolActivity: TurnToolActivity;
   turnId?: string;
   userMessage: Message;
+  /** Full active context for a safe pre-output model retry, including completed tool results. */
+  retryHistory?: Message[];
   mcpServerIds: readonly string[];
 }
 

@@ -244,7 +244,7 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
     const promptTokenUsage = equipPromptTokenUsageReader();
     try {
       const messages = await materializeMessageHistory(
-        [...(props.history ?? []), props.message],
+        props.retryHistory ?? [...(props.history ?? []), props.message],
         props.sessionBlobRoot ? { blobRoot: props.sessionBlobRoot } : {},
       );
       const result = await promptChatResilient({
@@ -257,6 +257,7 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
         sessionRecorder: props.sessionRecorder,
         turnId: props.turnId,
         onTurnProgress: props.onTurnProgress,
+        onModelRetryCheckpoint: props.onModelRetryCheckpoint,
         signal: props.operationSignal,
       });
 

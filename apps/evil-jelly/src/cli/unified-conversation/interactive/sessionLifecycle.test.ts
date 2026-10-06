@@ -9,6 +9,7 @@ import {
   ModelCallError,
   type StreamEvent,
 } from "@rejelly/core";
+import { isInstructionMessage } from "@rejelly/core/policy";
 import { createMockModel } from "@rejelly/core/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { recordInitialTextInput } from "../../../domains/session/__tests__/sessionTestInput";
@@ -469,11 +470,22 @@ describe("non-TTY session lifecycle", () => {
     ).toEqual(["completed"]);
   });
 
-  it("continues from a completed tool result when the next model response fails pre-output", async () => {
+  it.each([
+    true,
+    false,
+  ])("transparently retries after a completed tool, including repeated failures (persistence=%s)", async (persistence) => {
     const systemEvents: string[] = [];
+    const userMessages: string[] = [];
     const modelCalls: Message[][] = [];
-    const bindings = createMemoryBindings(["Inspect before failure", "/continue", "/exit"]);
+    const bindings = createMemoryBindings([
+      "Inspect before failure",
+      "/continue",
+      "/continue",
+      "Follow up",
+      "/exit",
+    ]);
     bindings.logSystemEvent = (message) => systemEvents.push(message);
+    bindings.logUserMessage = (message) => userMessages.push(message);
     let callIndex = 0;
     const adapter: ModelAdapter = {
       id: "post-tool-failure-model",
@@ -492,7 +504,7 @@ describe("non-TTY session lifecycle", () => {
           };
           return;
         }
-        if (currentCall === 1) {
+        if (currentCall === 1 || currentCall === 2) {
           throw new ModelCallError("provider unavailable after tool", {
             modelId: "post-tool-failure-model",
             code: "server_error",
@@ -508,38 +520,108 @@ describe("non-TTY session lifecycle", () => {
     await runEvilJellyHost(bindings, {
       runControl: createInteractiveRunControl(),
       model,
-      sessionId: "post-tool-failure",
-      sessionStartMode: "new",
-      session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+      ...(persistence
+        ? {
+            sessionId: "post-tool-failure",
+            sessionStartMode: "new" as const,
+            session: { enabled: true as const, appVersion: "1.0.0", sessionsRoot },
+          }
+        : {}),
     });
 
-    expect(callIndex).toBe(3);
-    expect(systemEvents).toContain(
-      "\n[System] Current task failed: provider unavailable after tool. Returning to router. A tool completed before the failure; continue from its recorded result. Use /continue to continue the task.\n",
-    );
-    expect(systemEvents).not.toContain("Retrying the previous model request…\n");
-    const continuedCall = modelCalls[2] ?? [];
+    expect(callIndex).toBe(5);
+    expect(systemEvents).toContain("Retrying the previous model request…\n");
+    expect(userMessages).toEqual(["Inspect before failure", "Follow up"]);
+    // Retry the failed dispatch, not the entire tool loop or a synthetic user turn.
+    expect(modelCalls[2]).toEqual(modelCalls[1]);
+    expect(modelCalls[3]).toEqual(modelCalls[1]);
+    for (const call of modelCalls.slice(1)) {
+      expect(
+        call.filter(
+          (message) =>
+            message.role === "tool" && message.tool_call_id === "completed-before-failure",
+        ),
+      ).toHaveLength(1);
+      expect(
+        call.some((message) =>
+          messageContentToText(message.content).includes("Continue the previous task"),
+        ),
+      ).toBe(false);
+    }
     expect(
-      continuedCall.some(
-        (message) => message.role === "tool" && message.tool_call_id === "completed-before-failure",
-      ),
-    ).toBe(true);
-    expect(
-      continuedCall.some(
-        (message) =>
-          message.role === "user" &&
-          messageContentToText(message.content).includes(
-            "Completed tool results are already present in the conversation history.",
-          ),
-      ),
-    ).toBe(true);
+      modelCalls[4]
+        ?.filter((message) => message.role === "user" && !isInstructionMessage(message))
+        .map((message) => messageContentToText(message.content)),
+    ).toEqual(["Inspect before failure", "Follow up"]);
 
+    if (!persistence) return;
     const stored = await readSessionEvents(workspaceRoot, "post-tool-failure", { sessionsRoot });
     expect(
       stored.events.filter(
         (event) => isKnownSessionEvent(event) && event.type === "user_input_recorded",
       ),
     ).toHaveLength(2);
+    expect(
+      stored.events
+        .filter((event) => isKnownSessionEvent(event) && event.type === "turn_completed")
+        .map((event) => (event.type === "turn_completed" ? event.status : undefined)),
+    ).toEqual(["completed", "completed"]);
+    const record = await resumeSession(workspaceRoot, "post-tool-failure", {
+      originator: "evil-jelly-cli",
+      appVersion: "1.0.0",
+      sessionsRoot,
+    });
+    expect(record?.recovery).toBeUndefined();
+    expect(record?.messages.filter((message) => message.role === "tool")).toHaveLength(1);
+  });
+
+  it("keeps completed tool history when the user submits a new task instead of retrying", async () => {
+    const calls: Message[][] = [];
+    const adapter: ModelAdapter = {
+      id: "abandoned-post-tool-model",
+      async *stream(messages): AsyncGenerator<StreamEvent> {
+        calls.push(messages.map((message) => ({ ...message })));
+        if (calls.length === 1) {
+          yield {
+            type: "tool_call",
+            toolCall: {
+              index: 0,
+              id: "abandoned-tool",
+              name: "list_directory",
+              arguments: JSON.stringify({ dirPath: ".", depth: 1 }),
+            },
+          };
+          return;
+        }
+        if (calls.length === 2) {
+          throw new ModelCallError("gateway unavailable", {
+            modelId: "abandoned-post-tool-model",
+            code: "connection_error",
+          });
+        }
+        yield { type: "text", content: "New task completed." };
+      },
+    };
+    const model = augmentModel(adapter, [
+      withRetry({ maxAttempts: 1, connectionRetry: "bounded" }),
+    ]);
+    await runEvilJellyHost(createMemoryBindings(["Inspect once", "New task", "/exit"]), {
+      runControl: createInteractiveRunControl(),
+      model,
+      sessionId: "abandoned-post-tool",
+      sessionStartMode: "new",
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+    });
+    expect(calls).toHaveLength(3);
+    expect(
+      calls[2]
+        ?.filter((message) => message.role === "user" && !isInstructionMessage(message))
+        .map((message) => messageContentToText(message.content)),
+    ).toEqual(["Inspect once", "New task"]);
+    expect(calls[2]?.filter((message) => message.tool_call_id === "abandoned-tool")).toHaveLength(
+      1,
+    );
+    const stored = await readSessionEvents(workspaceRoot, "abandoned-post-tool", { sessionsRoot });
     expect(
       stored.events
         .filter((event) => isKnownSessionEvent(event) && event.type === "turn_completed")
@@ -612,6 +694,7 @@ describe("non-TTY session lifecycle", () => {
 
   it.each([
     "retry",
+    "post-tool",
     "interrupted",
     "resumed",
   ] as const)("preserves image metadata through /continue (%s) and subsequent turns", async (mode) => {
@@ -644,8 +727,21 @@ describe("non-TTY session lifecycle", () => {
       id: "image-recovery-model",
       async *stream(messages): AsyncGenerator<StreamEvent> {
         calls.push(messages.map((message) => ({ ...message })));
-        if (callIndex++ === 0) {
-          if (mode === "retry") {
+        const currentCall = callIndex++;
+        if (mode === "post-tool" && currentCall === 0) {
+          yield {
+            type: "tool_call",
+            toolCall: {
+              index: 0,
+              id: "image-inspection",
+              name: "list_directory",
+              arguments: JSON.stringify({ dirPath: ".", depth: 1 }),
+            },
+          };
+          return;
+        }
+        if (currentCall === (mode === "post-tool" ? 1 : 0)) {
+          if (mode === "retry" || mode === "post-tool") {
             throw new ModelCallError("provider unavailable", {
               modelId: "image-recovery-model",
               code: "timeout",
@@ -693,7 +789,10 @@ describe("non-TTY session lifecycle", () => {
         session,
       });
     }
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(mode === "post-tool" ? 4 : 3);
+    if (mode === "post-tool") {
+      expect(calls[2]).toEqual(calls[1]);
+    }
     for (const call of calls) {
       const images = call.flatMap((message) =>
         Array.isArray(message.content)
