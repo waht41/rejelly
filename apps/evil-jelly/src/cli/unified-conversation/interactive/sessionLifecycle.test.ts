@@ -471,6 +471,153 @@ describe("non-TTY session lifecycle", () => {
   });
 
   it.each([
+    ["pre-output", true],
+    ["pre-output", false],
+    ["partial-output", true],
+    ["partial-output", false],
+    ["post-tool", true],
+    ["post-tool", false],
+  ] as const)("keeps unknown model failures in the router (%s, persistence=%s)", async (mode, persistence) => {
+    const systemEvents: string[] = [];
+    const calls: Message[][] = [];
+    const bindings = createMemoryBindings([
+      "Inspect before unknown failure",
+      "/status",
+      "/continue",
+      "Follow up",
+      "/continue",
+      "/exit",
+    ]);
+    bindings.logSystemEvent = (message) => systemEvents.push(message);
+    const failure = "stream disconnected before response.completed";
+    const partial = "Partial reply before disconnect.";
+    const adapter: ModelAdapter = {
+      id: "unknown-failure-model",
+      async *stream(messages): AsyncGenerator<StreamEvent> {
+        calls.push(messages.map((message) => ({ ...message })));
+        const currentCall = calls.length - 1;
+        if (mode === "post-tool" && currentCall === 0) {
+          yield {
+            type: "tool_call",
+            toolCall: {
+              index: 0,
+              id: "unknown-failure-tool",
+              name: "list_directory",
+              arguments: JSON.stringify({ dirPath: ".", depth: 1 }),
+            },
+          };
+          return;
+        }
+        if (currentCall === (mode === "post-tool" ? 1 : 0)) {
+          if (mode !== "pre-output") yield { type: "text", content: partial };
+          throw new ModelCallError(failure, {
+            modelId: "unknown-failure-model",
+            code: "unknown",
+          });
+        }
+        yield { type: "text", content: "Recovered conservatively." };
+      },
+    };
+    // Unknown errors must not consume this automatic retry budget, even before output.
+    const model = augmentModel(adapter, [withRetry({ maxAttempts: 3 })]);
+    await runEvilJellyHost(bindings, {
+      runControl: createInteractiveRunControl(),
+      model,
+      ...(persistence
+        ? {
+            sessionId: "unknown-model-failure",
+            sessionStartMode: "new" as const,
+            session: { enabled: true as const, appVersion: "1.0.0", sessionsRoot },
+          }
+        : {}),
+    });
+
+    expect(calls).toHaveLength(mode === "post-tool" ? 4 : 3);
+    expect(
+      systemEvents.some((message) =>
+        message.includes(`Current task failed: ${failure}. Returning to router.`),
+      ),
+    ).toBe(true);
+    expect(systemEvents.some((message) => message.includes("Run failed:"))).toBe(false);
+    expect(systemEvents).not.toContain("Retrying the previous model request…\n");
+    expect(systemEvents).toContain("No failed or interrupted task is available to continue.\n");
+    const continuedCall = calls[mode === "post-tool" ? 2 : 1] ?? [];
+    expect(
+      continuedCall.some(
+        (message) =>
+          message.role === "user" &&
+          messageContentToText(message.content).includes("Continue the previous task"),
+      ),
+    ).toBe(true);
+    expect(
+      continuedCall.filter(
+        (message) =>
+          message.role === "user" &&
+          messageContentToText(message.content) === "Inspect before unknown failure",
+      ),
+    ).toHaveLength(1);
+    for (const call of calls) {
+      expect(
+        call.some(
+          (message) =>
+            message.role === "assistant" && messageContentToText(message.content).includes(partial),
+        ),
+      ).toBe(false);
+    }
+    if (mode === "post-tool") {
+      for (const call of calls.slice(1)) {
+        expect(
+          call.filter(
+            (message) => message.role === "tool" && message.tool_call_id === "unknown-failure-tool",
+          ),
+        ).toHaveLength(1);
+      }
+    }
+    if (!persistence) return;
+    const stored = await readSessionEvents(workspaceRoot, "unknown-model-failure", {
+      sessionsRoot,
+    });
+    expect(
+      stored.events
+        .filter((event) => isKnownSessionEvent(event) && event.type === "turn_completed")
+        .map((event) => (event.type === "turn_completed" ? event.status : undefined)),
+    ).toEqual(["error", "completed", "completed"]);
+    const record = await resumeSession(workspaceRoot, "unknown-model-failure", {
+      originator: "evil-jelly-cli",
+      appVersion: "1.0.0",
+      sessionsRoot,
+    });
+    expect(record?.recovery).toBeUndefined();
+  });
+
+  it("does not treat non-model internal exceptions as recoverable model failures", async () => {
+    const systemEvents: string[] = [];
+    let callCount = 0;
+    const model: ModelAdapter = {
+      id: "internal-exception-model",
+      async *stream(): AsyncGenerator<StreamEvent> {
+        callCount++;
+        yield* [] as StreamEvent[];
+        throw new Error("internal invariant failed");
+      },
+    };
+    const bindings = createMemoryBindings(["Trigger internal failure", "/continue", "/exit"]);
+    bindings.logSystemEvent = (message) => systemEvents.push(message);
+    await runEvilJellyHost(bindings, {
+      runControl: createInteractiveRunControl(),
+      model,
+    });
+    expect(callCount).toBe(1);
+    expect(
+      systemEvents.some(
+        (message) =>
+          message.includes("Run failed:") && message.includes("internal invariant failed"),
+      ),
+    ).toBe(true);
+    expect(systemEvents.some((message) => message.includes("Use /continue"))).toBe(false);
+  });
+
+  it.each([
     true,
     false,
   ])("transparently retries after a completed tool, including repeated failures (persistence=%s)", async (persistence) => {

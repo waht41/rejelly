@@ -58,6 +58,7 @@ export interface PromptChatResilientOptions<TSchema extends z.ZodTypeAny = z.Zod
   turnId?: string;
   onTurnProgress?: (event: TurnProgressEvent) => void;
   onModelRetryCheckpoint?: (history: Message[]) => void;
+  onModelFailureHistory?: (history: Message[]) => void;
   /** Cancellation scoped to this chat loop rather than its owning agent context. */
   signal?: AbortSignal;
 }
@@ -118,6 +119,7 @@ export const promptChatResilient = createAgentPolicy({
       turnId: options?.turnId,
       onTurnProgress: options?.onTurnProgress,
       onModelRetryCheckpoint: options?.onModelRetryCheckpoint,
+      onModelFailureHistory: options?.onModelFailureHistory,
       signal: options?.signal,
     };
 

@@ -32,6 +32,8 @@ interface ConversationAgentBaseProps {
   onTurnProgress?: (event: TurnProgressEvent) => void;
   /** Active history at a model request that failed before emitting output, without equipped rules. */
   onModelRetryCheckpoint?: (history: Message[]) => void;
+  /** Committed context before a failed model dispatch, excluding partial streamed output. */
+  onModelFailureHistory?: (history: Message[]) => void;
 }
 
 export type ConversationAgentProps =

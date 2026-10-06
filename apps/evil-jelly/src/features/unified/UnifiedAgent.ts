@@ -258,6 +258,7 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
         turnId: props.turnId,
         onTurnProgress: props.onTurnProgress,
         onModelRetryCheckpoint: props.onModelRetryCheckpoint,
+        onModelFailureHistory: props.onModelFailureHistory,
         signal: props.operationSignal,
       });
 

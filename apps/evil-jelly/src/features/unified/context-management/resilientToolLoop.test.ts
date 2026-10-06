@@ -153,13 +153,16 @@ describe("runResilientToolCallLoopPolicy session recorder", () => {
     } as unknown as PromptContext;
     let round = 0;
     const checkpoint = vi.fn();
+    const failureHistory = vi.fn();
 
     await expect(
       runResilientToolCallLoopPolicy(ctx, {
         pendingUserMessages: () => (round++ === 1 ? [steer] : []),
         onModelRetryCheckpoint: checkpoint,
+        onModelFailureHistory: failureHistory,
       }),
     ).rejects.toBe(error);
+    expect(failureHistory).toHaveBeenCalledExactlyOnceWith([user, modelCall, toolResult, steer]);
     if (yielded === false) {
       expect(checkpoint).toHaveBeenCalledExactlyOnceWith([user, modelCall, toolResult, steer]);
     } else {
@@ -196,10 +199,15 @@ describe("runResilientToolCallLoopPolicy session recorder", () => {
       span: { setAttribute: vi.fn() },
     } as unknown as PromptContext;
     const checkpoint = vi.fn();
+    const failureHistory = vi.fn();
     await expect(
-      runResilientToolCallLoopPolicy(ctx, { onModelRetryCheckpoint: checkpoint }),
+      runResilientToolCallLoopPolicy(ctx, {
+        onModelRetryCheckpoint: checkpoint,
+        onModelFailureHistory: failureHistory,
+      }),
     ).rejects.toBe(error);
     expect(checkpoint).not.toHaveBeenCalled();
+    expect(failureHistory).not.toHaveBeenCalled();
   });
 
   it("reports a requested tool before local execution starts", async () => {

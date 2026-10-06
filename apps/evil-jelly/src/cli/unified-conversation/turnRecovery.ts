@@ -2,7 +2,11 @@ import type { Message } from "@rejelly/core";
 
 export type TurnRecoveryStatus = "failed" | "interrupted";
 export type TurnRecoveryStage = "preparation" | "agent";
-export type TurnRecoveryReason = "user_abort" | "transient_model_failure" | "session_recovery";
+export type TurnRecoveryReason =
+  | "user_abort"
+  | "transient_model_failure"
+  | "unknown_model_failure"
+  | "session_recovery";
 export type TurnRecoveryStrategy = "retry_same_turn" | "resume_with_context";
 export type TurnToolActivity = "none" | "requested" | "running" | "completed" | "unknown";
 
