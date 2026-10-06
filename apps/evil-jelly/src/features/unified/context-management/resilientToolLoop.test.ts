@@ -1,8 +1,9 @@
-import { AbortError, type Message } from "@rejelly/core";
+import { AbortError, type Message, ModelCallError } from "@rejelly/core";
 import type { PromptContext } from "@rejelly/core/policy";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { SessionRecorder } from "../../../domains/session/recorder/sessionRecorder";
+import { recordModelFailureProgress } from "../../../shared/model/modelFailureProgress";
 import type { NonUserMessageSource } from "../../../shared/session/messageSource";
 
 const policyMocks = vi.hoisted(() => ({
@@ -108,6 +109,97 @@ describe("runResilientToolCallLoopPolicy session recorder", () => {
       "dispatch_2",
     );
     expect(toolsForDispatch).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    false,
+    true,
+    undefined,
+  ])("only checkpoints a model dispatch with confirmed pre-output failure (yielded=%s)", async (yielded) => {
+    const user: Message = { role: "user", content: "inspect" };
+    const steer: Message = { role: "user", content: "also inspect tests" };
+    const modelCall: Message = {
+      role: "assistant",
+      content: null,
+      tool_calls: [{ id: "checkpoint-tool", name: "read_file", arguments: "{}" }],
+    };
+    const toolResult: Message = {
+      role: "tool",
+      tool_call_id: "checkpoint-tool",
+      content: "file body",
+    };
+    const error = new ModelCallError("connection failed", {
+      modelId: "checkpoint-model",
+      code: "connection_error",
+    });
+    if (yielded !== undefined) recordModelFailureProgress(error, yielded);
+    policyMocks.executeValidatedLoopTurn
+      .mockResolvedValueOnce({
+        kind: "tool_calls",
+        calls: modelCall.tool_calls,
+        deltaMessages: [modelCall],
+      })
+      .mockRejectedValueOnce(error);
+    policyMocks.executeTools.mockResolvedValueOnce([toolResult]);
+    const ctx = {
+      maxTurnSteps: 3,
+      maxRetries: 0,
+      messages: [{ role: "system", content: "equipped rules" }, user],
+      tools: [],
+      fork: vi.fn(function (this: PromptContext, overrides) {
+        return { ...this, ...overrides };
+      }),
+      span: { setAttribute: vi.fn() },
+    } as unknown as PromptContext;
+    let round = 0;
+    const checkpoint = vi.fn();
+
+    await expect(
+      runResilientToolCallLoopPolicy(ctx, {
+        pendingUserMessages: () => (round++ === 1 ? [steer] : []),
+        onModelRetryCheckpoint: checkpoint,
+      }),
+    ).rejects.toBe(error);
+    if (yielded === false) {
+      expect(checkpoint).toHaveBeenCalledExactlyOnceWith([user, modelCall, toolResult, steer]);
+    } else {
+      expect(checkpoint).not.toHaveBeenCalled();
+    }
+    expect(policyMocks.executeTools).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not checkpoint a tool failure even if it carries pre-output model progress", async () => {
+    const modelCall: Message = {
+      role: "assistant",
+      content: null,
+      tool_calls: [{ id: "failed-tool", name: "read_file", arguments: "{}" }],
+    };
+    const error = new ModelCallError("tool's model failed", {
+      modelId: "tool-model",
+      code: "server_error",
+    });
+    recordModelFailureProgress(error, false);
+    policyMocks.executeValidatedLoopTurn.mockResolvedValueOnce({
+      kind: "tool_calls",
+      calls: modelCall.tool_calls,
+      deltaMessages: [modelCall],
+    });
+    policyMocks.executeTools.mockRejectedValueOnce(error);
+    const ctx = {
+      maxTurnSteps: 3,
+      maxRetries: 0,
+      messages: [],
+      tools: [],
+      fork: vi.fn(function (this: PromptContext, overrides) {
+        return { ...this, ...overrides };
+      }),
+      span: { setAttribute: vi.fn() },
+    } as unknown as PromptContext;
+    const checkpoint = vi.fn();
+    await expect(
+      runResilientToolCallLoopPolicy(ctx, { onModelRetryCheckpoint: checkpoint }),
+    ).rejects.toBe(error);
+    expect(checkpoint).not.toHaveBeenCalled();
   });
 
   it("reports a requested tool before local execution starts", async () => {

@@ -57,8 +57,9 @@ interface MessageSnapshot {
   origin?: FrozenUserInputV1;
 }
 
-type RecoverySnapshot = Omit<TurnRecoveryState, "userMessage"> & {
+type RecoverySnapshot = Omit<TurnRecoveryState, "userMessage" | "retryHistory"> & {
   userMessage: MessageSnapshot;
+  retryHistory?: MessageSnapshot[];
 };
 
 function snapshotMessage(message: Message): MessageSnapshot {
@@ -76,7 +77,21 @@ function restoreMessage(snapshot: MessageSnapshot): Message {
 }
 
 function snapshotRecovery(state: TurnRecoveryState): RecoverySnapshot {
-  return { ...state, userMessage: snapshotMessage(state.userMessage) };
+  const { userMessage, retryHistory, ...rest } = state;
+  return {
+    ...rest,
+    userMessage: snapshotMessage(userMessage),
+    ...(retryHistory ? { retryHistory: retryHistory.map(snapshotMessage) } : {}),
+  };
+}
+
+function restoreRecovery(snapshot: RecoverySnapshot): TurnRecoveryState {
+  const { userMessage, retryHistory, ...rest } = snapshot;
+  return {
+    ...rest,
+    userMessage: restoreMessage(userMessage),
+    ...(retryHistory ? { retryHistory: retryHistory.map(restoreMessage) } : {}),
+  };
 }
 
 /** Equip the state whose lifetime is one logical interactive session segment. */
@@ -122,9 +137,7 @@ export function equipConversationSession(
   let liveSessionMcpState = storedSessionMcpState;
   let liveNextImageOrdinal = storedNextImageOrdinal;
   let liveContextTokenAnchor = storedContextTokenAnchor ?? undefined;
-  let liveRecoveryState = storedRecoveryState
-    ? { ...storedRecoveryState, userMessage: restoreMessage(storedRecoveryState.userMessage) }
-    : undefined;
+  let liveRecoveryState = storedRecoveryState ? restoreRecovery(storedRecoveryState) : undefined;
 
   equipBudget({
     onUpdate: ({ delta, aggregate }) => {

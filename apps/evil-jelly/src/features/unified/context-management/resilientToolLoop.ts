@@ -1,5 +1,5 @@
 import type { JsonSchema, Message, ToolDefinition } from "@rejelly/core";
-import { isAbortError, ToolLoopExceededError } from "@rejelly/core";
+import { isAbortError, isModelCallError, ToolLoopExceededError } from "@rejelly/core";
 import {
   executeTools,
   executeValidatedLoopTurn,
@@ -12,6 +12,7 @@ import {
   estimateMessagesTokensFromAnchor,
 } from "../../../shared/model/budget/tokenEstimate";
 import { appendMessageContentSuffix } from "../../../shared/model/message/content";
+import { modelFailureYielded } from "../../../shared/model/modelFailureProgress";
 import type { SessionMessageSink } from "../../../shared/session/recorderPort";
 import type { TurnProgressEvent } from "../conversationRun";
 import {
@@ -43,6 +44,7 @@ export interface ToolCallLoopPolicySnapshot {
   sessionRecorder?: SessionMessageSink;
   turnId?: string;
   onTurnProgress?: (event: TurnProgressEvent) => void;
+  onModelRetryCheckpoint?: (history: Message[]) => void;
   signal?: AbortSignal;
 }
 
@@ -221,13 +223,23 @@ export async function runResilientToolCallLoopPolicy<T = unknown>(
         tools: [...dispatchTools],
       });
       const usageRevisionBefore = snapshot.promptTokenUsage?.read()?.revision ?? 0;
-      const result: LoopTurnResult = await executeValidatedLoopTurn({
-        runtime: dispatchRuntime,
-        jsonSchema: snapshot.jsonSchema,
-        parser: snapshot.parser,
-        maxRetries: ctx.maxRetries,
-        signal: snapshot.signal,
-      });
+      let result: LoopTurnResult;
+      try {
+        result = await executeValidatedLoopTurn({
+          runtime: dispatchRuntime,
+          jsonSchema: snapshot.jsonSchema,
+          parser: snapshot.parser,
+          maxRetries: ctx.maxRetries,
+          signal: snapshot.signal,
+        });
+      } catch (error) {
+        // Only a model dispatch with no emitted output has a safe transparent retry boundary.
+        // Tool execution and persistence failures must not be mistaken for model failures.
+        if (isModelCallError(error) && modelFailureYielded(error) === false) {
+          snapshot.onModelRetryCheckpoint?.(withoutEquippedPrefix(dispatchRuntime.messages));
+        }
+        throw error;
+      }
 
       const latestUsage = snapshot.promptTokenUsage?.read();
       if (latestUsage && latestUsage.revision > usageRevisionBefore) {

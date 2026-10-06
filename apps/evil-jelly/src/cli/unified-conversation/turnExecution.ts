@@ -183,6 +183,7 @@ interface CommittedConversationTurn {
   turnId: string;
   userMessage: Message;
   mcpServerIds: readonly string[];
+  retryHistory?: Message[];
 }
 
 function createTurnMcpBindingFactory(
@@ -213,14 +214,15 @@ function createTurnMcpBindingFactory(
 
 function recoveryState(
   input: CommittedConversationTurn,
-  fields: Pick<TurnRecoveryState, "status" | "reason" | "strategy" | "message" | "toolActivity">,
+  fields: Pick<TurnRecoveryState, "status" | "reason" | "strategy" | "message" | "toolActivity"> &
+    Pick<Partial<TurnRecoveryState>, "retryHistory" | "mcpServerIds">,
 ): TurnRecoveryState {
   return {
-    ...fields,
     stage: "agent",
     turnId: input.turnId,
     userMessage: input.userMessage,
     mcpServerIds: input.mcpServerIds,
+    ...fields,
   };
 }
 
@@ -230,6 +232,7 @@ async function runCommittedConversationTurn(
 ): Promise<TurnExecutionResult> {
   let turnClosureAttempted = false;
   let modelOutputReceived = false;
+  let retryHistory: Message[] | undefined;
   let toolActivity: TurnToolActivity = "none";
   const observeProgress = (event: TurnProgressEvent): void => {
     switch (event) {
@@ -263,11 +266,23 @@ async function runCommittedConversationTurn(
         initialTokenAnchor: runtime.session.contextTokenAnchor(),
         operationSignal,
         onTurnProgress: observeProgress,
+        retryHistory: input.retryHistory,
+        onModelRetryCheckpoint: (history) => {
+          retryHistory = history;
+        },
       }),
     );
 
     if (result.compactHistory) {
       runtime.session.replaceHistory(result.compactHistory);
+      runtime.session.clearContextTokenAnchor();
+    } else if (input.retryHistory) {
+      runtime.session.replaceHistory([
+        ...input.retryHistory,
+        ...(result.delta?.length
+          ? result.delta
+          : [{ role: "assistant" as const, content: result.reply }]),
+      ]);
       runtime.session.clearContextTokenAnchor();
     } else {
       runtime.session.appendTurn(input.userMessage, result.reply, result.delta);
@@ -333,7 +348,10 @@ async function runCommittedConversationTurn(
       case "server_error":
       case "rate_limit": {
         const yielded = modelFailureYielded(error);
-        if (yielded === false && !modelOutputReceived && toolActivity === "none") {
+        if (
+          yielded === false &&
+          (retryHistory || (!modelOutputReceived && toolActivity === "none"))
+        ) {
           return {
             status: "recoverable",
             recovery: recoveryState(input, {
@@ -341,7 +359,9 @@ async function runCommittedConversationTurn(
               reason: "transient_model_failure",
               strategy: "retry_same_turn",
               message: error.message,
-              toolActivity: "none",
+              toolActivity,
+              mcpServerIds: [...turnMcpSelection],
+              ...(retryHistory ? { retryHistory } : {}),
             }),
           };
         }
@@ -430,7 +450,7 @@ export async function executeConversationTurn(
   }
 }
 
-/** Retry a pre-output transient model failure without recording another user input or Turn. */
+/** Retry a pre-output transient model failure from its context without another user input or Turn. */
 export async function retryConversationTurn(
   runtime: ConversationTurnRuntime,
   recovery: TurnRecoveryState,
@@ -443,6 +463,7 @@ export async function retryConversationTurn(
     turnId: recovery.turnId,
     userMessage: recovery.userMessage,
     mcpServerIds: recovery.mcpServerIds,
+    retryHistory: recovery.retryHistory,
   });
 }
 
@@ -452,5 +473,9 @@ export async function abandonPendingConversationTurn(
   recovery: TurnRecoveryState | undefined,
 ): Promise<void> {
   if (recovery?.strategy !== "retry_same_turn" || !recovery.turnId) return;
+  if (recovery.retryHistory) {
+    runtime.session.replaceHistory(recovery.retryHistory);
+    runtime.session.clearContextTokenAnchor();
+  }
   await closeTurnAfterFailure(runtime, recovery.turnId, "error");
 }

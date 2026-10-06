@@ -30,6 +30,8 @@ interface ConversationAgentBaseProps {
   operationSignal?: AbortSignal;
   /** Host-owned progress observer used to choose a safe recovery strategy. */
   onTurnProgress?: (event: TurnProgressEvent) => void;
+  /** Active history at a model request that failed before emitting output, without equipped rules. */
+  onModelRetryCheckpoint?: (history: Message[]) => void;
 }
 
 export type ConversationAgentProps =
@@ -37,6 +39,8 @@ export type ConversationAgentProps =
       /** Normal chat consumes the exact Message already prepared at the host boundary. */
       operation?: "chat";
       message: Message;
+      /** Retry a failed model dispatch with its full context instead of appending the input again. */
+      retryHistory?: Message[];
       /** Steers are likewise prepared before they cross into the model policy. */
       pendingUserMessages?: () => Message[] | Promise<Message[]>;
     })
