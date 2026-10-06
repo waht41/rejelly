@@ -7,7 +7,10 @@ import {
   type SessionMemoryRuntime,
 } from "../../domains/memory/runtime/sessionMemoryRuntime";
 import type { SessionRecorder } from "../../domains/session/recorder/sessionRecorder";
-import { materializeMessageHistory } from "../../domains/session/repository/sessionMessageMaterializer";
+import {
+  materializeMessageHistory,
+  materializeMessageImageBlobs,
+} from "../../domains/session/repository/sessionMessageMaterializer";
 import type {
   SessionBudget,
   SessionContextTokenAnchor,
@@ -514,7 +517,11 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
             return reborn();
           }
           await refreshInterruptedSessionContext(runtime);
-          session.ensureHistoryIncludes(recovery.userMessage);
+          session.ensureHistoryIncludes(
+            await materializeMessageImageBlobs(recovery.userMessage, {
+              ...(runtime.props.sessionBlobRoot ? { blobRoot: runtime.props.sessionBlobRoot } : {}),
+            }),
+          );
           const continuePrompt = continuationPromptForRecovery(recovery);
           await runConversationTurn(runtime, textPromptInput(continuePrompt), continuePrompt);
           return reborn();

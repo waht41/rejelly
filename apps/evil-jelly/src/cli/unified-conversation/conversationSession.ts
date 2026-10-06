@@ -1,4 +1,9 @@
 import { equipBudget, equipMemory, getUsageStats, type Message } from "@rejelly/core";
+import {
+  getSessionImageBlobMetadata,
+  registerRuntimeSessionImageBlobs,
+  type SessionImageBlobMap,
+} from "../../domains/session/model/storedSessionMessage";
 import type {
   SessionBudget,
   SessionContextTokenAnchor,
@@ -8,6 +13,11 @@ import {
   createSessionMcpState,
   type SessionMcpState,
 } from "../../shared/model/mcp/sessionMcpState";
+import {
+  type FrozenUserInputV1,
+  getFrozenUserInputOrigin,
+  registerFrozenUserInputOrigin,
+} from "../../shared/model/prompt/frozenUserInput";
 import { combineSessionBudget } from "./budget";
 import type { TurnRecoveryState } from "./turnRecovery";
 
@@ -39,12 +49,45 @@ export interface ConversationSession {
   ensureHistoryIncludes: (message: Message) => void;
 }
 
+// equipMemory JSON-clones values, so WeakMap associations must cross this boundary explicitly.
+// Keep them beside the message rather than adding internal metadata to its provider wire shape.
+interface MessageSnapshot {
+  message: Message;
+  imageBlobs: SessionImageBlobMap;
+  origin?: FrozenUserInputV1;
+}
+
+type RecoverySnapshot = Omit<TurnRecoveryState, "userMessage"> & {
+  userMessage: MessageSnapshot;
+};
+
+function snapshotMessage(message: Message): MessageSnapshot {
+  const origin = getFrozenUserInputOrigin(message);
+  return {
+    message,
+    imageBlobs: getSessionImageBlobMetadata(message),
+    ...(origin ? { origin } : {}),
+  };
+}
+
+function restoreMessage(snapshot: MessageSnapshot): Message {
+  const message = registerRuntimeSessionImageBlobs(snapshot.message, snapshot.imageBlobs);
+  return snapshot.origin ? registerFrozenUserInputOrigin(message, snapshot.origin) : message;
+}
+
+function snapshotRecovery(state: TurnRecoveryState): RecoverySnapshot {
+  return { ...state, userMessage: snapshotMessage(state.userMessage) };
+}
+
 /** Equip the state whose lifetime is one logical interactive session segment. */
 export function equipConversationSession(
   seed: ConversationSessionSeed,
   host: EvilJellyBindings,
 ): ConversationSession {
-  const [history, setHistory] = equipMemory<Message[]>("message_history", seed.seedContext ?? []);
+  const [history, setHistory] = equipMemory<MessageSnapshot[]>(
+    "message_history",
+    (seed.seedContext ?? []).map(snapshotMessage),
+  );
   const [storedContextTokens, setLastContextTokens] = equipMemory<number>(
     "main_cli:last_context_tokens",
     seed.seedBudget?.lastContextTokens ?? 0,
@@ -66,20 +109,22 @@ export function equipConversationSession(
       "main_cli:context_token_anchor",
       seed.seedContextTokenAnchor ?? null,
     );
-  const [storedRecoveryState, storeRecoveryState] = equipMemory<TurnRecoveryState | null>(
+  const [storedRecoveryState, storeRecoveryState] = equipMemory<RecoverySnapshot | null>(
     "main_cli:turn_recovery",
-    seed.seedRecovery ?? null,
+    seed.seedRecovery ? snapshotRecovery(seed.seedRecovery) : null,
   );
 
   // equipMemory getters are frozen at handler entry, so same-turn consumers use live mirrors.
-  let liveHistory = history;
+  let liveHistory = history.map(restoreMessage);
   let liveContextTokens = storedContextTokens;
   let liveCacheTokens = storedCacheTokens;
   let liveRunAggregate = getUsageStats().aggregate;
   let liveSessionMcpState = storedSessionMcpState;
   let liveNextImageOrdinal = storedNextImageOrdinal;
   let liveContextTokenAnchor = storedContextTokenAnchor ?? undefined;
-  let liveRecoveryState = storedRecoveryState ?? undefined;
+  let liveRecoveryState = storedRecoveryState
+    ? { ...storedRecoveryState, userMessage: restoreMessage(storedRecoveryState.userMessage) }
+    : undefined;
 
   equipBudget({
     onUpdate: ({ delta, aggregate }) => {
@@ -113,11 +158,11 @@ export function equipConversationSession(
       const assistantDelta =
         delta && delta.length > 0 ? delta : [{ role: "assistant" as const, content: reply }];
       liveHistory = [...liveHistory, userMessage, ...assistantDelta];
-      setHistory(liveHistory);
+      setHistory(liveHistory.map(snapshotMessage));
     },
     replaceHistory: (messages) => {
       liveHistory = messages;
-      setHistory(messages);
+      setHistory(messages.map(snapshotMessage));
     },
     mcpState: () => liveSessionMcpState,
     setMcpState: (state) => {
@@ -140,7 +185,7 @@ export function equipConversationSession(
     recoveryState: () => liveRecoveryState,
     setRecoveryState: (state) => {
       liveRecoveryState = state;
-      storeRecoveryState(state);
+      storeRecoveryState(snapshotRecovery(state));
     },
     clearRecoveryState: () => {
       liveRecoveryState = undefined;
@@ -150,7 +195,7 @@ export function equipConversationSession(
       const serialized = JSON.stringify(message);
       if (liveHistory.some((candidate) => JSON.stringify(candidate) === serialized)) return;
       liveHistory = [...liveHistory, message];
-      setHistory(liveHistory);
+      setHistory(liveHistory.map(snapshotMessage));
     },
   };
 }
