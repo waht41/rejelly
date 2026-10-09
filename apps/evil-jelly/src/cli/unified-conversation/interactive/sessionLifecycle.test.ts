@@ -475,6 +475,8 @@ describe("non-TTY session lifecycle", () => {
     ["pre-output", false],
     ["partial-output", true],
     ["partial-output", false],
+    ["post-tool-pre-output", true],
+    ["post-tool-pre-output", false],
     ["post-tool", true],
     ["post-tool", false],
   ] as const)("keeps unknown model failures in the router (%s, persistence=%s)", async (mode, persistence) => {
@@ -489,14 +491,18 @@ describe("non-TTY session lifecycle", () => {
       "/exit",
     ]);
     bindings.logSystemEvent = (message) => systemEvents.push(message);
-    const failure = "stream disconnected before response.completed";
+    const hasTool = mode === "post-tool" || mode === "post-tool-pre-output";
+    const safeRetry = mode === "pre-output" || mode === "post-tool-pre-output";
+    const failure = safeRetry
+      ? "400 unknown provider for model gpt-6.1-sol"
+      : "stream disconnected before response.completed";
     const partial = "Partial reply before disconnect.";
     const adapter: ModelAdapter = {
       id: "unknown-failure-model",
       async *stream(messages): AsyncGenerator<StreamEvent> {
         calls.push(messages.map((message) => ({ ...message })));
         const currentCall = calls.length - 1;
-        if (mode === "post-tool" && currentCall === 0) {
+        if (hasTool && currentCall === 0) {
           yield {
             type: "tool_call",
             toolCall: {
@@ -508,8 +514,8 @@ describe("non-TTY session lifecycle", () => {
           };
           return;
         }
-        if (currentCall === (mode === "post-tool" ? 1 : 0)) {
-          if (mode !== "pre-output") yield { type: "text", content: partial };
+        if (currentCall === (hasTool ? 1 : 0)) {
+          if (!safeRetry) yield { type: "text", content: partial };
           throw new ModelCallError(failure, {
             modelId: "unknown-failure-model",
             code: "unknown",
@@ -532,23 +538,31 @@ describe("non-TTY session lifecycle", () => {
         : {}),
     });
 
-    expect(calls).toHaveLength(mode === "post-tool" ? 4 : 3);
+    expect(calls).toHaveLength(hasTool ? 4 : 3);
     expect(
       systemEvents.some((message) =>
         message.includes(`Current task failed: ${failure}. Returning to router.`),
       ),
     ).toBe(true);
     expect(systemEvents.some((message) => message.includes("Run failed:"))).toBe(false);
-    expect(systemEvents).not.toContain("Retrying the previous model request…\n");
+    expect(systemEvents.includes("Retrying the previous model request…\n")).toBe(safeRetry);
     expect(systemEvents).toContain("No failed or interrupted task is available to continue.\n");
-    const continuedCall = calls[mode === "post-tool" ? 2 : 1] ?? [];
+    const continuedCall = calls[hasTool ? 2 : 1] ?? [];
+    if (safeRetry) expect(continuedCall).toEqual(calls[hasTool ? 1 : 0]);
+    expect(
+      continuedCall.some(
+        (message) =>
+          message.role === "system" &&
+          messageContentToText(message.content).includes("Continue the previous task"),
+      ),
+    ).toBe(!safeRetry);
     expect(
       continuedCall.some(
         (message) =>
           message.role === "user" &&
           messageContentToText(message.content).includes("Continue the previous task"),
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       continuedCall.filter(
         (message) =>
@@ -564,7 +578,7 @@ describe("non-TTY session lifecycle", () => {
         ),
       ).toBe(false);
     }
-    if (mode === "post-tool") {
+    if (hasTool) {
       for (const call of calls.slice(1)) {
         expect(
           call.filter(
@@ -581,13 +595,19 @@ describe("non-TTY session lifecycle", () => {
       stored.events
         .filter((event) => isKnownSessionEvent(event) && event.type === "turn_completed")
         .map((event) => (event.type === "turn_completed" ? event.status : undefined)),
-    ).toEqual(["error", "completed", "completed"]);
+    ).toEqual(safeRetry ? ["completed", "completed"] : ["error", "completed", "completed"]);
+    expect(
+      stored.events.filter(
+        (event) => isKnownSessionEvent(event) && event.type === "user_input_recorded",
+      ),
+    ).toHaveLength(2);
     const record = await resumeSession(workspaceRoot, "unknown-model-failure", {
       originator: "evil-jelly-cli",
       appVersion: "1.0.0",
       sessionsRoot,
     });
     expect(record?.recovery).toBeUndefined();
+    expect(record?.meta.turns).toBe(2);
   });
 
   it("does not treat non-model internal exceptions as recoverable model failures", async () => {
@@ -1025,6 +1045,28 @@ describe("non-TTY session lifecycle", () => {
 
     const resumedCall = resumedCalls[0] ?? [];
     expect(
+      resumedCall.filter(
+        (message) =>
+          message.role === "user" &&
+          messageContentToText(message.content).includes("Recover after restart"),
+      ),
+    ).toHaveLength(1);
+    expect(
+      resumedCall.some(
+        (message) =>
+          message.role === "user" &&
+          messageContentToText(message.content).includes("The previous task was interrupted"),
+      ),
+    ).toBe(false);
+    const recovered = await resumeSession(workspaceRoot, "durable-recovery", {
+      originator: "evil-jelly-cli",
+      appVersion: "1.0.0",
+      sessionsRoot,
+    });
+    expect(recovered?.recovery).toBeUndefined();
+    expect(recovered?.meta.turns).toBe(1);
+    expect(recovered?.transcript?.filter((item) => item.type === "user")).toHaveLength(1);
+    expect(
       resumedCall.some(
         (message) =>
           message.role === "user" &&
@@ -1034,7 +1076,7 @@ describe("non-TTY session lifecycle", () => {
     expect(
       resumedCall.some(
         (message) =>
-          message.role === "user" &&
+          message.role === "system" &&
           messageContentToText(message.content).includes(
             "The previous task was interrupted by the user.",
           ),
@@ -1109,7 +1151,7 @@ describe("non-TTY session lifecycle", () => {
     expect(
       hasText(
         continuedCall,
-        "user",
+        "system",
         "The previous task was interrupted by the user. Continue from the available conversation and tool history.",
       ),
     ).toBe(true);
@@ -1134,7 +1176,7 @@ describe("non-TTY session lifecycle", () => {
     expect(
       hasText(
         resumedMessages,
-        "user",
+        "system",
         "The previous task was interrupted by the user. Continue from the available conversation and tool history.",
       ),
     ).toBe(true);

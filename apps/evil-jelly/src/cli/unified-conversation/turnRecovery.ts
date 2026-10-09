@@ -7,6 +7,7 @@ export type TurnRecoveryReason =
   | "transient_model_failure"
   | "unknown_model_failure"
   | "session_recovery";
+/** Explicit /continue behavior, independent of model middleware automatic retry eligibility. */
 export type TurnRecoveryStrategy = "retry_same_turn" | "resume_with_context";
 export type TurnToolActivity = "none" | "requested" | "running" | "completed" | "unknown";
 
