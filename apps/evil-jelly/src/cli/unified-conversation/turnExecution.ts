@@ -30,11 +30,12 @@ import { materializeSkillAwareUserInput } from "../message-composer/message-mate
 import { memoryReferenceName } from "../message-composer/suggestions/semantic-reference/referenceNaming";
 import { drainSteers } from "../submission-dispatch/steerQueue";
 import type { ConversationSession } from "./conversationSession";
-import type {
-  TurnExecutionResult,
-  TurnRecoveryStage,
-  TurnRecoveryState,
-  TurnToolActivity,
+import {
+  continuationPromptForRecovery,
+  type TurnExecutionResult,
+  type TurnRecoveryStage,
+  type TurnRecoveryState,
+  type TurnToolActivity,
 } from "./turnRecovery";
 
 export type ResolveMcpUserInput = (serverId: string) => {
@@ -403,6 +404,25 @@ async function runCommittedConversationTurn(
             "Fix the model credentials or endpoint configuration, then restart Evil.",
         };
       case "unknown":
+        // Automatic retry eligibility belongs to the model middleware. Explicit /continue can
+        // still retry an unclassified failure at a safe, pre-output dispatch checkpoint.
+        if (
+          modelFailureYielded(error) === false &&
+          (retryHistory || (!modelOutputReceived && toolActivity === "none"))
+        ) {
+          return {
+            status: "recoverable",
+            recovery: recoveryState(input, {
+              status: "failed",
+              reason: "unknown_model_failure",
+              strategy: "retry_same_turn",
+              message: error.message,
+              toolActivity,
+              mcpServerIds: [...turnMcpSelection],
+              ...(retryHistory ? { retryHistory } : {}),
+            }),
+          };
+        }
         // Unclassified model errors end this turn, not the interactive session. Preserve only
         // committed context; partial streamed output is not a completed assistant message.
         if (failureHistory) {
@@ -484,6 +504,29 @@ export async function retryConversationTurn(
     userMessage: recovery.userMessage,
     mcpServerIds: recovery.mcpServerIds,
     retryHistory: recovery.retryHistory,
+  });
+}
+
+/** Resume an interrupted task without inventing another user input or user turn. */
+export async function resumeConversationTurn(
+  runtime: ConversationTurnRuntime,
+  recovery: TurnRecoveryState,
+): Promise<TurnExecutionResult> {
+  const turnId = recovery.turnId ?? createTurnId();
+  const instruction: Message = {
+    role: "system",
+    content: continuationPromptForRecovery(recovery),
+  };
+  await runtime.sessionRecorder?.recordMessage(turnId, { kind: "recovery" }, instruction);
+  runtime.session.replaceHistory([...runtime.session.history, instruction]);
+  runtime.session.clearContextTokenAnchor();
+  runtime.host.onTurnStart?.();
+  runtime.host.logSystemEvent("Continuing the previous task…\n");
+  return runCommittedConversationTurn(runtime, {
+    turnId,
+    userMessage: recovery.userMessage,
+    mcpServerIds: recovery.mcpServerIds,
+    retryHistory: runtime.session.history,
   });
 }
 

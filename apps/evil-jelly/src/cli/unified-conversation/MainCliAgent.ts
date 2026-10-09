@@ -37,7 +37,6 @@ import {
   type PromptInput,
   promptInputCommandText,
   promptInputPlainText,
-  textPromptInput,
 } from "../../shared/model/prompt/promptInput";
 import { startupTimeline } from "../../shared/profile/startup/timeline";
 import { registerInterruptibleTask } from "../../shared/task-interruption/taskStack";
@@ -62,10 +61,10 @@ import {
   type ConversationTurnRuntime,
   executeConversationTurn,
   type ResolveMcpUserInput,
+  resumeConversationTurn,
   retryConversationTurn,
 } from "./turnExecution";
 import {
-  continuationPromptForRecovery,
   recoveryActivityWarning,
   type TurnExecutionResult,
   type TurnRecoveryState,
@@ -522,8 +521,9 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
               ...(runtime.props.sessionBlobRoot ? { blobRoot: runtime.props.sessionBlobRoot } : {}),
             }),
           );
-          const continuePrompt = continuationPromptForRecovery(recovery);
-          await runConversationTurn(runtime, textPromptInput(continuePrompt), continuePrompt);
+          await runConversationOperation(runtime, (turnRuntime) =>
+            resumeConversationTurn(turnRuntime, recovery),
+          );
           return reborn();
         }
         case "resume":
