@@ -42,6 +42,42 @@ describe("WorkspaceFiles", () => {
     expect(hiddenDist.ok).toBe(false);
   });
 
+  it.each([
+    ".agents",
+    ".cursor",
+  ])("allows explicit access to %s while keeping it out of default discovery", (directory) => {
+    const policy = createPolicy();
+    for (const prefix of [directory, `nested/${directory}`]) {
+      const file = `${prefix}/rules.md`;
+      expect(policy.tryResolveWorkspacePath(file).ok).toBe(false);
+      expect(
+        policy.tryResolveWorkspacePath(prefix, { kind: "scan", includeIgnored: true }).ok,
+      ).toBe(true);
+      expect(policy.tryResolveWorkspacePath(file, { kind: "read" }).ok).toBe(true);
+      expect(policy.tryResolveWorkspacePath(file, { kind: "write" }).ok).toBe(true);
+      expect(policy.tryResolveWorkspacePath(`${prefix}/.env`, { kind: "read" }).ok).toBe(false);
+      expect(policy.tryResolveWorkspacePath(`${prefix}/.env`, { kind: "write" }).ok).toBe(false);
+    }
+  });
+
+  it("allows explicit Git metadata reads and scans but rejects writes", async () => {
+    const policy = createPolicy();
+    for (const file of [".git", ".git/config", "nested/.git/HEAD"]) {
+      expect(policy.tryResolveWorkspacePath(file).ok).toBe(false);
+      expect(policy.tryResolveWorkspacePath(file, { kind: "read" }).ok).toBe(true);
+      expect(policy.tryResolveWorkspacePath(file, { kind: "scan", includeIgnored: true }).ok).toBe(
+        true,
+      );
+      expect(policy.tryResolveWorkspacePath(file, { kind: "write" })).toMatchObject({
+        ok: false,
+        error: expect.stringContaining("read-only"),
+      });
+      await expect(policy.writeFile(file, "changed")).rejects.toThrow("read-only");
+      await expect(policy.writeNewFile(file, "new")).rejects.toThrow("read-only");
+      await expect(policy.deleteEntry(file)).rejects.toThrow("read-only");
+    }
+  });
+
   it("allows direct access to generated paths but keeps dependencies read-only", () => {
     const policy = createPolicy();
 

@@ -26,8 +26,8 @@ export const AGENT_HIDDEN_NAMES = new Set([
   "coverage",
 ]);
 
-const AGENT_PROTECTED_NAMES = new Set([".agents", ".cursor", ".git"]);
 const DEPENDENCY_DIR_NAME = "node_modules";
+const WRITE_PROTECTED_NAMES = new Set([".git", DEPENDENCY_DIR_NAME]);
 
 export const TOOL_ALWAYS_IGNORED_DIR_NAMES = new Set([
   ".agents",
@@ -84,9 +84,8 @@ function isPathSystemHidden(relativeNormalized: string, access: WorkspaceAccessK
   const fileName = parts[parts.length - 1];
   for (const segment of parts) {
     if (
-      AGENT_PROTECTED_NAMES.has(segment) ||
       (access === "discovery" && AGENT_HIDDEN_NAMES.has(segment)) ||
-      (access === "direct-write" && segment === DEPENDENCY_DIR_NAME)
+      (access === "direct-write" && WRITE_PROTECTED_NAMES.has(segment))
     ) {
       return true;
     }

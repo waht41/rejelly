@@ -109,6 +109,23 @@ describe("FuzzySearchTool", () => {
     expect(result).toContain("local/nested/IgnoredReport.md");
   });
 
+  it.each([
+    ".agents",
+    ".cursor",
+    ".git",
+  ])("searches explicitly selected %s paths", async (directory) => {
+    await fs.mkdir(path.join(workspace, directory, "nested"), { recursive: true });
+    await fs.writeFile(path.join(workspace, directory, "nested", "ConfigRules.md"), "rules");
+
+    const result = await FuzzySearchTool.handler({
+      keyword: "configrules",
+      directory,
+      includeIgnored: true,
+    });
+
+    expect(result).toContain(`${directory}/nested/ConfigRules.md`);
+  });
+
   it("requires ignored scans to use a bounded subtree and concrete dependency package", async () => {
     await fs.mkdir(path.join(workspace, "node_modules", "pkg"), { recursive: true });
     await fs.writeFile(path.join(workspace, ".gitignore"), "node_modules/\n", "utf8");
