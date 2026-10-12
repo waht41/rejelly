@@ -105,6 +105,44 @@ describe("ReadFileTool", () => {
     expect(workspaceWide).toContain("explicit workspace subdirectory");
   });
 
+  it.each([
+    ".agents",
+    ".cursor",
+    ".git",
+  ])("reads and lists explicitly selected %s without exposing it in default scans", async (directory) => {
+    await fs.mkdir(path.join(tmpDir, directory, "nested"), { recursive: true });
+    await fs.mkdir(path.join(tmpDir, directory, ".git"), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, directory, "nested", "rules.md"), "config content");
+    await fs.writeFile(path.join(tmpDir, directory, ".git", "hidden.md"), "nested metadata");
+    await fs.writeFile(path.join(tmpDir, directory, ".env"), "SECRET=1");
+
+    const defaultListing = await ListDirTool.handler({
+      dirPath: ".",
+      depth: 3,
+      includeIgnored: false,
+    });
+    const hidden = await ListDirTool.handler({
+      dirPath: directory,
+      depth: 3,
+      includeIgnored: false,
+    });
+    const listed = await ListDirTool.handler({
+      dirPath: directory,
+      depth: 3,
+      includeIgnored: true,
+    });
+    const read = await ReadFileTool.handler({
+      filePaths: [`${directory}/nested/rules.md`],
+    });
+
+    expect(defaultListing).not.toContain(directory);
+    expect(hidden).toContain("includeIgnored: true");
+    expect(listed).toContain("rules.md");
+    expect(listed).not.toContain("hidden.md");
+    expect(listed).not.toContain(".env");
+    expect(read).toContain("config content");
+  });
+
   it("lists a concrete dependency package but refuses the node_modules root", async () => {
     await fs.mkdir(path.join(tmpDir, "node_modules", "@scope", "pkg", "src"), {
       recursive: true,

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
@@ -69,11 +69,42 @@ describe("createEditFileTool", () => {
     }
   });
 
-  it("keeps dependency files read-only", async () => {
+  it.each([
+    ".agents",
+    ".cursor",
+  ])("edits %s configuration through normal diff confirmation", async (directory) => {
     const dir = createTempWorkspace();
     try {
-      mkdirSync(join(dir, "node_modules/pkg"), { recursive: true });
-      writeFileSync(join(dir, "node_modules/pkg/index.js"), "export const value = 1;\n", "utf8");
+      mkdirSync(join(dir, directory), { recursive: true });
+      const filePath = `${directory}/rules.md`;
+      writeFileSync(join(dir, filePath), "old rule\n", "utf8");
+      setWorkspaceRoot(dir);
+      const seen: FsWritePayload[] = [];
+      const tool = createEditFileTool(async (params) => {
+        if (params.type !== "fs_write") {
+          throw new Error(`Unexpected payload type: ${params.type}`);
+        }
+        seen.push(params);
+        return { action: "accept" };
+      });
+
+      await tool.handler({
+        targets: [{ filePath, edits: [{ searchBlock: "old rule", replaceBlock: "new rule" }] }],
+      });
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.unifiedDiff).toContain("rules.md");
+      expect(await readFile(join(dir, filePath), "utf8")).toBe("new rule\n");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["node_modules/pkg/index.js", ".git/config"])("keeps %s read-only", async (filePath) => {
+    const dir = createTempWorkspace();
+    try {
+      mkdirSync(join(dir, dirname(filePath)), { recursive: true });
+      writeFileSync(join(dir, filePath), "export const value = 1;\n", "utf8");
       setWorkspaceRoot(dir);
 
       let confirmed = false;
@@ -84,15 +115,15 @@ describe("createEditFileTool", () => {
       const result = await tool.handler({
         targets: [
           {
-            filePath: "node_modules/pkg/index.js",
+            filePath,
             edits: [{ searchBlock: "1", replaceBlock: "2" }],
           },
         ],
       });
 
-      expect(result).toContain("hidden or ignored");
+      expect(result).toContain("read-only");
       expect(confirmed).toBe(false);
-      expect(await readFile(join(dir, "node_modules/pkg/index.js"), "utf8")).toContain("1");
+      expect(await readFile(join(dir, filePath), "utf8")).toContain("1");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

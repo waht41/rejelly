@@ -94,8 +94,8 @@ export class WorkspaceFiles {
 
   /**
    * Traversal guard after an ignored subtree was explicitly selected. Root `.gitignore` rules no
-   * longer hide its children, but nested bulky/tool directories, protected paths, sensitive files,
-   * and symlinks remain excluded.
+   * longer hide its children, but nested bulky/tool directories, sensitive files, and symlinks
+   * remain excluded.
    */
   shouldSkipScopedResolvedEntry(parent: ResolvedFsPath, entry: WorkspaceDirEntry): boolean {
     return this.scan.shouldSkipScopedResolvedEntry(parent, entry);
@@ -172,7 +172,10 @@ export class WorkspaceFiles {
       if (this.scan.isPathHidden(resolved.rel, access)) {
         return {
           ok: false,
-          error: `Access denied: Path '${resolved.rel}' is hidden or ignored.`,
+          error:
+            access === "direct-write"
+              ? `Access denied: Path '${resolved.rel}' is read-only; .git metadata and node_modules dependencies cannot be modified.`
+              : `Access denied: Path '${resolved.rel}' is hidden or ignored during default discovery. Use an explicit subdirectory with includeIgnored: true, or read an exact file path.`,
         };
       }
       if (

@@ -459,6 +459,27 @@ describe("GrepSearchTool Node fallback context merge", () => {
     );
   });
 
+  it.each([
+    ".agents",
+    ".cursor",
+    ".git",
+  ])("searches explicitly selected %s content", async (directory) => {
+    await fs.mkdir(path.join(tmpDir, directory, "nested"), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, directory, "nested", "rules.md"),
+      "explicitConfigNeedle\n",
+      "utf8",
+    );
+
+    const out = await executeGrepSearch("explicitConfigNeedle", "*.md", 0, {
+      directory,
+      includeIgnored: true,
+    });
+
+    expect(out).toContain(path.join(directory, "nested", "rules.md"));
+    expect(out).toContain("> 1 | explicitConfigNeedle");
+  });
+
   it("accepts a concrete file through the directory parameter", async () => {
     await fs.writeFile(
       path.join(tmpDir, "target.ts"),
