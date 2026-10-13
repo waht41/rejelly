@@ -13,16 +13,14 @@ import {
   type ResolvedFsPath,
   type WorkspaceFiles,
 } from "../../../shared/fs-policy/workspace-files";
-import {
-  TOOL_ALWAYS_IGNORED_DIR_NAMES,
-  type WorkspaceDirEntry,
-} from "../../../shared/fs-policy/workspace-scan";
+import { TOOL_ALWAYS_IGNORED_DIR_NAMES } from "../../../shared/fs-policy/workspace-scan";
 import { recordActiveToolMetrics } from "../../../shared/tool-observation/invocationContext";
 import { resolveFileToolPath } from "../file-access/resolveFileToolPath";
 
 const MAX_FALLBACK_FILE_BYTES = 200 * 1024;
 const MAX_FALLBACK_FILES = 8000;
-const MAX_SCOPED_IGNORED_ENTRIES = 50_000;
+export const MAX_SCOPED_IGNORED_FILES = 200;
+export const MAX_SCOPED_IGNORED_ENTRIES = 10_000;
 const TRUNCATE_MAX_LINES = 300;
 /** Bound every model-facing grep line, including native backend output and context lines. */
 export const MAX_GREP_OUTPUT_LINE_BYTES = 4 * 1024;
@@ -57,7 +55,7 @@ const GrepSearchSchema = z.object({
     .boolean()
     .default(false)
     .describe(
-      "Include ignored files within the explicit directory. Workspace root is refused; node_modules must be scoped to a concrete package.",
+      "Include ignored files and dependency/build directories. Checks at most 200 candidate files matching filePattern, with a separate 10,000-directory-entry traversal limit; no package scope is required.",
     ),
 });
 
@@ -457,42 +455,42 @@ async function collectFiles(
   policy: WorkspaceFiles,
   directory: ResolvedFsPath,
   includeIgnored: boolean,
+  filePattern: string | undefined,
   fileList: ResolvedFsPath[] = [],
   state: { visitedEntries: number } = { visitedEntries: 0 },
 ): Promise<ResolvedFsPath[]> {
+  const maxFiles = includeIgnored ? MAX_SCOPED_IGNORED_FILES : MAX_FALLBACK_FILES;
   if (
-    fileList.length >= MAX_FALLBACK_FILES ||
+    fileList.length >= maxFiles ||
     (includeIgnored && state.visitedEntries >= MAX_SCOPED_IGNORED_ENTRIES)
   ) {
     return fileList;
   }
-  let entries: WorkspaceDirEntry[];
   try {
-    entries = await policy.readdirResolved(directory, { withFileTypes: true });
+    for await (const entry of policy.iterateDirectoryResolved(directory)) {
+      state.visitedEntries += 1;
+      if (
+        !entry.isSymbolicLink?.() &&
+        !(includeIgnored
+          ? policy.shouldSkipScopedResolvedEntry(directory, entry, true)
+          : policy.shouldSkipResolvedEntry(directory, entry))
+      ) {
+        const child = policy.childResolved(directory, entry.name);
+        if (entry.isDirectory()) {
+          await collectFiles(policy, child, includeIgnored, filePattern, fileList, state);
+        } else if (!includeIgnored || matchGlob(child.rel, filePattern)) {
+          fileList.push(child);
+        }
+      }
+      if (
+        fileList.length >= maxFiles ||
+        (includeIgnored && state.visitedEntries >= MAX_SCOPED_IGNORED_ENTRIES)
+      ) {
+        break;
+      }
+    }
   } catch {
-    return fileList;
-  }
-  for (const entry of entries) {
-    if (
-      fileList.length >= MAX_FALLBACK_FILES ||
-      (includeIgnored && state.visitedEntries >= MAX_SCOPED_IGNORED_ENTRIES)
-    ) {
-      break;
-    }
-    state.visitedEntries += 1;
-    if (
-      includeIgnored
-        ? policy.shouldSkipScopedResolvedEntry(directory, entry)
-        : policy.shouldSkipResolvedEntry(directory, entry)
-    ) {
-      continue;
-    }
-    const child = policy.childResolved(directory, entry.name);
-    if (entry.isDirectory()) {
-      await collectFiles(policy, child, includeIgnored, fileList, state);
-      continue;
-    }
-    fileList.push(child);
+    // Keep candidates already collected from readable directories.
   }
   return fileList;
 }
@@ -562,12 +560,6 @@ async function fallbackNodeSearch(
   if (!resolved.ok) {
     return `grep failed: ${resolved.error}`;
   }
-  if (includeIgnored) {
-    const scopeError = policy.validateScopedDiscoveryRoot(resolved);
-    if (scopeError) {
-      return `grep failed: ${scopeError}`;
-    }
-  }
   let searchRootIsDirectory: boolean;
   try {
     const stat = await policy.statResolved(resolved);
@@ -579,8 +571,9 @@ async function fallbackNodeSearch(
 
   // `directory` remains the agent-facing contract, but agents sometimes pass a concrete file while
   // narrowing a search. Treat that as a single-file scan instead of rejecting an otherwise safe path.
+  const scanState = { visitedEntries: 0 };
   const allFiles = searchRootIsDirectory
-    ? await collectFiles(policy, resolved, includeIgnored)
+    ? await collectFiles(policy, resolved, includeIgnored, filePattern, [], scanState)
     : [resolved];
   const searchResults: SearchFileResult[] = [];
   const normalizedContextLines = clampContextLines(contextLines);
@@ -625,12 +618,28 @@ async function fallbackNodeSearch(
   }
 
   const rendered = renderSearchResults(searchResults, normalizedContextLines);
-  if (rendered.length === 0) {
-    return includeIgnored
-      ? "No matches for pattern (bounded ignored-subtree scan; skipped nested tool dirs and oversized files)."
-      : "No matches for pattern (Node fallback; skipped by .gitignore, tool dirs, and oversized files).";
+  const limitReason = includeIgnored
+    ? allFiles.length >= MAX_SCOPED_IGNORED_FILES
+      ? `${MAX_SCOPED_IGNORED_FILES} candidate files`
+      : scanState.visitedEntries >= MAX_SCOPED_IGNORED_ENTRIES
+        ? `${MAX_SCOPED_IGNORED_ENTRIES} directory entries`
+        : ""
+    : "";
+  const limitNotice = limitReason
+    ? `\n[scan limit reached: ${limitReason}; results may be incomplete. Narrow directory or filePattern.]`
+    : "";
+  const output =
+    rendered ||
+    (includeIgnored
+      ? "No matches in the scanned files (bounded ignored scan; skipped nested tool dirs, links, and oversized files)."
+      : "No matches for pattern (Node fallback; skipped by .gitignore, tool dirs, and oversized files).");
+  if (limitNotice) {
+    return (
+      utf8Prefix(output, MAX_GREP_OUTPUT_BYTES - Buffer.byteLength(limitNotice, "utf8")) +
+      limitNotice
+    );
   }
-  return rendered;
+  return output;
 }
 
 /** Shared ripgrep / git grep / Node fallback pipeline (also used by planner-scoped grep). */
@@ -683,7 +692,8 @@ export const GrepSearchTool: ToolDefinition<typeof GrepSearchSchema> = {
     'Search files for literal text by default, or set mode="regex" for regular expressions, to find usages and definitions. ' +
     "Skips node_modules and .git. Uses ripgrep when available, then git grep if rg is missing, then a bounded Node scan only if both native tools are unavailable. " +
     "Native tools mostly respect .gitignore; git grep expands trailing `*.{ext,...}` style globs into multiple pathspecs. " +
-    "Use directory plus includeIgnored for a bounded ignored-subtree search; node_modules requires a concrete package path. " +
+    `Use includeIgnored to scan ignored files and dependency/build directories without package-scope restrictions; at most ${MAX_SCOPED_IGNORED_FILES} candidate files matching filePattern are checked, with a separate ${MAX_SCOPED_IGNORED_ENTRIES}-entry traversal limit (including skipped entries). ` +
+    "Discovered links are not followed. A scan-limit notice means results may be incomplete, even if no matches were found. " +
     "Supports configurable context lines (default 3, max 12). " +
     `Every output line is capped at ${MAX_GREP_OUTPUT_LINE_BYTES / 1024} KB; oversized matching or context lines retain their beginning and end with a truncation marker. ` +
     `The complete response is capped at ${MAX_GREP_OUTPUT_BYTES / 1024} KB. ` +

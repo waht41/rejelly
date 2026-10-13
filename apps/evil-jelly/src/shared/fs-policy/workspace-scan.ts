@@ -137,13 +137,19 @@ export class WorkspaceScan {
     return this.shouldSkipIgnoredWorkspaceEntry(parent.rel, entry);
   }
 
-  shouldSkipScopedResolvedEntry(parent: ScanPath, entry: WorkspaceDirEntry): boolean {
-    if (entry.isSymbolicLink?.()) {
+  shouldSkipScopedResolvedEntry(
+    parent: ScanPath,
+    entry: WorkspaceDirEntry,
+    boundedTraversal = false,
+  ): boolean {
+    if (isSensitiveFileName(entry.name) || (entry.isSymbolicLink?.() && !boundedTraversal)) {
       return true;
     }
     if (
-      entry.isDirectory() &&
-      (TOOL_ALWAYS_IGNORED_DIR_NAMES.has(entry.name) || AGENT_HIDDEN_NAMES.has(entry.name))
+      (entry.isDirectory() || entry.isSymbolicLink?.()) &&
+      (boundedTraversal
+        ? [".git", ".agents", ".cursor"].includes(entry.name)
+        : TOOL_ALWAYS_IGNORED_DIR_NAMES.has(entry.name) || AGENT_HIDDEN_NAMES.has(entry.name))
     ) {
       return true;
     }
@@ -152,7 +158,7 @@ export class WorkspaceScan {
       : isPathSystemHidden(path.join(parent.rel, entry.name), "scoped-discovery");
   }
 
-  validateScopedDiscoveryRoot(resolved: ScanPath): string | undefined {
+  validateScopedDiscoveryRoot(resolved: ScanPath, shallowListing = false): string | undefined {
     if (!resolved.outside && resolved.rel === ".") {
       return "includeIgnored requires an explicit workspace subdirectory; scanning the workspace root is not allowed.";
     }
@@ -168,7 +174,10 @@ export class WorkspaceScan {
       packageSegments[0] === ".pnpm" ||
       (packageSegments[0]?.startsWith("@") && packageSegments.length < 2)
     ) {
-      return "includeIgnored under node_modules must be scoped to a concrete package (for example node_modules/zod or node_modules/@scope/pkg).";
+      if (shallowListing) {
+        return undefined;
+      }
+      return "includeIgnored under node_modules must be scoped to a concrete package (for example node_modules/zod or node_modules/@scope/pkg). Use list_directory with depth: 1 to discover packages first.";
     }
     return undefined;
   }

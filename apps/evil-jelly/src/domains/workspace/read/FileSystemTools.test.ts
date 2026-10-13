@@ -3,11 +3,14 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getWorkspaceRoot, setWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
+import { getWorkspaceFiles } from "../../../shared/fs-policy/workspace-files";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import type { FsOutsideAccessPayload } from "../../../shared/host/toolConfirmationBindings";
 import { createTestHostBindings } from "../__tests__/testHostBindings";
 import {
   ListDirTool,
+  MAX_DIRECTORY_SCAN_ENTRIES,
+  MAX_IGNORED_DIRECTORY_SCAN_ENTRIES,
   MAX_READ_BYTES_PER_CALL,
   MAX_READ_LINE_BYTES,
   ReadFileTool,
@@ -78,7 +81,7 @@ describe("ReadFileTool", () => {
     expect(output).toContain("export const dependency = true;");
   });
 
-  it("lists one explicit ignored subtree without exposing ignored workspace-wide traversal", async () => {
+  it("lists ignored subtrees and the workspace root when explicitly requested", async () => {
     await fs.mkdir(path.join(tmpDir, "local", "nested"), { recursive: true });
     await fs.writeFile(path.join(tmpDir, ".gitignore"), "local/\n", "utf8");
     await fs.writeFile(path.join(tmpDir, "local", "nested", "settings.json"), "{}", "utf8");
@@ -96,13 +99,13 @@ describe("ReadFileTool", () => {
     });
     const workspaceWide = await ListDirTool.handler({
       dirPath: ".",
-      depth: 2,
+      depth: 3,
       includeIgnored: true,
     });
 
     expect(hidden).toContain("only contains ignored folders");
     expect(listed).toContain("settings.json");
-    expect(workspaceWide).toContain("explicit workspace subdirectory");
+    expect(workspaceWide).toContain("settings.json");
   });
 
   it.each([
@@ -143,7 +146,7 @@ describe("ReadFileTool", () => {
     expect(read).toContain("config content");
   });
 
-  it("lists a concrete dependency package but refuses the node_modules root", async () => {
+  it("lists dependency containers recursively within the entry budget", async () => {
     await fs.mkdir(path.join(tmpDir, "node_modules", "@scope", "pkg", "src"), {
       recursive: true,
     });
@@ -166,8 +169,225 @@ describe("ReadFileTool", () => {
       includeIgnored: true,
     });
 
+    const scopeListing = await ListDirTool.handler({
+      dirPath: "node_modules/@scope",
+      depth: 1,
+      includeIgnored: true,
+    });
+    const recursiveRoot = await ListDirTool.handler({
+      dirPath: "node_modules",
+      depth: 2,
+      includeIgnored: true,
+    });
+    const recursiveScope = await ListDirTool.handler({
+      dirPath: "node_modules/@scope",
+      depth: 3,
+      includeIgnored: true,
+    });
+    const defaultListing = await ListDirTool.handler({
+      dirPath: ".",
+      depth: 3,
+      includeIgnored: false,
+    });
+
     expect(packageListing).toContain("index.ts");
-    expect(rootListing).toContain("concrete package");
+    expect(rootListing).toContain("[dir]  @scope/");
+    expect(rootListing).not.toContain("index.ts");
+    expect(scopeListing).toContain("[dir]  pkg/");
+    expect(scopeListing).not.toContain("src/");
+    expect(recursiveRoot).toContain("pkg/");
+    expect(recursiveScope).toContain("index.ts");
+    expect(defaultListing).not.toContain("node_modules");
+  });
+
+  it("discovers pnpm packages and lists linked names without following them", async () => {
+    const storePath = "node_modules/.pnpm/pkg@1.0.0";
+    const packagePath = `${storePath}/node_modules/pkg`;
+    await fs.mkdir(path.join(tmpDir, packagePath, "src"), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, packagePath, "src/index.ts"), "export {};");
+    await fs.writeFile(path.join(tmpDir, "node_modules/.env"), "SECRET=1");
+    await fs.mkdir(path.join(tmpDir, "node_modules/.git"));
+    await fs.symlink(
+      path.join(tmpDir, packagePath),
+      path.join(tmpDir, "node_modules/pkg"),
+      "junction",
+    );
+
+    const rootListing = await ListDirTool.handler({
+      dirPath: "node_modules",
+      depth: 1,
+      includeIgnored: true,
+    });
+    const storeListing = await ListDirTool.handler({
+      dirPath: "node_modules/.pnpm",
+      depth: 1,
+      includeIgnored: true,
+    });
+    const versionListing = await ListDirTool.handler({
+      dirPath: storePath,
+      depth: 1,
+      includeIgnored: true,
+    });
+    const packageListing = await ListDirTool.handler({
+      dirPath: packagePath,
+      depth: 2,
+      includeIgnored: true,
+    });
+    const linkedListing = await ListDirTool.handler({
+      dirPath: "node_modules/pkg",
+      depth: 2,
+      includeIgnored: true,
+    });
+    const recursiveStore = await ListDirTool.handler({
+      dirPath: "node_modules/.pnpm",
+      depth: 2,
+      includeIgnored: true,
+    });
+
+    expect(rootListing).toContain("[dir]  .pnpm/");
+    expect(rootListing).toContain("[link] pkg");
+    expect(rootListing).not.toContain("index.ts");
+    expect(rootListing).not.toContain(".env");
+    expect(rootListing).not.toContain(".git");
+    expect(storeListing).toContain("[dir]  pkg@1.0.0/");
+    expect(versionListing).toContain("[dir]  node_modules/");
+    expect(packageListing).toContain("index.ts");
+    expect(linkedListing).toContain("index.ts");
+    expect(recursiveStore).toContain("pkg@1.0.0");
+    expect(recursiveStore).not.toContain("concrete package");
+  });
+
+  it.each([
+    false,
+    true,
+  ])("lists more than 200 entries without exhausting the budget (includeIgnored=%s)", async (includeIgnored) => {
+    await fs.mkdir(path.join(tmpDir, "nested"));
+    await Promise.all(
+      Array.from({ length: 205 }, (_, index) =>
+        fs.writeFile(path.join(tmpDir, "nested", `file-${index}.txt`), "content"),
+      ),
+    );
+    const output = await ListDirTool.handler({ dirPath: ".", depth: 3, includeIgnored });
+    expect(typeof output).toBe("string");
+    const text = String(output);
+    expect(text.match(/\[dir\]|\[file\]/g)).toHaveLength(206);
+    expect(text).not.toContain("scan limit");
+  });
+
+  it.each([
+    false,
+    true,
+  ])("stops at the whole-tree safety budget (includeIgnored=%s)", async (includeIgnored) => {
+    const maxEntries = includeIgnored
+      ? MAX_IGNORED_DIRECTORY_SCAN_ENTRIES
+      : MAX_DIRECTORY_SCAN_ENTRIES;
+    let inspected = 0;
+    const iterate = vi
+      .spyOn(getWorkspaceFiles(), "iterateDirectoryResolved")
+      .mockImplementation(async function* (directory) {
+        if (directory.rel === ".") {
+          inspected += 1;
+          yield { name: "nested", isDirectory: () => true };
+          inspected += 1;
+          yield { name: "root.txt", isDirectory: () => false };
+        } else {
+          for (let index = 0; index < maxEntries + 5; index++) {
+            inspected += 1;
+            yield { name: `file-${index}.txt`, isDirectory: () => false };
+          }
+        }
+      });
+    try {
+      const output = await ListDirTool.handler({ dirPath: ".", depth: 3, includeIgnored });
+      expect(inspected).toBe(maxEntries);
+      expect(output).toContain("[file] root.txt");
+      expect(output).toContain(`scan limit reached: ${maxEntries} directory entries`);
+      expect(output).toContain("results may be incomplete");
+    } finally {
+      iterate.mockRestore();
+    }
+  });
+
+  it.each([
+    "dist",
+    "build",
+  ])("lists nested %s only when ignored traversal is requested", async (directory) => {
+    await fs.mkdir(path.join(tmpDir, "pkg", directory), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, "pkg", directory, "compiled.js"), "export {};");
+    const hidden = await ListDirTool.handler({ dirPath: "pkg", depth: 2, includeIgnored: false });
+    const listed = await ListDirTool.handler({ dirPath: "pkg", depth: 2, includeIgnored: true });
+    expect(hidden).not.toContain("compiled.js");
+    expect(listed).toContain("compiled.js");
+  });
+
+  it.each([2, 3])("traverses breadth-first with unambiguous paths at depth %s", async (depth) => {
+    const visited: string[] = [];
+    const iterate = vi
+      .spyOn(getWorkspaceFiles(), "iterateDirectoryResolved")
+      .mockImplementation(async function* (directory) {
+        const relative = directory.rel.replace(/\\/g, "/");
+        visited.push(relative);
+        if (relative === ".") {
+          yield { name: "first", isDirectory: () => true };
+          yield { name: "second", isDirectory: () => true };
+          yield { name: "root.txt", isDirectory: () => false };
+        } else if (relative === "first") {
+          yield { name: "deep", isDirectory: () => true };
+          yield { name: "same.txt", isDirectory: () => false };
+        } else {
+          yield { name: "same.txt", isDirectory: () => false };
+        }
+      });
+    try {
+      const output = String(
+        await ListDirTool.handler({ dirPath: ".", depth, includeIgnored: true }),
+      );
+      const expected = [
+        "[dir]  first/",
+        "[dir]  second/",
+        "[file] root.txt",
+        "  [dir]  first/deep/",
+        "  [file] first/same.txt",
+        "  [file] second/same.txt",
+      ];
+      if (depth === 3) {
+        expected.push("    [file] first/deep/same.txt");
+      }
+      expect(output.split("\n").slice(1)).toEqual(expected);
+      expect(visited).toEqual(
+        depth === 3 ? [".", "first", "second", "first/deep"] : [".", "first", "second"],
+      );
+    } finally {
+      iterate.mockRestore();
+    }
+  });
+
+  it("continues queued siblings after an unreadable directory", async () => {
+    const iterate = vi
+      .spyOn(getWorkspaceFiles(), "iterateDirectoryResolved")
+      .mockImplementation(async function* (directory) {
+        if (directory.rel === ".") {
+          yield { name: "unreadable", isDirectory: () => true };
+          yield { name: "readable", isDirectory: () => true };
+        } else if (directory.rel === "unreadable") {
+          throw new Error("Access denied");
+        } else {
+          yield { name: "visible.txt", isDirectory: () => false };
+        }
+      });
+    try {
+      const output = await ListDirTool.handler({ dirPath: ".", depth: 2, includeIgnored: true });
+      expect(output).toContain("[file] readable/visible.txt");
+    } finally {
+      iterate.mockRestore();
+    }
+  });
+
+  it("does not report a scan limit for a small complete directory", async () => {
+    await fs.writeFile(path.join(tmpDir, "small.txt"), "content");
+    const output = await ListDirTool.handler({ dirPath: ".", depth: 1, includeIgnored: true });
+    expect(output).toContain("small.txt");
+    expect(output).not.toContain("scan limit");
   });
 
   it("reads a line range without adding line numbers to the file body", async () => {

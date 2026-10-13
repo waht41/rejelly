@@ -95,15 +95,23 @@ export class WorkspaceFiles {
   /**
    * Traversal guard after an ignored subtree was explicitly selected. Root `.gitignore` rules no
    * longer hide its children, but nested bulky/tool directories, sensitive files, and symlinks
-   * remain excluded.
+   * remain excluded by default. Bounded callers may traverse dependency/build directories and
+   * show link names, but must never follow discovered links. Nested Git/agent metadata stays hidden.
    */
-  shouldSkipScopedResolvedEntry(parent: ResolvedFsPath, entry: WorkspaceDirEntry): boolean {
-    return this.scan.shouldSkipScopedResolvedEntry(parent, entry);
+  shouldSkipScopedResolvedEntry(
+    parent: ResolvedFsPath,
+    entry: WorkspaceDirEntry,
+    boundedTraversal = false,
+  ): boolean {
+    return this.scan.shouldSkipScopedResolvedEntry(parent, entry, boundedTraversal);
   }
 
-  /** Validate the root of an opt-in ignored traversal before any entries are inspected. */
-  validateScopedDiscoveryRoot(resolved: ResolvedFsPath): string | undefined {
-    return this.scan.validateScopedDiscoveryRoot(resolved);
+  /** Shallow listings can enumerate dependencies; recursive discovery still requires a package. */
+  validateScopedDiscoveryRoot(
+    resolved: ResolvedFsPath,
+    shallowListing = false,
+  ): string | undefined {
+    return this.scan.validateScopedDiscoveryRoot(resolved, shallowListing);
   }
 
   childResolved(parent: ResolvedFsPath, childName: string): ResolvedFsPath {
@@ -280,6 +288,14 @@ export class WorkspaceFiles {
       isDirectory: () => e.isDirectory(),
       isSymbolicLink: () => e.isSymbolicLink(),
     }));
+  }
+
+  /** Stream directory entries so bounded consumers can stop without loading the whole directory. */
+  async *iterateDirectoryResolved(resolved: ResolvedFsPath): AsyncGenerator<WorkspaceDirEntry> {
+    const directory = await fsPromises.opendir(resolved.abs, { bufferSize: 1 });
+    for await (const entry of directory) {
+      yield entry;
+    }
   }
 
   /**

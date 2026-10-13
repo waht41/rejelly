@@ -91,6 +91,57 @@ describe("WorkspaceFiles", () => {
     );
   });
 
+  it("allows dependency container enumeration without enabling recursive searches", () => {
+    const policy = createPolicy();
+    for (const directory of [
+      "node_modules",
+      "node_modules/@scope",
+      "node_modules/.pnpm",
+      "node_modules/.pnpm/pkg@1.0.0",
+      "apps/demo/node_modules",
+    ]) {
+      const resolved = policy.classifyPath(directory);
+      expect(policy.validateScopedDiscoveryRoot(resolved, true)).toBeUndefined();
+      expect(policy.validateScopedDiscoveryRoot(resolved)).toContain("concrete package");
+    }
+    for (const directory of [
+      "node_modules/pkg",
+      "node_modules/@scope/pkg",
+      "node_modules/.pnpm/pkg@1.0.0/node_modules/pkg",
+      "node_modules/.pnpm/@scope+pkg@1.0.0/node_modules/@scope/pkg",
+    ]) {
+      expect(policy.validateScopedDiscoveryRoot(policy.classifyPath(directory))).toBeUndefined();
+    }
+    expect(policy.validateScopedDiscoveryRoot(policy.classifyPath("."), true)).toContain(
+      "explicit workspace subdirectory",
+    );
+  });
+
+  it("only exposes safe link names in shallow listings without relaxing traversal", () => {
+    const policy = createPolicy();
+    const parent = policy.classifyPath("node_modules");
+    const link = (name: string) => ({
+      name,
+      isDirectory: () => false,
+      isSymbolicLink: () => true,
+    });
+    expect(policy.shouldSkipScopedResolvedEntry(parent, link("pkg"))).toBe(true);
+    expect(policy.shouldSkipScopedResolvedEntry(parent, link("pkg"), true)).toBe(false);
+    expect(policy.shouldSkipScopedResolvedEntry(parent, link(".env"), true)).toBe(true);
+    expect(policy.shouldSkipScopedResolvedEntry(parent, link(".npmrc"), true)).toBe(true);
+    const nestedDependencies = { name: "node_modules", isDirectory: () => true };
+    expect(policy.shouldSkipScopedResolvedEntry(parent, nestedDependencies)).toBe(true);
+    expect(policy.shouldSkipScopedResolvedEntry(parent, nestedDependencies, true)).toBe(false);
+    for (const name of ["dist", "build", "coverage", ".next"]) {
+      const entry = { name, isDirectory: () => true };
+      expect(policy.shouldSkipScopedResolvedEntry(parent, entry)).toBe(true);
+      expect(policy.shouldSkipScopedResolvedEntry(parent, entry, true)).toBe(false);
+    }
+    expect(
+      policy.shouldSkipScopedResolvedEntry(parent, { name: ".git", isDirectory: () => true }, true),
+    ).toBe(true);
+  });
+
   it("blocks sensitive files", () => {
     const policy = createPolicy();
     const envFile = policy.tryResolveWorkspacePath(".env.local");

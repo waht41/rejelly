@@ -14,7 +14,6 @@ import {
   type ResolvedFsPath,
   type WorkspaceFiles,
 } from "../../../shared/fs-policy/workspace-files";
-import type { WorkspaceDirEntry } from "../../../shared/fs-policy/workspace-scan";
 import {
   type PseudoXmlAttributes,
   renderPseudoXmlElement,
@@ -31,52 +30,58 @@ const MAX_NON_TEXT_CHARACTER_RATIO = 0.05;
 const MIN_NON_TEXT_CHARACTERS = 4;
 export const MAX_DIR_DEPTH = 3;
 export const MAX_DIRECTORY_OUTPUT_CHARS = 15_000;
+export const MAX_DIRECTORY_SCAN_ENTRIES = 10_000;
+export const MAX_IGNORED_DIRECTORY_SCAN_ENTRIES = 2_000;
 
 async function getDirectoryTree(
   policy: WorkspaceFiles,
   dir: ResolvedFsPath,
-  currentDepth: number,
   maxDepth: number,
   includeIgnored: boolean,
+  state: { visitedEntries: number; maxEntries: number },
 ): Promise<string[]> {
-  if (currentDepth > maxDepth) {
-    return [];
-  }
-
-  let results: string[] = [];
-  let entries: WorkspaceDirEntry[];
-  try {
-    entries = await policy.readdirResolved(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-
-  for (const entry of entries) {
-    if (
-      includeIgnored
-        ? policy.shouldSkipScopedResolvedEntry(dir, entry)
-        : policy.shouldSkipResolvedEntry(dir, entry)
-    ) {
+  const results: string[] = [];
+  const queue = [{ dir, depth: 1, relativePath: "" }];
+  for (let index = 0; index < queue.length && state.visitedEntries < state.maxEntries; index++) {
+    const current = queue[index];
+    if (current.depth > maxDepth) {
       continue;
     }
-
-    const prefix = "  ".repeat(currentDepth - 1);
-    if (entry.isDirectory()) {
-      results.push(`${prefix}[dir]  ${entry.name}/`);
-      const subEntries = await getDirectoryTree(
-        policy,
-        policy.childResolved(dir, entry.name),
-        currentDepth + 1,
-        maxDepth,
-        includeIgnored,
-      );
-      results = results.concat(subEntries);
-      continue;
+    try {
+      for await (const entry of policy.iterateDirectoryResolved(current.dir)) {
+        state.visitedEntries += 1;
+        if (
+          !(includeIgnored
+            ? policy.shouldSkipScopedResolvedEntry(current.dir, entry, true)
+            : policy.shouldSkipResolvedEntry(current.dir, entry))
+        ) {
+          const prefix = "  ".repeat(current.depth - 1);
+          const relativePath = current.relativePath
+            ? `${current.relativePath}/${entry.name}`
+            : entry.name;
+          if (entry.isSymbolicLink?.()) {
+            results.push(`${prefix}[link] ${relativePath}`);
+          } else if (entry.isDirectory()) {
+            results.push(`${prefix}[dir]  ${relativePath}/`);
+            if (current.depth < maxDepth) {
+              queue.push({
+                dir: policy.childResolved(current.dir, entry.name),
+                depth: current.depth + 1,
+                relativePath,
+              });
+            }
+          } else {
+            results.push(`${prefix}[file] ${relativePath}`);
+          }
+        }
+        if (state.visitedEntries >= state.maxEntries) {
+          break;
+        }
+      }
+    } catch {
+      // Skip unreadable directories without dropping queued siblings or collected entries.
     }
-
-    results.push(`${prefix}[file] ${entry.name}`);
   }
-
   return results;
 }
 
@@ -93,16 +98,17 @@ const listDirParameters = z.object({
     .boolean()
     .default(false)
     .describe(
-      "Include files ignored by .gitignore within this explicit subdirectory. Workspace-root scans are refused; node_modules must be scoped to a concrete package.",
+      "Include ignored files and dependency directories. Traversal is bounded by the per-call directory-entry limit; no package scope is required.",
     ),
 });
 
 export const ListDirTool: ToolDefinition<typeof listDirParameters> = {
   name: "list_directory",
   description:
-    "List files and nested subdirectories with a bounded depth. " +
+    "List files and nested subdirectories breadth-first with a bounded depth. Nested entries show paths relative to dirPath. " +
     "Respects workspace root .gitignore and always hides bulky/tool dirs by default. " +
-    "Set includeIgnored only with an explicit bounded subdirectory; node_modules requires a concrete package path. " +
+    `Inspects at most ${MAX_DIRECTORY_SCAN_ENTRIES} directory entries normally, or ${MAX_IGNORED_DIRECTORY_SCAN_ENTRIES} with includeIgnored, across the entire call (including skipped entries). ` +
+    "Use includeIgnored to explore ignored directories, including node_modules, .pnpm, dist, and build. Link names are shown but never followed. " +
     `${AGENT_SCRATCH_DIR}/ is the agent scratch directory for temporary files. ` +
     "Use depth > 1 to scan layout faster.",
   parameters: listDirParameters,
@@ -112,15 +118,19 @@ export const ListDirTool: ToolDefinition<typeof listDirParameters> = {
     if (!resolved.ok) {
       return resolved.error;
     }
-    if (includeIgnored) {
-      const scopeError = policy.validateScopedDiscoveryRoot(resolved);
-      if (scopeError) {
-        return scopeError;
-      }
-    }
     try {
-      const treeLines = await getDirectoryTree(policy, resolved, 1, depth, includeIgnored);
-      if (treeLines.length === 0) {
+      const state = {
+        visitedEntries: 0,
+        maxEntries: includeIgnored
+          ? MAX_IGNORED_DIRECTORY_SCAN_ENTRIES
+          : MAX_DIRECTORY_SCAN_ENTRIES,
+      };
+      const treeLines = await getDirectoryTree(policy, resolved, depth, includeIgnored, state);
+      const limitNotice =
+        state.visitedEntries >= state.maxEntries
+          ? `\n... [scan limit reached: ${state.maxEntries} directory entries; results may be incomplete. Narrow dirPath.]`
+          : "";
+      if (treeLines.length === 0 && !limitNotice) {
         return `Directory ${resolved.abs} is empty or only contains ignored folders.`;
       }
 
@@ -128,11 +138,11 @@ export const ListDirTool: ToolDefinition<typeof listDirParameters> = {
       if (output.length > MAX_DIRECTORY_OUTPUT_CHARS) {
         return (
           `Contents of ${resolved.abs} (depth ${depth}, truncated):\n` +
-          `${output.slice(0, MAX_DIRECTORY_OUTPUT_CHARS)}\n...`
+          `${output.slice(0, MAX_DIRECTORY_OUTPUT_CHARS - limitNotice.length)}\n...${limitNotice}`
         );
       }
 
-      return `Contents of ${resolved.abs} (depth ${depth}):\n${output}`;
+      return `Contents of ${resolved.abs} (depth ${depth}):\n${output}${limitNotice}`;
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       return `Failed to list directory ${dirPath}: ${msg}`;
