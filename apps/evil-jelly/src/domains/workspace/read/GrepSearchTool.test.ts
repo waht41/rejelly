@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getWorkspaceRoot, setWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
+import { getWorkspaceFiles } from "../../../shared/fs-policy/workspace-files";
 import { TOOL_ALWAYS_IGNORED_DIR_NAMES } from "../../../shared/fs-policy/workspace-scan";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import type { FsOutsideAccessPayload } from "../../../shared/host/toolConfirmationBindings";
@@ -42,6 +43,7 @@ import {
   GrepSearchTool,
   MAX_GREP_OUTPUT_BYTES,
   MAX_GREP_OUTPUT_LINE_BYTES,
+  MAX_SCOPED_IGNORED_ENTRIES,
 } from "./GrepSearchTool";
 
 describe("GrepSearchTool contextLines", () => {
@@ -520,11 +522,123 @@ describe("GrepSearchTool Node fallback context merge", () => {
     }
   });
 
-  it("requires a concrete package for ignored dependency searches", async () => {
-    await fs.mkdir(path.join(tmpDir, "node_modules", "pkg", "src"), { recursive: true });
+  it.each([
+    "absent",
+    "present",
+  ])("bounds ignored scans even when the query is %s", async (query) => {
+    await Promise.all(
+      Array.from({ length: 205 }, (_, index) =>
+        fs.writeFile(path.join(tmpDir, `file-${index}.txt`), "present"),
+      ),
+    );
+    const read = vi.spyOn(getWorkspaceFiles(), "readResolved");
+    try {
+      const output = await executeGrepSearch(query, "*.txt", 0, {
+        directory: ".",
+        includeIgnored: true,
+      });
+      expect(read).toHaveBeenCalledTimes(200);
+      expect(output).toContain("scan limit reached: 200 candidate files");
+      expect(output).toContain("results may be incomplete");
+      if (query === "absent") {
+        expect(output).toContain("No matches in the scanned files");
+      } else {
+        expect(output).toContain("> 1 | present");
+      }
+    } finally {
+      read.mockRestore();
+    }
+  });
+
+  it("uses a separate traversal budget for directories and skipped sensitive files", async () => {
+    let inspected = 0;
+    const policy = getWorkspaceFiles();
+    const iterate = vi
+      .spyOn(policy, "iterateDirectoryResolved")
+      .mockImplementation(async function* (directory) {
+        if (directory.rel === ".") {
+          inspected += 1;
+          yield { name: "nested", isDirectory: () => true };
+        } else {
+          for (let index = 0; index < MAX_SCOPED_IGNORED_ENTRIES + 5; index++) {
+            inspected += 1;
+            yield { name: `.env.${index}`, isDirectory: () => false };
+          }
+        }
+      });
+    const read = vi.spyOn(policy, "readResolved");
+    try {
+      const output = await executeGrepSearch("secretNeedle", undefined, 0, {
+        directory: ".",
+        includeIgnored: true,
+      });
+      expect(inspected).toBe(MAX_SCOPED_IGNORED_ENTRIES);
+      expect(read).not.toHaveBeenCalled();
+      expect(output).toContain(
+        `scan limit reached: ${MAX_SCOPED_IGNORED_ENTRIES} directory entries`,
+      );
+      expect(output).not.toContain("> 1 | secretNeedle");
+    } finally {
+      iterate.mockRestore();
+      read.mockRestore();
+    }
+  });
+
+  it("does not spend the candidate-file budget on directories or nonmatching files", async () => {
+    await Promise.all(
+      Array.from({ length: 205 }, async (_, index) => {
+        await fs.mkdir(path.join(tmpDir, `empty-${index}`));
+        await fs.writeFile(path.join(tmpDir, `unrelated-${index}.md`), "not source");
+        await fs.writeFile(path.join(tmpDir, `.env.${index}`), "secret");
+      }),
+    );
+    await fs.mkdir(path.join(tmpDir, "build"));
+    await fs.writeFile(path.join(tmpDir, "build", "target.ts"), "targetNeedle");
+    const read = vi.spyOn(getWorkspaceFiles(), "readResolved");
+    try {
+      const output = await executeGrepSearch("targetNeedle", "*.ts", 0, {
+        includeIgnored: true,
+      });
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(output).toContain("targetNeedle");
+      expect(output).not.toContain("scan limit");
+    } finally {
+      read.mockRestore();
+    }
+  });
+
+  it.each([
+    "dist",
+    "build",
+  ])("searches nested %s without revealing Git metadata or following links", async (directory) => {
+    await fs.mkdir(path.join(tmpDir, "pkg", directory), { recursive: true });
+    await fs.mkdir(path.join(tmpDir, "pkg", ".git"));
+    await fs.writeFile(path.join(tmpDir, "pkg", directory, "compiled.js"), "compiledNeedle");
+    await fs.writeFile(path.join(tmpDir, "pkg", ".git", "hidden.js"), "compiledNeedle");
+    await fs.writeFile(path.join(tmpDir, "pkg", ".env"), "compiledNeedle");
+    await fs.symlink(
+      path.join(tmpDir, "pkg", directory),
+      path.join(tmpDir, "pkg", "linked"),
+      "junction",
+    );
+    const output = await executeGrepSearch("compiledNeedle", undefined, 0, {
+      directory: "pkg",
+      includeIgnored: true,
+    });
+    expect(output).toContain("compiled.js");
+    expect(output).not.toContain("hidden.js");
+    expect(output).not.toContain(".env");
+    expect(output).not.toContain("linked");
+  });
+
+  it.each([
+    "node_modules/pkg",
+    "node_modules/.pnpm/@scope+pkg@1.0.0/node_modules/@scope/pkg",
+  ])("searches dependency containers and concrete packages: %s", async (packagePath) => {
+    await fs.mkdir(path.join(tmpDir, packagePath, "src"), { recursive: true });
     await fs.writeFile(path.join(tmpDir, ".gitignore"), "node_modules/\n", "utf8");
     await fs.writeFile(
-      path.join(tmpDir, "node_modules", "pkg", "src", "index.ts"),
+      path.join(tmpDir, packagePath, "src", "index.ts"),
       "export const dependencyNeedle = true;\n",
       "utf8",
     );
@@ -535,12 +649,13 @@ describe("GrepSearchTool Node fallback context merge", () => {
       includeIgnored: true,
     });
     const packageResult = await executeGrepSearch("dependencyNeedle", "*.ts", 0, {
-      directory: "node_modules/pkg",
+      directory: packagePath,
       includeIgnored: true,
     });
 
-    expect(dependencyRoot).toContain("concrete package");
+    expect(dependencyRoot).toContain("dependencyNeedle");
+    expect(dependencyRoot).not.toContain("concrete package");
     expect(packageResult).toContain("dependencyNeedle");
-    expect(packageResult).toContain(path.join("node_modules", "pkg", "src", "index.ts"));
+    expect(packageResult).toContain(path.join(packagePath, "src", "index.ts"));
   });
 });
