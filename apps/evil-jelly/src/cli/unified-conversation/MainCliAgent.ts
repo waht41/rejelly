@@ -222,6 +222,7 @@ async function handleCompress(runtime: RouterRuntime): Promise<void> {
     runtime.host.logSystemEvent("Nothing to compress yet.\n");
     return;
   }
+  const beforeMessageCount = runtime.session.history.length;
   runtime.host.logSystemEvent("Compressing session history…\n");
   const result = await runInterruptibleConversationOperation(
     "session_compression",
@@ -245,11 +246,11 @@ async function handleCompress(runtime: RouterRuntime): Promise<void> {
     await runtime.props.sessionRecorder.recordCompaction({
       trigger: "manual",
       replacementHistory: result.compactHistory,
-      beforeMessageCount: runtime.session.history.length,
+      beforeMessageCount,
     });
   }
   runtime.host.logSystemEvent(
-    `Session compressed: ${runtime.session.history.length} messages → ${result.compactHistory.length} messages.\n`,
+    `Session compressed: ${beforeMessageCount} messages → ${result.compactHistory.length} messages.\n`,
   );
 }
 

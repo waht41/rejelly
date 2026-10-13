@@ -173,6 +173,7 @@ describe("non-TTY session lifecycle", () => {
     });
 
     expect(firstRunSystemEvents.join("\n")).toContain("Context window (approx): not measured yet");
+    expect(firstRunSystemEvents).toContain("Session compressed: 4 messages → 2 messages.\n");
 
     const firstResume = await resumeSession(workspaceRoot, "lifecycle", {
       originator: "evil-jelly-cli",
@@ -279,7 +280,7 @@ describe("non-TTY session lifecycle", () => {
     expect(stored.events.filter((event) => event.type === "run_segment_ended")).toHaveLength(2);
     expect(stored.events.filter((event) => event.type === "turn_completed")).toHaveLength(2);
     expect(stored.events.filter((event) => event.type === "context_compacted")).toMatchObject([
-      { trigger: "manual" },
+      { trigger: "manual", beforeMessageCount: 4, afterMessageCount: 2 },
     ]);
   });
 
