@@ -382,6 +382,15 @@ describe("OpenAI Responses adapter", () => {
             parameters: z.object({ id: z.number() }),
             handler: vi.fn(),
           },
+          {
+            name: "manage_download",
+            description: "Manage a download",
+            parameters: z.discriminatedUnion("action", [
+              z.object({ action: z.literal("start"), path: z.string() }).strict(),
+              z.object({ action: z.literal("cancel") }).strict(),
+            ]),
+            handler: vi.fn(),
+          },
         ],
         toolChoice: { type: "function", function: { name: "lookup" } },
       },
@@ -392,7 +401,10 @@ describe("OpenAI Responses adapter", () => {
     expect(mocks.create.mock.calls[0][0]).toMatchObject({
       instructions: "be precise",
       text: { format: { type: "json_schema", name: "response", schema, strict: true } },
-      tools: [{ type: "function", name: "lookup", description: "Lookup", strict: false }],
+      tools: [
+        { type: "function", name: "lookup", description: "Lookup", strict: false },
+        { type: "function", name: "manage_download", strict: false },
+      ],
       tool_choice: { type: "function", name: "lookup" },
       input: [
         {
@@ -405,6 +417,13 @@ describe("OpenAI Responses adapter", () => {
       ],
     });
     expect(mocks.create.mock.calls[0][0].tools[0]).toHaveProperty("strict", false);
+    expect(mocks.create.mock.calls[0][0].tools[1].parameters).toMatchObject({
+      type: "object",
+      anyOf: [
+        { type: "object", required: ["action", "path"], additionalProperties: false },
+        { type: "object", required: ["action"], additionalProperties: false },
+      ],
+    });
   });
 
   it.each<[ResponseParams, string]>([

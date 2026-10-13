@@ -23,11 +23,15 @@ import type {
   ToolChoiceFunction,
   ToolChoiceOptions,
 } from "openai/resources/responses/responses";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import type { RequestOption, SchemaMode } from "./adapter";
 import { OPENAI_RESPONSES_STATE_KIND } from "./identity";
 import { normalizeOpenAIUsage } from "./usage";
-import { convertContentToString, injectSchemaToMessages, wrapAsModelCallError } from "./utils";
+import {
+  convertContentToString,
+  injectSchemaToMessages,
+  toOpenAIToolParameters,
+  wrapAsModelCallError,
+} from "./utils";
 
 const OPENAI_RESPONSES_STATE_VERSION = 1;
 const REQUIRED_INCLUDE = "reasoning.encrypted_content" as const;
@@ -216,10 +220,7 @@ function toOpenAIResponseTools(tools: ToolDefinition[]): FunctionTool[] {
     type: "function",
     name: tool.name,
     description: tool.description,
-    parameters: zodToJsonSchema(tool.parameters, { $refStrategy: "none" }) as Record<
-      string,
-      unknown
-    >,
+    parameters: toOpenAIToolParameters(tool.parameters),
     // Responses may normalize an omitted value into strict mode. Evil's tool schemas preserve
     // Zod optional/default fields, so opt out explicitly instead of sending an invalid strict schema.
     strict: false,

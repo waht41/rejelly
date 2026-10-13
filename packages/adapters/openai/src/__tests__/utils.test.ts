@@ -1,7 +1,52 @@
 import type { JsonObject, Message } from "@rejelly/core";
 import { APIConnectionError, APIConnectionTimeoutError, APIError } from "openai";
 import { describe, expect, it } from "vitest";
-import { classifyOpenAIError, toOpenAIMessages, wrapAsModelCallError } from "../utils";
+import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
+import {
+  classifyOpenAIError,
+  toOpenAIMessages,
+  toOpenAIToolParameters,
+  toOpenAITools,
+  wrapAsModelCallError,
+} from "../utils";
+
+// Regression: DeepSeek rejects object unions whose root omits type: object.
+describe("OpenAI tool parameter conversion", () => {
+  it("adds an object root without changing union branches or nested constraints", () => {
+    const parameters = z.discriminatedUnion("mode", [
+      z
+        .object({ mode: z.literal("create"), path: z.string(), content: z.string().max(20) })
+        .strict(),
+      z
+        .object({
+          mode: z.literal("edit"),
+          path: z.string(),
+          search: z.union([z.string(), z.object({ start: z.string() }).strict()]),
+        })
+        .strict(),
+    ]);
+    const [tool] = toOpenAITools([
+      { name: "artifact_file", description: "Edit a file", parameters, handler: async () => "ok" },
+    ]);
+    if (tool?.type !== "function") throw new Error("Expected a function tool");
+    expect(tool.function.parameters).toEqual({
+      ...zodToJsonSchema(parameters, { $refStrategy: "none" }),
+      type: "object",
+    });
+  });
+
+  it("leaves plain objects and unions with non-object branches unchanged", () => {
+    for (const parameters of [
+      z.object({ id: z.string().optional() }).strict(),
+      z.union([z.object({ id: z.string() }), z.string()]),
+    ]) {
+      expect(toOpenAIToolParameters(parameters)).toEqual(
+        zodToJsonSchema(parameters, { $refStrategy: "none" }),
+      );
+    }
+  });
+});
 
 describe("OpenAI message conversion", () => {
   it("splits multimodal tool result into a text tool message and a follow-up user message", () => {

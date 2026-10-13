@@ -309,15 +309,36 @@ function withoutRejellyInternalExtra(message: Message): Message {
   };
 }
 
+export function toOpenAIToolParameters(
+  parameters: ToolDefinition["parameters"],
+): Record<string, unknown> {
+  const schema = zodToJsonSchema(parameters, { $refStrategy: "none" }) as Record<string, unknown>;
+  // Some compatible endpoints require an explicit object root even when every union branch is
+  // already an object. Keep the union intact so branch requirements and nested unions survive.
+  if (
+    schema.type === undefined &&
+    Array.isArray(schema.anyOf) &&
+    schema.anyOf.length > 0 &&
+    schema.anyOf.every(
+      (branch: unknown) =>
+        typeof branch === "object" &&
+        branch !== null &&
+        "type" in branch &&
+        branch.type === "object",
+    )
+  ) {
+    return { ...schema, type: "object" };
+  }
+  return schema;
+}
+
 export function toOpenAITools(tools: ToolDefinition[]): ChatCompletionTool[] {
   return tools.map((tool) => ({
     type: "function" as const,
     function: {
       name: tool.name,
       description: tool.description,
-      parameters: zodToJsonSchema(tool.parameters, {
-        $refStrategy: "none",
-      }) as Record<string, unknown>,
+      parameters: toOpenAIToolParameters(tool.parameters),
     },
   }));
 }
