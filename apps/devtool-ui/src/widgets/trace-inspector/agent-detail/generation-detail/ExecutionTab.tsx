@@ -271,6 +271,7 @@ function appendMessageMarkdown(md: string, msg: ChatMessage): string {
 function generateMarkdownExport(
   conversationStream: ConversationStreamEntry[],
   title = "# Execution Trace Export",
+  includeFinalResults = true,
 ): string {
   let md = `${title}\n\n`;
   const model = buildExecutionMarkdownModel(conversationStream);
@@ -300,7 +301,7 @@ function generateMarkdownExport(
       md += `**Error**\n\`\`\`json\n${JSON.stringify(turn.error, null, 2)}\n\`\`\`\n\n`;
     }
 
-    if (turn.finalResult) {
+    if (includeFinalResults && turn.finalResult) {
       const resultPreview = formatTurnResultPreviewForExport(turn.finalResult.output);
       md += `**Result ${turn.finalResult.isCached ? "(Cached)" : ""}**\n\n`;
       md += `- Size: ${turn.finalResult.output.length} characters\n`;
@@ -589,6 +590,7 @@ function TurnBlock({ turn, messages, turnIndex }: TurnBlockProps) {
 
 export function ExecutionTab({ trace, generation }: ExecutionTabProps) {
   const [isCopied, setIsCopied] = useState(false);
+  const [includeFinalResults, setIncludeFinalResults] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [isTurnMenuOpen, setIsTurnMenuOpen] = useState(false);
   const [selectedTurnIndex, setSelectedTurnIndex] = useState(-1);
@@ -614,7 +616,11 @@ export function ExecutionTab({ trace, generation }: ExecutionTabProps) {
 
   const handleCopy = async () => {
     try {
-      const markdown = generateMarkdownExport(conversationStream);
+      const markdown = generateMarkdownExport(
+        conversationStream,
+        "# Execution Trace Export",
+        includeFinalResults,
+      );
       await navigator.clipboard.writeText(markdown);
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
@@ -743,6 +749,19 @@ export function ExecutionTab({ trace, generation }: ExecutionTabProps) {
               </button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-52 p-1">
+              <label
+                className="flex items-center gap-2 rounded px-2 py-1.5 text-xs text-foreground cursor-pointer hover:bg-muted"
+                title="Include turn results in copied Markdown. Applies to Copy only."
+              >
+                <input
+                  type="checkbox"
+                  checked={includeFinalResults}
+                  onChange={(event) => setIncludeFinalResults(event.target.checked)}
+                  className="accent-primary"
+                />
+                Include results
+              </label>
+              <div className="my-1 border-t border-border" />
               <button
                 type="button"
                 className="w-full rounded px-2 py-1.5 text-left text-xs text-foreground hover:bg-muted"
