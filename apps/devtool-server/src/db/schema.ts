@@ -4,7 +4,7 @@
  * Defines database tables for trace events and trace summaries
  */
 
-import { index, integer, primaryKey, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { blob, index, integer, primaryKey, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 /**
  * Trace events table
@@ -100,6 +100,15 @@ export const traceAttrs = sqliteTable(
     keyNumIdx: index("idx_trace_attrs_key_num").on(table.key, table.valueNum),
   }),
 );
+
+/** Original raster image bytes, shared by every event referencing the same SHA-256. */
+export const traceAttachments = sqliteTable("trace_attachments", {
+  hash: text("hash").primaryKey(),
+  mimeType: text("mime_type").notNull(),
+  byteSize: integer("byte_size").notNull(),
+  data: blob("data", { mode: "buffer" }).notNull(),
+  createdAt: integer("created_at").notNull(),
+});
 
 export type TraceEventRow = typeof traceEvents.$inferSelect;
 export type TraceEventInsert = typeof traceEvents.$inferInsert;
