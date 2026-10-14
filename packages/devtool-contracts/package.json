@@ -22,6 +22,11 @@
       "import": "./dist/api.js",
       "default": "./dist/api.js"
     },
+    "./attachments": {
+      "types": "./dist/attachments.d.ts",
+      "import": "./dist/attachments.js",
+      "default": "./dist/attachments.js"
+    },
     "./traces": {
       "types": "./dist/traces.d.ts",
       "import": "./dist/traces.js",

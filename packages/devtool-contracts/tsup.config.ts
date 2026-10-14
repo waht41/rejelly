@@ -6,6 +6,7 @@ export default defineConfig({
     "src/index.ts",
     "src/analyze.ts",
     "src/api.ts",
+    "src/attachments.ts",
     "src/trace-filter.ts",
     "src/traces.ts",
     "src/ws-protocol.ts",
