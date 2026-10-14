@@ -87,6 +87,31 @@ await disableReview();
 
 更多 Review exporter 参数见 [Debugger API](/zh/api/debug#review-exporter)。
 
+## 图片附件
+
+应用可以在 Review 的 `convert` 钩子中外置截图，而不改变发给模型的图片。先上传图片，再提交引用它的事件：
+
+```typescript
+const response = await fetch("http://127.0.0.1:5789/api/v1/attachments", {
+  method: "POST",
+  headers: { "Content-Type": "image/png" },
+  body: pngBytes, // 原始二进制字节，不是 JSON、multipart 或 base64。
+});
+if (!response.ok) throw new Error(`Attachment upload failed: ${response.status}`);
+const attachment = await response.json();
+// { id: "sha256:<64 位小写十六进制字符>",
+//   url: "attachment://sha256/<hash>", mimeType: "image/png", byteSize: 12345 }
+```
+
+- 支持 PNG、JPEG、WebP、GIF；字节必须与声明的类型一致且能完整解码，不接受 SVG。
+- 上限为原始字节 16 MiB、解码像素 2000 万（包含动画帧）。无效图片返回 `400`，超限返回 `413`，不支持的媒体类型返回 `415`；并发解码饱和时返回 `503` 和 `Retry-After`。
+- Server 对原始字节计算 SHA-256，每个 hash 只保存一份不可变的 SQLite BLOB。重复上传相同字节会返回相同引用。
+- 只把导出事件副本中的 `image.url` 替换为 `attachment.url`，保留 `detail` 和原始模型输入。Core 不负责上传或自动替换图片。
+- `GET /api/v1/attachments/<hash>` 返回原始图片字节及对应的 Content-Type、ETag 和私有不可变缓存头；附件不存在返回 `404`，hash 格式错误返回 `400`。
+- Execution UI 将内部引用解析为 Trace API 同源的读取地址，引用本身不包含 Server 主机名或端口；读取失败显示图片不可用提示。
+
+附件属于当前 DevTool 数据库，沿用现有可信本地服务的访问模型；hash 不是授权凭证。原始事件导出保留引用，不打包图片字节；将事件文件迁移到另一个数据库时，需要另外上传对应图片。这一版协议不自动提取内联 base64、不在事件入库时校验附件引用，也不随 Trace 删除自动清理附件。
+
 ## 常用命令和参数
 
 `rejelly-devtool` 不带子命令时会启动本地 Server：

@@ -87,6 +87,31 @@ await disableReview();
 
 For more Review exporter options, see the [Debugger API](/en/api/debug#review-exporter).
 
+## Image Attachments
+
+Applications can externalize screenshots in a Review `convert` hook without changing the images sent to the model. Upload each image before submitting events that reference it:
+
+```typescript
+const response = await fetch("http://127.0.0.1:5789/api/v1/attachments", {
+  method: "POST",
+  headers: { "Content-Type": "image/png" },
+  body: pngBytes, // Original binary bytes, not JSON, multipart, or base64.
+});
+if (!response.ok) throw new Error(`Attachment upload failed: ${response.status}`);
+const attachment = await response.json();
+// { id: "sha256:<64 lowercase hex characters>",
+//   url: "attachment://sha256/<hash>", mimeType: "image/png", byteSize: 12345 }
+```
+
+- Supported types: PNG, JPEG, WebP, GIF. The bytes must match the declared type and decode successfully; SVG is not accepted.
+- Limits: 16 MiB of original bytes and 20 million decoded pixels (including animation frames). Invalid images return `400`, limits return `413`, unsupported media types return `415`, and concurrent decoder saturation returns `503` with `Retry-After`.
+- The Server computes SHA-256 from the original bytes and stores one immutable SQLite BLOB per hash. Re-uploading the same bytes returns the same reference.
+- Replace only the exported event's `image.url` with `attachment.url`, preserving `detail` and the original model input. Core does not upload or automatically rewrite images.
+- `GET /api/v1/attachments/<hash>` returns the original bytes with their image Content-Type, an ETag, and private immutable caching; missing hashes return `404` and malformed hashes return `400`.
+- The execution UI resolves internal references against the same origin used for trace APIs, so references do not embed the Server host or port. Missing images show an unavailable placeholder.
+
+Attachments are local to the current DevTool database and share its existing trusted-local-server access model; a hash is not an authorization token. Raw event exports preserve references but do not bundle attachment bytes. Moving an event file to another database requires uploading its images there separately. This first protocol does not automatically extract inline base64, validate attachment references during event ingestion, or garbage-collect attachments when a trace is deleted.
+
 ## Common Commands and Options
 
 `rejelly-devtool` starts the local Server without any subcommand:
