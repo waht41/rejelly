@@ -4,7 +4,6 @@
 import type { GenerationEndEvent, GenerationStartEvent, TraceEvent } from "@rejelly/core";
 import type { ExecutionStatus, NormalizedTrace } from "../../../../types";
 import type { EventHandler, TraceContext } from "../types";
-import { attachDetailToHost } from "./normShared";
 
 function endReasonToStatus(
   endReason: string | undefined,
@@ -58,8 +57,9 @@ export class NormGenerationHandler implements EventHandler {
         startTime: e.timestamp,
         startEvent: e,
       };
-      ctx.addNode(node);
-      attachDetailToHost(ctx, parentSpanId, spanId);
+      // generation:start may occur earlier than agent:start within the same millisecond; register it as an orphan, and link it to its parent when the parent arrives later or in a subsequent batch.
+      // Mounting it immediately would cause the generation of an existing Turn to disappear from the sidebar and the Execution selection list.
+      ctx.traceLinker.registerNode(node, parentSpanId);
       return;
     }
 
@@ -79,9 +79,8 @@ export class NormGenerationHandler implements EventHandler {
         startTime: e.timestamp,
         startEvent: { ...e, type: "generation:start" } as GenerationStartEvent,
       };
-      ctx.addNode(created);
+      ctx.traceLinker.registerNode(created, parentSpanId);
       node = created;
-      attachDetailToHost(ctx, parentSpanId, spanId);
     }
 
     ctx.updateNode<NormalizedTrace.GenerationNode>(spanId, (draft) => {
