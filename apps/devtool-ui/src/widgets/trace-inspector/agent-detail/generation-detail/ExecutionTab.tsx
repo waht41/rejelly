@@ -16,6 +16,7 @@ import {
   selectExecutionReplayForAgentGeneration,
 } from "@widgets/trace-inspector/lib/generationViewModel";
 import type { RoleType, Turn } from "@widgets/trace-inspector/ui/types";
+import { useLocalStorageState } from "ahooks";
 import { Bot, Check, CheckCircle2, ChevronDown, Copy, Settings, User, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ChatMessage, NormalizedTrace } from "src/entities/trace/types";
@@ -585,8 +586,26 @@ function TurnBlock({ turn, messages, turnIndex }: TurnBlockProps) {
 
 export function ExecutionTab({ trace, generation }: ExecutionTabProps) {
   const [isCopied, setIsCopied] = useState(false);
-  const [includeFinalResults, setIncludeFinalResults] = useState(false);
-  const [includeSystemMessages, setIncludeSystemMessages] = useState(true);
+  const [includeFinalResults, setIncludeFinalResults] = useLocalStorageState<boolean>(
+    "devtool-execution-include-results",
+    {
+      defaultValue: false,
+      deserializer: (value) => {
+        const parsed: unknown = JSON.parse(value);
+        return typeof parsed === "boolean" ? parsed : false;
+      },
+    },
+  );
+  const [includeSystemMessages, setIncludeSystemMessages] = useLocalStorageState<boolean>(
+    "devtool-execution-include-system",
+    {
+      defaultValue: true,
+      deserializer: (value) => {
+        const parsed: unknown = JSON.parse(value);
+        return typeof parsed === "boolean" ? parsed : true;
+      },
+    },
+  );
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [isTurnMenuOpen, setIsTurnMenuOpen] = useState(false);
   const [selectedTurnIndex, setSelectedTurnIndex] = useState(-1);
