@@ -16,6 +16,7 @@ import {
   selectExecutionReplayForAgentGeneration,
 } from "@widgets/trace-inspector/lib/generationViewModel";
 import type { RoleType, Turn } from "@widgets/trace-inspector/ui/types";
+import { useLocalStorageState } from "ahooks";
 import { Bot, Check, CheckCircle2, ChevronDown, Copy, Settings, User, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ChatMessage, NormalizedTrace } from "src/entities/trace/types";
@@ -201,13 +202,18 @@ function getCommonMessagePrefixLength(previous: ChatMessage[], current: ChatMess
 
 function buildExecutionMarkdownModel(
   conversationStream: ConversationStreamEntry[],
+  includeSystemMessages = true,
 ): ExecutionMarkdownModel {
   const messages: MessageRecord[] = [];
   const turns: TurnMessageReference[] = [];
   let previousMessages: ChatMessage[] = [];
   let previousMessageIds: string[] = [];
 
-  for (const { turn, messages: turnMessages } of conversationStream) {
+  for (const { turn, messages: snapshotMessages } of conversationStream) {
+    // Filter before assigning ids so turn references never point to omitted system messages.
+    const turnMessages = includeSystemMessages
+      ? snapshotMessages
+      : snapshotMessages.filter((message) => message.role !== "system");
     const prefixLength = getCommonMessagePrefixLength(previousMessages, turnMessages);
     const messageIds = previousMessageIds.slice(0, prefixLength);
     const firstSeenMessageIds: string[] = [];
@@ -269,9 +275,10 @@ function generateMarkdownExport(
   conversationStream: ConversationStreamEntry[],
   title = "# Execution Trace Export",
   includeFinalResults = true,
+  includeSystemMessages = true,
 ): string {
   let md = `${title}\n\n`;
-  const model = buildExecutionMarkdownModel(conversationStream);
+  const model = buildExecutionMarkdownModel(conversationStream, includeSystemMessages);
 
   md += "## Messages\n\n";
 
@@ -579,7 +586,26 @@ function TurnBlock({ turn, messages, turnIndex }: TurnBlockProps) {
 
 export function ExecutionTab({ trace, generation }: ExecutionTabProps) {
   const [isCopied, setIsCopied] = useState(false);
-  const [includeFinalResults, setIncludeFinalResults] = useState(false);
+  const [includeFinalResults, setIncludeFinalResults] = useLocalStorageState<boolean>(
+    "devtool-execution-include-results",
+    {
+      defaultValue: false,
+      deserializer: (value) => {
+        const parsed: unknown = JSON.parse(value);
+        return typeof parsed === "boolean" ? parsed : false;
+      },
+    },
+  );
+  const [includeSystemMessages, setIncludeSystemMessages] = useLocalStorageState<boolean>(
+    "devtool-execution-include-system",
+    {
+      defaultValue: true,
+      deserializer: (value) => {
+        const parsed: unknown = JSON.parse(value);
+        return typeof parsed === "boolean" ? parsed : true;
+      },
+    },
+  );
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [isTurnMenuOpen, setIsTurnMenuOpen] = useState(false);
   const [selectedTurnIndex, setSelectedTurnIndex] = useState(-1);
@@ -609,6 +635,7 @@ export function ExecutionTab({ trace, generation }: ExecutionTabProps) {
         conversationStream,
         "# Execution Trace Export",
         includeFinalResults,
+        includeSystemMessages,
       );
       await navigator.clipboard.writeText(markdown);
       setIsCopied(true);
@@ -631,6 +658,8 @@ export function ExecutionTab({ trace, generation }: ExecutionTabProps) {
     return generateMarkdownExport(
       targetConversationStream,
       `# Generation ${targetGeneration.startEvent.generationId} Export`,
+      includeFinalResults,
+      includeSystemMessages,
     );
   };
 
@@ -740,7 +769,7 @@ export function ExecutionTab({ trace, generation }: ExecutionTabProps) {
             <PopoverContent align="end" className="w-52 p-1">
               <label
                 className="flex items-center gap-2 rounded px-2 py-1.5 text-xs text-foreground cursor-pointer hover:bg-muted"
-                title="Include turn results in copied Markdown. Applies to Copy only."
+                title="Include turn results in copied and exported Markdown."
               >
                 <input
                   type="checkbox"
@@ -749,6 +778,18 @@ export function ExecutionTab({ trace, generation }: ExecutionTabProps) {
                   className="accent-primary"
                 />
                 Include results
+              </label>
+              <label
+                className="flex items-center gap-2 rounded px-2 py-1.5 text-xs text-foreground cursor-pointer hover:bg-muted"
+                title="Include system messages in copied and exported Markdown."
+              >
+                <input
+                  type="checkbox"
+                  checked={includeSystemMessages}
+                  onChange={(event) => setIncludeSystemMessages(event.target.checked)}
+                  className="accent-primary"
+                />
+                Include system
               </label>
               <div className="my-1 border-t border-border" />
               <button
