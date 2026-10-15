@@ -29,5 +29,10 @@ export { enableReview } from "./review";
 // enableReview / enableOTLP default to this when registerShutdown is omitted)
 export { type RegisterNodeShutdownOptions, registerNodeShutdown } from "./shutdown-node";
 
-// Export logger config types
-export type { ExporterRegisterShutdown, OTLPOptions, ReviewOptions } from "./types";
+// Export exporter configuration and conversion types
+export type {
+  ExporterRegisterShutdown,
+  OTLPOptions,
+  ReviewOptions,
+  TraceEventConverter,
+} from "./types";

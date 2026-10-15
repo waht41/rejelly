@@ -38,6 +38,7 @@
     "drizzle-orm": "^0.45.2",
     "fastify": "catalog:",
     "fastify-type-provider-zod": "5.1.0",
+    "sharp": "^0.34.5",
     "zod": "catalog:"
   },
   "devDependencies": {

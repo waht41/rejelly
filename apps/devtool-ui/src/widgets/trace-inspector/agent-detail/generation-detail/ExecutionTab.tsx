@@ -8,6 +8,7 @@
 
 import { getGenerationsForHost } from "@entities/trace/lib/treeFinder";
 import { ErrorCard } from "@entities/trace/ui/inspector/ErrorCard";
+import { TraceImage } from "@entities/trace/ui/TraceImage";
 import { Editor } from "@monaco-editor/react";
 import { Popover, PopoverContent, PopoverTrigger } from "@shared/ui/popover";
 import {
@@ -120,10 +121,6 @@ function getImageLabel(url: string): string {
     return `Image (${dataImageMatch[1].toUpperCase()})`;
   }
   return "Image";
-}
-
-function isRenderableImageUrl(url: string): boolean {
-  return /^(data:image\/|https?:\/\/|blob:)/i.test(url);
 }
 
 function formatMessageContentForExport(content: string): string {
@@ -441,15 +438,7 @@ function MessageItem({
                       key={`image-${index}`}
                       className="inline-flex max-w-full flex-col gap-1 rounded border border-border/60 bg-background/40 p-1.5"
                     >
-                      {isRenderableImageUrl(segment.url) ? (
-                        <img
-                          src={segment.url}
-                          alt={getImageLabel(segment.url)}
-                          className="max-h-56 max-w-full rounded object-contain"
-                          loading="lazy"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : null}
+                      <TraceImage url={segment.url} alt={getImageLabel(segment.url)} />
                       <figcaption className="max-w-full truncate font-mono text-[10px] text-muted-foreground">
                         {getImageLabel(segment.url)}
                       </figcaption>

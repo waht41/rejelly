@@ -12,12 +12,14 @@ import fastifyStatic from "@fastify/static";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import websocket from "@fastify/websocket";
+import { ATTACHMENTS_API_PATH } from "@rejelly/devtool-contracts";
 import Fastify from "fastify";
 import { jsonSchemaTransform } from "fastify-type-provider-zod";
 import { $ZodType } from "zod/v4/core";
 import { MAX_BODY_SIZE } from "../config";
 import { initSchema } from "../db/init-schema";
 import { aiRoutes } from "../routes/ai";
+import { attachmentRoutes } from "../routes/attachments";
 import { mcpRoutes } from "../routes/mcp";
 import { traceRoutes } from "../routes/traces";
 import { wsRoutes } from "../routes/ws";
@@ -88,6 +90,9 @@ export async function buildServer() {
   // Register business routes
   // All trace routes with unified version prefix
   fastify.register(traceRoutes, { prefix: "/api/v1/traces" });
+
+  // Content-addressed image attachments (binary parsing is isolated from trace routes).
+  fastify.register(attachmentRoutes, { prefix: ATTACHMENTS_API_PATH });
 
   // AI routes
   fastify.register(aiRoutes, { prefix: "/api/v1/ai" });

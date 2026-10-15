@@ -68,6 +68,7 @@
 
     // ---- Domain capability kernels -----------------------------------------
     "@traceFilter": "src/capabilities/trace-filter/**/*",
+    "@traceAttachments": "src/capabilities/trace-attachments/**/*",
 
     // ---- Leaf / cross-cutting (no upward deps) ------------------------------
     "@utils": "src/utils/**/*", // leaf utility layer (no internal deps)
@@ -87,7 +88,8 @@
       "connect": {
         "@cli": ["@server", "@tools", "@config"],
         "@server": ["@route", "@db", "@config"],
-        "@route": ["@controller", "@mcp", "@service", "@traceFilter"],
+        "@route": ["@controller", "@mcp", "@service", "@traceFilter", "@traceAttachments"],
+        "@traceAttachments": ["@db"],
         "@controller": ["@service", "@agents", "@utils", "@traceFilter"],
         "@agents": ["@tools", "@utils", "@config", "@traceFilter"],
         "@mcp": ["@tools"]
@@ -124,6 +126,7 @@
           "@repo",
           "@db",
           "@traceFilter",
+          "@traceAttachments",
           "@utils",
           "@config"
         ]
