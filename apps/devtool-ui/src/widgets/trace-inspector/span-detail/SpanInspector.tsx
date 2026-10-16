@@ -7,7 +7,8 @@
 import { selectBudgetSummaryForSpan } from "@entities/trace/lib/budgetSelectors.ts";
 import type { NormalizedTrace } from "@entities/trace/types";
 import { Inspector } from "@entities/trace/ui/inspector";
-import { ErrorCard } from "@entities/trace/ui/inspector/ErrorCard.tsx";
+import { ErrorDetailsSection } from "@entities/trace/ui/inspector/ErrorCard.tsx";
+import { TraceAttributesTable } from "@entities/trace/ui/inspector/TraceAttributesTable";
 import { StatusBadge } from "@entities/trace/ui/StatusBadge.tsx";
 import { formatDuration } from "@shared/lib/formatters.ts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@shared/ui/tabs";
@@ -26,26 +27,6 @@ export function SpanInspector({ trace, span }: SpanInspectorProps) {
     () => selectBudgetSummaryForSpan(trace, span.spanId),
     [trace, span.spanId],
   );
-
-  const formatValue = (value: unknown): string => {
-    if (value === null) return "null";
-    if (value === undefined) return "undefined";
-    if (typeof value === "string") return value;
-    if (typeof value === "object") {
-      try {
-        return JSON.stringify(value, null, 2);
-      } catch {
-        return String(value);
-      }
-    }
-    return String(value);
-  };
-
-  const getValueType = (value: unknown): string => {
-    if (value === null) return "null";
-    if (Array.isArray(value)) return "Array";
-    return typeof value === "object" ? "Object" : typeof value;
-  };
 
   // End event's trace carries the final attributes (static + values added via
   // span.setAttribute); fall back to the start event's trace while still running.
@@ -83,41 +64,14 @@ export function SpanInspector({ trace, span }: SpanInspectorProps) {
                 description="Custom attributes set via span.setAttribute()"
                 contentClassName="p-0"
               >
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-border bg-muted/20">
-                        <th className="text-left p-2 font-semibold text-foreground">Key</th>
-                        <th className="text-left p-2 font-semibold text-foreground">Value</th>
-                        <th className="text-left p-2 font-semibold text-foreground">Type</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(attributes).map(([key, value]) => (
-                        <tr key={key} className="border-b border-border/50 hover:bg-muted/20">
-                          <td className="p-2 font-mono text-[11px] text-blue-400">{key}</td>
-                          <td className="p-2 font-mono text-[11px] text-foreground max-w-md truncate">
-                            {formatValue(value)}
-                          </td>
-                          <td className="p-2 text-[10px] text-muted-foreground">
-                            {getValueType(value)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <TraceAttributesTable key={span.spanId} attributes={attributes} />
               </Inspector.Section>
             ) : (
               <Inspector.EmptySection message="No attributes set. Use span.setAttribute() to add custom data." />
             )}
 
             {/* Error Details */}
-            {span.endEvent?.error && (
-              <Inspector.Section title="ERROR DETAILS" variant="error">
-                <ErrorCard error={span.endEvent.error} />
-              </Inspector.Section>
-            )}
+            {span.endEvent?.error && <ErrorDetailsSection error={span.endEvent.error} />}
           </Inspector.Content>
         </TabsContent>
 

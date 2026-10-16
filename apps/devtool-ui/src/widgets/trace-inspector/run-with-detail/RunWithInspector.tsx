@@ -7,7 +7,8 @@
 import { selectBudgetSummaryForSpan } from "@entities/trace/lib/budgetSelectors.ts";
 import type { ErrorInfo, NormalizedTrace } from "@entities/trace/types";
 import { Inspector } from "@entities/trace/ui/inspector";
-import { ErrorCard } from "@entities/trace/ui/inspector/ErrorCard.tsx";
+import { ErrorDetailsSection } from "@entities/trace/ui/inspector/ErrorCard.tsx";
+import { TraceAttributesTable } from "@entities/trace/ui/inspector/TraceAttributesTable";
 import { StatusBadge } from "@entities/trace/ui/StatusBadge.tsx";
 import type { RunWithEndEvent } from "@rejelly/core";
 import { formatDuration } from "@shared/lib/formatters.ts";
@@ -35,26 +36,6 @@ function getRestorationAttributes(
       .filter(([key]) => key.startsWith("restoration."))
       .map(([key, value]) => [key.slice("restoration.".length), value]),
   );
-}
-
-function formatAttributeValue(value: unknown): string {
-  if (value === null) return "null";
-  if (value === undefined) return "undefined";
-  if (typeof value === "string") return value;
-  if (typeof value === "object") {
-    try {
-      return JSON.stringify(value, null, 2);
-    } catch {
-      return String(value);
-    }
-  }
-  return String(value);
-}
-
-function getAttributeValueType(value: unknown): string {
-  if (value === null) return "null";
-  if (Array.isArray(value)) return "Array";
-  return typeof value === "object" ? "Object" : typeof value;
 }
 
 /** Metrics / metadata derived from runWith:end (same rules as former legacy adapter). */
@@ -153,30 +134,7 @@ function RunWithAttributesSection({ attributes }: { attributes: Record<string, u
       description="Trace attributes attached to this runWith span"
       contentClassName="p-0"
     >
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-border bg-muted/20">
-              <th className="text-left p-2 font-semibold text-foreground">Key</th>
-              <th className="text-left p-2 font-semibold text-foreground">Value</th>
-              <th className="text-left p-2 font-semibold text-foreground">Type</th>
-            </tr>
-          </thead>
-          <tbody>
-            {Object.entries(attributes).map(([key, value]) => (
-              <tr key={key} className="border-b border-border/50 hover:bg-muted/20">
-                <td className="p-2 font-mono text-[11px] text-blue-400">{key}</td>
-                <td className="p-2 font-mono text-[11px] text-foreground max-w-md truncate">
-                  {formatAttributeValue(value)}
-                </td>
-                <td className="p-2 text-[10px] text-muted-foreground">
-                  {getAttributeValueType(value)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <TraceAttributesTable attributes={attributes} />
     </Inspector.Section>
   );
 }
@@ -323,7 +281,7 @@ export function RunWithInspector({ trace, runWith }: RunWithInspectorProps) {
           <Inspector.Content>
             <RunWithConfigurationSection start={start} />
 
-            <RunWithAttributesSection attributes={attributes} />
+            <RunWithAttributesSection key={runWith.spanId} attributes={attributes} />
 
             {start.restoration && (
               <RunWithRestorationSection
@@ -360,11 +318,7 @@ export function RunWithInspector({ trace, runWith }: RunWithInspectorProps) {
               </Inspector.Section>
             )}
 
-            {end?.error && (
-              <Inspector.Section title="ERROR DETAILS" variant="error">
-                <ErrorCard error={end.error as ErrorInfo} />
-              </Inspector.Section>
-            )}
+            {end?.error && <ErrorDetailsSection error={end.error as ErrorInfo} />}
           </Inspector.Content>
         </TabsContent>
 
