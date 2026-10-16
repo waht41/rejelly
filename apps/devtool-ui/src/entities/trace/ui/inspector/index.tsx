@@ -74,6 +74,7 @@ interface InspectorSectionProps {
   description?: string;
   children: ReactNode;
   variant?: "default" | "error";
+  actions?: ReactNode;
   contentClassName?: string;
   className?: string;
 }
@@ -87,24 +88,30 @@ export function InspectorSection({
   description,
   children,
   variant = "default",
+  actions,
   contentClassName,
   className,
 }: InspectorSectionProps) {
   return (
     <Primitives.InspectorSection className={className}>
       <Primitives.InspectorSectionHeader variant={variant}>
-        {variant === "error" ? (
-          <Primitives.InspectorErrorTitle>{title}</Primitives.InspectorErrorTitle>
-        ) : (
-          <>
-            <Primitives.InspectorSectionTitle>{title}</Primitives.InspectorSectionTitle>
-            {description && (
-              <Primitives.InspectorSectionDescription>
-                {description}
-              </Primitives.InspectorSectionDescription>
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            {variant === "error" ? (
+              <Primitives.InspectorErrorTitle>{title}</Primitives.InspectorErrorTitle>
+            ) : (
+              <>
+                <Primitives.InspectorSectionTitle>{title}</Primitives.InspectorSectionTitle>
+                {description && (
+                  <Primitives.InspectorSectionDescription>
+                    {description}
+                  </Primitives.InspectorSectionDescription>
+                )}
+              </>
             )}
-          </>
-        )}
+          </div>
+          {actions && <div className="shrink-0">{actions}</div>}
+        </div>
       </Primitives.InspectorSectionHeader>
       <Primitives.InspectorSectionContent className={contentClassName}>
         {children}
