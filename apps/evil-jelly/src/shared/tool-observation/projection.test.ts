@@ -16,6 +16,35 @@ describe("tool observation projection", () => {
     expect(JSON.parse(projected.args).command).toContain("\nconsole.log(1)\n");
   });
 
+  it.each([
+    {
+      toolName: "fuzzy_search_paths",
+      input: { keyword: "toolLog" },
+      summary: '[Tools] fuzzy_search_paths → "toolLog" (in .)',
+    },
+    {
+      toolName: "fuzzy_search_paths",
+      input: { keyword: "toolLog", directory: "apps/evil-jelly/src", limit: 30 },
+      summary: '[Tools] fuzzy_search_paths → "toolLog" (in apps/evil-jelly/src)',
+    },
+    {
+      toolName: "web_search",
+      input: { query: "chromium webstore installer", limit: 6 },
+      summary: '[Tools] web_search → "chromium webstore installer"',
+    },
+    {
+      toolName: "web_search",
+      input: { query: 'chromium "download"\ninstaller' },
+      summary: '[Tools] web_search → "chromium \\"download\\"\\ninstaller"',
+    },
+  ])("projects search inputs: $summary", ({ toolName, input, summary }) => {
+    const projected = projectToolStart(context(toolName, input));
+
+    expect(projected.summary).toBe(summary);
+    expect(projected.summary).not.toContain("\n");
+    expect(JSON.parse(projected.args)).toEqual(input);
+  });
+
   it("redacts write bodies from observed arguments", () => {
     const projected = projectToolStart(
       context("create_file", {
