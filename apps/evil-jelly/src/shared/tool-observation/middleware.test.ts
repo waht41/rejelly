@@ -2,6 +2,7 @@
  * Tests for withToolLogger: captures result, calls logToolBlock, stringifies objects, truncates preview.
  */
 
+import type { ToolContext } from "@rejelly/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EvilJellyBindings } from "../host/bindings";
 import { textPromptInput } from "../model/prompt/promptInput";
@@ -101,6 +102,38 @@ describe("withToolLogger", () => {
     expect(block.args).toContain('"src/a.ts"');
     expect(block.fullResult).toBe("file content line 1\nline 2\nline 3");
     expect(block.preview).toContain("file content line 1");
+  });
+
+  it.each([
+    {
+      toolName: "fuzzy_search_paths",
+      input: { keyword: "toolLog", directory: "src" },
+      summary: '[Tools] fuzzy_search_paths → "toolLog" (in src)',
+    },
+    {
+      toolName: "web_search",
+      input: { query: "chromium webstore installer" },
+      summary: '[Tools] web_search → "chromium webstore installer"',
+    },
+  ])("keeps $toolName search text in live and completed logs", async ({
+    toolName,
+    input,
+    summary,
+  }) => {
+    const bindings = createMockBindings();
+    const logToolStart = vi.fn(() => ({ id: "tc_search", ordinal: 1 }));
+    bindings.logToolStart = logToolStart;
+    mockGetBinding.mockReturnValue(bindings);
+
+    const ctx = { toolName, input } as ToolContext;
+    await withToolLogger().handler!(ctx, vi.fn().mockResolvedValue("No results."));
+
+    expect(logToolStart).toHaveBeenCalledWith({
+      toolName,
+      summary,
+      args: JSON.stringify(input, null, 2),
+    });
+    expect(bindings.toolBlocks[0]).toMatchObject({ toolName, summary });
   });
 
   it("calls logToolBlock on tool handler failure with ok=false", async () => {

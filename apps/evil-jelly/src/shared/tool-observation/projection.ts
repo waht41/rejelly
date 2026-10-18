@@ -60,6 +60,15 @@ function formatToolProgressLine(ctx: ToolContext): string {
     const reasonHint = reason.length > 0 ? ` | reason: ${reason.slice(0, 80)}` : "";
     return `[Tools] read_file → ${formatPathList(filePaths)}${reasonHint}\n`;
   }
+  if (ctx.toolName === "fuzzy_search_paths") {
+    const keyword = typeof input.keyword === "string" ? input.keyword : "";
+    const directory = typeof input.directory === "string" ? input.directory : ".";
+    return `[Tools] fuzzy_search_paths → ${JSON.stringify(keyword)} (in ${directory})…\n`;
+  }
+  if (ctx.toolName === "web_search") {
+    const query = typeof input.query === "string" ? input.query : "";
+    return `[Tools] web_search → ${JSON.stringify(query)}…\n`;
+  }
   if (ctx.toolName === "grep") {
     const q = String(input.query ?? "");
     const glob = typeof input.filePattern === "string" ? input.filePattern : "";
