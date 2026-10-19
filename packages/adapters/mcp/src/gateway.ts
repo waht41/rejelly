@@ -1,3 +1,5 @@
+import AjvDraft7 from "ajv";
+import Ajv2019 from "ajv/dist/2019.js";
 import Ajv2020, { type ErrorObject } from "ajv/dist/2020.js";
 import { McpProtocolError } from "./errors";
 
@@ -184,11 +186,27 @@ export function validateMcpToolArguments(
   inputSchema: Readonly<Record<string, unknown>>,
   argumentsValue: Record<string, unknown>,
 ): McpJsonSchemaValidationResult {
-  const ajv = new Ajv2020({
+  // Keep 2020-12 as the default, but honor explicitly declared older dialects.
+  const Ajv =
+    typeof inputSchema.$schema === "string" &&
+    /^https?:\/\/json-schema\.org\/draft-07\/schema#?$/.test(inputSchema.$schema)
+      ? AjvDraft7
+      : inputSchema.$schema === "https://json-schema.org/draft/2019-09/schema" ||
+          inputSchema.$schema === "https://json-schema.org/draft/2019-09/schema#"
+        ? Ajv2019
+        : Ajv2020;
+  const ajv = new Ajv({
     allErrors: true,
     strict: false,
     validateFormats: false,
   });
+  if (Ajv === AjvDraft7) {
+    // Ajv registers the canonical HTTP URI; also resolve its HTTPS spelling.
+    ajv.addMetaSchema(
+      { $ref: "http://json-schema.org/draft-07/schema#" },
+      "https://json-schema.org/draft-07/schema",
+    );
+  }
   let validate: ReturnType<Ajv2020["compile"]>;
   try {
     validate = ajv.compile(inputSchema);

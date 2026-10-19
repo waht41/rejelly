@@ -46,7 +46,7 @@ kit.inject({ injectResourceTools: true });
 const result = await promptAgent(ResultSchema);
 ```
 
-**Standalone conversion (single tool):** The exported function `fromMCPTool(mcpTool, client, { name? })` can convert a single MCP Tool into `ToolDefinition`, useful for custom composition or testing.
+**Standalone conversion (single tool):** The exported function `fromMCPTool(mcpTool, client, { name?, callToolStyle? })` can convert a single MCP Tool into `ToolDefinition`, useful for custom composition or testing.
 
 **MCPKit:** `equipMCP` returns `client`, `tools` (MCP business tools only), `resourceTools` (named `mcp_list_resources` / `mcp_read_resource` by default, or `<namespace>_list_resources` / `<namespace>_read_resource` when a namespace is configured), `toolMap`, `resourceToolMap`, `prompts` (providing `list()` / `get()`; **`asInstruction()`** is on the object returned by `await get()` and produces `MessageContent` that can be passed directly to `equipInstruction`), and `inject`. Calling **`inject({ injectTools?, injectResourceTools?, middleware? })`** triggers `equipTool`: default is **`injectTools: true`**, **`injectResourceTools: false`** (to avoid cluttering the Prompt with resource URIs; enable when needed). **The `kit.tools` returned by `await equipMCP(...)` is the snapshot from this fetch/cache parse** — it won't silently change later. To get the latest list, pass **`forceRefresh: true`** on the **next** `equipMCP` call (see below).
 
@@ -59,6 +59,8 @@ const result = await promptAgent(ResultSchema);
 ```typescript
 interface EquipMCPOptions {
   clientId: string;
+  /** Native callTool signature; default 'object' (official SDK). No signature-probing retries. */
+  callToolStyle?: 'object' | 'positional';
   /** Namespace for tool names registered to the Agent; `tools` filtering still uses MCP native names */
   namespace?: string;
   tools?: string[];
@@ -82,9 +84,9 @@ interface EquipMCPOptions {
 
 1. **Connection**: You `connect` the official Client inside [equipResource](/en/api/equip#equipresource)'s `create`; `close` in `destroy`.
 2. **Tools**: `listTools` supports `nextCursor` via `autoPaginate` + `maxItems`; if `tools` (native name list) is configured but cannot all be found within pagination and limits, **throws immediately**; results are cached via `equipMemo` by default (same `clientId` and deps — `reborn()` doesn't repeat RPC); **`forceRefresh: true`** skips cache hit and refreshes; generates a `ToolDefinition` for each MCP tool (JSON Schema goes directly into `jsonSchemaToZod`); registers when **`kit.inject({ injectTools: true })`** is called.
-3. **Invocation**: `callTool` is compatible with both the SDK's `callTool({ name, arguments })` and `(name, args)` signatures; plain text results are returned as text; non-text blocks (including images) are converted to `toolContent` (see [Adapter · Multimodal Tool Results](/en/api/adapter/#multimodal-tool-results)).
+3. **Invocation**: Uses the SDK's `callTool({ name, arguments })` signature by default. For positional clients, set `callToolStyle: 'positional'` in `equipMCP` or `fromMCPTool` options to call `(name, args)`. Failed calls are propagated without retrying or probing another signature, because the operation may already have executed. Plain text results remain text; text-only results with `structuredContent` retain the MCP result object. Non-text blocks (including images) are converted to `toolContent`, with structured data appended as a JSON text block when present (see [Adapter · Multimodal Tool Results](/en/api/adapter/#multimodal-tool-results)).
 4. **Resources**: When **`enableResources`** is true, generates **`resourceTools`** (`mcp_list_resources` with cursor and `mcp_read_resource` by URI by default; the corresponding `<namespace>_...` names are used when `namespace` is set) — **not fully listed at equip time**; only registered via **`inject({ injectResourceTools: true })`**.
-5. **Prompts**: `kit.prompts.list()` / `get()` let you manually `equipInstruction` in your business logic; `get` returns an object with **`asInstruction()`** (`MessageContent`: `string | ContentPart[]`, including text / image / video, consistent with `@rejelly/core` definitions).
+5. **Prompts**: `kit.prompts.list()` accepts legacy arrays and collects all SDK `{ prompts, nextCursor }` pages, rejecting cursor cycles and malformed responses. `list()` / `get()` let you manually `equipInstruction` in your business logic; `get` returns an object with **`asInstruction()`** (`MessageContent`: `string | ContentPart[]`, including text / image / video, consistent with `@rejelly/core` definitions).
 
 ## Working with equipResource
 

@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import { McpProtocolError } from "./errors";
 import {
   callMcpTool,
@@ -156,6 +158,150 @@ describe("MCP gateway protocol helpers", () => {
     };
 
     expect(validateMcpToolArguments(schema, argumentsValue)).toEqual({ ok: true });
+  });
+
+  it("accepts Draft-07 schemas generated from Zod by MCP SDKs", () => {
+    const schema = zodToJsonSchema(z.object({ traceId: z.string().optional() })) as Record<
+      string,
+      unknown
+    >;
+    expect(schema.$schema).toBe("http://json-schema.org/draft-07/schema#");
+    const originalSchema = structuredClone(schema);
+    const argumentsValue = { traceId: "f7a7dc9b9ee4dd5d213e988917fc18e9" };
+
+    expect(validateMcpToolArguments(schema, argumentsValue)).toEqual({ ok: true });
+    expect(validateMcpToolArguments(schema, {})).toEqual({ ok: true });
+    expect(validateMcpToolArguments(schema, { traceId: 123 })).toMatchObject({
+      ok: false,
+      reason: "invalid_arguments",
+      issues: [expect.objectContaining({ instancePath: "/traceId", keyword: "type" })],
+    });
+    expect(schema).toEqual(originalSchema);
+    expect(argumentsValue).toEqual({ traceId: "f7a7dc9b9ee4dd5d213e988917fc18e9" });
+  });
+
+  it.each([
+    "http://json-schema.org/draft-07/schema#",
+    "http://json-schema.org/draft-07/schema",
+    "https://json-schema.org/draft-07/schema#",
+    "https://json-schema.org/draft-07/schema",
+  ])("preserves Draft-07 tuple and reference semantics for %s", ($schema) => {
+    const schema = {
+      $schema,
+      type: "object",
+      definitions: { traceId: { type: "string", minLength: 1 } },
+      properties: {
+        target: {
+          type: "array",
+          items: [{ $ref: "#/definitions/traceId" }, { type: "integer", minimum: 1 }],
+          additionalItems: false,
+          minItems: 2,
+        },
+      },
+      required: ["target"],
+      additionalProperties: false,
+    };
+
+    expect(validateMcpToolArguments(schema, { target: ["trace-1", 1] })).toEqual({
+      ok: true,
+    });
+    for (const argumentsValue of [
+      { target: [1, "trace-1"] },
+      { target: ["", 1] },
+      { target: ["trace-1", 0] },
+      { target: ["trace-1", 1, "extra"] },
+      { target: ["trace-1"] },
+      { target: ["trace-1", 1], extra: true },
+    ]) {
+      expect(validateMcpToolArguments(schema, argumentsValue)).toMatchObject({
+        ok: false,
+        reason: "invalid_arguments",
+      });
+    }
+  });
+
+  it.each([
+    undefined,
+    "https://json-schema.org/draft/2020-12/schema",
+  ])("preserves Draft 2020-12 semantics with dialect %s", ($schema) => {
+    const schema = {
+      ...($schema === undefined ? {} : { $schema }),
+      type: "object",
+      $defs: { traceId: { type: "string", minLength: 1 } },
+      properties: {
+        target: {
+          type: "array",
+          prefixItems: [{ $ref: "#/$defs/traceId" }, { type: "integer", minimum: 1 }],
+          items: false,
+          minItems: 2,
+        },
+      },
+      required: ["target"],
+    };
+
+    expect(validateMcpToolArguments(schema, { target: ["trace-1", 1] })).toEqual({
+      ok: true,
+    });
+    for (const target of [[1, "trace-1"], ["trace-1", 1, "extra"], ["trace-1"]]) {
+      expect(validateMcpToolArguments(schema, { target })).toMatchObject({
+        ok: false,
+        reason: "invalid_arguments",
+      });
+    }
+  });
+
+  it.each([
+    "http://json-schema.org/draft-07/schema#",
+    "https://json-schema.org/draft-07/schema#",
+  ])("rejects malformed Draft-07 schemas with dialect %s", ($schema) => {
+    expect(validateMcpToolArguments({ $schema, type: "invalid" }, {})).toMatchObject({
+      ok: false,
+      reason: "invalid_schema",
+    });
+  });
+
+  it.each([
+    "https://json-schema.org/draft/2019-09/schema",
+    "https://json-schema.org/draft/2019-09/schema#",
+  ])("preserves Draft 2019-09 tuple and unevaluated-property semantics for %s", ($schema) => {
+    const schema = {
+      $schema,
+      type: "object",
+      properties: {
+        target: {
+          type: "array",
+          items: [{ type: "string" }, { type: "integer" }],
+          additionalItems: false,
+          minItems: 2,
+        },
+      },
+      required: ["target"],
+      unevaluatedProperties: false,
+    };
+    expect(validateMcpToolArguments(schema, { target: ["trace-1", 1] })).toEqual({ ok: true });
+    for (const argumentsValue of [
+      { target: [1, "trace-1"] },
+      { target: ["trace-1", 1, "extra"] },
+      { target: ["trace-1", 1], extra: true },
+    ]) {
+      expect(validateMcpToolArguments(schema, argumentsValue)).toMatchObject({
+        ok: false,
+        reason: "invalid_arguments",
+      });
+    }
+    expect(validateMcpToolArguments({ $schema, type: "invalid" }, {})).toMatchObject({
+      ok: false,
+      reason: "invalid_schema",
+    });
+  });
+
+  it("rejects unsupported dialects instead of silently using different semantics", () => {
+    expect(
+      validateMcpToolArguments(
+        { $schema: "https://example.invalid/unsupported-dialect", type: "object" },
+        {},
+      ),
+    ).toMatchObject({ ok: false, reason: "invalid_schema" });
   });
 
   it("reports invalid server schemas separately from invalid arguments", () => {

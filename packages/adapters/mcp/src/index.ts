@@ -37,4 +37,5 @@ export type {
   MCPPromptsKit,
   MCPResourceDescriptor,
   McpCallToolContentBlock,
+  McpCallToolStyle,
 } from "./types";

@@ -33,7 +33,11 @@ function jsonSchemaPropertyToZod(propSchema: JsonSchema, path?: string): z.ZodTy
       );
       shape[key] = isRequired ? zodField : zodField.optional();
     }
-    return z.object(shape);
+    return propSchema.additionalProperties === false
+      ? z.object(shape).strict()
+      : z
+          .object(shape)
+          .catchall(jsonSchemaPropertyToZod(propSchema.additionalProperties as JsonSchema, path));
   }
   return z.any();
 }
@@ -55,7 +59,13 @@ export function jsonSchemaToZod(jsonSchema: JsonSchema, toolName?: string): z.Zo
       const zodField = jsonSchemaPropertyToZod(propSchema as JsonSchema, `${toolName}.${key}`);
       shape[key] = isRequired ? zodField : zodField.optional();
     }
-    return z.object(shape);
+    return jsonSchema.additionalProperties === false
+      ? z.object(shape).strict()
+      : z
+          .object(shape)
+          .catchall(
+            jsonSchemaPropertyToZod(jsonSchema.additionalProperties as JsonSchema, toolName),
+          );
   }
   if (schemaType === "array") {
     const itemsSchema = jsonSchema.items;
