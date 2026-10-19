@@ -10,10 +10,13 @@ import {
   type McpToolListItem,
   normalizeCallTool,
 } from "./mcp-compat";
+import type { McpCallToolStyle } from "./types";
 
 export interface FromMCPToolOptions {
   /** Registered tool name; default is MCP tool name */
   name?: string;
+  /** Native callTool signature. Defaults to the SDK's object-parameter form. */
+  callToolStyle?: McpCallToolStyle;
 }
 
 /**
@@ -33,7 +36,12 @@ export function fromMCPTool(
     description: mcpTool.description ?? `MCP tool: ${mcpTool.name}`,
     parameters: zodSchema,
     handler: async (args) => {
-      const raw = await normalizeCallTool(client, mcpTool.name, args as Record<string, unknown>);
+      const raw = await normalizeCallTool(
+        client,
+        mcpTool.name,
+        args as Record<string, unknown>,
+        options?.callToolStyle,
+      );
       return formatCallToolResult(raw);
     },
   };

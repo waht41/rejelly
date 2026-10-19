@@ -46,7 +46,7 @@ kit.inject({ injectResourceTools: true });
 const result = await promptAgent(ResultSchema);
 ```
 
-**纯转换（单工具）：** 导出函数 `fromMCPTool(mcpTool, client, { name? })` 可将单个 MCP Tool 转为 `ToolDefinition`，便于自行组合或测试。
+**纯转换（单工具）：** 导出函数 `fromMCPTool(mcpTool, client, { name?, callToolStyle? })` 可将单个 MCP Tool 转为 `ToolDefinition`，便于自行组合或测试。
 
 **MCPKit：** `equipMCP` 返回 `client`、`tools`（仅 MCP 业务工具）、`resourceTools`（默认名为 `mcp_list_resources` / `mcp_read_resource`；配置 `namespace` 后为 `<namespace>_list_resources` / `<namespace>_read_resource`）、`toolMap`、`resourceToolMap`、`prompts`（提供 `list()` / `get()`；**`asInstruction()`** 位于 `await get()` 的返回值上，返回可直接传给 `equipInstruction` 的 `MessageContent`）、`inject`。调用 **`inject({ injectTools?, injectResourceTools?, middleware? })`** 时才 `equipTool`：默认 **`injectTools: true`**、**`injectResourceTools: false`**（避免在 Prompt 里塞满资源 URI；需要时再打开）。**本次 `await equipMCP(...)` 返回的 `kit.tools` 即本轮拉取/缓存解析后的快照**，不会在之后静默变新；需要最新列表时应在**下一次**调用 `equipMCP` 时传入 **`forceRefresh: true`**（见下）。
 
@@ -59,6 +59,8 @@ const result = await promptAgent(ResultSchema);
 ```typescript
 interface EquipMCPOptions {
   clientId: string;
+  /** 原生 callTool 签名；默认 'object'（官方 SDK），不通过失败重试探测签名 */
+  callToolStyle?: 'object' | 'positional';
   /** 注册到 Agent 的工具名命名空间；`tools` 过滤仍用 MCP 原生名 */
   namespace?: string;
   tools?: string[];
@@ -82,9 +84,9 @@ interface EquipMCPOptions {
 
 1. **连接**：由你在 [equipResource](/zh/api/equip#equipresource) 的 `create` 中 `connect` 官方 Client；`destroy` 中 `close`。
 2. **工具**：`listTools` 支持 `nextCursor` 时由 `autoPaginate` + `maxItems` 控制拉取；若配置了 `tools`（原生名列表）却未能在分页与上限内找齐，**直接抛错**；结果默认经 `equipMemo` 缓存（相同 `clientId` 与 deps 时 `reborn()` 不重复 RPC）；**`forceRefresh: true`** 时跳过命中并刷新缓存；为每个 MCP 工具生成 `ToolDefinition`（JSON Schema 原样进入 `jsonSchemaToZod`）；**`kit.inject({ injectTools: true })`** 时注册。
-3. **调用**：`callTool` 兼容 SDK 的 `callTool({ name, arguments })` 与 `(name, args)`；纯文本结果按文本返回，含图片等非文本块时转成 `toolContent`（见 [Adapter · 多模态工具结果](/zh/api/adapter/#多模态工具结果-multimodal-tool-results)）。
+3. **调用**：默认使用 SDK 的 `callTool({ name, arguments })` 签名；位置参数客户端需在 `equipMCP` 或 `fromMCPTool` 选项中设置 `callToolStyle: 'positional'`，使用 `(name, args)`。调用失败直接向上传播，不再重试或探测另一种签名，因为操作可能已经执行。纯文本结果仍按文本返回；仅含文本且带有 `structuredContent` 时保留 MCP 结果对象。含图片等非文本块时转成 `toolContent`，如有结构化数据则追加为 JSON 文本块（见 [Adapter · 多模态工具结果](/zh/api/adapter/#多模态工具结果-multimodal-tool-results)）。
 4. **资源**：**`enableResources`** 为 true 时生成 **`resourceTools`**（默认 `mcp_list_resources` 带 cursor、`mcp_read_resource` 按 URI；设置 `namespace` 后使用对应的 `<namespace>_...` 名称），**不在 equip 时全量 list**；需 **`inject({ injectResourceTools: true })`** 才注册。
-5. **Prompts**：`kit.prompts.list()` / `get()` 供你在业务里手动 `equipInstruction`；`get` 返回含 **`asInstruction()`**（`MessageContent`：`string | ContentPart[]`，含 text / image / video，与 `@rejelly/core` 中定义一致）。
+5. **Prompts**：`kit.prompts.list()` 支持旧式数组并收集 SDK `{ prompts, nextCursor }` 的全部分页，遇到 cursor 循环或畸形响应会抛错。`list()` / `get()` 供你在业务里手动 `equipInstruction`；`get` 返回含 **`asInstruction()`**（`MessageContent`：`string | ContentPart[]`，含 text / image / video，与 `@rejelly/core` 中定义一致）。
 
 ## 与 equipResource 配合
 

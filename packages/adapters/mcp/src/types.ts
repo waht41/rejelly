@@ -44,7 +44,11 @@ export interface EquipMCPOptions {
    */
   enableResources?: boolean;
   middleware?: ToolMiddleware[];
+  /** Native callTool signature. Defaults to the SDK's object-parameter form. */
+  callToolStyle?: McpCallToolStyle;
 }
+
+export type McpCallToolStyle = "object" | "positional";
 
 /** Single block in tools/call result.content (multimodal-safe). */
 export type McpCallToolContentBlock =
@@ -60,6 +64,7 @@ export type McpCallToolContentBlock =
 export interface CallToolResult {
   content: McpCallToolContentBlock[];
   isError?: boolean;
+  structuredContent?: Record<string, unknown>;
 }
 
 export interface MCPResourceDescriptor {
@@ -135,6 +140,7 @@ export interface MCPClientAdapter {
         nextCursor?: string;
       }
   >;
+  /** Positional facade: set callToolStyle: "positional" when bridging this signature. */
   callTool(name: string, args: Record<string, unknown>): Promise<CallToolResult>;
   listResources(params?: {
     cursor?: string;

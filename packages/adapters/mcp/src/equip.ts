@@ -21,7 +21,7 @@ import {
   normalizeListTools,
   readResourceNormalized,
 } from "./mcp-compat";
-import type { EquipMCPOptions, MCPKit, MCPPromptsKit } from "./types";
+import type { EquipMCPOptions, MCPKit, MCPPromptsKit, McpCallToolStyle } from "./types";
 
 /**
  * Namespaces equipMemory / equipMemo keys for this adapter (aligns with core `__rejelly_internal_*__::`).
@@ -70,9 +70,35 @@ function buildPromptsKit(client: MCPClientLike): MCPPromptsKit {
       if (typeof client.listPrompts !== "function") {
         throw new Error("[@rejelly/adapter-mcp] Client has no listPrompts()");
       }
-      const raw: unknown = await client.listPrompts();
-      if (!Array.isArray(raw)) return [];
-      return raw as Awaited<ReturnType<MCPPromptsKit["list"]>>;
+      const prompts: Awaited<ReturnType<MCPPromptsKit["list"]>> = [];
+      const seenCursors = new Set<string>();
+      let cursor: string | undefined;
+      for (;;) {
+        const raw: unknown = await client.listPrompts(cursor ? { cursor } : undefined);
+        const page = Array.isArray(raw)
+          ? { prompts: raw }
+          : (raw as { prompts?: unknown; nextCursor?: unknown } | null);
+        if (!page || !Array.isArray(page.prompts)) {
+          throw new McpProtocolError("Unexpected prompts/list return shape", {
+            code: "invalid_catalog_shape",
+          });
+        }
+        prompts.push(...(page.prompts as Awaited<ReturnType<MCPPromptsKit["list"]>>));
+        const nextCursor = "nextCursor" in page ? page.nextCursor : undefined;
+        if (nextCursor !== undefined && typeof nextCursor !== "string") {
+          throw new McpProtocolError("prompts/list returned an invalid cursor", {
+            code: "invalid_cursor",
+          });
+        }
+        if (!nextCursor) return prompts;
+        if (seenCursors.has(nextCursor)) {
+          throw new McpProtocolError(`Repeated prompts/list cursor: ${nextCursor}`, {
+            code: "cursor_cycle",
+          });
+        }
+        seenCursors.add(nextCursor);
+        cursor = nextCursor;
+      }
     },
     get: async (name, args) => {
       const { messages } = await normalizeGetPrompt(client, name, args);
@@ -150,11 +176,12 @@ function buildMcpToolDefinitions(
   mcpTools: readonly McpNativeToolDescriptor[],
   client: MCPClientLike,
   namespace?: string,
+  callToolStyle?: McpCallToolStyle,
 ): { tools: ToolDefinition[]; toolMap: Record<string, ToolDefinition> } {
   const tools: ToolDefinition[] = [];
   for (const mcpTool of mcpTools) {
     const regName = resolvedToolName(mcpTool.name, namespace);
-    tools.push(fromMCPTool(mcpTool, client, { name: regName }));
+    tools.push(fromMCPTool(mcpTool, client, { name: regName, callToolStyle }));
   }
   const toolMap: Record<string, ToolDefinition> = {};
   for (const tool of tools) {
@@ -234,6 +261,7 @@ export async function equipMCP(
     maxItems = 100,
     enableResources = false,
     middleware = [],
+    callToolStyle = "object",
   } = options;
 
   const [, setListEpoch] = equipMemory<number>(`${INTERNAL_MCP_PREFIX}${clientId}::list_epoch`, 0);
@@ -274,7 +302,7 @@ export async function equipMCP(
   }
   const mcpTools = normalizeMcpToolCatalog(parsedTools);
 
-  const { tools, toolMap } = buildMcpToolDefinitions(mcpTools, client, namespace);
+  const { tools, toolMap } = buildMcpToolDefinitions(mcpTools, client, namespace, callToolStyle);
   const { resourceTools, resourceToolMap } = buildResourceToolDefinitions(
     client,
     namespace,

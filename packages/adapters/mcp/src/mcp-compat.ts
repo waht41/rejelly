@@ -3,8 +3,9 @@
  */
 
 import { type ContentPart, type JsonSchema, toolContent } from "@rejelly/core";
+import { McpProtocolError } from "./errors";
 import { type McpNativeToolDescriptor, normalizeMcpToolCatalog } from "./gateway";
-import type { CallToolResult, MCPResourceDescriptor } from "./types";
+import type { CallToolResult, MCPResourceDescriptor, McpCallToolStyle } from "./types";
 
 /** Untrusted tools/list item shape accepted by the legacy compatibility path. */
 export interface McpToolListItem {
@@ -35,10 +36,17 @@ function parseListToolsPage(raw: unknown): {
   if (raw && typeof raw === "object") {
     const o = raw as { tools?: unknown; nextCursor?: string };
     if (Array.isArray(o.tools)) {
+      if (o.nextCursor !== undefined && typeof o.nextCursor !== "string") {
+        throw new McpProtocolError("tools/list returned an invalid cursor", {
+          code: "invalid_cursor",
+        });
+      }
       return { tools: o.tools as McpToolListItem[], nextCursor: o.nextCursor };
     }
   }
-  return { tools: [] };
+  throw new McpProtocolError("Unexpected tools/list return shape", {
+    code: "invalid_catalog_shape",
+  });
 }
 
 export interface NormalizeListToolsOptions {
@@ -65,6 +73,12 @@ export async function normalizeListTools(
   const autoPaginate = options?.autoPaginate !== false;
   const maxItems = options?.maxItems ?? 100;
   const required = options?.requiredNames?.length ? new Set(options.requiredNames) : null;
+  if (!Number.isSafeInteger(maxItems) || maxItems < 1) {
+    throw new McpProtocolError("maxItems must be a positive safe integer", {
+      code: "invalid_catalog_limit",
+    });
+  }
+  const seenCursors = new Set<string>();
 
   const byName = new Map<string, McpToolListItem>();
   let cursor: string | undefined;
@@ -74,16 +88,12 @@ export async function normalizeListTools(
     required ? [...required].filter((n) => !byName.has(n)) : [];
 
   for (;;) {
-    let raw: unknown;
-    try {
-      raw = cursor !== undefined ? await listFn({ cursor }) : await listFn();
-    } catch {
-      raw = await listFn();
-    }
+    const raw = cursor !== undefined ? await listFn({ cursor }) : await listFn();
     const { tools, nextCursor } = parseListToolsPage(raw);
 
     for (const t of tools) {
       if (!byName.has(t.name)) {
+        if (byName.size >= maxItems) break;
         byName.set(t.name, t);
       }
       if (!required && byName.size >= maxItems) {
@@ -115,6 +125,13 @@ export async function normalizeListTools(
       }
     }
 
+    if (!nextCursor || !autoPaginate) break;
+    if (seenCursors.has(nextCursor)) {
+      throw new McpProtocolError(`Repeated tools/list cursor: ${nextCursor}`, {
+        code: "cursor_cycle",
+      });
+    }
+    seenCursors.add(nextCursor);
     cursor = nextCursor;
   }
 
@@ -199,11 +216,12 @@ export async function normalizeCallTool(
   client: MCPClientLike,
   name: string,
   args: Record<string, unknown>,
+  style: McpCallToolStyle = "object",
 ): Promise<CallToolResult> {
   const fn = client.callTool.bind(client);
-  let result: unknown = await fn({ name, arguments: args }).catch(() => undefined);
-  if (isCallToolResult(result)) return result;
-  result = await fn(name, args).catch(() => undefined);
+  // Never probe signatures by retrying: a failed response may follow a successful mutation.
+  const result =
+    style === "positional" ? await fn(name, args) : await fn({ name, arguments: args });
   if (isCallToolResult(result)) return result;
   throw new Error(`[@rejelly/adapter-mcp] Unexpected callTool() return shape for "${name}"`);
 }
@@ -250,8 +268,12 @@ export function formatCallToolResult(result: CallToolResult): unknown {
   const onlyText = result.content.every((c) => c.type === "text");
   if (onlyText) {
     const textContent = result.content.map((c) => (c.type === "text" ? c.text : "")).join("\n");
-    return textContent || result;
+    return result.structuredContent === undefined ? textContent || result : result;
   }
 
-  return toolContent(result.content.map(blockToContentPart));
+  const parts = result.content.map(blockToContentPart);
+  if (result.structuredContent !== undefined) {
+    parts.push({ type: "text", text: JSON.stringify(result.structuredContent) });
+  }
+  return toolContent(parts);
 }
