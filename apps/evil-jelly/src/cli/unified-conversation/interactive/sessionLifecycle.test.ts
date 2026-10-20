@@ -556,16 +556,19 @@ describe("non-TTY session lifecycle", () => {
     });
 
     expect(calls).toHaveLength(hasTool ? 4 : 3);
-    expect(transcriptUpdates.filter((update) => update.prompt)).toHaveLength(2);
+    const startedTurns = transcriptUpdates.filter((update) => update.prompt);
+    expect(startedTurns.map((update) => update.prompt)).toEqual([
+      "Inspect before unknown failure",
+      "Follow up",
+    ]);
     expect(transcriptUpdates.some((update) => update.status === "error")).toBe(true);
-    expect(
-      transcriptUpdates
-        .filter((update) => update.answer)
-        .every(
-          (update) =>
-            update.status === "completed" && update.answer === "Recovered conservatively.",
-        ),
-    ).toBe(true);
+    expect(transcriptUpdates.filter((update) => update.answer !== undefined)).toEqual(
+      startedTurns.map(({ turnId }) => ({
+        turnId,
+        status: "completed",
+        answer: "Recovered conservatively.",
+      })),
+    );
     expect(new Set(transcriptUpdates.map((update) => update.turnId)).size).toBe(2);
     expect(
       systemEvents.some((message) =>

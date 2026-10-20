@@ -1,7 +1,6 @@
 import type { Message } from "@rejelly/core";
 import { describe, expect, it } from "vitest";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
-import { emptySessionMcpState } from "../../../shared/model/mcp/sessionMcpState";
 import { textPromptInput } from "../../../shared/model/prompt/promptInput";
 import { buildLegacyResumeSeed, hydrateResumeSeed } from "./resume";
 
@@ -129,41 +128,24 @@ describe("hydrateResumeSeed", () => {
     expect(calls.users[0]).not.toContain("base64");
   });
 
-  it("hydrates a bounded transcript in one host call and reports omitted earlier turns", () => {
+  it("passes full history to hydration while reporting only the scrollback tail as visible", () => {
     const { bindings, calls } = createBindings();
     const hydrated: Parameters<NonNullable<EvilJellyBindings["hydrateHistory"]>>[0][] = [];
     bindings.hydrateHistory = (items) => hydrated.push(items);
+    const history: Message[] = Array.from({ length: 12 }, (_, index): Message[] => [
+      { role: "user", content: `Question ${index}` },
+      { role: "assistant", content: `Answer ${index}` },
+    ]).flat();
 
-    hydrateResumeSeed(bindings, "session_tail", {
-      activeContext: [],
-      transcript: [
-        {
-          id: "11:user",
-          type: "user",
-          turnId: "turn-11",
-          seq: 11,
-          content: "recent task",
-          inputKind: "initial",
-        },
-        {
-          id: "12:assistant",
-          type: "assistant",
-          turnId: "turn-11",
-          seq: 12,
-          content: "recent answer",
-        },
-      ],
-      totalTurns: 25,
-      budget: undefined,
-      mcp: emptySessionMcpState(),
-    });
+    hydrateResumeSeed(bindings, "session_tail", buildLegacyResumeSeed(history));
 
     expect(hydrated).toHaveLength(1);
-    expect(hydrated[0]).toHaveLength(2);
+    expect(hydrated[0]).toHaveLength(24);
+    expect(hydrated[0]?.[0]).toMatchObject({ type: "user", content: "Question 0" });
     expect(calls.users).toEqual([]);
     expect(calls.assistants).toEqual([]);
     expect(calls.systems).toContain(
-      "Showing the last 1 of 25 prior turns; earlier history remains saved in the session transcript.\n",
+      "Showing the last 10 of 12 prior turns; earlier history remains saved in the session transcript.\n",
     );
   });
 });

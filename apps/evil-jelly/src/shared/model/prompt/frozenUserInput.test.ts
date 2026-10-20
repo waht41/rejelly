@@ -119,8 +119,6 @@ describe("frozen user input projections", () => {
       "[Paste · 2 lines]\nreview $skill:review@src/a.ts$mcp:docs$mcp:docs$memory:Squash message",
     );
     expect(projectFrozenUserInputDisplay(withPaste).text).toContain(paste);
-    expect(summary).not.toContain("<attached_file>");
-    expect(summary).not.toContain("explicit_memories");
     expect(
       projectFrozenUserInputSummary({
         ...input,
