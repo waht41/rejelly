@@ -57,6 +57,7 @@ const MOTIONS: MotionBinding[] = [
 ];
 
 export interface LineKeybindingDeps {
+  isActive?: boolean;
   buf: TextBuffer;
   /** Exact physical rows used by rendering and caret placement. */
   wrappedRows: WrappedRow[];
@@ -80,6 +81,7 @@ export interface LineKeybindingDeps {
 
 export function useLineKeybindings(deps: LineKeybindingDeps): void {
   const {
+    isActive = true,
     buf,
     wrappedRows,
     overlayKeys,
@@ -94,126 +96,129 @@ export function useLineKeybindings(deps: LineKeybindingDeps): void {
   } = deps;
   const preferredColumnRef = useRef<number | null>(null);
 
-  useInput((input, key) => {
-    // An open picker overlay claims its keys first (nav/commit/cancel, plus
-    // whatever its config adds); the editor handles everything it declines.
-    if (overlayKeys?.current?.(input, key)) {
+  useInput(
+    (input, key) => {
+      // An open picker overlay claims its keys first (nav/commit/cancel, plus
+      // whatever its config adds); the editor handles everything it declines.
+      if (overlayKeys?.current?.(input, key)) {
+        preferredColumnRef.current = null;
+        return;
+      }
+
+      if (key.upArrow || key.downArrow) {
+        const target = verticalCaretTarget(
+          wrappedRows,
+          buf.cursor,
+          key.upArrow ? -1 : 1,
+          preferredColumnRef.current,
+          buf.caretAffinity,
+        );
+        if (target) {
+          preferredColumnRef.current = target.preferredColumn;
+          buf.setDisplayCursor(target.cursor, "nearest", target.affinity);
+        }
+        return;
+      }
+
+      // Only a consecutive vertical-motion sequence keeps its desired visual column.
       preferredColumnRef.current = null;
-      return;
-    }
-
-    if (key.upArrow || key.downArrow) {
-      const target = verticalCaretTarget(
-        wrappedRows,
-        buf.cursor,
-        key.upArrow ? -1 : 1,
-        preferredColumnRef.current,
-        buf.caretAffinity,
-      );
-      if (target) {
-        preferredColumnRef.current = target.preferredColumn;
-        buf.setDisplayCursor(target.cursor, "nearest", target.affinity);
-      }
-      return;
-    }
-
-    // Only a consecutive vertical-motion sequence keeps its desired visual column.
-    preferredColumnRef.current = null;
-    if (key.escape && (isAgentRunning || hasInterruptibleTask())) {
-      onInterrupt();
-      return;
-    }
-    if (key.escape) {
-      if (buf.text.length > 0) {
-        clearDraft();
-      }
-      return;
-    }
-
-    // Shift+Tab cycles the session interaction mode (normal ⇄ auto). Must precede the plain-Tab
-    // handler below, which inserts spaces.
-    if (key.tab && key.shift) {
-      onCycleMode();
-      return;
-    }
-
-    if (key.meta && (input === "v" || input === "V")) {
-      attachClipboardImage();
-      return;
-    }
-
-    if (key.return) {
-      // Newline: Alt/Shift+Enter (where the terminal sends them), or a trailing
-      // backslash before the caret (works on every terminal). Otherwise submit.
-      if (key.meta || key.shift) {
-        buf.insert("\n");
+      if (key.escape && (isAgentRunning || hasInterruptibleTask())) {
+        onInterrupt();
         return;
       }
-      if (buf.text.slice(0, buf.cursor).endsWith("\\")) {
-        buf.apply((s) => {
-          const head = s.text.slice(0, s.cursor).replace(/\\$/, "");
-          return { text: `${head}\n${s.text.slice(s.cursor)}`, cursor: head.length + 1 };
-        });
+      if (key.escape) {
+        if (buf.text.length > 0) {
+          clearDraft();
+        }
         return;
       }
-      // Semantic token labels count as text, so trim() covers a token-only line.
-      if (buf.text.trim().length > 0) {
-        submit();
-      }
-      return;
-    }
 
-    // Record the arrival cadence before the cursor update. The profiler is a no-op unless
-    // explicitly selected and consumes the pending event at the next committed prompt layout.
-    if (key.leftArrow && !key.ctrl && !key.meta) {
-      recordComposerLeftInput(buf.cursor);
-    }
-
-    // Pure caret/delete motions (table above); first match wins.
-    for (const motion of MOTIONS) {
-      if (motion.when(input, key)) {
-        motion.run(buf, key);
+      // Shift+Tab cycles the session interaction mode (normal ⇄ auto). Must precede the plain-Tab
+      // handler below, which inserts spaces.
+      if (key.tab && key.shift) {
+        onCycleMode();
         return;
       }
-    }
 
-    // Backspace / Delete: terminals conflate these onto the Backspace key, so
-    // both erase the char before the caret (Ctrl/Alt erases the word).
-    if (key.backspace || key.delete) {
-      if (key.ctrl || key.meta) {
-        buf.apply(deleteWordLeft);
-      } else {
-        // Display edits are expanded to a whole semantic token when they touch one.
-        buf.apply(backspace);
-      }
-      return;
-    }
-    if (key.tab) {
-      // Insert spaces, not a literal "\t": the render/caret pipeline assumes
-      // 1 char == 1 terminal cell (cursorRowCol, renderLine's slice, and Ink's
-      // width measurement all count chars), but terminals expand a tab to the
-      // next tab stop (~8 cells). That mismatch shifts the caret and overflows
-      // the bordered Box, wrapping the line and leaving a stray border. Pad to
-      // the next tab stop so the buffer stays exactly as wide as it renders.
-      const { col } = cursorRowCol(buf.text, buf.cursor);
-      buf.insert(" ".repeat(TAB_WIDTH - (col % TAB_WIDTH)));
-      return;
-    }
-
-    if (input.length > 0 && !key.ctrl && !key.meta) {
-      const normalized = normalizeNewlines(input);
-      // Pasting an image (Ctrl+V) dumps garbage bytes here rather than text.
-      // Don't corrupt the buffer with it — pull the real image off the OS
-      // clipboard and attach it as an image token instead.
-      if (looksBinary(normalized)) {
+      if (key.meta && (input === "v" || input === "V")) {
         attachClipboardImage();
         return;
       }
-      const sanitized = stripControlChars(normalized);
-      if (handleTextPaste?.(sanitized)) {
+
+      if (key.return) {
+        // Newline: Alt/Shift+Enter (where the terminal sends them), or a trailing
+        // backslash before the caret (works on every terminal). Otherwise submit.
+        if (key.meta || key.shift) {
+          buf.insert("\n");
+          return;
+        }
+        if (buf.text.slice(0, buf.cursor).endsWith("\\")) {
+          buf.apply((s) => {
+            const head = s.text.slice(0, s.cursor).replace(/\\$/, "");
+            return { text: `${head}\n${s.text.slice(s.cursor)}`, cursor: head.length + 1 };
+          });
+          return;
+        }
+        // Semantic token labels count as text, so trim() covers a token-only line.
+        if (buf.text.trim().length > 0) {
+          submit();
+        }
         return;
       }
-      buf.insert(sanitized);
-    }
-  });
+
+      // Record the arrival cadence before the cursor update. The profiler is a no-op unless
+      // explicitly selected and consumes the pending event at the next committed prompt layout.
+      if (key.leftArrow && !key.ctrl && !key.meta) {
+        recordComposerLeftInput(buf.cursor);
+      }
+
+      // Pure caret/delete motions (table above); first match wins.
+      for (const motion of MOTIONS) {
+        if (motion.when(input, key)) {
+          motion.run(buf, key);
+          return;
+        }
+      }
+
+      // Backspace / Delete: terminals conflate these onto the Backspace key, so
+      // both erase the char before the caret (Ctrl/Alt erases the word).
+      if (key.backspace || key.delete) {
+        if (key.ctrl || key.meta) {
+          buf.apply(deleteWordLeft);
+        } else {
+          // Display edits are expanded to a whole semantic token when they touch one.
+          buf.apply(backspace);
+        }
+        return;
+      }
+      if (key.tab) {
+        // Insert spaces, not a literal "\t": the render/caret pipeline assumes
+        // 1 char == 1 terminal cell (cursorRowCol, renderLine's slice, and Ink's
+        // width measurement all count chars), but terminals expand a tab to the
+        // next tab stop (~8 cells). That mismatch shifts the caret and overflows
+        // the bordered Box, wrapping the line and leaving a stray border. Pad to
+        // the next tab stop so the buffer stays exactly as wide as it renders.
+        const { col } = cursorRowCol(buf.text, buf.cursor);
+        buf.insert(" ".repeat(TAB_WIDTH - (col % TAB_WIDTH)));
+        return;
+      }
+
+      if (input.length > 0 && !key.ctrl && !key.meta) {
+        const normalized = normalizeNewlines(input);
+        // Pasting an image (Ctrl+V) dumps garbage bytes here rather than text.
+        // Don't corrupt the buffer with it — pull the real image off the OS
+        // clipboard and attach it as an image token instead.
+        if (looksBinary(normalized)) {
+          attachClipboardImage();
+          return;
+        }
+        const sanitized = stripControlChars(normalized);
+        if (handleTextPaste?.(sanitized)) {
+          return;
+        }
+        buf.insert(sanitized);
+      }
+    },
+    { isActive },
+  );
 }

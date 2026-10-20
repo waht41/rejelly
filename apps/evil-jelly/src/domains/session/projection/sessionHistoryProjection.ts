@@ -7,6 +7,7 @@ import { messageContentToText } from "../../../shared/model/message/content";
 import {
   projectFrozenUserInputDisplay,
   projectFrozenUserInputPlainText,
+  projectFrozenUserInputSummary,
 } from "../../../shared/model/prompt/frozenUserInput";
 import { SESSION_BLOB_SCHEME, sessionBlobRefSchema } from "../../../shared/session/blobContract";
 import {
@@ -262,6 +263,7 @@ function appendTranscriptMessage(
         turnId: identity.turnId,
         seq: identity.seq,
         content: assistantDisplayText(text),
+        ...(message.tool_calls?.length ? { hasToolCalls: true as const } : {}),
       });
     }
     const calls = message.tool_calls ?? [];
@@ -336,8 +338,10 @@ export function buildTranscript(
   const pendingTools = new Map<string, Extract<TranscriptItem, { type: "tool" }>>();
   const toolItems = new Map<string, Extract<TranscriptItem, { type: "tool" }>>();
   const observations = new Map<string, ToolObservationRecordedEvent>();
+  const turnStatuses = new Map<string, "completed" | "interrupted" | "error">();
 
   for (const event of replay.events) {
+    if (event.type === "turn_completed") turnStatuses.set(event.turnId, event.status);
     if (event.type === "legacy_snapshot") {
       let legacyTurn = 0;
       event.messages.forEach((message, index) => {
@@ -383,6 +387,10 @@ export function buildTranscript(
           seq: event.seq,
           content,
           inputKind: event.inputKind,
+          // Legacy migrations compare projections exactly and have no paste/reference nodes.
+          ...(event.input.kind === "resolved"
+            ? { promptSummary: projectFrozenUserInputSummary(event.input) }
+            : {}),
           ...(display.attachments.length > 0 ? { attachments: [...display.attachments] } : {}),
           ...(images ? { images } : {}),
         });
@@ -435,6 +443,11 @@ export function buildTranscript(
     tool.ok = observation.ok;
   }
 
+  for (const item of items) {
+    if (item.type === "user" && item.inputKind === "initial") {
+      item.turnStatus = turnStatuses.get(item.turnId) ?? "interrupted";
+    }
+  }
   return tailTranscript(items, options.tailTurns);
 }
 

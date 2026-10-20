@@ -37,11 +37,13 @@ export function usePromptLayout({
   text,
   cursor,
   caretAffinity,
+  active = true,
   label,
 }: {
   text: string;
   cursor: number;
   caretAffinity: CaretAffinity;
+  active?: boolean;
   label: string;
 }): PromptLayout {
   const { setCursorPosition } = useCursor();
@@ -52,7 +54,7 @@ export function usePromptLayout({
   const caret = caretCell(rows, cursor, caretAffinity);
 
   setCursorPosition(
-    textArea
+    active && textArea
       ? { x: textArea.x + caret.col, y: textArea.y + caret.row }
       : // The first frame has not been measured, so there is no honest caret position yet.
         undefined,

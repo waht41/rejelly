@@ -32,6 +32,32 @@ evil audit --family clone
 
 Run `evil` to chat, inspect and search code, edit files with diff confirmation, execute commands, and verify changes in one unified session.
 
+### Reading previous answers
+
+Press `Ctrl+T` or run `/transcript` to open a read-only answer browser. It displays original
+Markdown source, not a rendered Markdown document, and draws only the current viewport.
+
+- `Left` / `Right`: previous / next turn; `Up` / `Down`, `PgUp` / `PgDn`, and `Home` / `End`: scroll.
+- `Tab`: switch between the answer and the newest-first turn directory; `Enter`: open a directory entry.
+- `/`: search question and answer text; `Enter` accepts the query, `Esc` cancels editing it.
+- `p`: switch between the answer and the complete original question, each with its own scroll position.
+- `c`: copy the complete, unwrapped source of the current answer or question; `Esc` or `Ctrl+T`: close the browser.
+
+The answer view shows at most two lines of question preview, with `p full question` when truncated.
+Previews and directory entries fold structured paste blocks into labels and retain file, image, Skill,
+MCP, and Memory reference labels without expanding their resolved context. The question view preserves
+all submitted text and paste contents. Legacy text is kept verbatim when structured input is unavailable.
+
+The browser starts at the latest ended turn and remembers its reading position when reopened.
+Resumed answers remain available beyond the ten turns printed into the main scrollback. Steers and
+`/continue` stay attached to their original turn. Running turns do not stream into this reader;
+interrupted/error output is labelled partial, and legacy turn status is marked unknown. Uncommitted
+stream fragments are not recovered as final answers. New turns do not take over the selected answer.
+
+Opening a reader keeps the composer draft and attachments mounted but pauses editor input. Pending
+approvals take priority and dismiss the reader. `/clear` starts a new session and resets the answer
+archive. Tool results retain their existing `Ctrl+O` / `/expand-tool` entry points.
+
 ### Local Skills
 
 Evil Jelly loads local, filesystem-backed instruction Skills from Evil-specific and portable

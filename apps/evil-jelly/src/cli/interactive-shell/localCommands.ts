@@ -18,6 +18,7 @@ export interface InteractiveCommandPorts {
   listTools: () => InteractiveToolEntry[];
   getLastAssistantMessage: () => string | undefined;
   openTranscript: () => void;
+  openAnswerTranscript: () => void;
   copyText: (text: string) => Promise<void>;
   logSystem: (message: string) => void;
 }
@@ -78,6 +79,10 @@ export function createInteractiveCommandHandler(
     const mode = ports.applyMode(text);
     if (mode) {
       ports.logSystem(`Mode → ${mode.label} (${mode.hint})`);
+      return true;
+    }
+    if (text === "/transcript") {
+      ports.openAnswerTranscript();
       return true;
     }
     if (handleExpandTool(text, ports)) {

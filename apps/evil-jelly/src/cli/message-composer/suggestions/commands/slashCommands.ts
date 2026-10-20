@@ -22,13 +22,14 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/compress", description: "Compress the current session history" },
   { name: "/mode", description: "Toggle interaction mode (normal ⇄ auto)" },
   { name: "/copy-last", description: "Copy the last assistant message as raw markdown" },
+  { name: "/transcript", description: "Browse previous answers as Markdown source (Ctrl+T)" },
   {
     name: "/expand-tool",
     description:
       "Open the tool result picker; add a number to print one directly, e.g. /expand-tool #5",
   },
-  { name: "/continue", description: "Continue the latest failed or interrupted task" },
   { name: "/stop", description: "Interrupt the running task" },
+  { name: "/continue", description: "Continue the latest failed or interrupted task" },
   { name: "/exit", description: "Quit evil-jelly" },
 ];
 

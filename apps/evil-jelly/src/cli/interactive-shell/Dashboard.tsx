@@ -8,6 +8,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { textPromptInput } from "../../shared/model/prompt/promptInput";
 import { composerProfileEnabled } from "../../shared/profile/selection";
 import { hasActiveInterruptibleTask } from "../../shared/task-interruption/taskStack";
+import { AnswerTranscriptOverlay } from "../conversation-display/answer-transcript/AnswerTranscriptOverlay";
+import { useAnswerTranscriptStore } from "../conversation-display/answer-transcript/viewStore";
 import { AssistantStreamView } from "../conversation-display/assistant-stream/AssistantStreamView";
 import { StaticHistory } from "../conversation-display/history/StaticHistory";
 import { RunningToolList } from "../conversation-display/running-tools/RunningToolList";
@@ -124,6 +126,9 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
   const openTranscript = useToolTranscriptViewStore((s) => s.openTranscript);
   const view = useDecisionStore((state) => state.view);
   const decision = useDecisionStore((state) => state.decision);
+  const answerRequested = useAnswerTranscriptStore((state) => state.open);
+  const answerOpen = answerRequested && !transcriptOpen && decision.type === "idle";
+  const overlayOpen = transcriptOpen || answerOpen;
   const submitChoice = useDecisionStore((state) => state.submitChoice);
   const cancelChoice = useDecisionStore((state) => state.cancelChoice);
   const submitManager = useDecisionStore((state) => state.submitManager);
@@ -174,11 +179,18 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
 
   useEffect(() => subscribePendingSubmissions(setPendingSubmissions), []);
 
-  // ctrl+o opens the tool transcript; ToolTranscriptOverlay handles its own close (Esc / ctrl+o)
-  useInput((input, key) => {
-    if (!transcriptOpen && key.ctrl && input === "o") {
-      openTranscript();
+  // Decisions take priority over readers; otherwise an approval can become invisible.
+  useEffect(() => {
+    if (decision.type !== "idle") {
+      useAnswerTranscriptStore.getState().closeTranscript();
+      useToolTranscriptViewStore.getState().closeTranscript();
     }
+  }, [decision.type]);
+
+  useInput((input, key) => {
+    if (overlayOpen || decision.type !== "idle" || !key.ctrl) return;
+    if (input === "o") openTranscript();
+    if (input === "t") useAnswerTranscriptStore.getState().openTranscript();
   });
 
   // Keep <Static> mounted across transcript open/close. Ink's <Static> tracks in instance
@@ -190,9 +202,9 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
     <>
       <StaticHistory turns={staticTurns} columns={columns} />
 
-      {transcriptOpen ? (
-        <ToolTranscriptOverlay />
-      ) : (
+      {transcriptOpen ? <ToolTranscriptOverlay /> : null}
+      {answerOpen ? <AnswerTranscriptOverlay copyText={copyTextToClipboard} /> : null}
+      <Box flexDirection="column" display={overlayOpen ? "none" : "flex"}>
         <Box flexDirection="column" marginTop={1} marginBottom={1}>
           <Box ref={topTransientRef} flexDirection="column">
             {runningTools.length > 0 ? (
@@ -253,6 +265,7 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
                   <PendingSubmissionList items={pendingSubmissions} columns={columns} />
                   {isAgentWorking ? <Text dimColor> · /stop or Esc to interrupt</Text> : null}
                   <MessageComposer
+                    active={!overlayOpen}
                     label=""
                     isAgentRunning={isAgentWorking}
                     hasInterruptibleTask={hasActiveInterruptibleTask}
@@ -271,7 +284,7 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
             ) : null}
           </Box>
         </Box>
-      )}
+      </Box>
     </>
   );
 }

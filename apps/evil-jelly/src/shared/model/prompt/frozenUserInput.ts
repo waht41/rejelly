@@ -268,6 +268,22 @@ export function projectFrozenUserInputDisplay(input: FrozenUserInputV1): UserInp
   return { text, attachments };
 }
 
+/** Compact authored input without expanding paste blocks or resolved reference context. */
+export function projectFrozenUserInputSummary(input: FrozenUserInputV1): string {
+  if (input.kind === "legacy") return input.display.text;
+  return projectFrozenUserInputDisplay({
+    ...input,
+    nodes: input.nodes.map((node) => {
+      if (node.kind !== "paste") return node;
+      const lines = node.text.split(/\r\n?|\n/).length;
+      return {
+        kind: "text" as const,
+        text: `[Paste · ${lines} ${lines === 1 ? "line" : "lines"}]`,
+      };
+    }),
+  }).text;
+}
+
 export function projectFrozenUserInputPlainText(input: FrozenUserInputV1): string {
   return projectFrozenUserInputDisplay(input).text;
 }

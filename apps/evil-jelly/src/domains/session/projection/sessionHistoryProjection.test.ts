@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Message } from "@rejelly/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { FrozenResolvedUserInputV1 } from "../../../shared/model/prompt/frozenUserInput";
 import { persistMessageImageBlobs } from "../journal/sessionBlobStore";
 import type { MessageRecordedEvent, SessionEvent } from "../model/sessionEvents";
 import { parseStoredSessionMessage } from "../model/storedSessionMessage";
@@ -441,6 +442,42 @@ describe("session history projections", () => {
       content: "inspect this",
       attachments: [{ type: "file", label: "secret.txt", action: "read" }],
     });
+  });
+
+  it("restores original questions and compact summaries rather than expanded model input", () => {
+    const input: FrozenResolvedUserInputV1 = {
+      version: 1,
+      kind: "resolved",
+      nodes: [
+        { kind: "text", text: "Inspect\n" },
+        { kind: "paste", text: "trace\n<mcp_reference>pasted XML</mcp_reference>" },
+        {
+          kind: "file",
+          path: "secret.txt",
+          action: "read",
+          status: "resolved",
+          context: "private file body",
+        },
+        { kind: "mcp", serverId: "docs", status: "selected" },
+      ],
+    };
+    const events: SessionEvent[] = [
+      {
+        type: "user_input_recorded",
+        seq: 1,
+        timestamp: 101,
+        turnId: "turn-1",
+        inputKind: "initial",
+        input,
+      },
+    ];
+    const [question] = buildTranscript(replay(events));
+    expect(question).toMatchObject({
+      type: "user",
+      content: "Inspect\ntrace\n<mcp_reference>pasted XML</mcp_reference>@secret.txt$mcp:docs",
+      promptSummary: "Inspect\n[Paste · 2 lines]@secret.txt$mcp:docs",
+    });
+    expect(JSON.stringify(question)).not.toContain("private file body");
   });
 
   it("validates stored image invariants and materializes only referenced blobs", async () => {

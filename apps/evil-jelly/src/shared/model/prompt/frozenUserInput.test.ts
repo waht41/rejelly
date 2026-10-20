@@ -8,6 +8,7 @@ import {
   getFrozenUserInputOrigin,
   projectFrozenUserInputDisplay,
   projectFrozenUserInputMessage,
+  projectFrozenUserInputSummary,
   registerFrozenUserInputOrigin,
 } from "./frozenUserInput";
 
@@ -105,6 +106,34 @@ describe("frozen user input projections", () => {
       "Keep the PR description suitable for a final commit message.",
     );
     expect(frozenUserInputMcpServerIds(input)).toEqual(["docs"]);
+  });
+
+  it("folds only structured pastes in summaries and never includes resolved reference bodies", () => {
+    const paste = "[Tools] mcp-reference → trace\r\n<mcp_reference>actual paste</mcp_reference>";
+    const withPaste: FrozenResolvedUserInputV1 = {
+      ...input,
+      nodes: [{ kind: "paste", text: paste }, { kind: "text", text: "\n" }, ...input.nodes],
+    };
+    const summary = projectFrozenUserInputSummary(withPaste);
+    expect(summary).toBe(
+      "[Paste · 2 lines]\nreview $skill:review@src/a.ts$mcp:docs$mcp:docs$memory:Squash message",
+    );
+    expect(projectFrozenUserInputDisplay(withPaste).text).toContain(paste);
+    expect(
+      projectFrozenUserInputSummary({
+        ...input,
+        nodes: [{ kind: "text", text: paste }],
+      }),
+    ).toBe(paste);
+    expect(
+      projectFrozenUserInputSummary({
+        version: 1,
+        kind: "legacy",
+        display: { text: paste, attachments: [] },
+        message: { role: "user", content: paste },
+        imageBlobs: {},
+      }),
+    ).toBe(paste);
   });
 
   it("copies only the canonical origin association between Message projections", () => {
