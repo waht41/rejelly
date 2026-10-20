@@ -47,7 +47,7 @@ class Input extends PassThrough {
 
 let instance: ReturnType<typeof render> | undefined;
 let stdin: Input;
-let stdout: PassThrough;
+let stdout: PassThrough & { columns: number; rows: number; isTTY: boolean };
 let output = "";
 
 beforeEach(() => {
@@ -74,6 +74,40 @@ afterEach(() => {
   resetAnswerTranscriptSession();
   resetToolTranscriptViewSession();
   resetOutputSession();
+});
+
+it("stretches the fresh composer divider to terminal width across resize and reader close", async () => {
+  instance = render(createElement(Dashboard, { onCtrlCAbort: vi.fn() }), {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: new PassThrough() as unknown as NodeJS.WriteStream,
+    debug: true,
+    exitOnCtrlC: false,
+    patchConsole: false,
+  });
+  const dividerWidth = () =>
+    output
+      .split("\n")
+      .map((line) => line.trim())
+      .reverse()
+      .find((line) => /^─+$/.test(line))?.length;
+  await vi.waitFor(() => expect(dividerWidth()).toBe(100));
+
+  stdout.columns = 72;
+  stdout.emit("resize");
+  await vi.waitFor(() => expect(dividerWidth()).toBe(72));
+
+  for (const shortcut of ["\u0014", "\u000f"]) {
+    // Ctrl+T answers, Ctrl+O tools
+    output = "";
+    stdin.write(shortcut);
+    const title = shortcut === "\u0014" ? "Transcript" : "Tool Calls";
+    await vi.waitFor(() => expect(output).toContain(title));
+    output = "";
+    stdin.write("\u001b");
+    await vi.waitFor(() => expect(dividerWidth()).toBe(72));
+  }
+  expect(mounts.history).toBe(1);
 });
 
 it("keeps the draft, attachments, and Static instance while reader keys own input", async () => {

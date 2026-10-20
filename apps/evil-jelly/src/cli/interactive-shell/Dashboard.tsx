@@ -204,7 +204,7 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
 
       {transcriptOpen ? <ToolTranscriptOverlay /> : null}
       {answerOpen ? <AnswerTranscriptOverlay copyText={copyTextToClipboard} /> : null}
-      <Box display={overlayOpen ? "none" : "flex"}>
+      <Box flexDirection="column" display={overlayOpen ? "none" : "flex"}>
         <Box flexDirection="column" marginTop={1} marginBottom={1}>
           <Box ref={topTransientRef} flexDirection="column">
             {runningTools.length > 0 ? (
