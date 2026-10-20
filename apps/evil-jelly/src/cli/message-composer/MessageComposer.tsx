@@ -59,6 +59,8 @@ export type ClipboardImageReadResult =
   | { ok: false; message: string };
 
 export interface MessageComposerProps {
+  /** Keep the draft mounted while a read-only overlay owns the terminal. */
+  active?: boolean;
   label: string;
   isAgentRunning: boolean;
   hasInterruptibleTask: () => boolean;
@@ -70,6 +72,7 @@ export interface MessageComposerProps {
 }
 
 export function MessageComposer({
+  active = true,
   label,
   isAgentRunning,
   hasInterruptibleTask,
@@ -106,6 +109,7 @@ export function MessageComposer({
     text: buf.text,
     cursor: buf.cursor,
     caretAffinity: buf.caretAffinity,
+    active,
     label,
   });
 
@@ -179,6 +183,7 @@ export function MessageComposer({
   };
 
   useLineKeybindings({
+    isActive: active,
     buf,
     wrappedRows: promptLayout.rows,
     overlayKeys: overlayKeysRef,

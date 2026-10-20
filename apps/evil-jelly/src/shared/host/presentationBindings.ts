@@ -1,4 +1,4 @@
-import type { TranscriptItem } from "../session/transcript";
+import type { TranscriptItem, TranscriptTurnUpdate } from "../session/transcript";
 import type {
   ToolCallHandle,
   ToolObservationBlock,
@@ -50,6 +50,8 @@ export interface ConversationPresentationBindings {
   appendToolOutput?: (toolCallId: string, chunk: string) => void;
   logToolBlock: (block: ToolObservationBlock) => void;
   hydrateHistory?: (items: TranscriptItem[]) => void;
+  /** Read-only answer browser lifecycle, independent of scrollback and streamed fragments. */
+  onTranscriptTurn?: (update: TranscriptTurnUpdate) => void;
   clearHistory?: () => void;
   clearScreen?: () => void;
   showSessionBanner?: () => void;

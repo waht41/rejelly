@@ -26,11 +26,12 @@ import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import { messageContentToText } from "../../../shared/model/message/content";
 import { projectFrozenUserInputMessage } from "../../../shared/model/prompt/frozenUserInput";
 import { textPromptInput } from "../../../shared/model/prompt/promptInput";
-import type { TranscriptItem } from "../../../shared/session/transcript";
+import type { TranscriptItem, TranscriptTurnUpdate } from "../../../shared/session/transcript";
 import {
   interruptActiveTask,
   resetInterruptibleTaskStack,
 } from "../../../shared/task-interruption/taskStack";
+import { buildAnswerTranscript } from "../../conversation-display/answer-transcript/projection";
 import { withRetry } from "../../model-composition/withRetry";
 import { buildSessionResumeSeed } from "./resume";
 import { createInteractiveRunControl } from "./runControl";
@@ -162,6 +163,8 @@ describe("non-TTY session lifecycle", () => {
       "/status",
       "/exit",
     ]);
+    const transcriptUpdates: TranscriptTurnUpdate[] = [];
+    firstRunBindings.onTranscriptTurn = (update) => transcriptUpdates.push(update);
     const firstRunSystemEvents: string[] = [];
     firstRunBindings.logSystemEvent = (message) => firstRunSystemEvents.push(message);
     await runEvilJellyHost(firstRunBindings, {
@@ -181,6 +184,17 @@ describe("non-TTY session lifecycle", () => {
       sessionsRoot,
     });
     expect(firstResume).toBeDefined();
+    const resumedAnswer = buildAnswerTranscript(firstResume?.transcript ?? [])[0];
+    expect(transcriptUpdates.at(-1)).toEqual({
+      turnId: resumedAnswer?.id,
+      answer: resumedAnswer?.answer,
+      status: "completed",
+    });
+    expect(resumedAnswer?.prompt).toBe("Inspect the workspace");
+    expect(transcriptUpdates.find((update) => update.prompt)).toMatchObject({
+      prompt: resumedAnswer?.prompt,
+      promptSummary: resumedAnswer?.promptSummary,
+    });
 
     const secondModel = createMockModel();
     secondModel.sequence([
@@ -492,6 +506,8 @@ describe("non-TTY session lifecycle", () => {
       "/exit",
     ]);
     bindings.logSystemEvent = (message) => systemEvents.push(message);
+    const transcriptUpdates: TranscriptTurnUpdate[] = [];
+    bindings.onTranscriptTurn = (update) => transcriptUpdates.push(update);
     const hasTool = mode === "post-tool" || mode === "post-tool-pre-output";
     const safeRetry = mode === "pre-output" || mode === "post-tool-pre-output";
     const failure = safeRetry
@@ -540,6 +556,17 @@ describe("non-TTY session lifecycle", () => {
     });
 
     expect(calls).toHaveLength(hasTool ? 4 : 3);
+    expect(transcriptUpdates.filter((update) => update.prompt)).toHaveLength(2);
+    expect(transcriptUpdates.some((update) => update.status === "error")).toBe(true);
+    expect(
+      transcriptUpdates
+        .filter((update) => update.answer)
+        .every(
+          (update) =>
+            update.status === "completed" && update.answer === "Recovered conservatively.",
+        ),
+    ).toBe(true);
+    expect(new Set(transcriptUpdates.map((update) => update.turnId)).size).toBe(2);
     expect(
       systemEvents.some((message) =>
         message.includes(`Current task failed: ${failure}. Returning to router.`),

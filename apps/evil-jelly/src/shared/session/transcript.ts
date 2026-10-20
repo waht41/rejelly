@@ -12,6 +12,17 @@ import type { SessionBlobMetadata, SessionBlobRef } from "./blobContract";
 
 export const RESUME_VISIBLE_TURNS = 10;
 
+export type TranscriptTurnStatus = "running" | "completed" | "interrupted" | "error" | "unknown";
+
+/** Presentation-only turn updates; never part of the model context or storage schema. */
+export interface TranscriptTurnUpdate {
+  turnId: string;
+  status: TranscriptTurnStatus;
+  prompt?: string;
+  promptSummary?: string;
+  answer?: string;
+}
+
 export interface TranscriptImage {
   blobRef: SessionBlobRef;
   detail?: "auto" | "low" | "high";
@@ -26,6 +37,12 @@ export type TranscriptItem =
       seq: number;
       content: string;
       inputKind?: "initial" | "steer";
+      /** Compact authored input; paste bodies are represented by labels, not expanded. */
+      promptSummary?: string;
+      /** Reconstructed lifecycle on initial user items; absent for legacy history. */
+      turnStatus?: TranscriptTurnStatus;
+      /** Assistant text accompanying tool calls is commentary, not a final answer. */
+      hasToolCalls?: true;
       attachments?: UserInputAttachmentDisplay[];
       images?: TranscriptImage[];
     }

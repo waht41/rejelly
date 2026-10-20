@@ -22,6 +22,7 @@ import {
   type FrozenUserInputV1,
   frozenUserInputMcpServerIds,
   projectFrozenUserInputDisplay,
+  projectFrozenUserInputSummary,
   type ResolvedUserInputV1,
 } from "../../shared/model/prompt/frozenUserInput";
 import type { PromptInput } from "../../shared/model/prompt/promptInput";
@@ -128,7 +129,16 @@ async function commitUserInput(
         ? frozen.nodes.filter((node) => node.kind === "image").length
         : 0);
   runtime.session.setNextImageOrdinal(nextImageOrdinal);
-  runtime.host.logUserMessage(formatUserInputDisplay(projectFrozenUserInputDisplay(frozen)));
+  const display = projectFrozenUserInputDisplay(frozen);
+  runtime.host.logUserMessage(formatUserInputDisplay(display));
+  if (inputKind === "initial") {
+    runtime.host.onTranscriptTurn?.({
+      turnId,
+      status: "running",
+      prompt: display.text,
+      promptSummary: projectFrozenUserInputSummary(frozen),
+    });
+  }
   return {
     frozen,
     message: await materializeFrozenUserInputMessage(frozen, {
@@ -231,6 +241,9 @@ async function runCommittedConversationTurn(
   runtime: ConversationTurnRuntime,
   input: CommittedConversationTurn,
 ): Promise<TurnExecutionResult> {
+  let transcriptStatus: "completed" | "interrupted" | "error" = "error";
+  let transcriptAnswer: string | undefined;
+  runtime.host.onTranscriptTurn?.({ turnId: input.turnId, status: "running" });
   let turnClosureAttempted = false;
   let modelOutputReceived = false;
   let retryHistory: Message[] | undefined;
@@ -308,6 +321,8 @@ async function runCommittedConversationTurn(
         runtime.session.currentBudget(),
       );
     }
+    transcriptStatus = result.interrupted ? "interrupted" : "completed";
+    transcriptAnswer = result.reply;
     runtime.host.logAssistantMessage(result.reply);
     if (result.interrupted) {
       return {
@@ -324,6 +339,7 @@ async function runCommittedConversationTurn(
     return { status: "completed" };
   } catch (error) {
     if (isAbortError(error)) {
+      transcriptStatus = "interrupted";
       if (runtime.sessionRecorder && !turnClosureAttempted) {
         await closeTurnAfterFailure(runtime, input.turnId, "interrupted");
       }
@@ -444,6 +460,13 @@ async function runCommittedConversationTurn(
           }),
         };
     }
+    throw error;
+  } finally {
+    runtime.host.onTranscriptTurn?.({
+      turnId: input.turnId,
+      status: transcriptStatus,
+      ...(transcriptAnswer === undefined ? {} : { answer: transcriptAnswer }),
+    });
   }
 }
 

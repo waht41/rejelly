@@ -1,3 +1,4 @@
+import { useAnswerTranscriptStore } from "../conversation-display/answer-transcript/viewStore";
 import { buildToolTranscriptEntries } from "../conversation-display/tool-transcript/projection";
 import { useToolTranscriptViewStore } from "../conversation-display/tool-transcript/viewStore";
 import { useOutputStore } from "../conversation-display/useOutputStore";
@@ -17,7 +18,14 @@ export const handleLocalCommand = createInteractiveCommandHandler({
   getLastAssistantMessage: () =>
     [...useOutputStore.getState().history].reverse().find((turn) => turn.type === "assistant")
       ?.content,
-  openTranscript: () => useToolTranscriptViewStore.getState().openTranscript(),
+  openTranscript: () => {
+    useAnswerTranscriptStore.getState().closeTranscript();
+    useToolTranscriptViewStore.getState().openTranscript();
+  },
+  openAnswerTranscript: () => {
+    useToolTranscriptViewStore.getState().closeTranscript();
+    useAnswerTranscriptStore.getState().openTranscript();
+  },
   copyText: copyTextToClipboard,
   logSystem: (message) => useOutputStore.getState().logSystem(message),
 });

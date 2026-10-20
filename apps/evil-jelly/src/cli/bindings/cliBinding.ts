@@ -16,6 +16,10 @@ import type { ToolConfirmationBindings } from "../../shared/host/toolConfirmatio
 import { formatStartupTimelineSummary } from "../../shared/profile/startup/summary";
 import { startupTimeline } from "../../shared/profile/startup/timeline";
 import { resetInterruptibleTaskStack } from "../../shared/task-interruption/taskStack";
+import {
+  resetAnswerTranscriptSession,
+  useAnswerTranscriptStore,
+} from "../conversation-display/answer-transcript/viewStore";
 import { resetToolTranscriptViewSession } from "../conversation-display/tool-transcript/viewStore";
 import {
   resetOutputSession,
@@ -67,6 +71,7 @@ function resetCliBindingSession(): void {
   resetOutputSession();
   resetModeSession();
   resetToolTranscriptViewSession();
+  resetAnswerTranscriptSession();
   resetInterruptibleTaskStack("CLI binding session reset");
 }
 
@@ -138,9 +143,12 @@ function createOutputBindings(): ConversationPresentationBindings {
     },
     hydrateHistory: (items) => {
       out().hydrateHistory(items);
+      useAnswerTranscriptStore.getState().hydrate(items);
     },
+    onTranscriptTurn: (update) => useAnswerTranscriptStore.getState().updateTurn(update),
     clearHistory: () => {
       out().clearHistory();
+      resetAnswerTranscriptSession();
     },
     logToolBlock: (block) => {
       const full =

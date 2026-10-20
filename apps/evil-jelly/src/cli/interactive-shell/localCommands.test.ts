@@ -7,6 +7,7 @@ function createPorts(overrides: Partial<InteractiveCommandPorts> = {}): Interact
     listTools: () => [],
     getLastAssistantMessage: () => undefined,
     openTranscript: vi.fn(),
+    openAnswerTranscript: vi.fn(),
     copyText: vi.fn(async () => {}),
     logSystem: vi.fn(),
     ...overrides,
@@ -98,6 +99,14 @@ describe("interactive commands", () => {
     expect(ports.logSystem).toHaveBeenCalledWith(
       expect.stringContaining("Proposed diff (not applied)"),
     );
+  });
+
+  it("opens answers locally without submitting a model request or logging history", () => {
+    const ports = createPorts();
+    expect(createInteractiveCommandHandler(ports)("/transcript")).toBe(true);
+    expect(ports.openAnswerTranscript).toHaveBeenCalledOnce();
+    expect(ports.openTranscript).not.toHaveBeenCalled();
+    expect(ports.logSystem).not.toHaveBeenCalled();
   });
 
   it("copies the last assistant message", async () => {
