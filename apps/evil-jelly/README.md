@@ -395,7 +395,7 @@ pnpm typecheck      # TypeScript checking
 - **`inspect --file <path>`**: inspect a Session V2/V3 JSONL file directly in read-only mode without requiring its recorded workspace to be active. It cannot be combined with a positional Session id or `--all-workspaces`.
 - `--snapshot <traceId>`: restore a snapshot from a Review trace before entering the session. Mutually exclusive with `--mock`, `--resume`, and `--headless`.
 - `--mock <traceId>`: replay an interactive session from a Review trace's model output and snapshot cache. Mutually exclusive with `--snapshot`, `--resume`, and `--headless`.
-- `--mock-inputs`: with `--mock`, enqueue user inputs recovered from the trace. Requires `--mock` and cannot be combined with `--input`.
+- `--mock-inputs`: with `--mock`, enqueue user inputs from the current conversation agent's `props.message` (a user message with string or text-only content parts). Requires `--mock` and cannot be combined with `--input`. Legacy `props.userInput` and image inputs are not supported; unsupported input formats fail explicitly. Traces without user inputs fall back to manual input.
 - `--headless`: run UnifiedAgent once without Ink. Requires `--input` and cannot be combined with `--resume`, `--snapshot`, or `--mock`.
 - `--auto-accept`: accept tool confirmations in headless test/evaluation runs. Requires `--headless`.
 - `--result-json <path>`: write a versioned machine-readable headless run summary with Session, model, token, tool, output, and error facts. Requires `--headless` and `--session-store`.

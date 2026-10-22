@@ -31,7 +31,6 @@ type TraceReplayStep =
 const DEFAULT_TEXT_CHUNK_SIZE = 12;
 const MIN_CHUNK_INTERVAL_MS = 1;
 const MAX_CHUNK_INTERVAL_MS = 80;
-const CONVERSATION_AGENT_IDS = new Set(["evil_jelly_unified_agent", "evil_jelly_workspace_agent"]);
 
 function isTurnEndEvent(event: TraceEvent): event is TurnEndEvent {
   return event.type === EVENTS.TURN_END;
@@ -176,24 +175,53 @@ export function stripPromptJournal(snapshot: AgentSnapshot): AgentSnapshot {
 
 function propsUserInput(props: unknown): string | undefined {
   if (!props || typeof props !== "object" || Array.isArray(props)) {
+    throw new Error("Unsupported mock input format: expected conversation agent props.");
+  }
+  if ("operation" in props && props.operation === "compress") {
     return undefined;
   }
-  const raw = (props as Record<string, unknown>).userInput;
-  if (typeof raw !== "string") {
-    return undefined;
+  const message = "message" in props ? props.message : undefined;
+  if (
+    !message ||
+    typeof message !== "object" ||
+    Array.isArray(message) ||
+    !("role" in message) ||
+    message.role !== "user" ||
+    !("content" in message)
+  ) {
+    throw new Error(
+      'Unsupported mock input format: expected props.message with role "user"; --mock-inputs requires the current trace format.',
+    );
   }
-  const trimmed = raw.trim();
+  const content = message.content;
+  let text: string;
+  if (typeof content === "string") {
+    text = content;
+  } else if (
+    Array.isArray(content) &&
+    content.every(
+      (part) =>
+        part && typeof part === "object" && part.type === "text" && typeof part.text === "string",
+    )
+  ) {
+    text = content.map((part) => part.text).join("");
+  } else {
+    throw new Error(
+      "Unsupported mock input format: --mock-inputs requires props.message.content to be a string or text-only content parts; image inputs cannot be replayed automatically.",
+    );
+  }
+  const trimmed = text.trim();
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
 export function traceEventsToMockInputs(events: TraceEvent[]): string[] {
   const inputs: string[] = [];
   for (const event of [...events].sort((a, b) => a.timestamp - b.timestamp)) {
-    if (!isAgentStartEvent(event) || !CONVERSATION_AGENT_IDS.has(event.agentId ?? "")) {
+    if (!isAgentStartEvent(event) || event.agentId !== "evil_jelly_unified_agent") {
       continue;
     }
     const input = propsUserInput(event.props);
-    if (input === undefined || inputs[inputs.length - 1] === input) {
+    if (input === undefined) {
       continue;
     }
     inputs.push(input);
@@ -201,7 +229,10 @@ export function traceEventsToMockInputs(events: TraceEvent[]): string[] {
   return inputs;
 }
 
-export async function loadMockReplayFromTraceId(traceId: string): Promise<{
+export async function loadMockReplayFromTraceId(
+  traceId: string,
+  enqueueTraceInputs: boolean,
+): Promise<{
   model: ModelAdapter;
   snapshot: AgentSnapshot;
   sequenceLength: number;
@@ -221,6 +252,6 @@ export async function loadMockReplayFromTraceId(traceId: string): Promise<{
     model,
     snapshot,
     sequenceLength: steps.length,
-    inputs: traceEventsToMockInputs(events),
+    inputs: enqueueTraceInputs ? traceEventsToMockInputs(events) : [],
   };
 }
