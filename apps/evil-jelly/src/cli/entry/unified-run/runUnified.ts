@@ -119,7 +119,12 @@ export async function runUnified(options: RunUnifiedOptions): Promise<void> {
     }
     const { bindings, runControl } = interactiveShell;
     const mockTraceId = startup.kind === "mock" ? startup.traceId : undefined;
-    const mockReplay = mockTraceId ? await loadMockReplayFromTraceId(mockTraceId) : undefined;
+    const mockReplay = mockTraceId
+      ? await loadMockReplayFromTraceId(
+          mockTraceId,
+          startup.kind === "mock" && startup.enqueueTraceInputs,
+        )
+      : undefined;
     if (mockReplay) {
       bindings.logSystemEvent(
         `Mock replay loaded from trace ${mockTraceId} (${mockReplay.sequenceLength} model turn(s)).\n`,
