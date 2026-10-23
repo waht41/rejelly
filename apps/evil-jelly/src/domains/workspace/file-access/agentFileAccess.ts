@@ -41,7 +41,7 @@ export class AgentFileAccess {
     approvalMode: AgentApprovalMode,
   ): AgentFileResolveResult {
     const resolved = this.workspaceFiles.classifyPath(userPath);
-    if (!resolved.outside) {
+    if (this.workspaceFiles.isManagedPath(resolved.abs)) {
       return this.workspaceFiles.tryResolveWorkspacePath(userPath, access);
     }
     if (isSensitiveFsPath(resolved.abs)) {

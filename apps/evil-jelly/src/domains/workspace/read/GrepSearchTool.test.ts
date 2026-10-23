@@ -41,6 +41,7 @@ afterEach(() => {
 import {
   executeGrepSearch,
   GrepSearchTool,
+  MAX_EXPLICIT_FILE_BYTES,
   MAX_GREP_OUTPUT_BYTES,
   MAX_GREP_OUTPUT_LINE_BYTES,
   MAX_SCOPED_IGNORED_ENTRIES,
@@ -500,6 +501,57 @@ describe("GrepSearchTool Node fallback context merge", () => {
 
     expect(out).toContain("target.ts\n> 1 | export const directNeedle = true");
     expect(out).not.toContain("sibling.ts");
+  });
+
+  it("streams a large explicit file with CRLF context without widening directory scans", async () => {
+    const content = `${"filler line\r\n".repeat(20000)}before\r\nLATE_NEEDLE\r\nafter\r\n`;
+    await fs.mkdir(path.join(tmpDir, "large"));
+    await fs.writeFile(path.join(tmpDir, "large", "snapshot.md"), content);
+    const readWhole = vi.spyOn(getWorkspaceFiles(), "readResolved");
+    try {
+      const output = await executeGrepSearch("LATE_NEEDLE", "*.md", 1, {
+        directory: "large/snapshot.md",
+      });
+      expect(output).toContain("  20001 | before");
+      expect(output).toContain("> 20002 | LATE_NEEDLE");
+      expect(output).toContain("  20003 | after");
+      expect(readWhole).not.toHaveBeenCalled();
+      const directory = await executeGrepSearch("LATE_NEEDLE", "*.md", 1, { directory: "large" });
+      expect(directory).not.toContain("> 20002 |");
+      expect(directory).toContain("oversized files");
+    } finally {
+      readWhole.mockRestore();
+    }
+  });
+
+  it("bounds a pathological explicit-file line while still finding its middle", async () => {
+    await fs.writeFile(
+      path.join(tmpDir, "long.md"),
+      `start-${"界".repeat(80000)}MIDDLE_NEEDLE${"😀".repeat(80000)}-tail`,
+    );
+    const output = await executeGrepSearch("MIDDLE_NEEDLE", undefined, 0, { directory: "long.md" });
+    expect(output).toContain("> 1 | start-");
+    expect(output).toContain("-tail");
+    expect(output).toContain("grep line truncated:");
+    expect(output).not.toContain("�");
+    expect(Buffer.byteLength(output, "utf8")).toBeLessThanOrEqual(MAX_GREP_OUTPUT_BYTES);
+    const line = output.split("\n").find((value) => value.startsWith("> 1 |"));
+    expect(Buffer.byteLength(line!, "utf8")).toBeLessThanOrEqual(MAX_GREP_OUTPUT_LINE_BYTES);
+  });
+
+  it("reports explicit-file byte and match limits rather than silently claiming no matches", async () => {
+    const file = path.join(tmpDir, "huge.md");
+    const handle = await fs.open(file, "w");
+    await handle.truncate(MAX_EXPLICIT_FILE_BYTES + 1);
+    await handle.close();
+    expect(await executeGrepSearch("needle", undefined, 0, { directory: "huge.md" })).toContain(
+      "explicit file exceeds",
+    );
+    await fs.writeFile(file, "needle\n".repeat(1000));
+    const output = await executeGrepSearch("needle", undefined, 0, { directory: "huge.md" });
+    expect(output).toContain("match/output limit reached");
+    expect(output).toContain("results may be incomplete");
+    expect(Buffer.byteLength(output, "utf8")).toBeLessThanOrEqual(MAX_GREP_OUTPUT_BYTES);
   });
 
   it("confirms and searches an outside directory", async () => {

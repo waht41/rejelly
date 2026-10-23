@@ -1,16 +1,17 @@
 /**
- * Controlled workspace filesystem access: strict path resolution, protected content, bounded
- * traversal, and filesystem I/O.
+ * Project filesystem access for the repository and its system-temp workspace: shared protection,
+ * bounded traversal, and filesystem I/O. Absolute locators remain distinct from access permissions.
  */
 
 import fs from "node:fs";
 import fsPromises from "node:fs/promises";
 import path from "node:path";
 import { getErrnoCode } from "../foundation/errno";
-import { isPathInside } from "./path-containment";
-import { getWorkspaceRoot } from "./workspace-context";
+import { isPathInside, isRealPathInside } from "./path-containment";
+import { getProjectTempRoot, getWorkspaceRoot } from "./workspace-context";
 import {
   isSensitiveFileName,
+  type ScanPath,
   sensitiveFsPathError,
   toGitignorePath,
   type WorkspaceAccessKind,
@@ -66,14 +67,45 @@ const DEFAULT_MAX_WORKSPACE_WALK_ENTRIES = 100_000;
 export class WorkspaceFiles {
   private readonly rootResolved: string;
   private readonly scan: WorkspaceScan;
+  private readonly tempRoot: string;
+  private tempScan: WorkspaceScan | undefined;
 
   constructor(root: string) {
     this.rootResolved = path.resolve(root);
+    this.tempRoot = getProjectTempRoot(this.rootResolved);
     this.scan = new WorkspaceScan(this.rootResolved);
   }
 
   getRoot(): string {
     return this.rootResolved;
+  }
+
+  /** Managed roots share access rules; `outside` still describes absolute-path presentation. */
+  isManagedPath(userPath: string): boolean {
+    const absolute = path.resolve(this.rootResolved, userPath);
+    return isPathInside(this.rootResolved, absolute) || isPathInside(this.tempRoot, absolute);
+  }
+
+  isRoot(absolute: string): boolean {
+    return (
+      path.relative(this.rootResolved, absolute) === "" ||
+      path.relative(this.tempRoot, absolute) === ""
+    );
+  }
+
+  private getTempScan(): WorkspaceScan {
+    this.tempScan ??= new WorkspaceScan(this.tempRoot);
+    return this.tempScan;
+  }
+
+  private scanFor(resolved: ResolvedFsPath): { scan: WorkspaceScan; scanPath: ScanPath } {
+    if (resolved.outside && isPathInside(this.tempRoot, resolved.abs)) {
+      return {
+        scan: this.getTempScan(),
+        scanPath: { rel: path.relative(this.tempRoot, resolved.abs) || ".", outside: false },
+      };
+    }
+    return { scan: this.scan, scanPath: resolved };
   }
 
   /**
@@ -89,7 +121,8 @@ export class WorkspaceFiles {
   }
 
   shouldSkipResolvedEntry(parent: ResolvedFsPath, entry: WorkspaceDirEntry): boolean {
-    return this.scan.shouldSkipResolvedEntry(parent, entry);
+    const { scan, scanPath } = this.scanFor(parent);
+    return scan.shouldSkipResolvedEntry(scanPath, entry);
   }
 
   /**
@@ -103,7 +136,8 @@ export class WorkspaceFiles {
     entry: WorkspaceDirEntry,
     boundedTraversal = false,
   ): boolean {
-    return this.scan.shouldSkipScopedResolvedEntry(parent, entry, boundedTraversal);
+    const { scan, scanPath } = this.scanFor(parent);
+    return scan.shouldSkipScopedResolvedEntry(scanPath, entry, boundedTraversal);
   }
 
   /** Shallow listings can enumerate dependencies; recursive discovery still requires a package. */
@@ -111,7 +145,8 @@ export class WorkspaceFiles {
     resolved: ResolvedFsPath,
     shallowListing = false,
   ): string | undefined {
-    return this.scan.validateScopedDiscoveryRoot(resolved, shallowListing);
+    const { scan, scanPath } = this.scanFor(resolved);
+    return scan.validateScopedDiscoveryRoot(scanPath, shallowListing);
   }
 
   childResolved(parent: ResolvedFsPath, childName: string): ResolvedFsPath {
@@ -164,20 +199,30 @@ export class WorkspaceFiles {
     try {
       const resolved = this.classifyPath(userPath);
       const access = toFsAccessKind(fileAccess);
-      if (resolved.outside) {
+      const temporary = resolved.outside && isPathInside(this.tempRoot, resolved.abs);
+      if (resolved.outside && !temporary) {
         return {
           ok: false,
           error: "Access denied: Path traversal outside workspace root is not allowed.",
         };
       }
-      const fileName = path.basename(resolved.rel);
+      if (temporary && !isRealPathInside(this.tempRoot, resolved.abs)) {
+        return {
+          ok: false,
+          error: "Access denied: Path resolves outside the project temp workspace.",
+        };
+      }
+      const scanRoot = temporary ? this.tempRoot : this.rootResolved;
+      const scan = temporary ? this.getTempScan() : this.scan;
+      const relative = path.relative(scanRoot, resolved.abs) || ".";
+      const fileName = path.basename(relative);
       if (fileName.length > 0 && isSensitiveFileName(fileName)) {
         return {
           ok: false,
           error: sensitiveFsPathError(resolved.rel),
         };
       }
-      if (this.scan.isPathHidden(resolved.rel, access)) {
+      if (scan.isPathHidden(relative, access)) {
         return {
           ok: false,
           error:
@@ -188,10 +233,10 @@ export class WorkspaceFiles {
       }
       if (
         (access === "direct-read" || access === "scoped-discovery") &&
-        resolved.rel.split(path.sep).includes(DEPENDENCY_DIR_NAME) &&
+        relative.split(path.sep).includes(DEPENDENCY_DIR_NAME) &&
         fs.existsSync(resolved.abs)
       ) {
-        const rootRealPath = fs.realpathSync.native(this.rootResolved);
+        const rootRealPath = fs.realpathSync.native(scanRoot);
         const realPath = fs.realpathSync.native(resolved.abs);
         if (!isPathInside(rootRealPath, realPath)) {
           return {
@@ -213,6 +258,35 @@ export class WorkspaceFiles {
 
   async readResolved(resolved: ResolvedFsPath): Promise<string> {
     return fsPromises.readFile(resolved.abs, "utf-8");
+  }
+
+  /** Stream a bounded text source for explicit-file grep without loading the whole file. */
+  async *readResolvedLines(resolved: ResolvedFsPath, maxBytes: number): AsyncGenerator<string> {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+      throw new Error("maxBytes must be a positive safe integer");
+    }
+    const stream = fs.createReadStream(resolved.abs, {
+      encoding: "utf8",
+      start: 0,
+      end: maxBytes - 1,
+    });
+    let pending = "";
+    try {
+      for await (const chunk of stream) {
+        pending += chunk;
+        let start = 0;
+        let newline = pending.indexOf("\n", start);
+        while (newline >= 0) {
+          yield pending.slice(start, newline).replace(/\r$/, "");
+          start = newline + 1;
+          newline = pending.indexOf("\n", start);
+        }
+        pending = pending.slice(start);
+      }
+      if (pending) yield pending.replace(/\r$/, "");
+    } finally {
+      stream.destroy();
+    }
   }
 
   async readAstFile(relativePath: string): Promise<string> {
@@ -429,8 +503,8 @@ export class WorkspaceFiles {
   }
 
   async deleteResolved(resolved: ResolvedFsPath): Promise<void> {
-    if (resolved.rel === ".") {
-      throw new Error("Access denied: refusing to delete the workspace root.");
+    if (this.isRoot(resolved.abs)) {
+      throw new Error("Access denied: refusing to delete a workspace root.");
     }
     if (path.parse(resolved.abs).root === resolved.abs) {
       throw new Error("Access denied: refusing to delete a filesystem root.");

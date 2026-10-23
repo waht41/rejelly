@@ -513,7 +513,9 @@ export function createEditFileTool(
         unifiedDiff,
         proposedContent: isBatch ? "" : preparedTargets[0]!.newContent,
         reviewCaption: isBatch ? `Batch edit across ${preparedTargets.length} files` : undefined,
-        outsideWorkspace: preparedTargets.some((target) => target.resolved.outside),
+        outsideWorkspace: preparedTargets.some(
+          (target) => !policy.isManagedPath(target.resolved.abs),
+        ),
         supportedActions: isBatch ? BATCH_REFACTOR_WRITE_ACTIONS : REFACTOR_WRITE_ACTIONS,
       });
       if (decision.action === "reject") {
@@ -635,7 +637,9 @@ export function createCreateFileTool(
         unifiedDiff,
         proposedContent: isBatch ? "" : preparedTargets[0]!.newN,
         reviewCaption: isBatch ? `Batch create ${preparedTargets.length} files` : undefined,
-        outsideWorkspace: preparedTargets.some((target) => target.resolved.outside),
+        outsideWorkspace: preparedTargets.some(
+          (target) => !policy.isManagedPath(target.resolved.abs),
+        ),
         supportedActions: isBatch ? BATCH_REFACTOR_WRITE_ACTIONS : REFACTOR_WRITE_ACTIONS,
       });
 
@@ -726,8 +730,8 @@ export function createDeleteFileTool(
         if (!resolved.ok) {
           return resolved.error;
         }
-        if (resolved.rel === ".") {
-          return "Refused: delete_file cannot remove the workspace root.";
+        if (policy.isRoot(resolved.abs)) {
+          return "Refused: delete_file cannot remove a workspace root.";
         }
         const resolvedKey =
           process.platform === "win32" ? resolved.abs.toLowerCase() : resolved.abs;
