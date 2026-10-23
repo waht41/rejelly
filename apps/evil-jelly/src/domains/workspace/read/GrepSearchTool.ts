@@ -8,6 +8,7 @@ import path from "node:path";
 import type { ToolDefinition } from "@rejelly/core";
 import picomatch from "picomatch";
 import { z } from "zod";
+import { utf8Prefix } from "../../../shared/foundation/string";
 import {
   getWorkspaceFiles,
   type ResolvedFsPath,
@@ -18,6 +19,7 @@ import { recordActiveToolMetrics } from "../../../shared/tool-observation/invoca
 import { resolveFileToolPath } from "../file-access/resolveFileToolPath";
 
 const MAX_FALLBACK_FILE_BYTES = 200 * 1024;
+export const MAX_EXPLICIT_FILE_BYTES = 16 * 1024 * 1024;
 const MAX_FALLBACK_FILES = 8000;
 export const MAX_SCOPED_IGNORED_FILES = 200;
 export const MAX_SCOPED_IGNORED_ENTRIES = 10_000;
@@ -58,23 +60,6 @@ const GrepSearchSchema = z.object({
       "Include ignored files and dependency/build directories. Checks at most 200 candidate files matching filePattern, with a separate 10,000-directory-entry traversal limit; no package scope is required.",
     ),
 });
-
-function utf8Prefix(value: string, maxBytes: number): string {
-  let low = 0;
-  let high = value.length;
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2);
-    if (Buffer.byteLength(value.slice(0, middle), "utf8") <= maxBytes) {
-      low = middle;
-    } else {
-      high = middle - 1;
-    }
-  }
-  while (low > 0 && /[\uD800-\uDBFF]/.test(value[low - 1] ?? "")) {
-    low -= 1;
-  }
-  return value.slice(0, low);
-}
 
 function utf8Suffix(value: string, maxBytes: number): string {
   let low = 0;
@@ -534,6 +519,55 @@ function compileRegex(query: string): { regex: RegExp } | { error: string } {
   }
 }
 
+async function searchExplicitFile(
+  policy: WorkspaceFiles,
+  resolved: ResolvedFsPath,
+  matchesLine: (line: string) => boolean,
+  contextLines: number,
+): Promise<string> {
+  const result = createSearchFileResult(resolved.displayPath);
+  const previous: SearchLine[] = [];
+  let lineNumber = 0;
+  let lastMatch = 0;
+  let notice = "";
+  try {
+    const stat = await policy.statResolved(resolved);
+    if (stat.size > MAX_EXPLICIT_FILE_BYTES) {
+      return `grep refused: explicit file exceeds the ${MAX_EXPLICIT_FILE_BYTES}-byte scan limit. Narrow the source before searching.`;
+    }
+    for await (const text of policy.readResolvedLines(resolved, MAX_EXPLICIT_FILE_BYTES)) {
+      lineNumber += 1;
+      if (text.includes("\0")) return "grep skipped the selected binary file (NUL content).";
+      const matched = matchesLine(text);
+      const bounded = truncateLongOutputLine(text);
+      if (matched) {
+        for (const line of previous)
+          addSearchLine(result, line.lineNumber, line.text, line.matched);
+        lastMatch = lineNumber;
+      }
+      if (matched || (lastMatch > 0 && lineNumber <= lastMatch + contextLines)) {
+        addSearchLine(result, lineNumber, bounded, matched);
+      }
+      previous.push({ lineNumber, text: bounded, matched });
+      if (previous.length > contextLines) previous.shift();
+      if (result.lines.size >= TRUNCATE_MAX_LINES + 2 * MAX_CONTEXT_LINES) {
+        notice = "[match/output limit reached; results may be incomplete. Narrow the query.]";
+        break;
+      }
+    }
+    if ((await policy.statResolved(resolved)).size > MAX_EXPLICIT_FILE_BYTES) {
+      notice = "[scan byte limit reached; file grew during search; results may be incomplete.]";
+    }
+  } catch (error) {
+    notice = `grep scan failed: ${utf8Prefix(error instanceof Error ? error.message : String(error), 1024)}; results may be incomplete.`;
+  }
+  const rendered =
+    renderSearchResults([result], contextLines) || "No matches in the selected file.";
+  return notice
+    ? `${utf8Prefix(rendered, MAX_GREP_OUTPUT_BYTES - Buffer.byteLength(notice, "utf8") - 1)}\n${notice}`
+    : rendered;
+}
+
 async function fallbackNodeSearch(
   query: string,
   filePattern?: string,
@@ -569,12 +603,14 @@ async function fallbackNodeSearch(
     return `grep failed: ${msg}`;
   }
 
-  // `directory` remains the agent-facing contract, but agents sometimes pass a concrete file while
-  // narrowing a search. Treat that as a single-file scan instead of rejecting an otherwise safe path.
+  if (!searchRootIsDirectory) {
+    if (!matchGlob(resolved.rel, filePattern)) return "No matches in the selected file pattern.";
+    return searchExplicitFile(policy, resolved, matchesLine, clampContextLines(contextLines));
+  }
+
+  // Directory scans retain their existing per-file size and traversal limits.
   const scanState = { visitedEntries: 0 };
-  const allFiles = searchRootIsDirectory
-    ? await collectFiles(policy, resolved, includeIgnored, filePattern, [], scanState)
-    : [resolved];
+  const allFiles = await collectFiles(policy, resolved, includeIgnored, filePattern, [], scanState);
   const searchResults: SearchFileResult[] = [];
   const normalizedContextLines = clampContextLines(contextLines);
 
@@ -697,6 +733,8 @@ export const GrepSearchTool: ToolDefinition<typeof GrepSearchSchema> = {
     "Supports configurable context lines (default 3, max 12). " +
     `Every output line is capped at ${MAX_GREP_OUTPUT_LINE_BYTES / 1024} KB; oversized matching or context lines retain their beginning and end with a truncation marker. ` +
     `The complete response is capped at ${MAX_GREP_OUTPUT_BYTES / 1024} KB. ` +
+    "The directory argument also accepts one exact file: explicit-file searches stream up to 16 MiB, " +
+    "including saved webpage snapshots; directory scans still skip files above 200 KiB. " +
     "The Node fallback uses case-insensitive JavaScript RegExp (`i` flag) and picomatch for filePattern.",
   parameters: GrepSearchSchema,
   handler: async ({ query, mode, filePattern, contextLines, directory, includeIgnored }) => {

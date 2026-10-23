@@ -215,6 +215,35 @@ export class WorkspaceFiles {
     return fsPromises.readFile(resolved.abs, "utf-8");
   }
 
+  /** Stream a bounded text source for explicit-file grep without loading the whole file. */
+  async *readResolvedLines(resolved: ResolvedFsPath, maxBytes: number): AsyncGenerator<string> {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+      throw new Error("maxBytes must be a positive safe integer");
+    }
+    const stream = fs.createReadStream(resolved.abs, {
+      encoding: "utf8",
+      start: 0,
+      end: maxBytes - 1,
+    });
+    let pending = "";
+    try {
+      for await (const chunk of stream) {
+        pending += chunk;
+        let start = 0;
+        let newline = pending.indexOf("\n", start);
+        while (newline >= 0) {
+          yield pending.slice(start, newline).replace(/\r$/, "");
+          start = newline + 1;
+          newline = pending.indexOf("\n", start);
+        }
+        pending = pending.slice(start);
+      }
+      if (pending) yield pending.replace(/\r$/, "");
+    } finally {
+      stream.destroy();
+    }
+  }
+
   async readAstFile(relativePath: string): Promise<string> {
     return this.readFile(relativePath);
   }

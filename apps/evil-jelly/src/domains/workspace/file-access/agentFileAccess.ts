@@ -1,3 +1,4 @@
+import { toolArtifacts } from "../../../shared/fs-policy/tool-artifacts";
 import {
   type FileAccess,
   getWorkspaceFiles,
@@ -49,6 +50,12 @@ export class AgentFileAccess {
     }
 
     const externalAccess = access.kind;
+    if (
+      externalAccess !== "write" &&
+      toolArtifacts.canRead(resolved.abs, this.workspaceFiles.getRoot())
+    ) {
+      return { ok: true, ...resolved };
+    }
     if (externalAccess === "read" && approvalMode === "auto") {
       return { ok: true, ...resolved };
     }

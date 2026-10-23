@@ -9,6 +9,7 @@
 
 import { getContextSignal } from "@rejelly/core";
 import type { Dispatcher } from "undici";
+import { utf8Prefix } from "../../shared/foundation/string";
 import { getWebConfig } from "./webConfig";
 
 type UndiciRuntime = typeof import("undici");
@@ -114,13 +115,14 @@ export async function fetchText(
 
     const reader = response.body?.getReader();
     if (!reader) {
-      const body = await response.text();
+      const text = await response.text();
+      const truncated = Buffer.byteLength(text, "utf8") > config.maxFetchBytes;
       return {
         url: response.url || url,
         status: response.status,
         contentType,
-        body: body.slice(0, config.maxFetchBytes),
-        truncated: body.length > config.maxFetchBytes,
+        body: utf8Prefix(text, config.maxFetchBytes),
+        truncated,
       };
     }
 
@@ -134,16 +136,19 @@ export async function fetchText(
         break;
       }
       if (value) {
-        chunks.push(value);
-        received += value.byteLength;
-        if (received >= config.maxFetchBytes) {
+        const remaining = config.maxFetchBytes - received;
+        chunks.push(value.subarray(0, remaining));
+        received += Math.min(value.byteLength, remaining);
+        if (value.byteLength > remaining) {
           truncated = true;
           await reader.cancel().catch(() => {});
           break;
         }
+        // At exactly the cap, inspect the next read to distinguish EOF from actual truncation.
       }
     }
-    const body = Buffer.concat(chunks.map((c) => Buffer.from(c))).toString("utf-8");
+    const decoder = new TextDecoder();
+    const body = decoder.decode(Buffer.concat(chunks, received), { stream: truncated });
     return {
       url: response.url || url,
       status: response.status,

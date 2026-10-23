@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import path from "node:path";
 import { resolveGlobalJellyDir } from "../../../shared/globalPath";
+import { workspaceBucket } from "../../../shared/workspaceBucket";
 
 const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
@@ -20,16 +21,8 @@ export function resolveSessionStorePaths(sessionStoreRoot: string): {
   };
 }
 
-/**
- * Per-workspace bucket: <sanitized-basename>-<sha1(absRoot)[0..8]>.
- * The naming format matches memory buckets, but the identity stays workspace-local.
- */
-export function workspaceBucket(workspaceRoot: string): string {
-  const abs = path.resolve(workspaceRoot);
-  const hash = crypto.createHash("sha1").update(abs).digest("hex").slice(0, 8);
-  const base = path.basename(abs).replace(/[^\w.-]+/g, "_") || "workspace";
-  return `${base}-${hash}`;
-}
+// Preserve the session API while sharing exactly the same project identity with temp artifacts.
+export { workspaceBucket } from "../../../shared/workspaceBucket";
 
 export function resolveWorkspaceDir(workspaceRoot: string, sessionsRoot = resolveSessionsRoot()) {
   return path.join(sessionsRoot, workspaceBucket(workspaceRoot));
