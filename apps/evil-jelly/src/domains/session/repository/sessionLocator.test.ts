@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { workspaceBucket } from "../journal/sessionPaths";
+import { workspaceBucket } from "../../../shared/workspaceBucket";
 import { findInspectSessionAcrossWorkspaces, locateInspectSession } from "./sessionLocator";
 
 const cleanup: string[] = [];

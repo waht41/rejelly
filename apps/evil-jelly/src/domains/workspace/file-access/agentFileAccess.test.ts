@@ -1,8 +1,8 @@
+import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { toolArtifacts } from "../../../shared/fs-policy/tool-artifacts";
-import { getWorkspaceRoot, setWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
+import { getProjectTempRoot } from "../../../shared/fs-policy/workspace-context";
 import { WorkspaceFiles } from "../../../shared/fs-policy/workspace-files";
 import { AgentFileAccess } from "./agentFileAccess";
 
@@ -65,31 +65,46 @@ describe("AgentFileAccess", () => {
     expect(hit.approval?.access).toBe("write");
   });
 
-  it.each([
-    "normal",
-    "auto",
-  ] as const)("allows only reads and scans of registered temp snapshots in %s mode", async (mode) => {
+  it("treats the project temp directory like the workspace without registering files", () => {
     const { root, access } = createAccess();
-    const previous = getWorkspaceRoot();
-    setWorkspaceRoot(root);
+    const temporary = getProjectTempRoot(root);
+    for (const kind of ["read", "scan", "write"] as const) {
+      const result = access.tryResolve(path.join(temporary, "existing.md"), { kind }, "normal");
+      expect(result.ok).toBe(true);
+    }
+    for (const [relative, kind] of [
+      [".env", "read"],
+      ["node_modules/pkg/index.js", "write"],
+      [".git/config", "write"],
+      ["dist", "scan"],
+    ] as const) {
+      expect(access.tryResolve(path.join(temporary, relative), { kind }, "normal").ok).toBe(
+        access.tryResolve(path.join(root, relative), { kind }, "normal").ok,
+      );
+    }
+    expect(access.tryResolve(path.dirname(temporary), { kind: "scan" }, "normal").ok).toBe(false);
+    expect(
+      access.tryResolve(getProjectTempRoot(`${root}-other`), { kind: "write" }, "normal").ok,
+    ).toBe(false);
+  });
+
+  it("does not extend project-temp permissions through a junction", async () => {
+    const { root, access } = createAccess();
+    const temporary = getProjectTempRoot(root);
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "evil-temp-escape-"));
+    await fs.mkdir(temporary, { recursive: true });
+    await fs.symlink(outside, path.join(temporary, "escape"), "junction");
     try {
-      const file = await toolArtifacts.saveText("saved page");
-      const directory = path.dirname(file);
-      expect(access.tryResolve(file, { kind: "read" }, mode).ok).toBe(true);
-      expect(access.tryResolve(file, { kind: "scan" }, mode).ok).toBe(true);
-      expect(access.tryResolve(directory, { kind: "scan" }, mode).ok).toBe(true);
-      const write = access.tryResolve(file, { kind: "write" }, mode);
-      expect(write.ok).toBe(false);
-      if (!write.ok) expect(write.approval?.access).toBe("write");
-      const otherTemp = access.tryResolve(os.tmpdir(), { kind: "scan" }, mode);
-      expect(otherTemp.ok).toBe(false);
-      if (!otherTemp.ok) expect(otherTemp.approval?.access).toBe("scan");
-      const sensitive = access.tryResolve(path.join(directory, ".env"), { kind: "read" }, mode);
-      expect(sensitive.ok).toBe(false);
-      if (!sensitive.ok) expect(sensitive.error).toContain("sensitive");
+      const hit = access.tryResolve(
+        path.join(temporary, "escape", "missing.md"),
+        { kind: "write" },
+        "normal",
+      );
+      expect(hit.ok).toBe(false);
+      if (!hit.ok) expect(hit.error).toContain("outside the project temp workspace");
     } finally {
-      toolArtifacts.dispose();
-      setWorkspaceRoot(previous);
+      await fs.rm(temporary, { recursive: true, force: true });
+      await fs.rm(outside, { recursive: true, force: true });
     }
   });
 

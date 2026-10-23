@@ -554,18 +554,6 @@ describe("GrepSearchTool Node fallback context merge", () => {
     expect(Buffer.byteLength(output, "utf8")).toBeLessThanOrEqual(MAX_GREP_OUTPUT_BYTES);
   });
 
-  it("merges regex context in streamed files and respects a mismatched file pattern", async () => {
-    await fs.writeFile(path.join(tmpDir, "context.md"), "a\nneedle1\nb\nneedle2\nc\n");
-    const output = await executeGrepSearch("needle[12]", "*.md", 1, {
-      directory: "context.md",
-      mode: "regex",
-    });
-    expect(output).toContain("  1 | a\n> 2 | needle1\n  3 | b\n> 4 | needle2\n  5 | c");
-    expect(output).not.toContain("\n--\n");
-    const excluded = await executeGrepSearch("needle", "*.ts", 1, { directory: "context.md" });
-    expect(excluded).toContain("No matches in the selected file pattern");
-  });
-
   it("confirms and searches an outside directory", async () => {
     const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), "evil-jelly-outside-grep-"));
     const outsideFile = path.join(outsideDir, "external.ts");

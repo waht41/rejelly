@@ -1,6 +1,7 @@
 import type { FileHandle } from "node:fs/promises";
 import { open, readFile, stat, truncate } from "node:fs/promises";
 import path from "node:path";
+import { workspaceBucket } from "../../../shared/workspaceBucket";
 import {
   parseSessionEvent,
   parseSessionMetaLine,
@@ -10,7 +11,7 @@ import {
   type SessionSchemaVersion,
   type SessionStateEvent,
 } from "../model/sessionEvents";
-import { assertSessionId, resolveSessionsRoot, workspaceBucket } from "./sessionPaths";
+import { assertSessionId, resolveSessionsRoot } from "./sessionPaths";
 
 /**
  * Session JSONL has two deliberately different read paths for both V2 and V3:

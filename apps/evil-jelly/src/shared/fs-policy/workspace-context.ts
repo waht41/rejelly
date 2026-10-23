@@ -1,8 +1,20 @@
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { workspaceBucket } from "../workspaceBucket";
 import { isPathInside } from "./path-containment";
 
 export const EVIL_JELLY_STATE_DIR = ".evil-jelly";
 export const AGENT_SCRATCH_DIR = `${EVIL_JELLY_STATE_DIR}/tmp`;
+
+/** The project's system-temp workspace uses the same bucket identity as session storage. */
+export function getProjectTempRoot(workspaceRoot = getWorkspaceRoot()): string {
+  return path.join(
+    fs.realpathSync.native(os.tmpdir()),
+    "evil-jelly",
+    workspaceBucket(workspaceRoot),
+  );
+}
 
 let workspaceRoot = path.resolve(process.cwd());
 

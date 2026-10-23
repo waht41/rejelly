@@ -1,4 +1,3 @@
-import { toolArtifacts } from "../../../shared/fs-policy/tool-artifacts";
 import {
   type FileAccess,
   getWorkspaceFiles,
@@ -42,7 +41,7 @@ export class AgentFileAccess {
     approvalMode: AgentApprovalMode,
   ): AgentFileResolveResult {
     const resolved = this.workspaceFiles.classifyPath(userPath);
-    if (!resolved.outside) {
+    if (this.workspaceFiles.isManagedPath(resolved.abs)) {
       return this.workspaceFiles.tryResolveWorkspacePath(userPath, access);
     }
     if (isSensitiveFsPath(resolved.abs)) {
@@ -50,12 +49,6 @@ export class AgentFileAccess {
     }
 
     const externalAccess = access.kind;
-    if (
-      externalAccess !== "write" &&
-      toolArtifacts.canRead(resolved.abs, this.workspaceFiles.getRoot())
-    ) {
-      return { ok: true, ...resolved };
-    }
     if (externalAccess === "read" && approvalMode === "auto") {
       return { ok: true, ...resolved };
     }

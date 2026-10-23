@@ -21,9 +21,6 @@ export function resolveSessionStorePaths(sessionStoreRoot: string): {
   };
 }
 
-// Preserve the session API while sharing exactly the same project identity with temp artifacts.
-export { workspaceBucket } from "../../../shared/workspaceBucket";
-
 export function resolveWorkspaceDir(workspaceRoot: string, sessionsRoot = resolveSessionsRoot()) {
   return path.join(sessionsRoot, workspaceBucket(workspaceRoot));
 }

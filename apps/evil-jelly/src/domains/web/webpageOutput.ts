@@ -1,5 +1,8 @@
+import { randomUUID } from "node:crypto";
+import path from "node:path";
 import { utf8Prefix } from "../../shared/foundation/string";
-import { toolArtifacts } from "../../shared/fs-policy/tool-artifacts";
+import { getProjectTempRoot } from "../../shared/fs-policy/workspace-context";
+import { getWorkspaceFiles } from "../../shared/fs-policy/workspace-files";
 import type { ReadWebpageResult } from "./index";
 
 export const MAX_WEBPAGE_OUTPUT_BYTES = 32 * 1024;
@@ -44,12 +47,21 @@ export async function renderWebpageOutput(page: ReadWebpageResult): Promise<stri
   const totalLines = snapshot.text.split("\n").length;
   let recovery: string;
   try {
-    const file = await toolArtifacts.saveText(snapshot.text, page.title || "webpage");
+    const policy = getWorkspaceFiles();
+    const directory = getProjectTempRoot(policy.getRoot());
+    const stem =
+      (page.title || "webpage")
+        .normalize("NFKC")
+        .replace(/[^a-zA-Z0-9._-]+/g, "-")
+        .replace(/^[.-]+|[.-]+$/g, "")
+        .slice(0, 48) || "webpage";
+    const file = path.join(directory, `${stem}-${randomUUID()}.md`);
+    await policy.mkdir(directory, { recursive: true });
+    await policy.writeNewFile(file, snapshot.text);
     recovery =
       `Saved Markdown: ${file}\n` +
       `Saved bytes: ${Buffer.byteLength(snapshot.text, "utf8")}; saved lines: ${totalLines}.\n` +
       `Long lines wrapped for reading: ${snapshot.wrapped ? "yes (line numbers refer to this snapshot)" : "no"}.\n` +
-      "Temporary snapshot: expires after 24 hours (cleanup on access/save), subject to capacity eviction; removed on normal exit.\n" +
       `Locate keywords with grep: ${JSON.stringify({ directory: file, query: "keyword" })}\n` +
       `Read relevant lines with read_file: ${JSON.stringify({ filePaths: [{ path: file, offset: 1, limit: 40 }] })}\n`;
   } catch (error) {

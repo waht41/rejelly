@@ -22,7 +22,7 @@ export const ReadWebpageTool: ToolDefinition<typeof readWebpageParameters> = {
     "pages that render entirely via client-side JS may return little text. Returns at most 32 KiB; " +
     "long pages are saved as complete cleaned Markdown in an application-owned system-temp directory. " +
     "Use the returned absolute path with grep (directory may be a file) and ranged read_file. " +
-    "Snapshots are temporary and may expire or be evicted; source-fetch truncation is reported separately.",
+    "source-fetch truncation is reported separately.",
   parameters: readWebpageParameters,
   handler: async ({ url }) => {
     try {

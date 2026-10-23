@@ -1,12 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getErrnoCode } from "../../../shared/foundation/errno";
+import { workspaceBucket } from "../../../shared/workspaceBucket";
 import {
   MAX_META_LINE_BYTES,
   resolveV2SessionPath,
   resolveV3SessionPath,
 } from "../journal/sessionJsonlReader";
-import { assertSessionId, resolveSessionsRoot, workspaceBucket } from "../journal/sessionPaths";
+import { assertSessionId, resolveSessionsRoot } from "../journal/sessionPaths";
 
 type InspectableJournalVersion = 2 | 3;
 
