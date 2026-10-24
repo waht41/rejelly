@@ -8,6 +8,7 @@ import { useMemo, useRef, useState } from "react";
 import {
   type PromptDocument,
   type PromptNode,
+  promptDocumentCommandText,
   promptDocumentLogicalLength,
   textPromptDocument,
 } from "../../../../shared/model/prompt/promptDocument";
@@ -19,6 +20,7 @@ import {
   type PromptTokenDisplayText,
   projectPromptDocument,
   replacePromptRange,
+  slicePromptDocument,
 } from "./promptDocument";
 
 export interface BufferState {
@@ -341,10 +343,8 @@ export function useTextBuffer(
           if (start < 0) {
             return current;
           }
-          const projection = projectPromptDocument(current.document, tokenDisplayTextRef.current);
-          const displayStart = projection.logicalToDisplay(start);
-          const displayEnd = projection.logicalToDisplay(current.cursor);
-          if (projection.text.slice(displayStart, displayEnd) !== expectedText) {
+          const beforeCursor = slicePromptDocument(current.document, start, current.cursor);
+          if (promptDocumentCommandText(beforeCursor) !== expectedText) {
             return current;
           }
           const document = replacePromptRange(current.document, start, current.cursor, nodes);

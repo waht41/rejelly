@@ -108,6 +108,20 @@ describe("rich document compatibility transforms", () => {
     expect(movedRight.cursor).toBe(2);
   });
 
+  it("moves over and deletes a pasted tab atomically without rewriting other tabs", () => {
+    const state = {
+      document: textPromptDocument("a\t中\tb"),
+      cursor: 4,
+      caretAffinity: "forward" as const,
+    };
+    const moved = applyProjectedTransform(state, moveLeft, "left");
+    expect(moved.cursor).toBe(3);
+    expect(applyProjectedTransform(moved, moveRight, "right").cursor).toBe(4);
+    const deleted = applyProjectedTransform(state, backspace);
+    expect(deleted.document).toEqual(textPromptDocument("a\t中b"));
+    expect(deleted.cursor).toBe(3);
+  });
+
   it("expands a character deletion inside a token to the whole token", () => {
     const deleted = applyProjectedTransform(
       { document, cursor: 2, caretAffinity: "forward" },

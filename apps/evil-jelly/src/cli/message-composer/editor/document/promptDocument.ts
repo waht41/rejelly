@@ -56,7 +56,7 @@ export function defaultPromptTokenDisplayText(token: PromptToken): string {
   }
 }
 
-function slicePromptDocument(
+export function slicePromptDocument(
   document: PromptDocument,
   rawStart: number,
   rawEnd: number,
@@ -111,78 +111,77 @@ export function projectPromptDocument(
   let text = "";
   let logicalLength = 0;
   const tokenSpans: ProjectedTokenSpan[] = [];
+  // Both tokens and literal tabs are atomic logical units with wider display labels.
+  // Expand tabs here, not in the document: raw tabs move the terminal cursor but
+  // string-width counts them as zero cells, breaking wrapping and caret placement.
+  const spans: Omit<ProjectedTokenSpan, "token">[] = [];
 
   for (const node of document) {
     if (node.type === "text") {
-      text += node.text;
-      logicalLength += node.text.length;
+      let offset = 0;
+      for (const match of node.text.matchAll(/\t/g)) {
+        text += node.text.slice(offset, match.index);
+        logicalLength += match.index - offset;
+        const start = text.length;
+        text += "  ";
+        spans.push({
+          start,
+          end: text.length,
+          logicalStart: logicalLength,
+          logicalEnd: logicalLength + 1,
+        });
+        logicalLength += 1;
+        offset = match.index + 1;
+      }
+      text += node.text.slice(offset);
+      logicalLength += node.text.length - offset;
       continue;
     }
     const start = text.length;
-    const displayText = tokenDisplayText(node, document);
-    text += displayText;
-    tokenSpans.push({
+    text += tokenDisplayText(node, document).replaceAll("\t", "  ");
+    const span: ProjectedTokenSpan = {
       start,
       end: text.length,
       logicalStart: logicalLength,
       logicalEnd: logicalLength + 1,
       token: node,
-    });
+    };
+    tokenSpans.push(span);
+    spans.push(span);
     logicalLength += 1;
   }
 
   const logicalToDisplay = (rawPosition: number): number => {
     const position = clamp(rawPosition, 0, logicalLength);
-    let logicalOffset = 0;
-    let displayOffset = 0;
-    for (const node of document) {
-      const nodeLength = promptNodeLogicalLength(node);
-      if (position <= logicalOffset + nodeLength) {
-        return node.type === "text"
-          ? displayOffset + position - logicalOffset
-          : position === logicalOffset
-            ? displayOffset
-            : displayOffset + tokenDisplayText(node, document).length;
+    let delta = 0;
+    for (const span of spans) {
+      if (position <= span.logicalStart) {
+        return position + delta;
       }
-      logicalOffset += nodeLength;
-      displayOffset +=
-        node.type === "text" ? node.text.length : tokenDisplayText(node, document).length;
+      delta = span.end - span.logicalEnd;
     }
-    return text.length;
+    return position + delta;
   };
 
   const displayToLogical = (rawPosition: number, bias: ProjectionBias = "nearest"): number => {
     const position = clamp(rawPosition, 0, text.length);
-    let logicalOffset = 0;
-    let displayOffset = 0;
-    for (const node of document) {
-      const displayLength =
-        node.type === "text" ? node.text.length : tokenDisplayText(node, document).length;
-      const displayEnd = displayOffset + displayLength;
-      if (position <= displayEnd) {
-        if (node.type === "text") {
-          return logicalOffset + position - displayOffset;
-        }
-        if (position <= displayOffset) {
-          return logicalOffset;
-        }
-        if (position >= displayEnd) {
-          return logicalOffset + 1;
-        }
+    let delta = 0;
+    for (const span of spans) {
+      if (position <= span.start) {
+        return position - delta;
+      }
+      if (position < span.end) {
         if (bias === "left") {
-          return logicalOffset;
+          return span.logicalStart;
         }
         if (bias === "right") {
-          return logicalOffset + 1;
+          return span.logicalEnd;
         }
-        return position - displayOffset <= displayEnd - position
-          ? logicalOffset
-          : logicalOffset + 1;
+        return position - span.start <= span.end - position ? span.logicalStart : span.logicalEnd;
       }
-      logicalOffset += promptNodeLogicalLength(node);
-      displayOffset = displayEnd;
+      delta = span.end - span.logicalEnd;
     }
-    return logicalLength;
+    return position - delta;
   };
 
   return { text, tokenSpans, logicalToDisplay, displayToLogical };

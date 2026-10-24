@@ -192,12 +192,8 @@ export function useLineKeybindings(deps: LineKeybindingDeps): void {
         return;
       }
       if (key.tab) {
-        // Insert spaces, not a literal "\t": the render/caret pipeline assumes
-        // 1 char == 1 terminal cell (cursorRowCol, renderLine's slice, and Ink's
-        // width measurement all count chars), but terminals expand a tab to the
-        // next tab stop (~8 cells). That mismatch shifts the caret and overflows
-        // the bordered Box, wrapping the line and leaving a stray border. Pad to
-        // the next tab stop so the buffer stays exactly as wide as it renders.
+        // Typed Tab inserts spaces; literal tabs from pastes are expanded only
+        // in the display projection so their original content survives submission.
         const { col } = cursorRowCol(buf.text, buf.cursor);
         buf.insert(" ".repeat(TAB_WIDTH - (col % TAB_WIDTH)));
         return;
