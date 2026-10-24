@@ -579,7 +579,7 @@ describe("non-TTY session lifecycle", () => {
     expect(systemEvents.includes("Retrying the previous model request…\n")).toBe(safeRetry);
     expect(systemEvents).toContain("No failed or interrupted task is available to continue.\n");
     const continuedCall = calls[hasTool ? 2 : 1] ?? [];
-    if (safeRetry) expect(continuedCall).toEqual(calls[hasTool ? 1 : 0]);
+    expect(continuedCall).toEqual(calls[hasTool ? 1 : 0]);
     expect(
       continuedCall.some(
         (message) =>
@@ -593,7 +593,7 @@ describe("non-TTY session lifecycle", () => {
           message.role === "user" &&
           messageContentToText(message.content).includes("Continue the previous task"),
       ),
-    ).toBe(!safeRetry);
+    ).toBe(false);
     expect(
       continuedCall.filter(
         (message) =>
@@ -1086,9 +1086,9 @@ describe("non-TTY session lifecycle", () => {
       resumedCall.some(
         (message) =>
           message.role === "user" &&
-          messageContentToText(message.content).includes("The previous task was interrupted"),
+          messageContentToText(message.content).includes("Continue the previous task"),
       ),
-    ).toBe(true);
+    ).toBe(false);
     const recovered = await resumeSession(workspaceRoot, "durable-recovery", {
       originator: "evil-jelly-cli",
       appVersion: "1.0.0",
@@ -1135,7 +1135,7 @@ describe("non-TTY session lifecycle", () => {
           };
           return;
         }
-        if (currentCall === 1) {
+        if (currentCall === 1 || currentCall === 2) {
           const signal = options?.signal;
           if (!signal) throw new Error("expected operation-aware model signal");
           queueMicrotask(() => interruptActiveTask("interrupt test model turn"));
@@ -1154,7 +1154,7 @@ describe("non-TTY session lifecycle", () => {
     };
 
     await runEvilJellyHost(
-      createMemoryBindings(["Inspect before interruption", "/continue", "/exit"]),
+      createMemoryBindings(["Inspect before interruption", "/continue", "/continue", "/exit"]),
       {
         runControl: createInteractiveRunControl(),
         model,
@@ -1176,16 +1176,11 @@ describe("non-TTY session lifecycle", () => {
           messageContentToText(message.content).includes(text),
       );
 
-    expect(modelCalls).toHaveLength(3);
-    const continuedCall = modelCalls[2] ?? [];
+    expect(modelCalls).toHaveLength(4);
+    expect(modelCalls[3]).toEqual(modelCalls[2]);
+    const continuedCall = modelCalls[3] ?? [];
     expect(hasText(continuedCall, "user", "Inspect before interruption")).toBe(true);
-    expect(
-      hasText(
-        continuedCall,
-        "user",
-        "The previous task was interrupted by the user. Continue from the available conversation and tool history.",
-      ),
-    ).toBe(true);
+    expect(hasText(continuedCall, "user", "Continue the previous task")).toBe(false);
     expect(continuedCall.filter((message) => message.role === "system")).toEqual(
       modelCalls[0]?.filter((message) => message.role === "system"),
     );
@@ -1207,13 +1202,7 @@ describe("non-TTY session lifecycle", () => {
     });
     const resumedMessages = resumed?.messages ?? [];
     expect(hasText(resumedMessages, "user", "Inspect before interruption")).toBe(true);
-    expect(
-      hasText(
-        resumedMessages,
-        "user",
-        "The previous task was interrupted by the user. Continue from the available conversation and tool history.",
-      ),
-    ).toBe(true);
+    expect(hasText(resumedMessages, "user", "Continue the previous task")).toBe(false);
     expect(hasText(resumedMessages, "assistant", "Continued with the interrupted work")).toBe(true);
     expect(
       resumedMessages.some((message) =>
@@ -1231,7 +1220,116 @@ describe("non-TTY session lifecycle", () => {
       stored.events
         .filter((event) => isKnownSessionEvent(event) && event.type === "turn_completed")
         .map((event) => (event.type === "turn_completed" ? event.status : undefined)),
-    ).toEqual(["interrupted", "completed"]);
+    ).toEqual(["interrupted", "interrupted", "completed"]);
+  });
+
+  it.each([
+    true,
+    false,
+  ])("adds one tool-recovery prompt across interrupted continuations and failed retries (persistence=%s)", async (persistence) => {
+    const sessionId = "tool-recovery-prompt";
+    const recorder = await openSessionRecorder({
+      workspaceRoot,
+      sessionId,
+      traceId: "crashed-tool-trace",
+      originator: "evil-jelly-cli",
+      appVersion: "1.0.0",
+      modelId: "tool-recovery-model",
+      cwd: workspaceRoot,
+      sessionsRoot,
+    });
+    await recordInitialTextInput(recorder, "tool-recovery-turn", "Inspect interrupted work");
+    await recorder.recordMessage(
+      "tool-recovery-turn",
+      { kind: "model" },
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [{ id: "unknown-tool-call", name: "list_directory", arguments: "{}" }],
+      },
+    );
+    await recorder.close();
+    const loadSeed = async () => {
+      const record = await resumeSession(workspaceRoot, sessionId, {
+        originator: "evil-jelly-cli",
+        appVersion: "1.0.0",
+        sessionsRoot,
+      });
+      return buildSessionResumeSeed(record!);
+    };
+    const calls: Message[][] = [];
+    const model: ModelAdapter = {
+      id: "tool-recovery-model",
+      async *stream(messages): AsyncGenerator<StreamEvent> {
+        calls.push(messages.map((message) => ({ ...message })));
+        if (calls.length === 1) throw new AbortError("continue interrupted without progress");
+        if (calls.length === 2) {
+          throw new ModelCallError("retry failed before output", {
+            modelId: "tool-recovery-model",
+            code: "unknown",
+          });
+        }
+        yield { type: "text", content: "Recovered without replaying tools." };
+      },
+    };
+    const run = async (inputs: string[]) => {
+      const seed = await loadSeed();
+      await runEvilJellyHost(createMemoryBindings(inputs), {
+        runControl: createInteractiveRunControl(),
+        model,
+        seedContext: seed.activeContext,
+        seedRecovery: seed.recovery,
+        ...(persistence
+          ? {
+              sessionId,
+              sessionStartMode: "resumed" as const,
+              session: { enabled: true as const, appVersion: "1.0.0", sessionsRoot },
+            }
+          : {}),
+      });
+    };
+    if (persistence) {
+      await run(["/continue", "/exit"]);
+      await run(["/continue", "/continue", "/exit"]);
+    } else {
+      await run(["/continue", "/continue", "/continue", "/exit"]);
+    }
+
+    expect(calls).toHaveLength(3);
+    expect(calls[1]).toEqual(calls[0]);
+    expect(calls[2]).toEqual(calls[0]);
+    const firstCall = calls[0] ?? [];
+    expect(firstCall.at(-1)?.role).toBe("user");
+    expect(messageContentToText(firstCall.at(-1)?.content ?? null)).toContain(
+      "partial side effects may have occurred",
+    );
+    expect(firstCall.filter((message) => message.role === "tool")).toHaveLength(1);
+    expect(
+      firstCall.filter(
+        (message) =>
+          message.role === "user" &&
+          messageContentToText(message.content).includes("Continue the previous task"),
+      ),
+    ).toHaveLength(1);
+    if (!persistence) return;
+    const stored = await readSessionEvents(workspaceRoot, sessionId, { sessionsRoot });
+    expect(
+      stored.events.filter(
+        (event) =>
+          isKnownSessionEvent(event) &&
+          event.type === "message_recorded" &&
+          event.source.kind === "recovery" &&
+          event.message.role === "user",
+      ),
+    ).toHaveLength(1);
+    const recovered = await resumeSession(workspaceRoot, sessionId, {
+      originator: "evil-jelly-cli",
+      appVersion: "1.0.0",
+      sessionsRoot,
+    });
+    expect(recovered?.meta.turns).toBe(1);
+    expect(recovered?.transcript?.filter((item) => item.type === "user")).toHaveLength(1);
+    expect(recovered?.recovery).toBeUndefined();
   });
 
   it("does not automatically rerun a user-only turn recovered from a crashed segment", async () => {

@@ -1,4 +1,7 @@
 import type { Message } from "@rejelly/core";
+import { UNKNOWN_TOOL_OUTCOME_CONTENT } from "../../domains/session/projection/sessionRecovery";
+import { INTERRUPTED_TOOL_OUTPUT_CONTENT } from "../../features/unified/context-management/interruptedDelta";
+import { messageContentToText } from "../../shared/model/message/content";
 
 export type TurnRecoveryStatus = "failed" | "interrupted";
 export type TurnRecoveryStage = "preparation" | "agent";
@@ -36,10 +39,7 @@ export type TurnExecutionResult =
       suggestedAction?: string;
     };
 
-export const ABORT_CONTINUE_PROMPT =
-  "The previous task was interrupted by the user. Continue from the available conversation and tool history. Verify the current state before repeating any action.";
-
-export const TRANSIENT_CONTINUE_PROMPT =
+const TRANSIENT_CONTINUE_PROMPT =
   "Continue the previous task using the available conversation and tool history. Verify the current state before repeating any action.";
 
 export function recoveryActivityWarning(activity: TurnToolActivity): string {
@@ -57,18 +57,31 @@ export function recoveryActivityWarning(activity: TurnToolActivity): string {
   }
 }
 
-export function continuationPromptForRecovery(recovery: TurnRecoveryState): string {
-  const base = recovery.reason === "user_abort" ? ABORT_CONTINUE_PROMPT : TRANSIENT_CONTINUE_PROMPT;
-  switch (recovery.toolActivity) {
-    case "none":
-      return base;
-    case "requested":
-      return `${base} A tool was requested but may not have started.`;
-    case "running":
-      return `${base} A tool execution was interrupted, so partial side effects may have occurred.`;
-    case "completed":
-      return `${base} Completed tool results are already present in the conversation history.`;
-    case "unknown":
-      return `${base} A tool outcome may be unknown; inspect current state before retrying it.`;
+/** Only add an instruction when the committed history does not already express how to continue. */
+export function continuationPromptForHistory(history: readonly Message[]): string | undefined {
+  const last = history.at(-1);
+  if (!last || last.role === "user") return undefined;
+
+  if (last.role === "assistant" && !last.tool_calls?.length) {
+    return TRANSIENT_CONTINUE_PROMPT;
   }
+
+  // Inspect the whole trailing tool batch: a later successful result must not hide an
+  // earlier interrupted execution. Stop at any new user/model message, including a
+  // previously inserted continuation, so retries without progress remain unchanged.
+  for (let index = history.length - 1; index >= 0; index--) {
+    const message = history[index];
+    if (message.role !== "tool") break;
+    const content = messageContentToText(message.content);
+    if (
+      content === INTERRUPTED_TOOL_OUTPUT_CONTENT ||
+      content === UNKNOWN_TOOL_OUTCOME_CONTENT ||
+      (content.startsWith("exitCode=null status=aborted\n") &&
+        content.endsWith("Command aborted by user (/stop or Esc).")) ||
+      /^Tool "[^"]+" execution failed: AbortError:/.test(content)
+    ) {
+      return `${TRANSIENT_CONTINUE_PROMPT} A tool execution was interrupted or its outcome is unknown; partial side effects may have occurred.`;
+    }
+  }
+  return undefined;
 }

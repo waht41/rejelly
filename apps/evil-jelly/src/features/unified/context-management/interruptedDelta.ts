@@ -1,6 +1,8 @@
 import type { Message } from "@rejelly/core";
 import { normalizeMessages } from "@rejelly/core/policy";
 
+export const INTERRUPTED_TOOL_OUTPUT_CONTENT = "[Tool execution interrupted by user]";
+
 export function sanitizeInterruptedDelta(deltaMessages: Message[]): Message[] {
   const sanitized: Message[] = [];
   const pendingToolCallCounts = new Map<string, number>();
@@ -42,7 +44,7 @@ function appendInterruptedToolOutputs(
       messages.push({
         role: "tool",
         tool_call_id: toolCallId,
-        content: "[Tool execution interrupted by user]",
+        content: INTERRUPTED_TOOL_OUTPUT_CONTENT,
       });
     }
   }
