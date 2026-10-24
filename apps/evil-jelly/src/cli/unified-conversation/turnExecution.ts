@@ -536,12 +536,13 @@ export async function resumeConversationTurn(
   recovery: TurnRecoveryState,
 ): Promise<TurnExecutionResult> {
   const turnId = recovery.turnId ?? createTurnId();
-  const instruction: Message = {
-    role: "system",
+  // Keep recovery at the history tail instead of rewriting cacheable system instructions.
+  const continuation: Message = {
+    role: "user",
     content: continuationPromptForRecovery(recovery),
   };
-  await runtime.sessionRecorder?.recordMessage(turnId, { kind: "recovery" }, instruction);
-  runtime.session.replaceHistory([...runtime.session.history, instruction]);
+  await runtime.sessionRecorder?.recordMessage(turnId, { kind: "recovery" }, continuation);
+  runtime.session.replaceHistory([...runtime.session.history, continuation]);
   runtime.session.clearContextTokenAnchor();
   runtime.host.onTurnStart?.();
   runtime.host.logSystemEvent("Continuing the previous task…\n");

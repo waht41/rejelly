@@ -586,14 +586,14 @@ describe("non-TTY session lifecycle", () => {
           message.role === "system" &&
           messageContentToText(message.content).includes("Continue the previous task"),
       ),
-    ).toBe(!safeRetry);
+    ).toBe(false);
     expect(
       continuedCall.some(
         (message) =>
           message.role === "user" &&
           messageContentToText(message.content).includes("Continue the previous task"),
       ),
-    ).toBe(false);
+    ).toBe(!safeRetry);
     expect(
       continuedCall.filter(
         (message) =>
@@ -1088,7 +1088,7 @@ describe("non-TTY session lifecycle", () => {
           message.role === "user" &&
           messageContentToText(message.content).includes("The previous task was interrupted"),
       ),
-    ).toBe(false);
+    ).toBe(true);
     const recovered = await resumeSession(workspaceRoot, "durable-recovery", {
       originator: "evil-jelly-cli",
       appVersion: "1.0.0",
@@ -1112,7 +1112,7 @@ describe("non-TTY session lifecycle", () => {
             "The previous task was interrupted by the user.",
           ),
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("keeps an interrupted multi-round turn in live and resumed context", async () => {
@@ -1182,10 +1182,13 @@ describe("non-TTY session lifecycle", () => {
     expect(
       hasText(
         continuedCall,
-        "system",
+        "user",
         "The previous task was interrupted by the user. Continue from the available conversation and tool history.",
       ),
     ).toBe(true);
+    expect(continuedCall.filter((message) => message.role === "system")).toEqual(
+      modelCalls[0]?.filter((message) => message.role === "system"),
+    );
     expect(
       continuedCall.some((message) =>
         message.tool_calls?.some((call) => call.id === "interrupted-list-call"),
@@ -1207,7 +1210,7 @@ describe("non-TTY session lifecycle", () => {
     expect(
       hasText(
         resumedMessages,
-        "system",
+        "user",
         "The previous task was interrupted by the user. Continue from the available conversation and tool history.",
       ),
     ).toBe(true);
