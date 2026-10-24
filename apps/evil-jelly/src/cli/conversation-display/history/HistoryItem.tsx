@@ -1,4 +1,5 @@
 import { Box, Text } from "ink";
+import stringWidth from "string-width";
 import { MarkdownViewer } from "../../terminal-ui/rich-text/MarkdownViewer";
 import { DiffBlock } from "../DiffBlock";
 import type { Turn } from "./model";
@@ -55,6 +56,24 @@ function compactToolPreview(
   return contentLines.slice(0, TOOL_PREVIEW_OUTPUT_ROWS);
 }
 
+/** Expand before Ink measures or paints: raw tabs move the terminal cursor past its cell grid. */
+function expandUserMessageTabs(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => {
+      let column = 0;
+      return line
+        .split("\t")
+        .map((segment, index) => {
+          const padding = index === 0 ? "" : " ".repeat(4 - (column % 4));
+          column += padding.length + stringWidth(segment);
+          return padding + segment;
+        })
+        .join("");
+    })
+    .join("\n");
+}
+
 export function HistoryItem({ turn, columns }: { turn: Turn; columns: number }) {
   if (turn.type === "banner") {
     const { model, dir, version } = turn.banner;
@@ -88,7 +107,7 @@ export function HistoryItem({ turn, columns }: { turn: Turn; columns: number }) 
     return (
       <Box width={columns} paddingX={1} marginBottom={1} backgroundColor="#333">
         <Text bold color="whiteBright">
-          ❯ {turn.content}
+          ❯ {expandUserMessageTabs(turn.content)}
         </Text>
       </Box>
     );

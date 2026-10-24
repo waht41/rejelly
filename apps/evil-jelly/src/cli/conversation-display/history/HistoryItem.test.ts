@@ -22,6 +22,49 @@ const toolTurn = (summary: string, preview = "", fullResult = ""): Turn => ({
   tool: { toolName: "run_command", summary, preview, fullResult, ok: true, ordinal: 3 },
 });
 
+describe("HistoryItem user message", () => {
+  function renderUser(content: string, columns: number): string {
+    const turn = Object.freeze({ id: "u_1", type: "user" as const, content });
+    return renderToString(
+      createElement(Static, {
+        items: [turn],
+        children: () => createElement(HistoryItem, { key: turn.id, turn, columns }),
+      }),
+      { columns },
+    );
+  }
+
+  it("renders pasted code with four-column tab stops without changing the source", () => {
+    const content =
+      "\t// 点赞\n\tconst sql = `\n\t\tSELECT user_id\n\n\t\tFROM like_relation\n\t`;\n中\tA\tB\n1234\tend\n🙂\tend";
+    const lines = stripAnsi(renderUser(content, 40)).split("\n");
+
+    expect(lines.map((line) => line.trimEnd())).toEqual([
+      " ❯     // 点赞",
+      "     const sql = `",
+      "         SELECT user_id",
+      "",
+      "         FROM like_relation",
+      "     `;",
+      " 中  A   B",
+      " 1234    end",
+      " 🙂  end",
+      "",
+    ]);
+  });
+
+  it("never emits cursor-moving tabs or rows wider than the terminal", () => {
+    const content = `\t// ${"并发点赞 query ".repeat(20)}\n\t\tSELECT user_id\n\t\tFROM like_relation`;
+    for (const columns of [20, 40, 80]) {
+      const output = renderUser(content, columns);
+      expect(output).not.toContain("\t");
+      for (const line of stripAnsi(output).split("\n")) {
+        expect(stringWidth(line)).toBeLessThanOrEqual(columns);
+      }
+    }
+  });
+});
+
 describe("HistoryItem tool headline", () => {
   it("keeps a long command on one row instead of wrapping it", () => {
     const command = `git -C D:/project/git/benchmark show HEAD:${"results/debug/report".repeat(12)}`;
