@@ -134,7 +134,7 @@ export function MessageComposer({
 
   const commandText = promptDocumentCommandText(buf.document);
   const commandSuggestion = useCommandSuggestion({
-    text: commandText ?? "",
+    text: commandText === undefined ? "" : buf.text,
     cursor: commandText === undefined ? 0 : buf.cursor,
     isMultiline: commandText === undefined || isMultiline,
     onSelect: submitCommand,

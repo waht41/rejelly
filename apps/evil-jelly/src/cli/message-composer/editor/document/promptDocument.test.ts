@@ -23,6 +23,33 @@ describe("PromptDocument", () => {
     expect(document).toEqual([{ type: "token", kind: "skill", qualifiedName: "project:review" }]);
   });
 
+  it("expands pasted tabs without changing source content or token coordinates", () => {
+    const document = [
+      { type: "text" as const, text: "中\t" },
+      skill,
+      { type: "text" as const, text: "\tmux" },
+    ];
+    const projection = projectPromptDocument(document, displayToken);
+
+    expect(projection.text).toBe("中  $review  mux");
+    expect(document[0]).toEqual({ type: "text", text: "中\t" });
+    expect(projection.tokenSpans[0]).toMatchObject({
+      start: 3,
+      end: 10,
+      logicalStart: 2,
+      logicalEnd: 3,
+    });
+    expect(projection.logicalToDisplay(2)).toBe(3);
+    expect(projection.logicalToDisplay(4)).toBe(12);
+    expect(projection.displayToLogical(2, "left")).toBe(1);
+    expect(projection.displayToLogical(2, "right")).toBe(2);
+    expect(projection.displayToLogical(11, "left")).toBe(3);
+    expect(projection.displayToLogical(11, "right")).toBe(4);
+    for (let cursor = 0; cursor <= promptDocumentLogicalLength(document); cursor++) {
+      expect(projection.displayToLogical(projection.logicalToDisplay(cursor))).toBe(cursor);
+    }
+  });
+
   it("counts a semantic token as one logical position", () => {
     const document = replacePromptRange(textPromptDocument("ab"), 1, 1, [skill]);
     const projection = projectPromptDocument(document, displayToken);
