@@ -46,6 +46,7 @@ export interface ModelCallInspection {
   finishReason?: string;
   status: "succeeded" | "failed";
   errorCode?: string;
+  error?: ModelCallCompletedEvent["error"];
   usage?: ModelCallCompletedEvent["usage"];
   uncachedTokens?: number;
   cacheHitRate?: number;
@@ -155,6 +156,7 @@ export function projectModelCalls(
       ...(event.finishReason ? { finishReason: event.finishReason } : {}),
       status: event.success ? "succeeded" : "failed",
       ...(event.errorCode ? { errorCode: event.errorCode } : {}),
+      ...(event.error ? { error: event.error } : {}),
       ...(event.usage ? { usage: event.usage } : {}),
       ...(promptTokens !== undefined
         ? {

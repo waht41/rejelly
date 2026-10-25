@@ -248,6 +248,40 @@ describe("Model Call inspection", () => {
     expect(failed).toContain("+1.0s backoff");
   });
 
+  it("exposes persisted diagnostic causes in JSON and text while accepting old calls", () => {
+    const snapshot = {
+      name: "ModelCallError",
+      message: "Upstream rejected the model",
+      code: "unknown",
+      cause: {
+        name: "APIError",
+        message: "Unsupported upstream model",
+        code: "invalid_model",
+        status: 400,
+        requestId: "req-model-error",
+        truncated: true,
+      },
+    };
+    const withError = events.map((entry) =>
+      entry.type === "model_call_completed" && entry.spanId === "model-2"
+        ? { ...entry, error: snapshot }
+        : entry,
+    );
+    const call = projectModelCallInspection(meta, withError, "M2");
+    expect(call.error).toEqual(snapshot);
+    const rendered = renderModelCallInspection(call);
+    for (const text of [
+      "Upstream rejected the model",
+      "Unsupported upstream model",
+      "invalid_model",
+      "400",
+      "req-model-error",
+      "truncated",
+    ])
+      expect(rendered).toContain(text);
+    expect(projectModelCallInspection(meta, events, "M2").error).toBeUndefined();
+  });
+
   it("rejects invalid and out-of-bounds addresses", () => {
     expect(() => projectModelCallInspection(meta, events, "M0")).toThrow("Expected M1 or 1");
     expect(() => projectModelCallList(meta, events, { selector: "M2..M8" })).toThrow(
