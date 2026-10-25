@@ -145,7 +145,10 @@ function createOutputBindings(): ConversationPresentationBindings {
       out().hydrateHistory(items);
       useAnswerTranscriptStore.getState().hydrate(items);
     },
-    onTranscriptTurn: (update) => useAnswerTranscriptStore.getState().updateTurn(update),
+    onTranscriptTurn: (update) => {
+      out().updateTranscriptTurn(update);
+      useAnswerTranscriptStore.getState().updateTurn(update);
+    },
     clearHistory: () => {
       out().clearHistory();
       resetAnswerTranscriptSession();
@@ -206,6 +209,9 @@ function createPromptBindings(options: {
   const requestManager = createInkRequestManager();
   return {
     getInput,
+    restoreWithdrawnInput: (input) => {
+      useComposerSession.getState().seedDraft(input);
+    },
     confirmTool: createToolApproval({
       suspendInkForExternalProcess,
       getMode: () => useModeStore.getState().mode,

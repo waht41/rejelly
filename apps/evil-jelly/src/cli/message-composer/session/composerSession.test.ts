@@ -70,30 +70,48 @@ describe("composer session bridge", () => {
     expect(useComposerSession.getState().nextImageOrdinal).toBe(1);
   });
 
-  it("releases a pending composer-owned draft when a newer seed replaces it", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "evil-draft-seed-cleanup-"));
+  it("prepends pending restorations without losing images or colliding attachment ids", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "evil-draft-merge-cleanup-"));
     roots.push(root);
-    const imagePath = path.join(root, "clipboard.png");
-    await fs.writeFile(imagePath, "image");
-    useComposerSession.getState().seedDraft({
-      document: [{ type: "token", kind: "image", attachmentId: "image-1" }],
-      attachments: [
-        {
-          id: "image-1",
-          kind: "image",
-          path: imagePath,
-          mimeType: "image/png",
-          ownership: "composer_temp",
-        },
-      ],
-    });
-
-    useComposerSession
-      .getState()
-      .seedDraft({ document: [{ type: "text", text: "new" }], attachments: [] });
+    const pendingPath = path.join(root, "pending.png");
+    const withdrawnPath = path.join(root, "withdrawn.png");
+    await Promise.all([
+      fs.writeFile(pendingPath, "pending"),
+      fs.writeFile(withdrawnPath, "withdrawn"),
+    ]);
+    const store = useComposerSession.getState();
+    for (const imagePath of [pendingPath, withdrawnPath]) {
+      store.seedDraft({
+        document: [{ type: "token", kind: "image", attachmentId: "image" }],
+        attachments: [
+          {
+            id: "image",
+            kind: "image",
+            path: imagePath,
+            mimeType: "image/png",
+            ownership: "composer_temp",
+          },
+        ],
+      });
+    }
+    const merged = useComposerSession.getState().draftSeed!.value;
+    expect(merged.attachments.map((attachment) => attachment.path)).toEqual([
+      withdrawnPath,
+      pendingPath,
+    ]);
+    expect(merged.attachments[0]?.id).not.toBe(merged.attachments[1]?.id);
+    expect(merged.document).toEqual([
+      { type: "token", kind: "image", attachmentId: merged.attachments[0]?.id },
+      { type: "text", text: "\n" },
+      { type: "token", kind: "image", attachmentId: merged.attachments[1]?.id },
+    ]);
+    await expect(fs.readFile(pendingPath, "utf8")).resolves.toBe("pending");
+    await expect(fs.readFile(withdrawnPath, "utf8")).resolves.toBe("withdrawn");
+    resetComposerSession();
 
     await vi.waitFor(async () => {
-      await expect(fs.access(imagePath)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(fs.access(pendingPath)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(fs.access(withdrawnPath)).rejects.toMatchObject({ code: "ENOENT" });
     });
   });
 });

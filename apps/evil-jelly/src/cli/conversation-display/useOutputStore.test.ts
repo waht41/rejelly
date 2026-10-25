@@ -885,6 +885,45 @@ describe("logToolRound", () => {
   });
 });
 
+describe("withdrawable scrollback", () => {
+  it("retains failed inputs and never reopens their withdrawal window on continue", () => {
+    const store = useOutputStore.getState();
+    store.updateTranscriptTurn({ turnId: "failed", status: "running", prompt: "Keep me" });
+    store.logUser("Keep me");
+    store.updateTranscriptTurn({ turnId: "failed", status: "error" });
+    expect(useOutputStore.getState().pendingInput).toBeNull();
+    const keptHistory = useOutputStore.getState().history;
+
+    store.updateTranscriptTurn({ turnId: "failed", status: "running" });
+    expect(useOutputStore.getState().pendingInput).toBeNull();
+    store.updateTranscriptTurn({ turnId: "new", status: "running", prompt: "New input" });
+    store.logUser("New input");
+    store.updateTranscriptTurn({ turnId: "failed", status: "interrupted", withdrawn: true });
+    expect(useOutputStore.getState().pendingInput?.turnId).toBe("new");
+    store.updateTranscriptTurn({ turnId: "new", status: "interrupted", withdrawn: true });
+    expect(useOutputStore.getState().history).toEqual(keptHistory);
+  });
+
+  it("does not flush a pending suffix into the frozen Static prefix on clear", () => {
+    const store = useOutputStore.getState();
+    store.logSystem("Earlier notice");
+    const committed = useOutputStore.getState().history;
+    store.updateTranscriptTurn({ turnId: "pending", status: "running", prompt: "Unflushed" });
+    store.logUser("Unflushed");
+    store.logSystem("Pending notice");
+    store.clearHistory();
+    expect(useOutputStore.getState()).toMatchObject({
+      history: [],
+      pendingInput: null,
+      clearedStaticTurns: committed,
+    });
+    store.logSystem("After clear");
+    expect(useOutputStore.getState().history).toEqual([
+      expect.objectContaining({ type: "system", content: "After clear" }),
+    ]);
+  });
+});
+
 describe("clearHistory", () => {
   it("clears history, stream, and status", () => {
     useOutputStore.setState({

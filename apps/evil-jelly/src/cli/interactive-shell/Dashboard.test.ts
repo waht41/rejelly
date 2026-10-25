@@ -50,6 +50,9 @@ let instance: ReturnType<typeof render> | undefined;
 let stdin: Input;
 let stdout: PassThrough & { columns: number; rows: number; isTTY: boolean };
 let output = "";
+// Ink debug writes the complete Static backlog + dynamic frame on each render. A withdrawn
+// input accidentally flushed to <Static> remains here even if the store later filters it out.
+let lastFrame = "";
 
 beforeEach(() => {
   resetOutputSession();
@@ -59,10 +62,12 @@ beforeEach(() => {
   useDecisionStore.setState({ decision: { type: "idle" }, view: { type: "none" } });
   mounts.history = 0;
   output = "";
+  lastFrame = "";
   stdin = new Input();
   stdout = Object.assign(new PassThrough(), { columns: 100, rows: 24, isTTY: true });
   stdout.on("data", (chunk) => {
-    output += stripAnsi(String(chunk));
+    lastFrame = stripAnsi(String(chunk));
+    output += lastFrame;
   });
 });
 
@@ -87,6 +92,133 @@ function mountDashboard(): void {
     patchConsole: false,
   });
 }
+
+it("removes a withdrawn input without shrinking Static history or hiding the next answer", async () => {
+  const store = useOutputStore.getState();
+  const start = (turnId: string, prompt: string) => {
+    store.beginTurn();
+    store.updateTranscriptTurn({ turnId, status: "running", prompt });
+    store.logUser(prompt);
+  };
+  start("kept", "Same question");
+  store.logAssistant("Earlier answer");
+  store.updateTranscriptTurn({ turnId: "kept", status: "completed" });
+  mountDashboard();
+  await vi.waitFor(() => expect(lastFrame).toContain("Earlier answer"));
+
+  start("withdrawn", "Same question");
+  await vi.waitFor(() => expect(lastFrame.match(/Same question/g)).toHaveLength(2));
+  store.logSystem("Interrupted active task.");
+  await vi.waitFor(() => expect(lastFrame).toContain("Interrupted active task."));
+  store.logSystem("Input withdrawn.");
+  store.updateTranscriptTurn({ turnId: "withdrawn", status: "interrupted", withdrawn: true });
+  await vi.waitFor(() => {
+    expect(lastFrame).toContain("Input withdrawn.");
+    expect(lastFrame.match(/Same question/g)).toHaveLength(1);
+  });
+  expect(lastFrame.match(/Earlier answer/g)).toHaveLength(1);
+
+  start("next", "Next question");
+  store.appendStream("Uncommitted partial output\n");
+  await vi.waitFor(() => expect(lastFrame).toContain("Uncommitted partial output"));
+  expect(useOutputStore.getState().pendingInput?.turnId).toBe("next");
+  store.updateTranscriptTurn({ turnId: "next", status: "running", hasProgress: true });
+  store.logAssistant("Uncommitted partial output\nNext answer");
+  store.updateTranscriptTurn({ turnId: "next", status: "completed" });
+  await vi.waitFor(() => expect(lastFrame).toContain("Next answer"));
+  for (const text of ["Same question", "Earlier answer", "Next question", "Next answer"]) {
+    expect(lastFrame.split(text)).toHaveLength(2);
+  }
+  expect(mounts.history).toBe(1);
+});
+
+it("keeps long withdrawable input inside the refreshable viewport", async () => {
+  const store = useOutputStore.getState();
+  mountDashboard();
+  await vi.waitFor(() => expect(lastFrame).toContain("Message"));
+  const prompt = Array.from({ length: 100 }, (_, i) => `Pending input row ${i}`).join("\n");
+  store.beginTurn();
+  store.updateTranscriptTurn({ turnId: "long", status: "running", prompt });
+  store.logUser(prompt);
+  await vi.waitFor(() => expect(lastFrame).toContain("Pending input row 99"));
+  expect(lastFrame).not.toContain("Pending input row 0");
+  expect(lastFrame.trimEnd().split("\n").length).toBeLessThanOrEqual(stdout.rows);
+  store.appendStream(`${Array.from({ length: 50 }, (_, i) => `Partial row ${i}`).join("\n\n")}\n`);
+  await vi.waitFor(() => expect(lastFrame).toContain("Partial row 49"));
+  expect(lastFrame).not.toContain("Partial row 0");
+  expect(lastFrame.trimEnd().split("\n").length).toBeLessThanOrEqual(stdout.rows);
+  store.logSystem("Input withdrawn.");
+  store.updateTranscriptTurn({ turnId: "long", status: "interrupted", withdrawn: true });
+  await vi.waitFor(() => expect(lastFrame).not.toContain("Pending input row"));
+  expect(lastFrame).toContain("Message");
+});
+
+it("prepends withdrawn rich input while preserving live text and attachments", async () => {
+  const submit = vi.fn();
+  const composer = useComposerSession.getState();
+  composer.setBackgroundLineHandler(submit);
+  mountDashboard();
+  await vi.waitFor(() => expect(lastFrame).toContain("Message"));
+  const input = {
+    document: [
+      { type: "text" as const, text: "Restore " },
+      { type: "token" as const, kind: "paste" as const, text: "one\ntwo\nthree\nfour\nfive\nsix" },
+      { type: "token" as const, kind: "file" as const, attachmentId: "file" },
+      { type: "token" as const, kind: "image" as const, attachmentId: "image" },
+    ],
+    attachments: [
+      { id: "file", kind: "file" as const, path: "keep.ts" },
+      {
+        id: "image",
+        kind: "image" as const,
+        path: "keep.png",
+        mimeType: "image/png" as const,
+        ownership: "borrowed" as const,
+      },
+    ],
+  };
+  composer.seedDraft(input);
+  await vi.waitFor(() => expect(lastFrame).toContain("@keep.ts[Image #1]"));
+  expect(lastFrame).toContain("[Pasted text +6 lines]");
+  stdin.write("\r");
+  await vi.waitFor(() => expect(submit).toHaveBeenCalledWith(input));
+  await vi.waitFor(() => expect(lastFrame).toContain("Message"));
+
+  stdin.write("Already typing");
+  await vi.waitFor(() => expect(lastFrame).toContain("Already typing"));
+  composer.seedDraft(input);
+  await vi.waitFor(() => expect(lastFrame).toContain("@keep.ts[Image #1]"));
+  expect(lastFrame).toContain("Already typing");
+  stdin.write("\r");
+  await vi.waitFor(() =>
+    expect(submit).toHaveBeenLastCalledWith({
+      document: [...input.document, { type: "text", text: "\nAlready typing" }],
+      attachments: input.attachments,
+    }),
+  );
+  await vi.waitFor(() => expect(lastFrame).toContain("Message"));
+
+  // An attachment-only live draft must also survive prepending the withdrawn input.
+  composer.seedDraft({
+    document: [{ type: "token", kind: "file", attachmentId: "current-file" }],
+    attachments: [{ id: "current-file", kind: "file", path: "new.ts" }],
+  });
+  await vi.waitFor(() => expect(lastFrame).toContain("@new.ts"));
+  composer.seedDraft(input);
+  await vi.waitFor(() => expect(lastFrame).toContain("@keep.ts[Image #1]"));
+  expect(lastFrame).toContain("@new.ts");
+  stdin.write("\r");
+  await vi.waitFor(() =>
+    expect(submit).toHaveBeenLastCalledWith({
+      document: [
+        ...input.document,
+        { type: "text", text: "\n" },
+        { type: "token", kind: "file", attachmentId: "current-file" },
+      ],
+      attachments: [...input.attachments, { id: "current-file", kind: "file", path: "new.ts" }],
+    }),
+  );
+});
 
 it("reads full questions and answers with independent paging, search, and copy", async () => {
   const copy = vi.mocked(copyTextToClipboard);

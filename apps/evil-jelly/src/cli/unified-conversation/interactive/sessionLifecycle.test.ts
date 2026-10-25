@@ -1058,6 +1058,8 @@ describe("non-TTY session lifecycle", () => {
       "/continue",
       "/exit",
     ]);
+    const restoredInputs: MemoryInput[] = [];
+    bindings.restoreWithdrawnInput = (input) => restoredInputs.push(input);
     bindings.onTranscriptTurn = (update) => updates.push(update);
     bindings.logSystemEvent = (message) => systemEvents.push(message);
     await runEvilJellyHost(bindings, {
@@ -1077,7 +1079,20 @@ describe("non-TTY session lifecycle", () => {
         (message) => message === "No failed or interrupted task is available to continue.\n",
       ),
     ).toHaveLength(3);
-    expect(updates.filter((update) => update.withdrawn)).toHaveLength(3);
+    const withdrawnIds = updates
+      .filter((update) => update.withdrawn)
+      .map((update) => update.turnId);
+    expect(withdrawnIds).toHaveLength(3);
+    const progressedIds = updates
+      .filter((update) => update.hasProgress)
+      .map((update) => update.turnId);
+    expect(progressedIds).toHaveLength(2);
+    expect(progressedIds.some((id) => withdrawnIds.includes(id))).toBe(false);
+    expect(restoredInputs).toEqual([
+      textPromptInput("First cancelled"),
+      textPromptInput("Keep this"),
+      textPromptInput("Final cancelled"),
+    ]);
     const lastCall = calls[3] ?? [];
     const userTexts = lastCall
       .filter((message) => message.role === "user")
@@ -1126,6 +1141,58 @@ describe("non-TTY session lifecycle", () => {
     expect(
       calls.at(-1)?.some((message) => messageContentToText(message.content) === "First cancelled"),
     ).toBe(false);
+  });
+
+  it.each([
+    true,
+    false,
+  ])("returns owned rich input on withdrawal without losing its image (restore=%s)", async (restore) => {
+    const imagePath = path.join(tmpDir, "withdrawn-clipboard.png");
+    const bytes = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=",
+      "base64",
+    );
+    await fs.writeFile(imagePath, bytes);
+    const input: MemoryInput = {
+      document: [
+        { type: "text", text: "Inspect " },
+        { type: "token", kind: "paste", text: "original\npaste" },
+        { type: "token", kind: "file", attachmentId: "file" },
+        { type: "token", kind: "image", attachmentId: "image" },
+      ],
+      attachments: [
+        { id: "file", kind: "file", path: "README.md" },
+        {
+          id: "image",
+          kind: "image",
+          path: imagePath,
+          mimeType: "image/png",
+          ownership: "composer_temp",
+        },
+      ],
+    };
+    const restored: MemoryInput[] = [];
+    const bindings = createMemoryBindings([input, ...(restore ? [input] : []), "/exit"]);
+    if (restore) bindings.restoreWithdrawnInput = (value) => restored.push(value);
+    let calls = 0;
+    const model: ModelAdapter = {
+      id: "withdraw-and-restore-model",
+      async *stream(): AsyncGenerator<StreamEvent> {
+        calls += 1;
+        if (calls === 1) throw new AbortError("Stopped by user (/stop or Esc)");
+        yield { type: "text", content: "Restored image received." };
+      },
+    };
+    await runEvilJellyHost(bindings, {
+      runControl: createInteractiveRunControl(),
+      model,
+      sessionId: "withdraw-and-restore",
+      sessionStartMode: "new",
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot, blobRoot },
+    });
+    expect(restored).toEqual(restore ? [input] : []);
+    expect(calls).toBe(restore ? 2 : 1);
+    await expect(fs.access(imagePath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("restores /continue recovery after exiting and resuming an interrupted session", async () => {

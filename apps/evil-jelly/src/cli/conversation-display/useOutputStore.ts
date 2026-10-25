@@ -9,6 +9,7 @@ import type {
 import {
   RESUME_VISIBLE_TURNS,
   type TranscriptItem,
+  type TranscriptTurnUpdate,
   tailTranscriptByInitialTurns,
 } from "../../shared/session/transcript";
 import type {
@@ -67,6 +68,8 @@ const assistantStream = new AssistantStreamBuffer(({ stableText, tailText }) => 
 interface OutputState extends RunningToolsState, RuntimeStatusState {
   streamBuffer: string;
   history: Turn[];
+  /** The suffix from this fresh input must stay transient until retention or withdrawal. */
+  pendingInput: { turnId: string; historyIndex: number } | null;
   /** Complete current-session tool archive; unlike visible history it is not resume-tail limited. */
   toolHistory: Turn[];
   /**
@@ -93,6 +96,7 @@ interface OutputState extends RunningToolsState, RuntimeStatusState {
   /** After a mid-turn user pause (confirmation), resume the phase that fits: tools running → "tool", else "working". */
   resumeWork: (detail?: string) => void;
   logUser: (content: string) => void;
+  updateTranscriptTurn: (update: TranscriptTurnUpdate) => void;
   logAssistant: (content: string) => void;
   /** Head the batch a single model call issued; callers filter out single-call rounds. */
   logToolRound: (calls: number) => void;
@@ -139,6 +143,7 @@ export const useOutputStore = create<OutputState>((set) => ({
   history: [],
   toolHistory: [],
   clearedStaticTurns: [],
+  pendingInput: null,
   toolCallGeneration: null,
 
   appendStream: (text) => {
@@ -218,6 +223,30 @@ export const useOutputStore = create<OutputState>((set) => ({
     set((state) => ({
       history: [...state.history, userTurn(historySequence, content)],
     })),
+
+  updateTranscriptTurn: (update) =>
+    set((state) => {
+      if (update.status === "running" && update.prompt !== undefined) {
+        return { pendingInput: { turnId: update.turnId, historyIndex: state.history.length } };
+      }
+      const pending = state.pendingInput;
+      if (
+        !pending ||
+        pending.turnId !== update.turnId ||
+        (update.status === "running" && !update.hasProgress)
+      )
+        return {};
+      return {
+        pendingInput: null,
+        ...(update.withdrawn
+          ? {
+              // Only this unflushed input is removed, never a same-text earlier submission.
+              history: state.history.filter((_, index) => index !== pending.historyIndex),
+              runtime: idleRuntime(),
+            }
+          : {}),
+      };
+    }),
 
   logAssistant: (content) => {
     const { visualRemainder, shouldHideFinal } = assistantStream.finalize(content);
@@ -347,8 +376,12 @@ export const useOutputStore = create<OutputState>((set) => ({
     assistantSegmentActive = false;
     safeBoundaryOperations.clear();
     set((state) => ({
-      clearedStaticTurns: [...state.clearedStaticTurns, ...state.history],
+      clearedStaticTurns: [
+        ...state.clearedStaticTurns,
+        ...state.history.slice(0, state.pendingInput?.historyIndex),
+      ],
       history: [],
+      pendingInput: null,
       toolHistory: [],
       streamBuffer: "",
       runningTools: [],
@@ -377,6 +410,7 @@ export const useOutputStore = create<OutputState>((set) => ({
     const visibleProjected = projected.slice(projected.length - visibleItems.length);
     set((state) => ({
       history: [...state.history, ...visibleProjected],
+      pendingInput: null,
       toolHistory: [...state.toolHistory, ...projected.filter((turn) => turn.type === "tool")],
       streamBuffer: "",
       runningTools: [],
@@ -400,6 +434,7 @@ export function resetOutputSession(): void {
     history: [],
     toolHistory: [],
     clearedStaticTurns: [],
+    pendingInput: null,
   });
 }
 

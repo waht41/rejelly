@@ -20,6 +20,8 @@ export interface TranscriptTurnUpdate {
   status: TranscriptTurnStatus;
   /** Remove a fresh input cancelled before any committed assistant/tool progress. */
   withdrawn?: true;
+  /** Committed assistant/tool progress (or a steer) makes the fresh input non-withdrawable. */
+  hasProgress?: true;
   prompt?: string;
   promptSummary?: string;
   answer?: string;

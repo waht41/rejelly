@@ -129,8 +129,12 @@ async function commitUserInput(
         ? frozen.nodes.filter((node) => node.kind === "image").length
         : 0);
   runtime.session.setNextImageOrdinal(nextImageOrdinal);
+  // Publish the retractable input only after preparation succeeds: no fallible await may
+  // strand its display between the initial transcript update and the execution lifecycle.
+  const message = await materializeFrozenUserInputMessage(frozen, {
+    blobRoot: runtime.sessionBlobRoot,
+  });
   const display = projectFrozenUserInputDisplay(frozen);
-  runtime.host.logUserMessage(formatUserInputDisplay(display));
   if (inputKind === "initial") {
     runtime.host.onTranscriptTurn?.({
       turnId,
@@ -139,12 +143,8 @@ async function commitUserInput(
       promptSummary: projectFrozenUserInputSummary(frozen),
     });
   }
-  return {
-    frozen,
-    message: await materializeFrozenUserInputMessage(frozen, {
-      blobRoot: runtime.sessionBlobRoot,
-    }),
-  };
+  runtime.host.logUserMessage(formatUserInputDisplay(display));
+  return { frozen, message };
 }
 
 async function drainAndPrepareSteerMessages(
@@ -252,6 +252,16 @@ async function runCommittedConversationTurn(
   let retryHistory: Message[] | undefined;
   let failureHistory: Message[] | undefined;
   let toolActivity: TurnToolActivity = "none";
+  let inputProgressReported = false;
+  const reportInputProgress = (): void => {
+    if (!input.withdrawOnEmptyAbort || inputProgressReported) return;
+    inputProgressReported = true;
+    runtime.host.onTranscriptTurn?.({
+      turnId: input.turnId,
+      status: "running",
+      hasProgress: true,
+    });
+  };
   const observeProgress = (event: TurnProgressEvent): void => {
     switch (event) {
       case "model_output":
@@ -267,6 +277,7 @@ async function runCommittedConversationTurn(
         toolActivity = "completed";
         break;
     }
+    reportInputProgress();
   };
   const historyBefore = runtime.session.history;
   let inputWithdrawn = false;
@@ -304,6 +315,7 @@ async function runCommittedConversationTurn(
         pendingUserMessages: () =>
           drainAndPrepareSteerMessages(runtime, input.turnId, turnMcpSelection, () => {
             additionalInputCommitted = true;
+            reportInputProgress();
           }),
         sessionBlobRoot: runtime.sessionBlobRoot,
         sessionRecorder: runtime.sessionRecorder,
@@ -523,28 +535,41 @@ export async function executeConversationTurn(
   promptInput: PromptInput,
 ): Promise<TurnExecutionResult> {
   let recoveryStage: TurnRecoveryStage = "preparation";
+  // Keep the original semantic draft and its owned images alive until the outcome is known.
+  // A successful withdrawal transfers them back to the host instead of returning dead paths.
+  let inputReturned = false;
+  const restoreWithdrawnInput = (): void => {
+    if (!runtime.host.restoreWithdrawnInput) return;
+    runtime.host.restoreWithdrawnInput(promptInput);
+    inputReturned = true;
+  };
   try {
-    const resolved = await materializePromptInput(runtime, promptInput).finally(() =>
-      releasePromptResources(promptInput).catch((error) =>
-        runtime.host.logSystemEvent(
-          `Prompt resource cleanup failed: ${formatPersistenceError(error)}\n`,
-        ),
-      ),
-    );
+    const resolved = await materializePromptInput(runtime, promptInput);
     const turnId = createTurnId();
     runtime.host.onTurnStart?.();
     const committed = await commitUserInput(runtime, turnId, "initial", resolved);
     recoveryStage = "agent";
-    return await runCommittedConversationTurn(runtime, {
+    const result = await runCommittedConversationTurn(runtime, {
       turnId,
       userMessage: committed.message,
       mcpServerIds: frozenUserInputMcpServerIds(committed.frozen),
       withdrawOnEmptyAbort: true,
     });
+    if (result.status === "withdrawn") restoreWithdrawnInput();
+    return result;
   } catch (error) {
     if (recoveryStage === "agent" || !isAbortError(error)) throw error;
     runtime.host.logSystemEvent("Input withdrawn before submission completed.\n");
+    restoreWithdrawnInput();
     return { status: "withdrawn" };
+  } finally {
+    if (!inputReturned) {
+      await releasePromptResources(promptInput).catch((error) =>
+        runtime.host.logSystemEvent(
+          `Prompt resource cleanup failed: ${formatPersistenceError(error)}\n`,
+        ),
+      );
+    }
   }
 }
 

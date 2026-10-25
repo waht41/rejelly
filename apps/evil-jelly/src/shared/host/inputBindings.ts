@@ -164,6 +164,11 @@ export type McpManagerAction =
 /** User input, picker inventory, and general prompt choices supplied to the agent runtime. */
 export interface PromptInputBindings {
   getInput: () => Promise<PromptInput>;
+  /**
+   * Takes ownership of a freshly withdrawn input, including temporary attachments. Prepend it
+   * to the live draft, preserving existing content and attachments (with a newline separator).
+   */
+  restoreWithdrawnInput?: (input: PromptInput) => void;
   setAvailableSkills?: (skills: UserSkillListItem[]) => void;
   setAvailableMcpServers?: (servers: UserMcpListItem[]) => void;
   setAvailableMemories?: (memories: UserMemoryListItem[]) => void;
