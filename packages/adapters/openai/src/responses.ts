@@ -293,9 +293,28 @@ function createResponsesProviderState(
   };
 }
 
-function responseFailureMessage(response: Response): string {
-  return (
-    response.error?.message ?? response.incomplete_details?.reason ?? "Responses request failed"
+function responseStreamError(
+  event: Extract<ResponseStreamEvent, { type: "response.failed" | "error" }>,
+  status: number,
+  requestId: string | null,
+): Error {
+  const failedResponse = event.type === "response.failed" ? event.response : undefined;
+  const upstream = event.type === "error" ? event : failedResponse?.error;
+  // Compatible endpoints may attach HTTP diagnostics to an otherwise standard SSE event.
+  const metadata = (failedResponse ?? event) as unknown as Record<string, unknown>;
+  return Object.assign(
+    new Error(
+      upstream?.message ?? failedResponse?.incomplete_details?.reason ?? "Responses request failed",
+    ),
+    {
+      name: "OpenAIResponsesError",
+      code: upstream?.code,
+      ...(upstream && "param" in upstream ? { param: upstream.param } : {}),
+      status: typeof metadata.status === "number" ? metadata.status : status,
+      request_id: requestId ?? metadata.request_id ?? metadata._request_id,
+      // Keep the original event in memory; persistence projects only safe diagnostic fields.
+      cause: event,
+    },
   );
 }
 
@@ -358,10 +377,16 @@ export async function* streamResponses(
   let terminal = false;
 
   try {
-    const stream = await client.responses.create(params, {
-      ...requestOption,
-      signal: requestController.signal,
-    });
+    const {
+      data: stream,
+      response,
+      request_id,
+    } = await client.responses
+      .create(params, {
+        ...requestOption,
+        signal: requestController.signal,
+      })
+      .withResponse();
 
     for await (const event of stream as AsyncIterable<ResponseStreamEvent>) {
       if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -456,10 +481,10 @@ export async function* streamResponses(
         }
         case "response.failed":
           terminal = true;
-          throw new Error(responseFailureMessage(event.response));
+          throw responseStreamError(event, response.status, request_id);
         case "error":
           terminal = true;
-          throw new Error(event.message);
+          throw responseStreamError(event, response.status, request_id);
       }
     }
 

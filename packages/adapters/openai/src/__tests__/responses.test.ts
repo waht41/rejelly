@@ -4,13 +4,21 @@ import { z } from "zod";
 import type { ResponseParams } from "../index";
 import { createOpenAIAdapter, toOpenAIResponseInput } from "../index";
 
-const mocks = vi.hoisted(() => ({ create: vi.fn() }));
+const mocks = vi.hoisted(() => ({ create: vi.fn(), requestId: null as string | null }));
 
 vi.mock("openai", () => ({
   default: class {
     baseURL = "https://mock.test/v1";
     chat = { completions: { create: vi.fn() } };
-    responses = { create: mocks.create };
+    responses = {
+      create: (...args: unknown[]) => ({
+        withResponse: async () => ({
+          data: await mocks.create(...args),
+          response: { status: 200 },
+          request_id: mocks.requestId,
+        }),
+      }),
+    };
   },
   APIError: class APIError extends Error {},
 }));
@@ -66,7 +74,10 @@ async function drain(adapter: ReturnType<typeof createOpenAIAdapter>, messages: 
 }
 
 describe("OpenAI Responses adapter", () => {
-  beforeEach(() => mocks.create.mockReset());
+  beforeEach(() => {
+    mocks.create.mockReset();
+    mocks.requestId = null;
+  });
 
   it("keeps model provider optional while using a stable adapter state owner", async () => {
     mocks.create.mockImplementation(() =>
@@ -485,19 +496,51 @@ describe("OpenAI Responses adapter", () => {
     await expect(result).rejects.toMatchObject({ name: "AbortError" });
   });
 
-  it("does not fall back to Chat when a Responses stream fails", async () => {
-    mocks.create.mockImplementation(() =>
-      events({
-        type: "error",
-        code: "invalid_prompt",
-        message: "unsupported",
-        param: null,
-        sequence_number: 1,
-      }),
-    );
+  it.each([
+    ["response.failed", "context_length_exceeded", "context_length"],
+    ["response.failed", "server_error", "server_error"],
+    ["error", "rate_limit_exceeded", "rate_limit"],
+    ["error", "invalid_api_key", "auth_error"],
+    ["error", "request_timeout", "timeout"],
+    ["error", "invalid_prompt", "unknown"],
+  ])("preserves and classifies %s (%s) without falling back to Chat", async (type, code, expected) => {
+    const failure =
+      type === "response.failed"
+        ? {
+            type,
+            response: response({
+              status: "failed",
+              error: { code, message: "Upstream rejected the request" },
+              _request_id: "req-failed-response",
+            }),
+            sequence_number: 1,
+          }
+        : {
+            type,
+            code,
+            message: "Upstream rejected the request",
+            param: "input",
+            request_id: "req-stream-error",
+            sequence_number: 1,
+          };
+    mocks.create.mockImplementation(() => events(failure));
+    if (code === "server_error") mocks.requestId = "req-http-header";
     const adapter = createOpenAIAdapter({ api: "responses", modelId: "test-model" });
-    const result = drain(adapter, [{ role: "user", content: "hi" }]);
-    await expect(result).rejects.toMatchObject({ name: "ModelCallError" });
+    const error = await drain(adapter, [{ role: "user", content: "hi" }]).catch((error) => error);
+    expect(error).toMatchObject({
+      name: "ModelCallError",
+      code: expected,
+      message: expect.stringContaining("Upstream rejected the request"),
+      cause: {
+        name: "OpenAIResponsesError",
+        code,
+        status: 200,
+        request_id:
+          mocks.requestId ??
+          (type === "response.failed" ? "req-failed-response" : "req-stream-error"),
+      },
+    });
+    expect(error.cause.cause).toBe(failure);
     expect(mocks.create).toHaveBeenCalledTimes(1);
   });
 });
