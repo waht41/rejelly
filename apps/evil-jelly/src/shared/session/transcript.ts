@@ -18,6 +18,8 @@ export type TranscriptTurnStatus = "running" | "completed" | "interrupted" | "er
 export interface TranscriptTurnUpdate {
   turnId: string;
   status: TranscriptTurnStatus;
+  /** Remove a fresh input cancelled before any committed assistant/tool progress. */
+  withdrawn?: true;
   prompt?: string;
   promptSummary?: string;
   answer?: string;

@@ -79,7 +79,7 @@ export interface SessionRecorder extends SessionMessageSink {
   recordToolCall(call: ToolCallCompletedInput): Promise<void>;
   completeTurn(
     turnId: string,
-    status: "completed" | "interrupted" | "error",
+    status: "completed" | "interrupted" | "error" | "withdrawn",
     budget?: SessionBudget,
   ): Promise<void>;
   endSegment(input: {
@@ -128,7 +128,7 @@ class JsonlSessionRecorder implements SessionRecorder {
 
   // A recorder instance only sees newly appended turns. This set prevents a duplicated initial
   // input callback from incrementing the checkpoint count twice without retaining all old turn ids.
-  readonly #newUserTurnIds = new Set<string>();
+  readonly #newUserTurnIds = new Map<string, string>();
 
   constructor(
     private readonly writer: SessionWriter,
@@ -222,7 +222,7 @@ class JsonlSessionRecorder implements SessionRecorder {
     });
     this.#nextImageOrdinal += frozen.nodes.filter((node) => node.kind === "image").length;
     if (inputKind === "initial" && !this.#newUserTurnIds.has(turnId)) {
-      this.#newUserTurnIds.add(turnId);
+      this.#newUserTurnIds.set(turnId, this.#title);
       this.#userTurns += 1;
       if (this.#title === "(untitled)") {
         this.#title =
@@ -333,7 +333,7 @@ class JsonlSessionRecorder implements SessionRecorder {
 
   async completeTurn(
     turnId: string,
-    status: "completed" | "interrupted" | "error",
+    status: "completed" | "interrupted" | "error" | "withdrawn",
     budget?: SessionBudget,
   ): Promise<void> {
     // Budget and turn closure are one durable batch. A crash before the final state is still safe:
@@ -342,8 +342,22 @@ class JsonlSessionRecorder implements SessionRecorder {
       await this.#append({ type: "budget_updated", budget });
       this.#budget = budget;
     }
-    await this.#append({ type: "turn_completed", turnId, status });
-    await this.#checkpoint(status === "completed" ? "active" : status);
+    const withdrawn = status === "withdrawn";
+    if (withdrawn) {
+      const previousTitle = this.#newUserTurnIds.get(turnId);
+      if (previousTitle !== undefined) {
+        this.#newUserTurnIds.delete(turnId);
+        this.#userTurns -= 1;
+        this.#title = previousTitle;
+      }
+    }
+    await this.#append({
+      type: "turn_completed",
+      turnId,
+      status: withdrawn ? "interrupted" : status,
+      ...(withdrawn ? { inputWithdrawn: true } : {}),
+    });
+    await this.#checkpoint(status === "completed" || withdrawn ? "active" : status);
     await this.writer.flush();
   }
 

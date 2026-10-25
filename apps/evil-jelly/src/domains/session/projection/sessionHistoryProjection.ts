@@ -123,7 +123,8 @@ export function buildLatestRecoveryCandidate(
     }
   }
 
-  if (!latest || latest.status === "completed") return undefined;
+  if (!latest || latest.status === "completed" || replay.withdrawnTurnIds.has(latest.turnId))
+    return undefined;
   const status = latest.status ?? "interrupted";
   return {
     turnId: latest.turnId,
@@ -147,6 +148,11 @@ export function buildStoredActiveContext(replay: PreparedSessionReplay): StoredS
   let needsRecovery = false;
 
   for (const event of replay.events) {
+    if (
+      (event.type === "user_input_recorded" || event.type === "message_recorded") &&
+      replay.withdrawnTurnIds.has(event.turnId)
+    )
+      continue;
     switch (event.type) {
       case "legacy_snapshot":
         messages = [...event.messages];
@@ -168,7 +174,7 @@ export function buildStoredActiveContext(replay: PreparedSessionReplay): StoredS
         break;
       case "turn_completed":
         openTurns.delete(event.turnId);
-        if (event.status !== "completed") {
+        if (event.status !== "completed" && !event.inputWithdrawn) {
           needsRecovery = true;
         }
         break;
@@ -341,6 +347,12 @@ export function buildTranscript(
   const turnStatuses = new Map<string, "completed" | "interrupted" | "error">();
 
   for (const event of replay.events) {
+    if (
+      "turnId" in event &&
+      typeof event.turnId === "string" &&
+      replay.withdrawnTurnIds.has(event.turnId)
+    )
+      continue;
     if (event.type === "turn_completed") turnStatuses.set(event.turnId, event.status);
     if (event.type === "legacy_snapshot") {
       let legacyTurn = 0;

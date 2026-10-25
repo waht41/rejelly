@@ -73,7 +73,8 @@ export function projectSessionSummary(
         if (
           event.source.kind === "user_input" &&
           event.source.inputKind === "initial" &&
-          !userTurnIds.has(event.turnId)
+          !userTurnIds.has(event.turnId) &&
+          !replay.withdrawnTurnIds.has(event.turnId)
         ) {
           userTurnIds.add(event.turnId);
           userTurns += 1;
@@ -81,7 +82,11 @@ export function projectSessionSummary(
         }
         break;
       case "user_input_recorded":
-        if (event.inputKind === "initial" && !userTurnIds.has(event.turnId)) {
+        if (
+          event.inputKind === "initial" &&
+          !userTurnIds.has(event.turnId) &&
+          !replay.withdrawnTurnIds.has(event.turnId)
+        ) {
           userTurnIds.add(event.turnId);
           userTurns += 1;
           title =
@@ -91,7 +96,9 @@ export function projectSessionSummary(
         }
         break;
       case "turn_completed":
-        if (event.status === "error") {
+        if (event.inputWithdrawn) {
+          status = "active";
+        } else if (event.status === "error") {
           status = "error";
         } else if (event.status === "interrupted") {
           status = "interrupted";

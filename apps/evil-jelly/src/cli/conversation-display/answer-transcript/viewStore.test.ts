@@ -93,6 +93,16 @@ describe("answer transcript", () => {
     expect(useAnswerTranscriptStore.getState().anchor).toEqual({ line: 0, offset: 0 });
   });
 
+  it("removes withdrawn inputs without changing earlier answers", () => {
+    const store = useAnswerTranscriptStore.getState();
+    store.updateTurn({ turnId: "kept", prompt: "Keep", answer: "Answer", status: "completed" });
+    store.updateTurn({ turnId: "cancelled", prompt: "Cancel", status: "running" });
+    store.select("cancelled");
+    store.updateTurn({ turnId: "cancelled", status: "interrupted", withdrawn: true });
+    expect(useAnswerTranscriptStore.getState().entries.map((entry) => entry.id)).toEqual(["kept"]);
+    expect(useAnswerTranscriptStore.getState().selectedId).toBeNull();
+  });
+
   it("resets answers and bookmarks on clear or hydration of a different session", () => {
     const store = useAnswerTranscriptStore.getState();
     store.hydrate(transcript);

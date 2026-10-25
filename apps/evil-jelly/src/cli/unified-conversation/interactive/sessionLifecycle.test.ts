@@ -926,7 +926,7 @@ describe("non-TTY session lifecycle", () => {
       async *stream(messages): AsyncGenerator<StreamEvent> {
         calls.push(messages.map((message) => ({ ...message })));
         const currentCall = callIndex++;
-        if (mode === "post-tool" && currentCall === 0) {
+        if (mode !== "retry" && currentCall === 0) {
           yield {
             type: "tool_call",
             toolCall: {
@@ -938,7 +938,7 @@ describe("non-TTY session lifecycle", () => {
           };
           return;
         }
-        if (currentCall === (mode === "post-tool" ? 1 : 0)) {
+        if (currentCall === (mode !== "retry" ? 1 : 0)) {
           if (mode === "retry" || mode === "post-tool") {
             throw new ModelCallError("provider unavailable", {
               modelId: "image-recovery-model",
@@ -987,7 +987,7 @@ describe("non-TTY session lifecycle", () => {
         session,
       });
     }
-    expect(calls).toHaveLength(mode === "post-tool" ? 4 : 3);
+    expect(calls).toHaveLength(mode !== "retry" ? 4 : 3);
     if (mode === "post-tool") {
       expect(calls[2]).toEqual(calls[1]);
     }
@@ -1022,11 +1022,125 @@ describe("non-TTY session lifecycle", () => {
     expect(record?.recovery).toBeUndefined();
   });
 
+  it.each([
+    true,
+    false,
+  ])("withdraws fresh inputs cancelled without progress (persistence=%s)", async (persistence) => {
+    const calls: Message[][] = [];
+    const updates: TranscriptTurnUpdate[] = [];
+    const systemEvents: string[] = [];
+    const model: ModelAdapter = {
+      id: "withdraw-input-model",
+      async *stream(messages, options): AsyncGenerator<StreamEvent> {
+        calls.push(messages.map((message) => ({ ...message })));
+        if (calls.length === 1 || calls.length === 3 || calls.length === 5) {
+          const signal = options?.signal;
+          if (!signal) throw new Error("expected operation signal");
+          queueMicrotask(() => interruptActiveTask("withdraw fresh input"));
+          await new Promise<void>((_resolve, reject) => {
+            const abort = () => reject(AbortError.fromSignal(signal));
+            if (signal.aborted) abort();
+            else signal.addEventListener("abort", abort, { once: true });
+          });
+          return;
+        }
+        yield { type: "text", content: "Kept answer." };
+      },
+    };
+    const bindings = createMemoryBindings([
+      "First cancelled",
+      "/continue",
+      "Keep this",
+      "Keep this",
+      "/continue",
+      "New question",
+      "Final cancelled",
+      "/continue",
+      "/exit",
+    ]);
+    bindings.onTranscriptTurn = (update) => updates.push(update);
+    bindings.logSystemEvent = (message) => systemEvents.push(message);
+    await runEvilJellyHost(bindings, {
+      runControl: createInteractiveRunControl(),
+      model,
+      ...(persistence
+        ? {
+            sessionId: "withdraw-input",
+            sessionStartMode: "new" as const,
+            session: { enabled: true as const, appVersion: "1.0.0", sessionsRoot },
+          }
+        : {}),
+    });
+    expect(calls).toHaveLength(5);
+    expect(
+      systemEvents.filter(
+        (message) => message === "No failed or interrupted task is available to continue.\n",
+      ),
+    ).toHaveLength(3);
+    expect(updates.filter((update) => update.withdrawn)).toHaveLength(3);
+    const lastCall = calls[3] ?? [];
+    const userTexts = lastCall
+      .filter((message) => message.role === "user")
+      .map((message) => messageContentToText(message.content));
+    expect(userTexts).not.toContain("First cancelled");
+    expect(userTexts.filter((text) => text === "Keep this")).toHaveLength(1);
+    expect(userTexts).toContain("New question");
+    expect(userTexts.some((text) => text.includes("Continue the previous task"))).toBe(false);
+    expect(
+      lastCall.some(
+        (message) =>
+          message.role === "assistant" && messageContentToText(message.content) === "Kept answer.",
+      ),
+    ).toBe(true);
+    if (!persistence) return;
+    const record = await resumeSession(workspaceRoot, "withdraw-input", {
+      originator: "evil-jelly-cli",
+      appVersion: "1.0.0",
+      sessionsRoot,
+    });
+    expect(record?.meta).toMatchObject({ turns: 2, title: "Keep this" });
+    expect(record?.recovery).toBeUndefined();
+    expect(
+      record?.transcript?.flatMap((item) => (item.type === "user" ? [item.content] : [])),
+    ).toEqual(["Keep this", "New question"]);
+    expect(
+      record?.messages.some(
+        (message) => messageContentToText(message.content) === "First cancelled",
+      ),
+    ).toBe(false);
+    const stored = await readSessionEvents(workspaceRoot, "withdraw-input", { sessionsRoot });
+    expect(
+      stored.events.filter((event) => event.type === "turn_completed" && event.inputWithdrawn),
+    ).toHaveLength(3);
+    const seed = buildSessionResumeSeed(record!);
+    await runEvilJellyHost(createMemoryBindings(["/continue", "After restart", "/exit"]), {
+      runControl: createInteractiveRunControl(),
+      model,
+      sessionId: "withdraw-input",
+      sessionStartMode: "resumed",
+      seedContext: seed.activeContext,
+      seedRecovery: seed.recovery,
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+    });
+    expect(calls).toHaveLength(6);
+    expect(
+      calls.at(-1)?.some((message) => messageContentToText(message.content) === "First cancelled"),
+    ).toBe(false);
+  });
+
   it("restores /continue recovery after exiting and resuming an interrupted session", async () => {
+    let firstCall = true;
     const interruptedModel: ModelAdapter = {
       id: "durable-recovery-model",
       async *stream(): AsyncGenerator<StreamEvent> {
-        yield* [] as StreamEvent[];
+        if (firstCall) {
+          firstCall = false;
+          yield {
+            type: "tool_call",
+            toolCall: { index: 0, id: "durable-list", name: "list_directory", arguments: "{}" },
+          };
+          return;
+        }
         throw new AbortError("user interrupted");
       },
     };

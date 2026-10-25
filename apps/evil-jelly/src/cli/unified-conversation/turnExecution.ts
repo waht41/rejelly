@@ -151,6 +151,7 @@ async function drainAndPrepareSteerMessages(
   runtime: ConversationTurnRuntime,
   turnId: string,
   turnMcpSelection: Set<string>,
+  onInputCommitted: () => void,
 ): Promise<Message[]> {
   const messages: Message[] = [];
   const inputs = drainSteers();
@@ -164,6 +165,7 @@ async function drainAndPrepareSteerMessages(
         ),
       );
       const committed = await commitUserInput(runtime, turnId, "steer", resolved);
+      onInputCommitted();
       for (const serverId of frozenUserInputMcpServerIds(committed.frozen)) {
         turnMcpSelection.add(serverId);
       }
@@ -195,6 +197,7 @@ interface CommittedConversationTurn {
   userMessage: Message;
   mcpServerIds: readonly string[];
   retryHistory?: Message[];
+  withdrawOnEmptyAbort?: true;
 }
 
 function createTurnMcpBindingFactory(
@@ -265,6 +268,33 @@ async function runCommittedConversationTurn(
         break;
     }
   };
+  const historyBefore = runtime.session.history;
+  let inputWithdrawn = false;
+  let additionalInputCommitted = false;
+  const withdrawInput = async (): Promise<boolean> => {
+    // Only a fresh submission can be retracted. An empty /continue or retry must never
+    // erase a task that already had committed work in an earlier execution.
+    if (
+      !input.withdrawOnEmptyAbort ||
+      modelOutputReceived ||
+      toolActivity !== "none" ||
+      additionalInputCommitted
+    )
+      return false;
+    turnClosureAttempted = true;
+    await runtime.sessionRecorder?.completeTurn(
+      input.turnId,
+      "withdrawn",
+      runtime.session.currentBudget(),
+    );
+    runtime.session.replaceHistory(historyBefore);
+    transcriptStatus = "interrupted";
+    inputWithdrawn = true;
+    runtime.host.logSystemEvent(
+      "Input withdrawn: cancelled before any assistant or tool progress.\n",
+    );
+    return true;
+  };
   const turnMcpSelection = new Set(input.mcpServerIds);
   try {
     const result = await runtime.runInterruptibleOperation("conversation_turn", (operationSignal) =>
@@ -272,7 +302,9 @@ async function runCommittedConversationTurn(
         message: input.userMessage,
         history: runtime.session.history,
         pendingUserMessages: () =>
-          drainAndPrepareSteerMessages(runtime, input.turnId, turnMcpSelection),
+          drainAndPrepareSteerMessages(runtime, input.turnId, turnMcpSelection, () => {
+            additionalInputCommitted = true;
+          }),
         sessionBlobRoot: runtime.sessionBlobRoot,
         sessionRecorder: runtime.sessionRecorder,
         sessionId: runtime.sessionId,
@@ -290,6 +322,15 @@ async function runCommittedConversationTurn(
         },
       }),
     );
+
+    if (
+      result.interrupted &&
+      !result.compactHistory &&
+      !result.delta?.length &&
+      (await withdrawInput())
+    ) {
+      return { status: "withdrawn" };
+    }
 
     if (result.compactHistory) {
       runtime.session.replaceHistory(result.compactHistory);
@@ -343,6 +384,7 @@ async function runCommittedConversationTurn(
     return { status: "completed" };
   } catch (error) {
     if (isAbortError(error)) {
+      if (await withdrawInput()) return { status: "withdrawn" };
       transcriptStatus = "interrupted";
       if (runtime.sessionRecorder && !turnClosureAttempted) {
         await closeTurnAfterFailure(runtime, input.turnId, "interrupted");
@@ -470,6 +512,7 @@ async function runCommittedConversationTurn(
       turnId: input.turnId,
       status: transcriptStatus,
       ...(transcriptAnswer === undefined ? {} : { answer: transcriptAnswer }),
+      ...(inputWithdrawn ? { withdrawn: true } : {}),
     });
   }
 }
@@ -478,7 +521,6 @@ async function runCommittedConversationTurn(
 export async function executeConversationTurn(
   runtime: ConversationTurnRuntime,
   promptInput: PromptInput,
-  fallbackUserText: string,
 ): Promise<TurnExecutionResult> {
   let recoveryStage: TurnRecoveryStage = "preparation";
   try {
@@ -497,23 +539,12 @@ export async function executeConversationTurn(
       turnId,
       userMessage: committed.message,
       mcpServerIds: frozenUserInputMcpServerIds(committed.frozen),
+      withdrawOnEmptyAbort: true,
     });
   } catch (error) {
     if (recoveryStage === "agent" || !isAbortError(error)) throw error;
-    runtime.host.logAssistantMessage("Task has been interrupted by user.");
-    return {
-      status: "interrupted",
-      recovery: {
-        status: "interrupted",
-        reason: "user_abort",
-        strategy: "resume_with_context",
-        stage: "preparation",
-        message: "Task was interrupted before input commit completed.",
-        toolActivity: "none",
-        userMessage: { role: "user", content: fallbackUserText },
-        mcpServerIds: [],
-      },
-    };
+    runtime.host.logSystemEvent("Input withdrawn before submission completed.\n");
+    return { status: "withdrawn" };
   }
 }
 
