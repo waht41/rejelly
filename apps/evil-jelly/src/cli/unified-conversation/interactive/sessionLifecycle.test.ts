@@ -407,6 +407,110 @@ describe("non-TTY session lifecycle", () => {
     expect(compact?.seq).toBeLessThan(completed?.seq ?? 0);
   });
 
+  it.each([
+    { code: "timeout", nextInput: "New task", persistence: true, partialOutput: true },
+    { code: "server_error", nextInput: "/continue", persistence: false, partialOutput: true },
+    { code: "timeout", nextInput: "/continue", persistence: false, partialOutput: false },
+    { code: "context_length", nextInput: "New task", persistence: false, partialOutput: false },
+  ] as const)("retains automatic compaction across model failure ($code, next=$nextInput, partial=$partialOutput)", async ({
+    code,
+    nextInput,
+    persistence,
+    partialOutput,
+  }) => {
+    process.env.OPENAI_AUTO_COMPACT_TOKENS = "1";
+    const calls: Message[][] = [];
+    const oldAnswer = "Verbose assistant history that automatic compaction must discard.";
+    const summary = "Both directory checks found README.md; continue from this checkpoint.";
+    const partial = "Unfinished streamed answer before the model failed.";
+    const adapter: ModelAdapter = {
+      id: "auto-compact-failure-model",
+      async *stream(messages): AsyncGenerator<StreamEvent> {
+        calls.push(messages.map((message) => ({ ...message })));
+        switch (calls.length) {
+          case 1:
+            yield { type: "text", content: oldAnswer };
+            return;
+          case 2:
+            // Two tool results cross the loop's minimum-delta gate for automatic compaction.
+            for (const index of [0, 1]) {
+              yield {
+                type: "tool_call",
+                toolCall: {
+                  index,
+                  id: `tool-before-auto-compaction-${index}`,
+                  name: "list_directory",
+                  arguments: JSON.stringify({ dirPath: ".", depth: 1 }),
+                },
+              };
+            }
+            return;
+          case 3:
+            yield { type: "text", content: summary };
+            return;
+          case 4:
+            if (partialOutput) yield { type: "text", content: partial };
+            throw new ModelCallError("model failed after automatic compaction", {
+              modelId: "auto-compact-failure-model",
+              code,
+            });
+          default:
+            yield { type: "text", content: "Finished using the automatic checkpoint." };
+        }
+      },
+    };
+    await runEvilJellyHost(
+      createMemoryBindings(["Earlier task", "Inspect before failure", nextInput, "/exit"]),
+      {
+        runControl: createInteractiveRunControl(),
+        model: augmentModel(adapter, [withRetry({ maxAttempts: 1, connectionRetry: "bounded" })]),
+        ...(persistence
+          ? {
+              sessionId: "auto-compact-failure",
+              sessionStartMode: "new" as const,
+              session: { enabled: true as const, appVersion: "1.0.0", sessionsRoot },
+            }
+          : {}),
+      },
+    );
+
+    expect(calls).toHaveLength(5);
+    // Both the failed request and the next task/retry must use the checkpoint, never the old
+    // assistant/tool history or the uncommitted partial answer. No tool is executed again.
+    for (const request of calls.slice(3)) {
+      expect(request.some(isCompactionBridgeMessage)).toBe(true);
+      expect(
+        request.some((message) => messageContentToText(message.content).includes(summary)),
+      ).toBe(true);
+      expect(request.some((message) => message.role === "tool")).toBe(false);
+      expect(
+        request.some((message) =>
+          [oldAnswer, partial].includes(messageContentToText(message.content)),
+        ),
+      ).toBe(false);
+    }
+
+    if (!persistence) return;
+    const stored = await readSessionEvents(workspaceRoot, "auto-compact-failure", { sessionsRoot });
+    expect(stored.events.filter((event) => event.type === "context_compacted")).toMatchObject([
+      { trigger: "auto" },
+    ]);
+    const record = await resumeSession(workspaceRoot, "auto-compact-failure", {
+      originator: "evil-jelly-cli",
+      appVersion: "1.0.0",
+      sessionsRoot,
+    });
+    expect(record?.recovery).toBeUndefined();
+    expect(record?.messages.some(isCompactionBridgeMessage)).toBe(true);
+    expect(record?.messages.some((message) => message.role === "tool")).toBe(false);
+    expect(record?.transcript?.filter((item) => item.type === "tool")).toHaveLength(2);
+    expect(
+      record?.transcript?.some(
+        (item) => item.type === "assistant" && item.content.includes(partial),
+      ),
+    ).toBe(false);
+  });
+
   it("returns to the interactive router and continues from a task error", async () => {
     const systemEvents: string[] = [];
     const assistantMessages: string[] = [];
@@ -825,6 +929,190 @@ describe("non-TTY session lifecycle", () => {
         .filter((event) => isKnownSessionEvent(event) && event.type === "turn_completed")
         .map((event) => (event.type === "turn_completed" ? event.status : undefined)),
     ).toEqual(["error", "completed"]);
+  });
+
+  it.each([
+    { nextInput: "New task", priorTurn: true },
+    { nextInput: "/continue", priorTurn: true },
+    { nextInput: "/continue", priorTurn: false },
+  ])("keeps manual compaction after a pending retry (next=$nextInput, priorTurn=$priorTurn)", async ({
+    nextInput,
+    priorTurn,
+  }) => {
+    const calls: Message[][] = [];
+    const summary = "The workspace inspection found README.md; continue from that result.";
+    const oldAnswer = "Verbose pre-compaction assistant history.";
+    const adapter: ModelAdapter = {
+      id: "compact-pending-retry-model",
+      async *stream(messages): AsyncGenerator<StreamEvent> {
+        calls.push(messages.map((message) => ({ ...message })));
+        if (priorTurn && calls.length === 1) {
+          yield { type: "text", content: oldAnswer };
+          return;
+        }
+        switch (calls.length - (priorTurn ? 1 : 0)) {
+          case 1:
+            yield {
+              type: "tool_call",
+              toolCall: {
+                index: 0,
+                id: "tool-before-compression",
+                name: "list_directory",
+                arguments: JSON.stringify({ dirPath: ".", depth: 1 }),
+              },
+            };
+            return;
+          case 2:
+            throw new ModelCallError("provider unavailable after tool", {
+              modelId: "compact-pending-retry-model",
+              code: "timeout",
+            });
+          case 3:
+            yield { type: "text", content: summary };
+            return;
+          default:
+            yield { type: "text", content: "Finished using the compacted context." };
+        }
+      },
+    };
+    const model = augmentModel(adapter, [
+      withRetry({ maxAttempts: 1, connectionRetry: "bounded" }),
+    ]);
+    await runEvilJellyHost(
+      createMemoryBindings([
+        ...(priorTurn ? ["Earlier task"] : []),
+        "Inspect before failure",
+        "/compress",
+        nextInput,
+        "/exit",
+      ]),
+      {
+        runControl: createInteractiveRunControl(),
+        model,
+        sessionId: "compact-pending-retry",
+        sessionStartMode: "new",
+        session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+      },
+    );
+
+    expect(calls).toHaveLength(priorTurn ? 5 : 4);
+    const summaryInput = calls.at(-2) ?? [];
+    expect(
+      summaryInput.some(
+        (message) => messageContentToText(message.content) === "Inspect before failure",
+      ),
+    ).toBe(true);
+    expect(summaryInput).toContainEqual(
+      expect.objectContaining({
+        role: "tool",
+        tool_call_id: "tool-before-compression",
+        content: expect.stringContaining("README.md"),
+      }),
+    );
+    const nextRequest = calls.at(-1) ?? [];
+    expect(nextRequest.some(isCompactionBridgeMessage)).toBe(true);
+    expect(nextRequest.some((message) => message.role === "tool")).toBe(false);
+    expect(nextRequest.some((message) => messageContentToText(message.content) === oldAnswer)).toBe(
+      false,
+    );
+    expect(
+      nextRequest.some((message) => messageContentToText(message.content).includes(summary)),
+    ).toBe(true);
+
+    const stored = await readSessionEvents(workspaceRoot, "compact-pending-retry", {
+      sessionsRoot,
+    });
+    expect(stored.events.filter((event) => event.type === "context_compacted")).toMatchObject([
+      { trigger: "manual", beforeMessageCount: priorTurn ? 5 : 3 },
+    ]);
+    const record = await resumeSession(workspaceRoot, "compact-pending-retry", {
+      originator: "evil-jelly-cli",
+      appVersion: "1.0.0",
+      sessionsRoot,
+    });
+    expect(record?.recovery).toBeUndefined();
+    expect(record?.messages.some(isCompactionBridgeMessage)).toBe(true);
+    expect(record?.messages.some((message) => message.role === "tool")).toBe(false);
+    // Compaction changes model context, not the original user/tool transcript or Turn identity.
+    expect(record?.transcript?.filter((item) => item.type === "tool")).toHaveLength(1);
+    expect(
+      record?.transcript?.flatMap((item) => (item.type === "user" ? [item.content] : [])),
+    ).toEqual([
+      ...(priorTurn ? ["Earlier task"] : []),
+      "Inspect before failure",
+      ...(nextInput === "/continue" ? [] : [nextInput]),
+    ]);
+  });
+
+  it.each([
+    "empty",
+    "interrupted",
+  ])("preserves the original pending retry when manual compaction is %s", async (outcome) => {
+    const calls: Message[][] = [];
+    const systemEvents: string[] = [];
+    const bindings = createMemoryBindings([
+      "Inspect before failure",
+      "/compress",
+      "/continue",
+      "/exit",
+    ]);
+    bindings.logSystemEvent = (message) => systemEvents.push(message);
+    const adapter: ModelAdapter = {
+      id: "unsuccessful-compaction-model",
+      async *stream(messages, options): AsyncGenerator<StreamEvent> {
+        calls.push(messages.map((message) => ({ ...message })));
+        switch (calls.length) {
+          case 1:
+            yield {
+              type: "tool_call",
+              toolCall: {
+                index: 0,
+                id: "tool-before-failed-compression",
+                name: "list_directory",
+                arguments: JSON.stringify({ dirPath: ".", depth: 1 }),
+              },
+            };
+            return;
+          case 2:
+            throw new ModelCallError("provider unavailable after tool", {
+              modelId: "unsuccessful-compaction-model",
+              code: "timeout",
+            });
+          case 3:
+            if (outcome === "interrupted") {
+              expect(interruptActiveTask("Cancel manual compaction")).toMatchObject({
+                status: "interrupted",
+                task: { name: "session_compression" },
+              });
+              if (!options?.signal) throw new Error("expected compaction operation signal");
+              throw AbortError.fromSignal(options.signal);
+            }
+            yield { type: "text", content: " \n" };
+            return;
+          default:
+            yield { type: "text", content: "Continued from the original tool result." };
+        }
+      },
+    };
+    await runEvilJellyHost(bindings, {
+      runControl: createInteractiveRunControl(),
+      model: augmentModel(adapter, [withRetry({ maxAttempts: 1, connectionRetry: "bounded" })]),
+      sessionId: "unsuccessful-compaction",
+      sessionStartMode: "new",
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+    });
+
+    expect(calls).toHaveLength(4);
+    expect(calls[3]).toEqual(calls[1]);
+    expect(systemEvents).toContain(
+      outcome === "interrupted"
+        ? "Compression interrupted by user.\n"
+        : "Compression failed: summarization produced no usable summary.\n",
+    );
+    const stored = await readSessionEvents(workspaceRoot, "unsuccessful-compaction", {
+      sessionsRoot,
+    });
+    expect(stored.events.some((event) => event.type === "context_compacted")).toBe(false);
   });
 
   it("closes a pending transparent retry when the user exits", async () => {

@@ -218,17 +218,24 @@ function handleStatus(runtime: RouterRuntime): void {
 }
 
 async function handleCompress(runtime: RouterRuntime): Promise<void> {
-  if (runtime.session.history.length === 0) {
+  const recovery = runtime.session.recoveryState();
+  // A pending retry owns the latest request, including its user input and completed tools, which
+  // may not have reached session.history yet. Keep it intact until compression actually succeeds.
+  const history =
+    recovery?.strategy === "retry_same_turn"
+      ? (recovery.retryHistory ?? [...runtime.session.history, recovery.userMessage])
+      : runtime.session.history;
+  if (history.length === 0) {
     runtime.host.logSystemEvent("Nothing to compress yet.\n");
     return;
   }
-  const beforeMessageCount = runtime.session.history.length;
+  const beforeMessageCount = history.length;
   runtime.host.logSystemEvent("Compressing session history…\n");
   const result = await runInterruptibleConversationOperation(
     "session_compression",
     (operationSignal) =>
       UnifiedAgent({
-        history: runtime.session.history,
+        history,
         operation: "compress",
         sessionBlobRoot: runtime.props.sessionBlobRoot,
         operationSignal,
@@ -242,6 +249,11 @@ async function handleCompress(runtime: RouterRuntime): Promise<void> {
   runtime.session.replaceHistory(result.compactHistory);
   runtime.session.clearContextTokenAnchor();
   runtime.session.clearLastContextUsage();
+  if (recovery?.strategy === "retry_same_turn") {
+    // Both /continue and abandoning this task consume retryHistory. Once compression succeeds,
+    // neither path may restore the discarded request over the new active context.
+    runtime.session.setRecoveryState({ ...recovery, retryHistory: result.compactHistory });
+  }
   if (runtime.props.sessionRecorder) {
     await runtime.props.sessionRecorder.recordCompaction({
       trigger: "manual",
