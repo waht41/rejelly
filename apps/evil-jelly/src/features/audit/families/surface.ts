@@ -5,21 +5,20 @@
  */
 
 import type { SgNode } from "@ast-grep/napi";
-import { tryParseWorkspaceRel } from "../../../domains/workspace/ast/heuristicAstCore";
-import { extractJsDocAbove } from "../../../domains/workspace/ast/jsdoc";
-import type { HeuristicSymbolKind } from "../../../domains/workspace/ast/queries";
-import {
-  collectOutlineDeclarations,
-  sliceDeclarationSignature,
-} from "../../../domains/workspace/ast/queries";
 import { langFromRelPath } from "../../../domains/workspace/source/sourceLanguage";
-import { tryParseRoot } from "../detectors/astParse";
+import { tryParseRoot, tryParseWorkspaceRel } from "../detectors/astParse";
 import { sha256 } from "../runtime/ledger";
 import { isTestOrGeneratedPath } from "../sourcePath";
+import {
+  collectOutlineDeclarations,
+  extractJsDocAbove,
+  type SurfaceSymbolKind,
+  sliceDeclarationSignature,
+} from "./surfaceDeclarations";
 
 export interface SurfaceSymbol {
   name: string;
-  kind: HeuristicSymbolKind;
+  kind: SurfaceSymbolKind;
   /** Workspace-relative posix path. */
   file: string;
   /** 1-based declaration line. */

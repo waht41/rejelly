@@ -1,21 +1,14 @@
-import { Lang, type SgNode } from "@ast-grep/napi";
-import { MAX_NAMED_DECL_MATCHES } from "../source/heuristicAstLimits";
+/** JS/TS declaration and documentation extraction for audit surface snapshots. */
 
-/**
- * Node kinds that exist only in the TypeScript / TSX tree-sitter grammars. ast-grep
- * validates `rule.kind` against the grammar of the parsed language and throws
- * ("Kind `...` is invalid") when a JavaScript parse is queried with one of these,
- * so every findAll on them must be gated by the source language.
- */
+import { Lang, type SgNode } from "@ast-grep/napi";
+
+/** ast-grep rejects kinds absent from the parsed language's grammar. */
 const TS_ONLY_KINDS: ReadonlySet<string> = new Set([
   "interface_declaration",
   "type_alias_declaration",
   "enum_declaration",
-  "required_parameter",
-  "optional_parameter",
 ]);
 
-/** findAll by kind, returning no matches instead of throwing when the kind is absent from the language's grammar. */
 function findAllOfKind(node: SgNode, kind: string, lang: Lang): SgNode[] {
   if (lang === Lang.JavaScript && TS_ONLY_KINDS.has(kind)) {
     return [];
@@ -23,7 +16,7 @@ function findAllOfKind(node: SgNode, kind: string, lang: Lang): SgNode[] {
   return node.findAll({ rule: { kind } });
 }
 
-export type HeuristicSymbolKind =
+export type SurfaceSymbolKind =
   | "class"
   | "interface"
   | "type"
@@ -32,18 +25,8 @@ export type HeuristicSymbolKind =
   | "method"
   | "variable";
 
-export type HeuristicSymbolRow = {
-  kind: HeuristicSymbolKind;
-  name: string;
-  /** 1-based line number */
-  line: number;
-};
-
-/**
- * Outline-style scope: module / export / namespace / class body, but not inside a
- * non-class function, arrow, or object-literal method body (locals and nested decls excluded).
- */
-export function isModuleOutlineDeclaration(declNode: SgNode): boolean {
+/** Exclude declarations inside functions, arrows, and object-literal methods. */
+function isModuleOutlineDeclaration(declNode: SgNode): boolean {
   let cur: SgNode | null | undefined = declNode.parent();
   while (cur) {
     const k = cur.kind();
@@ -57,10 +40,7 @@ export function isModuleOutlineDeclaration(declNode: SgNode): boolean {
     if (k === "arrow_function" || k === "function_expression") {
       return false;
     }
-    if (k === "function_declaration") {
-      return false;
-    }
-    if (k === "method_definition") {
+    if (k === "function_declaration" || k === "method_definition") {
       return false;
     }
     cur = cur.parent();
@@ -68,16 +48,15 @@ export function isModuleOutlineDeclaration(declNode: SgNode): boolean {
   return false;
 }
 
-export type OutlineDeclaration = {
-  kind: HeuristicSymbolKind;
+type OutlineDeclaration = {
+  kind: SurfaceSymbolKind;
   name: string;
   node: SgNode;
 };
 
-/** Outline declarations with their AST nodes (for signature slicing / export checks). */
 export function collectOutlineDeclarations(root: SgNode, lang: Lang): OutlineDeclaration[] {
   const rows: OutlineDeclaration[] = [];
-  const push = (kind: HeuristicSymbolKind, node: SgNode, name: string) => {
+  const push = (kind: SurfaceSymbolKind, node: SgNode, name: string) => {
     rows.push({ kind, name, node });
   };
 
@@ -139,92 +118,6 @@ export function collectOutlineDeclarations(root: SgNode, lang: Lang): OutlineDec
   return rows;
 }
 
-export function collectDocumentSymbols(root: SgNode, lang: Lang): HeuristicSymbolRow[] {
-  return collectOutlineDeclarations(root, lang).map(({ kind, name, node }) => ({
-    kind,
-    name,
-    line: node.range().start.line + 1,
-  }));
-}
-
-export function filterDeclarationsByName(
-  rows: HeuristicSymbolRow[],
-  queryName: string,
-  caseInsensitive: boolean,
-): HeuristicSymbolRow[] {
-  const q = caseInsensitive ? queryName.toLowerCase() : queryName;
-  return rows.filter((r) => {
-    const n = caseInsensitive ? r.name.toLowerCase() : r.name;
-    return n === q;
-  });
-}
-
-function matchDeclarationName(
-  symbolName: string,
-  candidate: string,
-  caseInsensitive: boolean,
-): boolean {
-  if (caseInsensitive) {
-    return candidate.toLowerCase() === symbolName.toLowerCase();
-  }
-  return candidate === symbolName;
-}
-
-/**
- * Declaration nodes that bind this identifier anywhere in the file (including nested scopes).
- * Sorted by start position for symbol-code queries.
- */
-export function findNamedDeclarationAstNodes(
-  root: SgNode,
-  symbolName: string,
-  caseInsensitive: boolean,
-  lang: Lang,
-): SgNode[] {
-  const out: SgNode[] = [];
-  const tryCapture = (declNode: SgNode, name: string | undefined) => {
-    if (!name || !matchDeclarationName(symbolName, name, caseInsensitive)) {
-      return;
-    }
-    out.push(declNode);
-  };
-
-  for (const n of findAllOfKind(root, "class_declaration", lang)) {
-    tryCapture(n, n.field("name")?.text());
-  }
-  for (const n of findAllOfKind(root, "interface_declaration", lang)) {
-    tryCapture(n, n.field("name")?.text());
-  }
-  for (const n of findAllOfKind(root, "type_alias_declaration", lang)) {
-    tryCapture(n, n.field("name")?.text());
-  }
-  for (const n of findAllOfKind(root, "enum_declaration", lang)) {
-    tryCapture(n, n.field("name")?.text());
-  }
-  for (const n of findAllOfKind(root, "function_declaration", lang)) {
-    tryCapture(n, n.field("name")?.text());
-  }
-  for (const n of findAllOfKind(root, "method_definition", lang)) {
-    tryCapture(n, n.field("name")?.text());
-  }
-  for (const n of findAllOfKind(root, "variable_declarator", lang)) {
-    const id = n.field("name");
-    if (id?.kind() !== "identifier") {
-      continue;
-    }
-    tryCapture(n, id.text());
-  }
-
-  out.sort((a, b) => {
-    const ra = a.range().start;
-    const rb = b.range().start;
-    if (ra.line !== rb.line) {
-      return ra.line - rb.line;
-    }
-    return ra.column - rb.column;
-  });
-  return out.slice(0, MAX_NAMED_DECL_MATCHES);
-}
-
 function sliceSourceByRange(
   sourceText: string,
   start: { line: number; column: number },
@@ -244,9 +137,7 @@ function sliceSourceByRange(
   return sourceText.slice(startOffset, endOffset);
 }
 
-/**
- * Declaration head without the body block (signature-only heuristic for navigation)
- */
+/** Declaration head without the body block or variable initializer. */
 export function sliceDeclarationSignature(sourceText: string, decl: SgNode): string {
   const k = decl.kind();
   const body = decl.field("body");
@@ -272,4 +163,35 @@ export function sliceDeclarationSignature(sourceText: string, decl: SgNode): str
     return head;
   }
   return decl.text().split("{")[0]?.trim() ?? decl.text().trim();
+}
+
+export function extractJsDocAbove(lines: string[], declLine1Based: number): string | undefined {
+  const idx = declLine1Based - 1;
+  if (idx <= 0) {
+    return undefined;
+  }
+  let end = idx - 1;
+  while (end >= 0 && lines[end].trim() === "") {
+    end--;
+  }
+  if (end < 0) {
+    return undefined;
+  }
+  const line = lines[end].trim();
+  if (!line.startsWith("/**")) {
+    return undefined;
+  }
+  const block: string[] = [];
+  let i = end;
+  while (i >= 0) {
+    block.unshift(lines[i]);
+    if (lines[i].includes("*/")) {
+      break;
+    }
+    i--;
+  }
+  if (!block.some((l) => l.includes("*/"))) {
+    return undefined;
+  }
+  return block.join("\n").trim();
 }

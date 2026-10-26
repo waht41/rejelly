@@ -74,25 +74,7 @@ function formatToolProgressLine(ctx: ToolContext): string {
     const glob = typeof input.filePattern === "string" ? input.filePattern : "";
     return `[Tools] grep → "${q}"${glob ? ` [glob ${glob}]` : ""}…\n`;
   }
-  if (ctx.toolName === "ast_document_symbols") {
-    const raw = input.filePath;
-    const parts = typeof raw === "string" ? [raw] : Array.isArray(raw) ? (raw as string[]) : [];
-    return `[Tools] ast_document_symbols → ${formatPathList(parts)}…\n`;
-  }
-  if (ctx.toolName === "ast_read_symbol_code") {
-    const fp = typeof input.filePath === "string" ? input.filePath : "";
-    const raw = input.symbolName;
-    const syms = Array.isArray(raw)
-      ? (raw as string[]).join(", ")
-      : typeof raw === "string"
-        ? raw
-        : "";
-    return `[Tools] ast_read_symbol_code → ${fp || "(path)"} [${syms}]…\n`;
-  }
-  if (ctx.toolName === "ast_workspace_symbols") {
-    const q = typeof input.queryName === "string" ? input.queryName : "";
-    return `[Tools] ast_workspace_symbols → "${q}"…\n`;
-  }
+
   if (ctx.toolName === "edit_file") {
     const targets = Array.isArray(input.targets)
       ? (input.targets as Array<Record<string, unknown>>)

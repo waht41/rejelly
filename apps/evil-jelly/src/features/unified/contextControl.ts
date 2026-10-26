@@ -50,7 +50,7 @@ const AUTO_COMPACT_SUMMARY_INSTRUCTION = [
 /** Nudge appended to the last tool output as occupancy nears (but has not yet hit) the threshold. */
 const AUTO_COMPACT_WARN_HINT =
   "[context filling: nearing the auto-compaction threshold. Auto-compaction preserves a summary but " +
-  "can reduce accuracy — narrow further (grep / ast_document_symbols over full reads) to defer it.]";
+  "can reduce accuracy — use grep and targeted read_file ranges instead of full reads to defer it.]";
 
 /**
  * The single top-level context bound for the interactive coding loop: one occupancy-based governor

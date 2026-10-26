@@ -184,7 +184,7 @@ describe("withToolLogger", () => {
 
     const middleware = withToolLogger();
     const ctx = {
-      toolName: "ast_document_symbols",
+      toolName: "custom_tool",
       input: { filePath: "src/a.ts" },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any;

@@ -38,7 +38,7 @@ describe("buildUnifiedSystemPrompt", () => {
   it("uses structured and complementary workspace exploration without embedding MCP routing", () => {
     const prompt = buildDefaultSystemPrompt();
 
-    for (const tool of ["list_directory", "fuzzy_search_paths", "grep", "AST tools"]) {
+    for (const tool of ["list_directory", "fuzzy_search_paths", "grep"]) {
       expect(prompt).toContain(tool);
     }
     expect(prompt).toMatch(/multiple complementary methods/i);
