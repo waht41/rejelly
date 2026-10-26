@@ -32,7 +32,7 @@ import { memoryReferenceName } from "../message-composer/suggestions/semantic-re
 import { drainSteers } from "../submission-dispatch/steerQueue";
 import type { ConversationSession } from "./conversationSession";
 import {
-  continuationPromptForRecovery,
+  continuationPromptForHistory,
   type TurnExecutionResult,
   type TurnRecoveryStage,
   type TurnRecoveryState,
@@ -294,12 +294,16 @@ async function runCommittedConversationTurn(
     if (result.compactHistory) {
       runtime.session.replaceHistory(result.compactHistory);
       runtime.session.clearContextTokenAnchor();
-    } else if (input.retryHistory) {
+    } else if (input.retryHistory || result.interrupted) {
+      // The interruption reply is UI status, not model output. An empty interrupted
+      // delta must leave a resumed request unchanged, even without a session recorder.
       runtime.session.replaceHistory([
-        ...input.retryHistory,
+        ...(input.retryHistory ?? [...runtime.session.history, input.userMessage]),
         ...(result.delta?.length
           ? result.delta
-          : [{ role: "assistant" as const, content: result.reply }]),
+          : result.interrupted
+            ? []
+            : [{ role: "assistant" as const, content: result.reply }]),
       ]);
       runtime.session.clearContextTokenAnchor();
     } else {
@@ -536,13 +540,14 @@ export async function resumeConversationTurn(
   recovery: TurnRecoveryState,
 ): Promise<TurnExecutionResult> {
   const turnId = recovery.turnId ?? createTurnId();
-  const instruction: Message = {
-    role: "system",
-    content: continuationPromptForRecovery(recovery),
-  };
-  await runtime.sessionRecorder?.recordMessage(turnId, { kind: "recovery" }, instruction);
-  runtime.session.replaceHistory([...runtime.session.history, instruction]);
-  runtime.session.clearContextTokenAnchor();
+  const prompt = continuationPromptForHistory(runtime.session.history);
+  if (prompt) {
+    // Keep recovery at the history tail instead of rewriting cacheable system instructions.
+    const continuation: Message = { role: "user", content: prompt };
+    await runtime.sessionRecorder?.recordMessage(turnId, { kind: "recovery" }, continuation);
+    runtime.session.replaceHistory([...runtime.session.history, continuation]);
+    runtime.session.clearContextTokenAnchor();
+  }
   runtime.host.onTurnStart?.();
   runtime.host.logSystemEvent("Continuing the previous task…\n");
   return runCommittedConversationTurn(runtime, {
