@@ -114,8 +114,9 @@ describe("useStandardStreaming", () => {
     expect(output).toEqual([]);
   });
 
-  it("prints plain text turns when plain text mode is enabled", async () => {
+  it("reports output before printing the first plain text delta, without waiting for turn end", async () => {
     const output: string[] = [];
+    let outputStarts = 0;
     const model = createStreamingModel(() => [
       { type: "text", content: "plain " },
       { type: "text", content: "assistant text" },
@@ -126,8 +127,19 @@ describe("useStandardStreaming", () => {
       id: "standard-streaming-plain-text-enabled",
       model,
       handler: async () => {
-        await setBinding(createTestBindings(output));
-        useStandardStreaming({ textMode: "plain" });
+        const bindings = createTestBindings(output);
+        bindings.printOut = (message) => {
+          expect(outputStarts).toBe(1);
+          output.push(message);
+        };
+        await setBinding(bindings);
+        useStandardStreaming({
+          textMode: "plain",
+          onOutputStarted: () => {
+            expect(output).toEqual([]);
+            outputStarts += 1;
+          },
+        });
         return promptChat({ message: [{ role: "user", content: "hi" }] });
       },
     });
@@ -136,6 +148,7 @@ describe("useStandardStreaming", () => {
 
     expect(result.data).toBe("plain assistant text");
     expect(output.join("")).toBe("plain assistant text\n");
+    expect(outputStarts).toBe(1);
   });
 
   it("delays text in tool-call turns without duplicating tool logger output", async () => {

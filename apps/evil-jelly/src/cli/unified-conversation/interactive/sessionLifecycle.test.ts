@@ -1143,6 +1143,67 @@ describe("non-TTY session lifecycle", () => {
     ).toBe(false);
   });
 
+  it("keeps a directly streaming input on Esc and continues it instead of withdrawing it", async () => {
+    const updates: TranscriptTurnUpdate[] = [];
+    const restored: MemoryInput[] = [];
+    const calls: Message[][] = [];
+    const bindings = createMemoryBindings(["Answer directly", "/continue", "/exit"]);
+    bindings.onTranscriptTurn = (update) => updates.push(update);
+    bindings.restoreWithdrawnInput = (input) => restored.push(input);
+    bindings.printOut = (text) => {
+      if (calls.length !== 1 || !text) return;
+      // The progress update must precede printing, while the provider has not completed a round.
+      expect(updates.at(-1)).toMatchObject({ status: "running", hasProgress: true });
+      interruptActiveTask("Esc after visible answer started");
+    };
+    const model: ModelAdapter = {
+      id: "interrupt-direct-reply-model",
+      async *stream(messages, options): AsyncGenerator<StreamEvent> {
+        calls.push(messages.map((message) => ({ ...message })));
+        if (calls.length === 1) {
+          yield { type: "text", content: "Visible partial answer" };
+          const signal = options?.signal;
+          if (!signal) throw new Error("expected operation signal");
+          await new Promise<void>((_resolve, reject) => {
+            const abort = () => reject(AbortError.fromSignal(signal));
+            if (signal.aborted) abort();
+            else signal.addEventListener("abort", abort, { once: true });
+          });
+          return;
+        }
+        yield { type: "text", content: "Completed answer." };
+      },
+    };
+    await runEvilJellyHost(bindings, {
+      runControl: createInteractiveRunControl(),
+      model,
+      sessionId: "direct-reply-interruption",
+      sessionStartMode: "new",
+      session: { enabled: true, appVersion: "1.0.0", sessionsRoot },
+    });
+    expect(calls).toHaveLength(2);
+    expect(restored).toEqual([]);
+    expect(updates.some((update) => update.withdrawn)).toBe(false);
+    expect(
+      calls[1]
+        ?.filter((message) => message.role === "user" && !isInstructionMessage(message))
+        .map((message) => messageContentToText(message.content)),
+    ).toEqual(["Answer directly"]);
+    const record = await resumeSession(workspaceRoot, "direct-reply-interruption", {
+      originator: "evil-jelly-cli",
+      appVersion: "1.0.0",
+      sessionsRoot,
+    });
+    expect(record?.meta).toMatchObject({ turns: 1, title: "Answer directly" });
+    expect(record?.recovery).toBeUndefined();
+    const events = await readSessionEvents(workspaceRoot, "direct-reply-interruption", {
+      sessionsRoot,
+    });
+    expect(
+      events.events.some((event) => event.type === "turn_completed" && event.inputWithdrawn),
+    ).toBe(false);
+  });
+
   it.each([
     true,
     false,

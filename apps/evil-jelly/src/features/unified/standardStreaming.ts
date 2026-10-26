@@ -21,12 +21,14 @@ export interface StandardStreamingOptions {
    * `none`: never print raw text.
    */
   textMode?: StandardStreamingTextMode;
+  /** Notify before the first rendered text; reasoning and named-channel side-turns do not count. */
+  onOutputStarted?: () => void;
 }
 
 function normalizeStandardStreamingOptions(
   options: string | StandardStreamingOptions | undefined,
 ): Required<Pick<StandardStreamingOptions, "textMode">> &
-  Pick<StandardStreamingOptions, "structuredKey"> {
+  Pick<StandardStreamingOptions, "structuredKey" | "onOutputStarted"> {
   if (typeof options === "string") {
     return { structuredKey: options, textMode: "tool-preamble" };
   }
@@ -36,6 +38,7 @@ function normalizeStandardStreamingOptions(
   return {
     structuredKey: options.structuredKey,
     textMode: options.textMode ?? "tool-preamble",
+    onOutputStarted: options.onOutputStarted,
   };
 }
 
@@ -119,7 +122,7 @@ export function phaseForStreamEvent(
  */
 export function useStandardStreaming(options?: string | StandardStreamingOptions): void {
   const { printOut, onPhaseUpdate, onToolCallGenerationUpdate, logToolRound } = getBinding();
-  const { structuredKey, textMode } = normalizeStandardStreamingOptions(options);
+  const { structuredKey, textMode, onOutputStarted } = normalizeStandardStreamingOptions(options);
   onStream(async (stream) => {
     // Mirrored locally so the per-delta calls below collapse to nothing: text events arrive
     // dozens of times a second and each host hop would otherwise touch the UI store.
@@ -130,6 +133,16 @@ export function useStandardStreaming(options?: string | StandardStreamingOptions
       }
       phase = next;
       onPhaseUpdate?.(next);
+    };
+
+    let outputStarted = false;
+    const printText = (text: string) => {
+      if (text.length === 0) return;
+      if (!outputStarted) {
+        outputStarted = true;
+        onOutputStarted?.();
+      }
+      printOut(text);
     };
 
     let lastStructuredValue = "";
@@ -174,9 +187,9 @@ export function useStandardStreaming(options?: string | StandardStreamingOptions
       }
 
       if (value.startsWith(lastStructuredValue)) {
-        printOut(value.slice(lastStructuredValue.length));
+        printText(value.slice(lastStructuredValue.length));
       } else {
-        printOut(value);
+        printText(value);
       }
       lastStructuredValue = value;
       streamedThisTurn = true;
@@ -207,7 +220,7 @@ export function useStandardStreaming(options?: string | StandardStreamingOptions
           if (event.delta.length > 0) {
             textBuffer += event.delta;
             if (textMode === "plain" && structuredKey === undefined) {
-              printOut(event.delta);
+              printText(event.delta);
               streamedThisTurn = true;
             }
           }
@@ -267,7 +280,7 @@ export function useStandardStreaming(options?: string | StandardStreamingOptions
           if (textMode === "tool-preamble" && toolRequested) {
             const preamble = textBuffer.trim();
             if (!structuredThisTurn && preamble.length > 0) {
-              printOut(`${preamble}\n`);
+              printText(`${preamble}\n`);
               streamedThisTurn = true;
             }
           }

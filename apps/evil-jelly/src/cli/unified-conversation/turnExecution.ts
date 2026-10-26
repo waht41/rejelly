@@ -264,6 +264,7 @@ async function runCommittedConversationTurn(
   };
   const observeProgress = (event: TurnProgressEvent): void => {
     switch (event) {
+      case "assistant_output_started":
       case "model_output":
         modelOutputReceived = true;
         break;

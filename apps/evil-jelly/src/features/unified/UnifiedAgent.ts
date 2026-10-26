@@ -235,7 +235,10 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
     await useUnifiedPrompts(props);
     equipMcpCatalog();
     equipSkillKit();
-    useStandardStreaming({ textMode: "plain" });
+    useStandardStreaming({
+      textMode: "plain",
+      onOutputStarted: () => props.onTurnProgress?.("assistant_output_started"),
+    });
 
     if (props.operation === "compress") {
       return runManualCompression(props, memoryRuntime);

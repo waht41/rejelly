@@ -1,8 +1,11 @@
 import { PassThrough } from "node:stream";
+import type { ModelAdapter, StreamEvent } from "@rejelly/core";
 import { render } from "ink";
 import { createElement } from "react";
 import stripAnsi from "strip-ansi";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { EvilJellyBindings } from "../../shared/host/bindings";
+import { textPromptInput } from "../../shared/model/prompt/promptInput";
 import {
   resetAnswerTranscriptSession,
   useAnswerTranscriptStore,
@@ -14,6 +17,8 @@ import {
   useComposerSession,
 } from "../message-composer/session/composerSession";
 import { useDecisionStore } from "../operator-decision/decisionStore";
+import { createInteractiveRunControl } from "../unified-conversation/interactive/runControl";
+import { runEvilJellyHost } from "../unified-conversation/interactive/runSegment";
 import { copyTextToClipboard } from "./clipboard/clipboardText";
 import { Dashboard } from "./Dashboard";
 
@@ -119,16 +124,79 @@ it("removes a withdrawn input without shrinking Static history or hiding the nex
   expect(lastFrame.match(/Earlier answer/g)).toHaveLength(1);
 
   start("next", "Next question");
+  store.updateTranscriptTurn({ turnId: "next", status: "running", hasProgress: true });
   store.appendStream("Uncommitted partial output\n");
   await vi.waitFor(() => expect(lastFrame).toContain("Uncommitted partial output"));
-  expect(useOutputStore.getState().pendingInput?.turnId).toBe("next");
-  store.updateTranscriptTurn({ turnId: "next", status: "running", hasProgress: true });
+  expect(useOutputStore.getState().pendingInput).toBeNull();
   store.logAssistant("Uncommitted partial output\nNext answer");
   store.updateTranscriptTurn({ turnId: "next", status: "completed" });
   await vi.waitFor(() => expect(lastFrame).toContain("Next answer"));
   for (const text of ["Same question", "Earlier answer", "Next question", "Next answer"]) {
     expect(lastFrame.split(text)).toHaveLength(2);
   }
+  expect(mounts.history).toBe(1);
+});
+
+it("retains the input and flushes stable Markdown during a direct reply before it finishes", async () => {
+  const store = useOutputStore.getState();
+  const prompt = "Direct reply question sentinel";
+  const stable = `${Array.from({ length: 20 }, (_, i) => `Stable paragraph ${i}.\n\n`).join("")}\`\`\`ts\nconst ok = true;\n\`\`\`\n\n`;
+  let finishReply = () => {};
+  const replyGate = new Promise<void>((resolve) => {
+    finishReply = resolve;
+  });
+  const model: ModelAdapter = {
+    id: "direct-streaming-reply",
+    async *stream(): AsyncGenerator<StreamEvent> {
+      yield { type: "text", content: `${stable}Unfinished **tail` };
+      await replyGate;
+      yield { type: "text", content: "** done." };
+    },
+  };
+  const inputs = [prompt, "/exit"];
+  const bindings: EvilJellyBindings = {
+    getInput: async () => textPromptInput(inputs.shift() ?? "/exit"),
+    printOut: store.appendStream,
+    logUserMessage: store.logUser,
+    logAssistantMessage: store.logAssistant,
+    logSystemEvent: store.logSystem,
+    logToolBlock: () => {},
+    onTranscriptTurn: store.updateTranscriptTurn,
+    onTurnStart: store.beginTurn,
+    onPhaseUpdate: store.setPhase,
+    confirmTool: async () => ({ action: "accept" }),
+    requestChoice: async ({ options }) => options[0]?.value ?? "",
+  };
+  mountDashboard();
+  const run = runEvilJellyHost(bindings, {
+    runControl: createInteractiveRunControl(),
+    model,
+    isolateSessionState: true,
+  });
+  try {
+    // The provider is still streaming: no turn_done, tool call, or final reply can release this.
+    await vi.waitFor(() => {
+      // Static code blocks also wait for the asynchronous syntax highlighter to become ready.
+      expect(lastFrame).toContain("Stable paragraph 0.");
+      expect(lastFrame).toContain("Stable paragraph 19.");
+      expect(lastFrame).toContain("const ok = true;");
+      expect(lastFrame).toContain("Unfinished **tail");
+    });
+    expect(useOutputStore.getState().pendingInput).toBeNull();
+    expect(useOutputStore.getState().streamBuffer).toBe("Unfinished **tail");
+    expect(lastFrame.match(/Direct reply question sentinel/g)).toHaveLength(1);
+    expect(
+      useOutputStore
+        .getState()
+        .history.some((turn) => turn.type === "assistant_stream" && turn.content === stable),
+    ).toBe(true);
+  } finally {
+    finishReply();
+    await run;
+  }
+  await vi.waitFor(() => expect(lastFrame).toContain("done."));
+  expect(lastFrame.match(/Direct reply question sentinel/g)).toHaveLength(1);
+  expect(lastFrame.match(/Stable paragraph 0\./g)).toHaveLength(1);
   expect(mounts.history).toBe(1);
 });
 
@@ -142,10 +210,6 @@ it("keeps long withdrawable input inside the refreshable viewport", async () => 
   store.logUser(prompt);
   await vi.waitFor(() => expect(lastFrame).toContain("Pending input row 99"));
   expect(lastFrame).not.toContain("Pending input row 0");
-  expect(lastFrame.trimEnd().split("\n").length).toBeLessThanOrEqual(stdout.rows);
-  store.appendStream(`${Array.from({ length: 50 }, (_, i) => `Partial row ${i}`).join("\n\n")}\n`);
-  await vi.waitFor(() => expect(lastFrame).toContain("Partial row 49"));
-  expect(lastFrame).not.toContain("Partial row 0");
   expect(lastFrame.trimEnd().split("\n").length).toBeLessThanOrEqual(stdout.rows);
   store.logSystem("Input withdrawn.");
   store.updateTranscriptTurn({ turnId: "long", status: "interrupted", withdrawn: true });

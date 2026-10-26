@@ -52,7 +52,7 @@ export interface ConversationPresentationBindings {
   hydrateHistory?: (items: TranscriptItem[]) => void;
   /**
    * Turn lifecycle for the answer browser and withdrawable live scrollback. The initial
-   * running update with a prompt precedes logUserMessage; streamed fragments are not progress.
+   * running update with a prompt precedes logUserMessage; visible streamed text starts progress.
    */
   onTranscriptTurn?: (update: TranscriptTurnUpdate) => void;
   clearHistory?: () => void;

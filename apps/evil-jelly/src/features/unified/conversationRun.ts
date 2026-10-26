@@ -4,6 +4,8 @@ import type { SessionMessageSink } from "../../shared/session/recorderPort";
 import type { UserReplySurface } from "./outputSurface";
 
 export type TurnProgressEvent =
+  /** First user-facing assistant text, before the model round has finished. */
+  | "assistant_output_started"
   | "model_output"
   | "tool_requested"
   | "tool_execution_started"
