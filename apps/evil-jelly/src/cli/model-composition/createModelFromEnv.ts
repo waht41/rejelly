@@ -76,8 +76,11 @@ export function createOpenAIModelFromEnv(options: CreateOpenAIModelOptions = {})
     apiKey,
     // Evil owns model-call retries so one logical attempt cannot multiply with
     // the OpenAI SDK's default retries (and any retries performed by a gateway).
-    // Bound stalled requests so the CLI cannot remain at Connect indefinitely.
-    requestOption: { maxRetries: 0, timeout: 30_000 },
+    // A gateway may wait for an upstream SSE event before sending response headers.
+    // Give queued reasoning requests time to start, then bound each protocol-event wait
+    // independently instead of imposing a total generation deadline.
+    requestOption: { maxRetries: 0, timeout: 300_000 },
+    streamIdleTimeoutMs: 300_000,
     ...(isDeepSeek ? { schemaMode: "json_object" as const } : {}),
   };
 

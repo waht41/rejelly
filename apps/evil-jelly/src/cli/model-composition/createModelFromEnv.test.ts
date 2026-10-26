@@ -38,7 +38,8 @@ describe("createOpenAIModelFromEnv", () => {
     expect(createOpenAIAdapter).toHaveBeenCalledWith(
       expect.objectContaining({
         api: "chat_completions",
-        requestOption: { maxRetries: 0, timeout: 30_000 },
+        requestOption: { maxRetries: 0, timeout: 300_000 },
+        streamIdleTimeoutMs: 300_000,
       }),
     );
     expect(getSessionModelConfiguration(model)).toMatchObject({
@@ -59,7 +60,8 @@ describe("createOpenAIModelFromEnv", () => {
     expect(createOpenAIAdapter).toHaveBeenCalledWith(
       expect.objectContaining({
         api: "responses",
-        requestOption: { maxRetries: 0, timeout: 30_000 },
+        requestOption: { maxRetries: 0, timeout: 300_000 },
+        streamIdleTimeoutMs: 300_000,
         responseParams: { reasoning: { effort: "high" } },
       }),
     );
