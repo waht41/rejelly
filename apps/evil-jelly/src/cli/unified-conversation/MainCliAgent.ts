@@ -338,7 +338,7 @@ function formatPersistenceError(error: unknown): string {
 }
 
 function applyTurnResult(runtime: RouterRuntime, result: TurnExecutionResult): void {
-  if (result.status === "completed") {
+  if (result.status === "completed" || result.status === "withdrawn") {
     runtime.session.clearRecoveryState();
     return;
   }
@@ -409,10 +409,9 @@ async function runConversationOperation(
 async function runConversationTurn(
   runtime: RouterRuntime,
   promptInput: PromptInput,
-  userInput: string,
 ): Promise<void> {
   await runConversationOperation(runtime, (turnRuntime) =>
-    executeConversationTurn(turnRuntime, promptInput, userInput),
+    executeConversationTurn(turnRuntime, promptInput),
   );
 }
 
@@ -541,7 +540,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
           return reborn();
         case "message":
           await abandonCurrentRecovery(runtime);
-          await runConversationTurn(runtime, intent.promptInput, intent.userInput);
+          await runConversationTurn(runtime, intent.promptInput);
           return reborn();
       }
     } catch (error) {

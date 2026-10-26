@@ -50,7 +50,10 @@ export interface ConversationPresentationBindings {
   appendToolOutput?: (toolCallId: string, chunk: string) => void;
   logToolBlock: (block: ToolObservationBlock) => void;
   hydrateHistory?: (items: TranscriptItem[]) => void;
-  /** Read-only answer browser lifecycle, independent of scrollback and streamed fragments. */
+  /**
+   * Turn lifecycle for the answer browser and withdrawable live scrollback. The initial
+   * running update with a prompt precedes logUserMessage; visible streamed text starts progress.
+   */
   onTranscriptTurn?: (update: TranscriptTurnUpdate) => void;
   clearHistory?: () => void;
   clearScreen?: () => void;

@@ -8,7 +8,11 @@ import type {
   UserSkillListItem,
 } from "../../../shared/host/inputBindings";
 import { releasePromptResources } from "../../../shared/host/promptResourceLifecycle";
-import { copyPromptInput, type PromptInput } from "../../../shared/model/prompt/promptInput";
+import {
+  concatenatePromptInputs,
+  copyPromptInput,
+  type PromptInput,
+} from "../../../shared/model/prompt/promptInput";
 
 export type SkillPickerItem = UserSkillListItem;
 export type McpPickerItem = UserMcpListItem;
@@ -31,6 +35,7 @@ interface ComposerSessionState {
   setAvailableMcpServers: (servers: McpPickerItem[]) => void;
   setAvailableMemories: (memories: MemoryPickerItem[]) => void;
   setNextImageOrdinal: (ordinal: number) => void;
+  /** Prepend restored input to any pending restoration and then the live draft. */
   seedDraft: (value: PromptInput) => void;
   clearDraftSeed: (id: number) => void;
   setBackgroundLineHandler: (handler: ((value: PromptInput) => void) | null) => void;
@@ -69,14 +74,15 @@ export const useComposerSession = create<ComposerSessionState>((set, get) => ({
   setNextImageOrdinal: (ordinal) =>
     set({ nextImageOrdinal: Number.isInteger(ordinal) && ordinal > 0 ? ordinal : 1 }),
   seedDraft: (value) => {
-    const replaced = get().draftSeed;
+    const pending = get().draftSeed;
     set({
       draftSeed: {
         id: ++draftSeedId,
-        value: copyPromptInput(value),
+        // Esc may already have restored queued steers. Prepend without discarding
+        // their content or releasing attachments now owned by the merged seed.
+        value: pending ? concatenatePromptInputs([value, pending.value]) : copyPromptInput(value),
       },
     });
-    if (replaced) void releasePromptResources(replaced.value).catch(() => undefined);
   },
   clearDraftSeed: (id) =>
     set((state) => (state.draftSeed?.id === id ? { draftSeed: null } : state)),

@@ -129,8 +129,12 @@ async function commitUserInput(
         ? frozen.nodes.filter((node) => node.kind === "image").length
         : 0);
   runtime.session.setNextImageOrdinal(nextImageOrdinal);
+  // Publish the retractable input only after preparation succeeds: no fallible await may
+  // strand its display between the initial transcript update and the execution lifecycle.
+  const message = await materializeFrozenUserInputMessage(frozen, {
+    blobRoot: runtime.sessionBlobRoot,
+  });
   const display = projectFrozenUserInputDisplay(frozen);
-  runtime.host.logUserMessage(formatUserInputDisplay(display));
   if (inputKind === "initial") {
     runtime.host.onTranscriptTurn?.({
       turnId,
@@ -139,18 +143,15 @@ async function commitUserInput(
       promptSummary: projectFrozenUserInputSummary(frozen),
     });
   }
-  return {
-    frozen,
-    message: await materializeFrozenUserInputMessage(frozen, {
-      blobRoot: runtime.sessionBlobRoot,
-    }),
-  };
+  runtime.host.logUserMessage(formatUserInputDisplay(display));
+  return { frozen, message };
 }
 
 async function drainAndPrepareSteerMessages(
   runtime: ConversationTurnRuntime,
   turnId: string,
   turnMcpSelection: Set<string>,
+  onInputCommitted: () => void,
 ): Promise<Message[]> {
   const messages: Message[] = [];
   const inputs = drainSteers();
@@ -164,6 +165,7 @@ async function drainAndPrepareSteerMessages(
         ),
       );
       const committed = await commitUserInput(runtime, turnId, "steer", resolved);
+      onInputCommitted();
       for (const serverId of frozenUserInputMcpServerIds(committed.frozen)) {
         turnMcpSelection.add(serverId);
       }
@@ -195,6 +197,7 @@ interface CommittedConversationTurn {
   userMessage: Message;
   mcpServerIds: readonly string[];
   retryHistory?: Message[];
+  withdrawOnEmptyAbort?: true;
 }
 
 function createTurnMcpBindingFactory(
@@ -249,8 +252,19 @@ async function runCommittedConversationTurn(
   let retryHistory: Message[] | undefined;
   let failureHistory: Message[] | undefined;
   let toolActivity: TurnToolActivity = "none";
+  let inputProgressReported = false;
+  const reportInputProgress = (): void => {
+    if (!input.withdrawOnEmptyAbort || inputProgressReported) return;
+    inputProgressReported = true;
+    runtime.host.onTranscriptTurn?.({
+      turnId: input.turnId,
+      status: "running",
+      hasProgress: true,
+    });
+  };
   const observeProgress = (event: TurnProgressEvent): void => {
     switch (event) {
+      case "assistant_output_started":
       case "model_output":
         modelOutputReceived = true;
         break;
@@ -264,6 +278,34 @@ async function runCommittedConversationTurn(
         toolActivity = "completed";
         break;
     }
+    reportInputProgress();
+  };
+  const historyBefore = runtime.session.history;
+  let inputWithdrawn = false;
+  let additionalInputCommitted = false;
+  const withdrawInput = async (): Promise<boolean> => {
+    // Only a fresh submission can be retracted. An empty /continue or retry must never
+    // erase a task that already had committed work in an earlier execution.
+    if (
+      !input.withdrawOnEmptyAbort ||
+      modelOutputReceived ||
+      toolActivity !== "none" ||
+      additionalInputCommitted
+    )
+      return false;
+    turnClosureAttempted = true;
+    await runtime.sessionRecorder?.completeTurn(
+      input.turnId,
+      "withdrawn",
+      runtime.session.currentBudget(),
+    );
+    runtime.session.replaceHistory(historyBefore);
+    transcriptStatus = "interrupted";
+    inputWithdrawn = true;
+    runtime.host.logSystemEvent(
+      "Input withdrawn: cancelled before any assistant or tool progress.\n",
+    );
+    return true;
   };
   const turnMcpSelection = new Set(input.mcpServerIds);
   try {
@@ -272,7 +314,10 @@ async function runCommittedConversationTurn(
         message: input.userMessage,
         history: runtime.session.history,
         pendingUserMessages: () =>
-          drainAndPrepareSteerMessages(runtime, input.turnId, turnMcpSelection),
+          drainAndPrepareSteerMessages(runtime, input.turnId, turnMcpSelection, () => {
+            additionalInputCommitted = true;
+            reportInputProgress();
+          }),
         sessionBlobRoot: runtime.sessionBlobRoot,
         sessionRecorder: runtime.sessionRecorder,
         sessionId: runtime.sessionId,
@@ -290,6 +335,15 @@ async function runCommittedConversationTurn(
         },
       }),
     );
+
+    if (
+      result.interrupted &&
+      !result.compactHistory &&
+      !result.delta?.length &&
+      (await withdrawInput())
+    ) {
+      return { status: "withdrawn" };
+    }
 
     if (result.compactHistory) {
       runtime.session.replaceHistory(result.compactHistory);
@@ -343,6 +397,7 @@ async function runCommittedConversationTurn(
     return { status: "completed" };
   } catch (error) {
     if (isAbortError(error)) {
+      if (await withdrawInput()) return { status: "withdrawn" };
       transcriptStatus = "interrupted";
       if (runtime.sessionRecorder && !turnClosureAttempted) {
         await closeTurnAfterFailure(runtime, input.turnId, "interrupted");
@@ -470,6 +525,7 @@ async function runCommittedConversationTurn(
       turnId: input.turnId,
       status: transcriptStatus,
       ...(transcriptAnswer === undefined ? {} : { answer: transcriptAnswer }),
+      ...(inputWithdrawn ? { withdrawn: true } : {}),
     });
   }
 }
@@ -478,42 +534,43 @@ async function runCommittedConversationTurn(
 export async function executeConversationTurn(
   runtime: ConversationTurnRuntime,
   promptInput: PromptInput,
-  fallbackUserText: string,
 ): Promise<TurnExecutionResult> {
   let recoveryStage: TurnRecoveryStage = "preparation";
+  // Keep the original semantic draft and its owned images alive until the outcome is known.
+  // A successful withdrawal transfers them back to the host instead of returning dead paths.
+  let inputReturned = false;
+  const restoreWithdrawnInput = (): void => {
+    if (!runtime.host.restoreWithdrawnInput) return;
+    runtime.host.restoreWithdrawnInput(promptInput);
+    inputReturned = true;
+  };
   try {
-    const resolved = await materializePromptInput(runtime, promptInput).finally(() =>
-      releasePromptResources(promptInput).catch((error) =>
-        runtime.host.logSystemEvent(
-          `Prompt resource cleanup failed: ${formatPersistenceError(error)}\n`,
-        ),
-      ),
-    );
+    const resolved = await materializePromptInput(runtime, promptInput);
     const turnId = createTurnId();
     runtime.host.onTurnStart?.();
     const committed = await commitUserInput(runtime, turnId, "initial", resolved);
     recoveryStage = "agent";
-    return await runCommittedConversationTurn(runtime, {
+    const result = await runCommittedConversationTurn(runtime, {
       turnId,
       userMessage: committed.message,
       mcpServerIds: frozenUserInputMcpServerIds(committed.frozen),
+      withdrawOnEmptyAbort: true,
     });
+    if (result.status === "withdrawn") restoreWithdrawnInput();
+    return result;
   } catch (error) {
     if (recoveryStage === "agent" || !isAbortError(error)) throw error;
-    runtime.host.logAssistantMessage("Task has been interrupted by user.");
-    return {
-      status: "interrupted",
-      recovery: {
-        status: "interrupted",
-        reason: "user_abort",
-        strategy: "resume_with_context",
-        stage: "preparation",
-        message: "Task was interrupted before input commit completed.",
-        toolActivity: "none",
-        userMessage: { role: "user", content: fallbackUserText },
-        mcpServerIds: [],
-      },
-    };
+    runtime.host.logSystemEvent("Input withdrawn before submission completed.\n");
+    restoreWithdrawnInput();
+    return { status: "withdrawn" };
+  } finally {
+    if (!inputReturned) {
+      await releasePromptResources(promptInput).catch((error) =>
+        runtime.host.logSystemEvent(
+          `Prompt resource cleanup failed: ${formatPersistenceError(error)}\n`,
+        ),
+      );
+    }
   }
 }
 

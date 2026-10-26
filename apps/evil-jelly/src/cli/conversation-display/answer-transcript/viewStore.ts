@@ -41,6 +41,12 @@ export const useAnswerTranscriptStore = create<AnswerTranscriptState>((set) => (
   ...initialView,
   updateTurn: (update) =>
     set((state) => {
+      if (update.withdrawn) {
+        return {
+          entries: state.entries.filter((entry) => entry.id !== update.turnId),
+          ...(state.selectedId === update.turnId ? { selectedId: null } : {}),
+        };
+      }
       const previous = state.entries.find((entry) => entry.id === update.turnId);
       const entry: AnswerTranscriptEntry = {
         id: update.turnId,

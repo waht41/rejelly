@@ -11,6 +11,7 @@ import { hasActiveInterruptibleTask } from "../../shared/task-interruption/taskS
 import { AnswerTranscriptOverlay } from "../conversation-display/answer-transcript/AnswerTranscriptOverlay";
 import { useAnswerTranscriptStore } from "../conversation-display/answer-transcript/viewStore";
 import { AssistantStreamView } from "../conversation-display/assistant-stream/AssistantStreamView";
+import { HistoryItem } from "../conversation-display/history/HistoryItem";
 import { StaticHistory } from "../conversation-display/history/StaticHistory";
 import { RunningToolList } from "../conversation-display/running-tools/RunningToolList";
 import { RuntimeStatusLine } from "../conversation-display/runtime-status/RuntimeStatusLine";
@@ -117,6 +118,7 @@ export interface DashboardProps {
 export function Dashboard({ onCtrlCAbort }: DashboardProps) {
   const { columns, rows } = useWindowSize();
   const history = useOutputStore((s) => s.history);
+  const pendingInput = useOutputStore((s) => s.pendingInput);
   const clearedStaticTurns = useOutputStore((s) => s.clearedStaticTurns);
   const streamBuffer = useOutputStore((s) => s.streamBuffer);
   const runningTools = useOutputStore((s) => s.runningTools);
@@ -140,10 +142,14 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
   // while mounted. `/clear` moves wiped turns into clearedStaticTurns (an already-flushed
   // prefix) instead of shrinking, so the post-clear banner/summary still get flushed; the
   // visible wipe is clearScreen's job.
-  const staticTurns = useMemo(
-    () => (clearedStaticTurns.length === 0 ? history : [...clearedStaticTurns, ...history]),
-    [clearedStaticTurns, history],
-  );
+  const { staticTurns, pendingTurns } = useMemo(() => {
+    const committed = pendingInput ? history.slice(0, pendingInput.historyIndex) : history;
+    return {
+      staticTurns:
+        clearedStaticTurns.length === 0 ? committed : [...clearedStaticTurns, ...committed],
+      pendingTurns: pendingInput ? history.slice(pendingInput.historyIndex) : [],
+    };
+  }, [clearedStaticTurns, history, pendingInput]);
   // The tail window lives inside the measured transient region, so the assistant
   // stream's budget already shrinks around it. Keep it a modest slice of the
   // terminal so a short window still leaves room for everything else.
@@ -207,6 +213,22 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
       <Box flexDirection="column" display={overlayOpen ? "none" : "flex"}>
         <Box flexDirection="column" marginTop={1} marginBottom={1}>
           <Box ref={topTransientRef} flexDirection="column">
+            {/* Bound the retractable suffix so long input/partial output cannot escape into
+                terminal scrollback before the turn decides whether to withdraw it. */}
+            {pendingTurns.length > 0 ? (
+              <Box
+                flexDirection="column"
+                justifyContent="flex-end"
+                maxHeight={Math.floor(rows / 3)}
+                overflow="hidden"
+              >
+                {pendingTurns.map((turn) => (
+                  <Box key={turn.id} flexDirection="column" flexShrink={0}>
+                    <HistoryItem turn={turn} columns={columns} />
+                  </Box>
+                ))}
+              </Box>
+            ) : null}
             {runningTools.length > 0 ? (
               <RunningToolList tools={runningTools} maxTailRows={toolTailRows} />
             ) : null}

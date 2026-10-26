@@ -18,6 +18,10 @@ export type TranscriptTurnStatus = "running" | "completed" | "interrupted" | "er
 export interface TranscriptTurnUpdate {
   turnId: string;
   status: TranscriptTurnStatus;
+  /** Remove a fresh input cancelled before visible assistant output or committed tool progress. */
+  withdrawn?: true;
+  /** Visible assistant output or committed tool/steer activity makes the input non-withdrawable. */
+  hasProgress?: true;
   prompt?: string;
   promptSummary?: string;
   answer?: string;

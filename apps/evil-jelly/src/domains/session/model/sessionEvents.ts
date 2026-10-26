@@ -383,6 +383,8 @@ export const turnCompletedEventSchema = z
     turnId: z.string(),
     status: z.enum(["completed", "interrupted", "error"]),
     recovered: z.boolean().optional(),
+    /** The fresh input was cancelled before visible assistant output or committed tool progress. */
+    inputWithdrawn: z.literal(true).optional(),
   })
   .passthrough();
 

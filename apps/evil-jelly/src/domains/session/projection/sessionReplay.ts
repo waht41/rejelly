@@ -69,6 +69,7 @@ export type PreparedSessionEvent =
  */
 export interface PreparedSessionReplay {
   readonly events: readonly PreparedSessionEvent[];
+  readonly withdrawnTurnIds: ReadonlySet<string>;
   readonly lastSeq: number;
   readonly lastTimestamp?: number;
   readonly [preparedSessionReplayBrand]: true;
@@ -150,9 +151,14 @@ export function prepareSessionReplay(events: readonly SessionEvent[]): PreparedS
 
   return Object.freeze({
     events: Object.freeze(prepared),
+    withdrawnTurnIds: new Set(
+      prepared.flatMap((event) =>
+        event.type === "turn_completed" && event.inputWithdrawn ? [event.turnId] : [],
+      ),
+    ),
     lastSeq,
     ...(lastTimestamp === undefined ? {} : { lastTimestamp }),
     // The opaque brand plus freezing makes this the only construction boundary accepted by
     // projections; callers cannot accidentally pass unvalidated SessionEvent arrays.
-  }) as PreparedSessionReplay;
+  }) as unknown as PreparedSessionReplay;
 }

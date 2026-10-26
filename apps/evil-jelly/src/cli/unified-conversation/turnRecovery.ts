@@ -31,6 +31,7 @@ export interface TurnRecoveryState {
 
 export type TurnExecutionResult =
   | { status: "completed" }
+  | { status: "withdrawn" }
   | { status: "recoverable" | "interrupted"; recovery: TurnRecoveryState }
   | {
       status: "blocked";
