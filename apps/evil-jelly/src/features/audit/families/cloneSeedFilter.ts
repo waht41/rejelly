@@ -13,7 +13,7 @@
  */
 
 import { Lang, type SgNode } from "@ast-grep/napi";
-import { tryParseWorkspaceRel } from "../../../domains/workspace/ast/heuristicAstCore";
+import { tryParseWorkspaceRel } from "../detectors/astParse";
 import type { CloneCluster, CloneFragment } from "../detectors/clone";
 
 /** Any of these intersecting a fragment range carries executable logic → force KEEP. */

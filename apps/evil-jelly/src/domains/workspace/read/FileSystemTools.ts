@@ -315,7 +315,7 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
     "Returns one XML-like <file> envelope per result while leaving each file body unchanged. " +
     'An unchanged result may be returned as <file ... status="unchanged" reference="previous-read" /> when the identical prior result is still in context. ' +
     "Pass { path, offset, limit } entries to read a line range from files too large to read whole, or around a known line; range metadata is in the envelope attributes and is not added to the body. " +
-    `Use ast_document_symbols first if you only need file structure or declarations. ${AGENT_SCRATCH_DIR}/ is the agent scratch directory for temporary files.`,
+    `${AGENT_SCRATCH_DIR}/ is the agent scratch directory for temporary files.`,
   parameters: readFileParameters,
   handler: async ({ filePaths }) => {
     const policy = getWorkspaceFiles();

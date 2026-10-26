@@ -75,6 +75,29 @@ describe("extractSurfaceFromSource", () => {
     expect(add?.line).toBe(5);
   });
 
+  it("handles JavaScript exports without including nested or object-literal declarations", () => {
+    const symbols = extractSurfaceFromSource(
+      "src/sample.js",
+      `export function main() {
+        function nested() {}
+        const local = 1;
+      }
+      export const create = () => { const hidden = 1; };
+      export const object = { method() { const hidden = 1; } };
+      export class Box {
+        run() { const hidden = 1; }
+      }`,
+    );
+
+    expect(symbols.map((symbol) => symbol.name)).toEqual([
+      "main",
+      "create",
+      "object",
+      "Box",
+      "run",
+    ]);
+  });
+
   it("returns empty for unparsable content instead of throwing", () => {
     expect(extractSurfaceFromSource("src/sample.ts", "export function {{{")).toEqual(
       expect.any(Array),

@@ -674,7 +674,7 @@ Each `sync.pairs` value is a `[leftGlob, rightGlob]` pair whose `*` / `**` wildc
 
 ### Product role and interaction model
 
-Evil Jelly runs `@rejelly/core` in real CLI sessions to validate the same Host protocol, toolchain, and optional Review path used by other hosts. It is both a terminal example application and a reference for future Electron or HTTP integrations. Workspace capabilities such as file access, AST inspection, search, unified-diff writes, and command execution live under `src/domains/workspace/`; other domain capabilities include MCP, Memory, Skills, sessions, and web access.
+Evil Jelly runs `@rejelly/core` in real CLI sessions to validate the same Host protocol, toolchain, and optional Review path used by other hosts. It is both a terminal example application and a reference for future Electron or HTTP integrations. Workspace capabilities such as file access, search, unified-diff writes, and command execution live under `src/domains/workspace/`; other domain capabilities include MCP, Memory, Skills, sessions, and web access.
 
 Ink renders completed turns once in `<Static>` history and keeps the current input, streaming output, tool status, and interactive decisions in a transient bottom area. The React tree normally remains mounted for the interactive session; it is temporarily unmounted while an external editor owns the TTY, remounted afterward, and unmounted during disposal. `logUserMessage` records submitted input immediately, avoiding a visual gap before model output begins. A proposed write diff is committed to `<Static>` history before confirmation; after application, the applied diff is also attached to the completed tool-observation block and remains visible in conversation history.
 
@@ -685,7 +685,7 @@ Source is organized primarily by ownership and change reason rather than by a un
 | Area | Directory | Responsibility |
 |------|-----------|----------------|
 | **shared** | `shared/` | Foundation utilities, configuration, filesystem policy, model/prompt types, session ports, and the host capability contracts. |
-| **domains** | `domains/` | Cohesive capabilities owned by MCP, Memory, sessions, Skills, web access, and workspace operations. Workspace read/write/AST/execute tools live under `domains/workspace/`. |
+| **domains** | `domains/` | Cohesive capabilities owned by MCP, Memory, sessions, Skills, web access, and workspace operations. Workspace read/write/search/execute tools live under `domains/workspace/`. |
 | **features** | `features/` | Cross-domain product flows: unified coding conversations, their context-management policy, one-shot audits, and replay/snapshot support. |
 | **cli** | `cli/` | Process entry and argument dispatch, runtime composition, Ink presentation, interactive decisions, and headless/background host adapters. |
 

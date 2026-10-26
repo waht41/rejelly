@@ -111,8 +111,8 @@ describe("mockFromTrace", () => {
         calls: [
           {
             id: "call_1",
-            name: "ast_document_symbols",
-            arguments: '{"filePath": apps/devtool-ui/src/entities/trace/api}',
+            name: "list_directory",
+            arguments: '{"dirPath": apps/devtool-ui/src/entities/trace/api}',
           },
         ],
       },
@@ -129,8 +129,8 @@ describe("mockFromTrace", () => {
         toolCall: {
           index: 0,
           id: "call_1",
-          name: "ast_document_symbols",
-          arguments: '{"filePath": apps/devtool-ui/src/entities/trace/api}',
+          name: "list_directory",
+          arguments: '{"dirPath": apps/devtool-ui/src/entities/trace/api}',
         },
       },
       { type: "finish", finishReason: "tool_calls" },

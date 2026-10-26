@@ -5,11 +5,6 @@
 
 import { augmentTool, equipTool, type ToolDefinition } from "@rejelly/core";
 import { evilJellyToolLoggerMiddleware } from "../../shared/tool-observation/middleware";
-import {
-  AstDocumentSymbolsTool,
-  AstReadSymbolCodeTool,
-  AstWorkspaceSymbolsTool,
-} from "./ast/document-symbol";
 import { RunCommandTool } from "./execute/runCommandTool";
 import { ListDirTool, ReadFileTool } from "./read/FileSystemTools";
 import { FuzzySearchTool } from "./read/FuzzySearchTool";
@@ -25,9 +20,6 @@ const READ_ONLY_WORKSPACE_TOOLS: ToolDefinition<any>[] = [
   ListDirTool,
   FuzzySearchTool,
   GrepSearchTool,
-  AstDocumentSymbolsTool,
-  AstReadSymbolCodeTool,
-  AstWorkspaceSymbolsTool,
   ReadFileTool,
   // Returns image `toolContent`, not text: an intake budget only charges string outputs, so
   // including it here equips it without it ever drawing down such a pool.
@@ -57,7 +49,7 @@ export interface ReadOnlyWorkspaceKitOptions {
 }
 
 /**
- * Read-only workspace exploration: list, fuzzy paths, grep, AST/symbol tools, read_file.
+ * Read-only workspace exploration: list, fuzzy paths, grep, read_file, view_image.
  *
  * The kit also equips read_file's context-aware result deduplication, but installs NO context/cost
  * budget. A caller that wants a hard intake ceiling declares one explicitly at its own top level
