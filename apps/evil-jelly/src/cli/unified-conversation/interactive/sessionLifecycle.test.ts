@@ -407,6 +407,110 @@ describe("non-TTY session lifecycle", () => {
     expect(compact?.seq).toBeLessThan(completed?.seq ?? 0);
   });
 
+  it.each([
+    { code: "timeout", nextInput: "New task", persistence: true, partialOutput: true },
+    { code: "server_error", nextInput: "/continue", persistence: false, partialOutput: true },
+    { code: "timeout", nextInput: "/continue", persistence: false, partialOutput: false },
+    { code: "context_length", nextInput: "New task", persistence: false, partialOutput: false },
+  ] as const)("retains automatic compaction across model failure ($code, next=$nextInput, partial=$partialOutput)", async ({
+    code,
+    nextInput,
+    persistence,
+    partialOutput,
+  }) => {
+    process.env.OPENAI_AUTO_COMPACT_TOKENS = "1";
+    const calls: Message[][] = [];
+    const oldAnswer = "Verbose assistant history that automatic compaction must discard.";
+    const summary = "Both directory checks found README.md; continue from this checkpoint.";
+    const partial = "Unfinished streamed answer before the model failed.";
+    const adapter: ModelAdapter = {
+      id: "auto-compact-failure-model",
+      async *stream(messages): AsyncGenerator<StreamEvent> {
+        calls.push(messages.map((message) => ({ ...message })));
+        switch (calls.length) {
+          case 1:
+            yield { type: "text", content: oldAnswer };
+            return;
+          case 2:
+            // Two tool results cross the loop's minimum-delta gate for automatic compaction.
+            for (const index of [0, 1]) {
+              yield {
+                type: "tool_call",
+                toolCall: {
+                  index,
+                  id: `tool-before-auto-compaction-${index}`,
+                  name: "list_directory",
+                  arguments: JSON.stringify({ dirPath: ".", depth: 1 }),
+                },
+              };
+            }
+            return;
+          case 3:
+            yield { type: "text", content: summary };
+            return;
+          case 4:
+            if (partialOutput) yield { type: "text", content: partial };
+            throw new ModelCallError("model failed after automatic compaction", {
+              modelId: "auto-compact-failure-model",
+              code,
+            });
+          default:
+            yield { type: "text", content: "Finished using the automatic checkpoint." };
+        }
+      },
+    };
+    await runEvilJellyHost(
+      createMemoryBindings(["Earlier task", "Inspect before failure", nextInput, "/exit"]),
+      {
+        runControl: createInteractiveRunControl(),
+        model: augmentModel(adapter, [withRetry({ maxAttempts: 1, connectionRetry: "bounded" })]),
+        ...(persistence
+          ? {
+              sessionId: "auto-compact-failure",
+              sessionStartMode: "new" as const,
+              session: { enabled: true as const, appVersion: "1.0.0", sessionsRoot },
+            }
+          : {}),
+      },
+    );
+
+    expect(calls).toHaveLength(5);
+    // Both the failed request and the next task/retry must use the checkpoint, never the old
+    // assistant/tool history or the uncommitted partial answer. No tool is executed again.
+    for (const request of calls.slice(3)) {
+      expect(request.some(isCompactionBridgeMessage)).toBe(true);
+      expect(
+        request.some((message) => messageContentToText(message.content).includes(summary)),
+      ).toBe(true);
+      expect(request.some((message) => message.role === "tool")).toBe(false);
+      expect(
+        request.some((message) =>
+          [oldAnswer, partial].includes(messageContentToText(message.content)),
+        ),
+      ).toBe(false);
+    }
+
+    if (!persistence) return;
+    const stored = await readSessionEvents(workspaceRoot, "auto-compact-failure", { sessionsRoot });
+    expect(stored.events.filter((event) => event.type === "context_compacted")).toMatchObject([
+      { trigger: "auto" },
+    ]);
+    const record = await resumeSession(workspaceRoot, "auto-compact-failure", {
+      originator: "evil-jelly-cli",
+      appVersion: "1.0.0",
+      sessionsRoot,
+    });
+    expect(record?.recovery).toBeUndefined();
+    expect(record?.messages.some(isCompactionBridgeMessage)).toBe(true);
+    expect(record?.messages.some((message) => message.role === "tool")).toBe(false);
+    expect(record?.transcript?.filter((item) => item.type === "tool")).toHaveLength(2);
+    expect(
+      record?.transcript?.some(
+        (item) => item.type === "assistant" && item.content.includes(partial),
+      ),
+    ).toBe(false);
+  });
+
   it("returns to the interactive router and continues from a task error", async () => {
     const systemEvents: string[] = [];
     const assistantMessages: string[] = [];

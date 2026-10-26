@@ -422,6 +422,13 @@ async function runCommittedConversationTurn(
       throw error;
     }
 
+    // The failed dispatch's input is the latest committed context, possibly after automatic
+    // compaction. Preserve it on every model-error exit; partial streamed output is not included.
+    if (failureHistory) {
+      runtime.session.replaceHistory(failureHistory);
+      runtime.session.clearContextTokenAnchor();
+    }
+
     switch (error.code) {
       case "connection_error":
       case "timeout":
@@ -498,12 +505,7 @@ async function runCommittedConversationTurn(
             }),
           };
         }
-        // Unclassified model errors end this turn, not the interactive session. Preserve only
-        // committed context; partial streamed output is not a completed assistant message.
-        if (failureHistory) {
-          runtime.session.replaceHistory(failureHistory);
-          runtime.session.clearContextTokenAnchor();
-        }
+        // Unclassified model errors end this turn, not the interactive session.
         if (runtime.sessionRecorder && !turnClosureAttempted) {
           await closeTurnAfterFailure(runtime, input.turnId, "error");
         }
