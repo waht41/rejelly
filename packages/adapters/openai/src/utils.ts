@@ -13,7 +13,6 @@ import type {
 } from "@rejelly/core";
 import { AbortError, isAbortError, isNotSupportedError, ModelCallError } from "@rejelly/core";
 import { mergeConsecutiveSameRoleMessages } from "@rejelly/core/policy";
-import { APIError } from "openai";
 import type {
   ChatCompletionAssistantMessageParam,
   ChatCompletionContentPart,
@@ -399,15 +398,33 @@ export function classifyOpenAIError(error: unknown): ModelErrorCode {
   if (className === "APIConnectionError" || errorChainHasCode(error, CONNECTION_ERROR_CODES)) {
     return "connection_error";
   }
-  if (error instanceof APIError) {
-    const status = error.status;
+  if (typeof error === "object" && error !== null) {
+    const record = error as Record<string, unknown>;
+    // SSE failures have provider codes but no HTTP error response. Do not reduce
+    // those structured failures to `unknown` merely because they are not SDK APIErrors.
+    switch (record.code) {
+      case "context_length_exceeded":
+        return "context_length";
+      case "rate_limit_exceeded":
+        return "rate_limit";
+      case "invalid_api_key":
+      case "authentication_error":
+      case "permission_denied":
+        return "auth_error";
+      case "server_error":
+      case "internal_server_error":
+        return "server_error";
+      case "request_timeout":
+        return "timeout";
+    }
+    const status = record.status;
     if (status === 429) return "rate_limit";
     if (status === 401 || status === 403) return "auth_error";
-    if (status !== undefined && status >= 500 && status <= 599) return "server_error";
+    if (typeof status === "number" && status >= 500 && status <= 599) return "server_error";
     if (
       status === 400 &&
-      typeof error.message === "string" &&
-      /context.length|max.*tokens|too.long/i.test(error.message)
+      typeof record.message === "string" &&
+      /context.length|max.*tokens|too.long/i.test(record.message)
     ) {
       return "context_length";
     }

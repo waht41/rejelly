@@ -262,6 +262,14 @@ export function renderModelCallInspection(
   ];
   if (call.status === "failed") {
     lines.push("", "Error", detailLine("type", call.errorCode ?? "unknown"));
+    for (let error = call.error; error; error = error.cause) {
+      lines.push(detailLine(error === call.error ? "name" : "cause", error.name));
+      lines.push(detailLine("message", error.message));
+      if (error.code) lines.push(detailLine("code", error.code));
+      if (error.status !== undefined) lines.push(detailLine("HTTP status", String(error.status)));
+      if (error.requestId) lines.push(detailLine("request ID", error.requestId));
+      if (error.truncated) lines.push(detailLine("truncated", "yes"));
+    }
   }
   if (options.input) {
     lines.push("", "Input composition");

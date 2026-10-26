@@ -255,6 +255,27 @@ describe("OpenAI error conversion", () => {
     );
   });
 
+  it("keeps SDK HTTP diagnostics and the original error when classification is unknown", () => {
+    const original = new APIError(
+      400,
+      { code: "invalid_model", message: "Model not available" },
+      "Model not available",
+      new Headers({ "x-request-id": "req-sdk-error" }),
+    );
+    let wrapped: unknown;
+    try {
+      wrapAsModelCallError(original, "test-model", "openai", "https://gateway.test/v1");
+    } catch (error) {
+      wrapped = error;
+    }
+    expect(wrapped).toMatchObject({
+      name: "ModelCallError",
+      code: "unknown",
+      cause: { code: "invalid_model", status: 400, requestID: "req-sdk-error" },
+    });
+    expect((wrapped as Error).cause).toBe(original);
+  });
+
   it("normalizes SDK abort-like errors to AbortError", () => {
     expect(() =>
       wrapAsModelCallError(

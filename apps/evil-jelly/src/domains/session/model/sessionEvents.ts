@@ -211,6 +211,37 @@ const modelCallUsageSchema = z.object({
   reasoningTokens: nonNegativeIntSchema.optional(),
 });
 
+export const MODEL_CALL_ERROR_LIMITS = {
+  depth: 4,
+  name: 128,
+  message: 2048,
+  code: 128,
+  requestId: 256,
+} as const;
+
+/** Bounded diagnostic projection, never a raw SDK error, request, or response. */
+export interface ModelCallErrorSnapshot {
+  name: string;
+  message: string;
+  code?: string;
+  status?: number;
+  requestId?: string;
+  cause?: ModelCallErrorSnapshot;
+  truncated?: boolean;
+}
+
+const modelCallErrorSchema: z.ZodType<ModelCallErrorSnapshot> = z.lazy(() =>
+  z.object({
+    name: z.string().max(MODEL_CALL_ERROR_LIMITS.name),
+    message: z.string().max(MODEL_CALL_ERROR_LIMITS.message),
+    code: z.string().max(MODEL_CALL_ERROR_LIMITS.code).optional(),
+    status: z.number().int().min(100).max(599).optional(),
+    requestId: z.string().max(MODEL_CALL_ERROR_LIMITS.requestId).optional(),
+    cause: modelCallErrorSchema.optional(),
+    truncated: z.boolean().optional(),
+  }),
+);
+
 export const modelCallCompletedEventSchema = z
   .object({
     ...eventBaseFields,
@@ -260,6 +291,7 @@ export const modelCallCompletedEventSchema = z
     finishReason: z.string().min(1).optional(),
     success: z.boolean(),
     errorCode: z.string().min(1).optional(),
+    error: modelCallErrorSchema.optional(),
     usage: modelCallUsageSchema.optional(),
     costs: z.record(z.string(), z.number().int()).optional(),
     attemptCount: z.number().int().positive().optional(),
@@ -516,6 +548,7 @@ export interface ModelCallCompletedInput {
   finishReason?: string;
   success: boolean;
   errorCode?: string;
+  error?: ModelCallErrorSnapshot;
   usage?: {
     promptTokens: number;
     completionTokens: number;

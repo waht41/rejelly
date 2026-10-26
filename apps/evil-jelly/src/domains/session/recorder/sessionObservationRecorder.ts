@@ -10,6 +10,7 @@ import type { SessionModelConfiguration } from "../../../shared/model/observatio
 import { readModelInputMetrics } from "../../../shared/model/observation/modelInputMetrics";
 import { readModelRetryMetrics } from "../../../shared/model/observation/modelRetryMetrics";
 import type { SessionToolObservation } from "../../../shared/session/recorderPort";
+import { modelErrorSnapshot } from "./modelErrorSnapshot";
 import type { SessionRecorder } from "./sessionRecorder";
 
 export interface SessionObservationRecorderOptions {
@@ -139,6 +140,7 @@ class ObservedSessionRecorder implements SessionRecorder {
       ...(event.finishReason ? { finishReason: event.finishReason } : {}),
       success: event.success,
       ...optionalErrorCode(event),
+      ...(event.error ? { error: modelErrorSnapshot(event.error) } : {}),
       ...(usage
         ? {
             usage: {

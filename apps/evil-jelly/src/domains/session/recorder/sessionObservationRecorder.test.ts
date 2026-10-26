@@ -1,7 +1,12 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createEventBus, EVENTS, TRACE_EVENT_SCHEMA_VERSION } from "@rejelly/core";
+import {
+  createEventBus,
+  EVENTS,
+  type ModelCallEndEvent,
+  TRACE_EVENT_SCHEMA_VERSION,
+} from "@rejelly/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MODEL_INPUT_METRICS_TRACE_ATTRIBUTE } from "../../../shared/model/observation/modelInputMetrics";
 import { MODEL_RETRY_METRICS_TRACE_ATTRIBUTE } from "../../../shared/model/observation/modelRetryMetrics";
@@ -24,6 +29,101 @@ describe("sessionObservationRecorder", () => {
 
   afterEach(async () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("persists useful unknown-error causes without SDK payloads or credentials", async () => {
+    const eventBus = createEventBus();
+    const base = await openSessionRecorder({
+      workspaceRoot,
+      sessionsRoot,
+      sessionId: "failed-call",
+      traceId: "trace-failure",
+      originator: "evil-jelly-cli",
+      appVersion: "0.1.0",
+      modelId: "test-model",
+      cwd: workspaceRoot,
+    });
+    const recorder = observeSessionRecorder(base, { eventBus });
+    await recordInitialTextInput(recorder, "failed-turn", "Inspect failure diagnostics");
+    const error: NonNullable<ModelCallEndEvent["error"]> = {
+      name: "ModelCallError",
+      message: "Upstream rejected the model (model: test-model)",
+      stack: "private-stack-not-for-session",
+      details: { code: "unknown" },
+      cause: {
+        name: "APIError",
+        message: [
+          "400 unsupported upstream model",
+          "Authorization: Bearer bearer-secret",
+          'api_key="json-secret" password=plain-secret',
+          "https://url-user:url-password@gateway.test/v1?api_key=query-secret&tenant=alpha",
+          "sk-private-secret-token",
+          "Cookie: session=cookie-secret; other=other-cookie-secret",
+        ].join("\n"),
+        details: {
+          code: "unsupported_upstream_model",
+          status: 400,
+          requestID: "req-original-failure",
+          headers: { authorization: "raw-header-secret" },
+          request: { body: { messages: ["private-request-body"] } },
+          response: { body: "private-response-body" },
+        },
+      },
+    };
+    eventBus.emit({
+      schemaVersion: TRACE_EVENT_SCHEMA_VERSION,
+      type: EVENTS.MODEL_CALL_END,
+      trace: { traceId: "trace-failure", spanId: "failed-span", parentSpanId: "" },
+      timestamp: 10,
+      adapterId: "test-model",
+      messageCount: 1,
+      usedTools: false,
+      rawText: "",
+      duration: 25,
+      finishReason: "error",
+      success: false,
+      error,
+    });
+    await recorder.completeTurn("failed-turn", "error");
+    await recorder.close();
+
+    const stored = await readSessionEvents(workspaceRoot, "failed-call", { sessionsRoot });
+    const call = stored.events.find((event) => event.type === "model_call_completed");
+    expect(call).toMatchObject({
+      type: "model_call_completed",
+      errorCode: "unknown",
+      error: {
+        name: "ModelCallError",
+        message: "Upstream rejected the model (model: test-model)",
+        code: "unknown",
+        cause: {
+          name: "APIError",
+          message: expect.stringContaining("400 unsupported upstream model"),
+          code: "unsupported_upstream_model",
+          status: 400,
+          requestId: "req-original-failure",
+        },
+      },
+    });
+    const persisted = JSON.stringify(stored.events);
+    for (const secret of [
+      "bearer-secret",
+      "json-secret",
+      "plain-secret",
+      "url-user",
+      "url-password",
+      "query-secret",
+      "sk-private-secret-token",
+      "cookie-secret",
+      "raw-header-secret",
+      "private-request-body",
+      "private-response-body",
+      "private-stack-not-for-session",
+    ])
+      expect(persisted).not.toContain(secret);
+    expect(persisted).toContain("REDACTED");
+    expect(persisted).toContain("tenant=alpha");
+    expect(error.cause?.details?.headers).toEqual({ authorization: "raw-header-secret" });
   });
 
   it("projects matching Core model and tool facts before the Turn checkpoint", async () => {
