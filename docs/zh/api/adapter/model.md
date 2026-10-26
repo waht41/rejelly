@@ -39,6 +39,22 @@ const model = createOpenAIAdapter({
 });
 ```
 
+#### 响应头等待与流式空闲超时
+
+`requestOption.timeout` 是 OpenAI SDK 等待响应头的预算。流式请求收到 HTTP 响应头后就停止计时，并不是整次生成的总时限。网关可能等到上游首个 SSE 事件后才发送响应头。
+
+通过 `streamIdleTimeoutMs` 单独限制收到响应头后等待下一个 SDK 协议事件的时间。Chat Completions 和 Responses 均支持；元数据事件和内容事件都会重置等待，不计算消费方处理事件的时间。不设置时不增加空闲时限。只有 SSE 注释、没有 SDK 协议事件的心跳不会重置等待。
+
+```typescript
+const model = createOpenAIAdapter({
+  modelId: 'gpt-5.6-luna',
+  requestOption: { timeout: 300_000, maxRetries: 0 },
+  streamIdleTimeoutMs: 300_000,
+});
+```
+
+流式空闲超时会中止上游请求，归类为 code 为 `timeout` 的 `ModelCallError`，错误消息会区分响应头等待超时和流中途停滞。用户取消仍按取消处理。
+
 ### Gemini
 
 ```typescript
