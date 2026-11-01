@@ -134,7 +134,9 @@
           "@domain:mcp",
           "@domain:memory"
         ],
+        "@cli:tool-approval": ["@domain:workspace"],
         "@cli:unified-conversation": [
+          "@domain:workspace",
           "@feature:unified",
           "@feature:replay",
           "@domain:mcp",

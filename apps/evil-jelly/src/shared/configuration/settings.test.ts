@@ -156,6 +156,33 @@ describe("settings resolution", () => {
     });
   });
 
+  it("loads exact-project grants only from user settings, never workspace settings", () => {
+    const permission = { directory: join(homeDir, "external"), access: "read-write" };
+    const permissions = { projects: { [workspaceDir]: { filesystem: { allow: [permission] } } } };
+    writeWorkspaceSettingsFile(JSON.stringify({ permissions }));
+    expect(getSettings().filePermissions).toEqual([]);
+    writeUserSettingsFile(JSON.stringify({ permissions }));
+    initSettings({});
+    expect(getSettings().filePermissions).toEqual([permission]);
+    setWorkspaceRoot(join(workspaceDir, "child"));
+    expect(getSettings().filePermissions).toEqual([]);
+  });
+
+  it("rejects relative permission paths and unknown access levels", () => {
+    for (const grant of [
+      { directory: "../outside", access: "read" },
+      { directory: homeDir, access: "write" },
+    ]) {
+      writeUserSettingsFile(
+        JSON.stringify({
+          permissions: { projects: { [workspaceDir]: { filesystem: { allow: [grant] } } } },
+        }),
+      );
+      initSettings({});
+      expect(() => getSettings()).toThrow(/failed validation/);
+    }
+  });
+
   it("applies CLI overrides over workspace and user values", () => {
     writeUserSettingsFile(`{
       "audit": { "maxSeeds": 48, "ledgerGcDays": 21 }

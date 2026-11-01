@@ -68,8 +68,7 @@ export function isSensitiveFileName(fileName: string): boolean {
 }
 
 export function isSensitiveFsPath(filePath: string): boolean {
-  const fileName = path.basename(filePath);
-  return fileName.length > 0 && isSensitiveFileName(fileName);
+  return filePath.split(path.sep).some((segment) => isSensitiveFileName(segment));
 }
 
 export function sensitiveFsPathError(displayPath: string): string {
@@ -77,6 +76,12 @@ export function sensitiveFsPathError(displayPath: string): string {
     `Access denied: Path '${displayPath}' matches a sensitive file pattern. ` +
     "If you explicitly need to inspect it, ask the user to run the command via run_command."
   );
+}
+
+export function isWriteProtectedFsPath(filePath: string): boolean {
+  return filePath
+    .split(path.sep)
+    .some((segment) => WRITE_PROTECTED_NAMES.has(segment.toLowerCase()));
 }
 
 function isPathSystemHidden(relativeNormalized: string, access: WorkspaceAccessKind): boolean {

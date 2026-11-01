@@ -21,6 +21,33 @@ function resetCliStores(): void {
 }
 
 describe("createToolApproval", () => {
+  it.each([
+    ["accept", "once", "read"],
+    ["accept_session", "session", "read"],
+    ["accept_always", "always", "read"],
+    ["accept_session_write", "session", "read-write"],
+    ["accept_always_write", "always", "read-write"],
+  ] as const)("returns explicit directory grant scope for %s", async (selected, scope, fileAccess) => {
+    resetCliStores();
+    const pending = createToolApproval()({
+      type: "fs_outside_access",
+      access: "read",
+      targetPath: "outside/a.md",
+      grantRoot: "outside",
+    });
+    await flushMicrotasks();
+    expect(useDecisionStore.getState().decision).toMatchObject({
+      type: "choice",
+      options: expect.arrayContaining([
+        expect.objectContaining({ value: "accept", label: "Allow once" }),
+        expect.objectContaining({ value: "accept_session" }),
+        expect.objectContaining({ value: "accept_always" }),
+      ]),
+    });
+    useDecisionStore.getState().submitChoice(selected);
+    await expect(pending).resolves.toEqual({ action: "accept", scope, fileAccess });
+  });
+
   it("serializes concurrent confirmations so retry feedback cannot orphan an earlier prompt", async () => {
     resetCliStores();
     const confirmWrite = createToolApproval();
@@ -155,6 +182,28 @@ describe("createToolApproval", () => {
     expect(edited).toEqual({ action: "accept" });
     expect(deleted).toEqual({ action: "accept" });
     expect(useDecisionStore.getState().decision).toMatchObject({ type: "idle" });
+  });
+
+  it("reviews recursive directory deletes even in auto mode with a session write policy", async () => {
+    resetCliStores();
+    const pending = createToolApproval({
+      getMode: () => "auto",
+      initialAutoAllow: { delete: true },
+    })({
+      type: "fs_write",
+      kind: "delete",
+      filePath: "directory",
+      recursiveDelete: true,
+      unifiedDiff: "delete directory",
+      proposedContent: "",
+    });
+    await flushMicrotasks();
+    const decision = useDecisionStore.getState().decision;
+    expect(decision).toMatchObject({ type: "choice" });
+    if (decision.type === "choice")
+      expect(decision.options.some((option) => option.value === "accept_all_session")).toBe(false);
+    useDecisionStore.getState().submitChoice("reject");
+    await expect(pending).resolves.toEqual({ action: "reject" });
   });
 
   it("normal mode still confirms fs writes", async () => {

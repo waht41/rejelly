@@ -3,6 +3,8 @@
  * terminal prompt/presentation adapters.
  */
 
+import { getAgentFileAccess } from "../../domains/workspace/file-access/agentFileAccess";
+import { getWorkspaceFiles } from "../../shared/fs-policy/workspace-files";
 import type { AgentMode } from "../../shared/host/modeBindings";
 import type {
   FsOutsideAccessPayload,
@@ -140,8 +142,20 @@ function tryAutoAllowFsWrite(
   policy: AutoAllowPolicy,
   getMode: () => AgentMode,
 ): ToolConfirmationResult | null {
+  if (params.recursiveDelete) return null;
   if (params.outsideWorkspace) {
-    return null;
+    if (!params.targetPaths?.length) return null;
+    const approval = getAgentFileAccess().writeApproval(params.targetPaths);
+    if (!approval) return null;
+    const hasWorkspaceTargets = params.targetPaths.some((target) =>
+      getWorkspaceFiles().isManagedPath(target),
+    );
+    if (hasWorkspaceTargets && getMode() !== "auto" && !policy[params.kind]) return null;
+    recordAutoAllowed(
+      { mode: "policy", basis: `${approval} external read-write` },
+      `[Auto-allowed] ${params.kind} (${approval} directory grant) → ${forNotice(params.filePath)}`,
+    );
+    return { action: "accept" };
   }
   // Inside-workspace fs writes are diff-reviewed, so "auto" mode accepts them. Outside-workspace
   // writes have a wider boundary and stay manually gated.
@@ -166,22 +180,54 @@ async function confirmOutsideAccess(
   params: FsOutsideAccessPayload,
   decision: OperatorDecisionSession,
 ): Promise<ToolConfirmationResult> {
+  const readWrite = params.access === "write";
+  const capability = readWrite ? "read/write (including file deletion)" : "read, list and search";
   const menuOptions: DecisionOption[] = [
-    { key: "y", label: "Allow", value: "accept" },
+    { key: "y", label: "Allow once", value: "accept" },
+    { key: "s", label: `Allow ${capability} for this session`, value: "accept_session" },
+    { key: "A", label: `Always allow ${capability} for this project`, value: "accept_always" },
+    ...(!readWrite
+      ? [
+          { key: "w", label: "Allow read/write for this session", value: "accept_session_write" },
+          {
+            key: "W",
+            label: "Always allow read/write for this project",
+            value: "accept_always_write",
+          },
+        ]
+      : []),
     { key: "n", label: "Reject", value: "reject" },
   ];
   useOutputStore
     .getState()
     .setPhase("awaiting_user", `outside ${params.access} → ${params.targetPath}`);
   const selected = await decision.requestChoice({
-    message: `Allow ${params.access} outside workspace?\n${params.targetPath}\n\nGrant root for this session:\n${params.grantRoot}`,
+    message: `Allow ${params.access} outside workspace?\n${params.targetPath}\n\nDirectory for session/always grants (including descendants):\n${params.grantRoot}\n\nRead/write grants skip future file-write reviews. Recursive directory deletion still requires confirmation.`,
     options: menuOptions,
     cancelValue: "reject",
   });
   useOutputStore.getState().resumeWork("Running…");
-  if (selected === "accept") {
-    attachToolApproval({ mode: "manual", basis: `${params.access} outside workspace` });
-    return { action: "accept" };
+  if (
+    [
+      "accept",
+      "accept_session",
+      "accept_always",
+      "accept_session_write",
+      "accept_always_write",
+    ].includes(selected)
+  ) {
+    const scope =
+      selected === "accept" ? "once" : selected.includes("always") ? "always" : "session";
+    attachToolApproval({
+      mode: "manual",
+      basis: `${scope} ${params.access} outside workspace`,
+      reason: params.grantRoot,
+    });
+    return {
+      action: "accept",
+      scope,
+      fileAccess: readWrite || selected.endsWith("_write") ? "read-write" : "read",
+    };
   }
   return { action: "reject" };
 }
@@ -388,7 +434,7 @@ async function confirmFsWrite(
     supportedActions.length > 0 ? supportedActions : ["accept", "reject"],
   );
   const menuOptions: DecisionOption[] = actions.map((a) => ACTION_UI_MAP[a]);
-  if (actions.includes("accept") && !params.outsideWorkspace) {
+  if (actions.includes("accept") && !params.outsideWorkspace && !params.recursiveDelete) {
     menuOptions.push({
       key: "A",
       label: "Accept all future writes in this session",

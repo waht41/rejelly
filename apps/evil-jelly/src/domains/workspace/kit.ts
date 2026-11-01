@@ -6,6 +6,7 @@
 import { augmentTool, equipTool, type ToolDefinition } from "@rejelly/core";
 import { evilJellyToolLoggerMiddleware } from "../../shared/tool-observation/middleware";
 import { RunCommandTool } from "./execute/runCommandTool";
+import { equipAgentFileAccess } from "./file-access/agentFileAccess";
 import { ListDirTool, ReadFileTool } from "./read/FileSystemTools";
 import { FuzzySearchTool } from "./read/FuzzySearchTool";
 import { GrepSearchTool } from "./read/GrepSearchTool";
@@ -60,6 +61,7 @@ export interface ReadOnlyWorkspaceKitOptions {
 export async function equipReadOnlyWorkspaceKit(
   options: ReadOnlyWorkspaceKitOptions = {},
 ): Promise<void> {
+  await equipAgentFileAccess();
   equipReadFileDedupMiddleware();
   const tools = createReadOnlyWorkspaceTools(options.quiet ?? false);
   for (const tool of tools) {

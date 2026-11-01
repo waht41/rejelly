@@ -516,6 +516,7 @@ export function createEditFileTool(
         outsideWorkspace: preparedTargets.some(
           (target) => !policy.isManagedPath(target.resolved.abs),
         ),
+        targetPaths: preparedTargets.map((target) => target.resolved.abs),
         supportedActions: isBatch ? BATCH_REFACTOR_WRITE_ACTIONS : REFACTOR_WRITE_ACTIONS,
       });
       if (decision.action === "reject") {
@@ -640,6 +641,7 @@ export function createCreateFileTool(
         outsideWorkspace: preparedTargets.some(
           (target) => !policy.isManagedPath(target.resolved.abs),
         ),
+        targetPaths: preparedTargets.map((target) => target.resolved.abs),
         supportedActions: isBatch ? BATCH_REFACTOR_WRITE_ACTIONS : REFACTOR_WRITE_ACTIONS,
       });
 
@@ -666,6 +668,7 @@ export function createCreateFileTool(
             rel: path.dirname(target.resolved.rel),
             displayPath: parentDisplayPath,
             outside: target.resolved.outside,
+            ...(target.resolved.accessRoot ? { accessRoot: target.resolved.accessRoot } : {}),
           };
           if (parentResolved.rel !== "." && parentResolved.displayPath !== ".") {
             await policy.mkdirResolved(parentResolved, { recursive: true });
@@ -777,6 +780,11 @@ export function createDeleteFileTool(
         reviewCaption: isBatch
           ? `Batch delete across ${existingTargets.length} targets`
           : undefined,
+        outsideWorkspace: existingTargets.some(
+          (target) => !policy.isManagedPath(target.resolved.abs),
+        ),
+        targetPaths: existingTargets.map((target) => target.resolved.abs),
+        recursiveDelete: existingTargets.some((target) => target.isDirectory),
         supportedActions: BATCH_REFACTOR_WRITE_ACTIONS,
       });
       if (decision.action === "reject") {

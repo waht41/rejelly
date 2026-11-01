@@ -693,6 +693,51 @@ Source is organized primarily by ownership and change reason rather than by a un
 
 Workspace writes are implemented by the workspace domain and cross the host's `confirmTool` boundary when confirmation is required. The CLI supplies either an Ink-backed interactive binding or a restricted background/headless binding; verification remains an explicit Agent-selected command rather than an automatic post-write pipeline.
 
+### External directory permissions
+
+File tools offer **Allow once**, **Allow for this session**, and **Always allow for this project**
+when accessing an external directory. Read access includes file reads, images, directory listing,
+and search. Read/write access additionally skips subsequent create/edit/file-delete reviews within
+that directory. Recursive directory deletion always requires a separate review, even in Auto mode.
+Mixed batches still review workspace writes in Normal mode unless the workspace write policy also
+allows them. Every external target must be covered; granting one directory never approves an
+uncovered target in the same batch. Applied diffs and approval reasons remain in tool observations.
+
+Session directory grants live only in the active session's memory. `/clear`, switching sessions,
+and restarting (including `--resume`) do not restore them. Session history is audit material, not a
+source of filesystem authority. Allow once never creates a directory grant, so a write may also
+require its actual diff review.
+
+Project-always grants are stored only in **user** `~/.evil-jelly/settings.jsonc`:
+
+```jsonc
+{
+  "permissions": {
+    "projects": {
+      "E:/project/git/rejelly": {
+        "filesystem": {
+          "allow": [
+            { "directory": "E:/project/git/shared-docs", "access": "read" },
+            { "directory": "E:/project/git/another-project", "access": "read-write" }
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
+Project keys match exact canonical workspace roots, not ancestor projects. Both project keys and
+external directories must be absolute paths, without environment-variable or glob expansion. Grants
+include descendants but never extend through links/junctions outside the granted real directory.
+Host-created grants save real absolute paths. Workspace settings cannot grant or override these
+permissions. To revoke or narrow an always grant, edit the user allow list and restart Evil Jelly;
+host-created grants take effect immediately. JSONC updates preserve unrelated settings and comments.
+
+Sensitive files, `.git`/`node_modules` writes, and writes/removal affecting user-global Evil Jelly
+state remain protected regardless of grants. File permissions do not grant shell or MCP authority
+and are not an operating-system sandbox for arbitrary shell commands.
+
 ### CLI and host responsibilities
 
 | Path | Responsibility |
