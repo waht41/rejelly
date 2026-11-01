@@ -108,20 +108,19 @@ describe("AgentFileAccess", () => {
     }
   });
 
-  it("keeps outside read, scan, and write grants least-privileged", () => {
+  it("treats read as read/scan and write as read/scan/write without widening roots", () => {
     const { root, access } = createAccess();
     const outsideDir = path.resolve(root, "../shared-zone");
     const outsideFile = path.join(outsideDir, "README.md");
-
     access.approveExternalAccess("read", outsideDir);
-    expect(access.tryResolve(outsideDir, { kind: "scan" }, "normal").ok).toBe(false);
-
+    expect(access.tryResolve(outsideDir, { kind: "scan" }, "normal").ok).toBe(true);
+    expect(access.tryResolve(outsideFile, { kind: "write" }, "normal").ok).toBe(false);
     access.approveExternalAccess("write", outsideDir);
-    expect(access.tryResolve(outsideDir, { kind: "scan" }, "normal").ok).toBe(false);
+    expect(access.tryResolve(outsideDir, { kind: "scan" }, "normal").ok).toBe(true);
     expect(access.tryResolve(outsideFile, { kind: "read" }, "normal").ok).toBe(true);
     expect(access.tryResolve(outsideFile, { kind: "write" }, "normal").ok).toBe(true);
-
-    access.approveExternalAccess("scan", outsideDir);
-    expect(access.tryResolve(outsideDir, { kind: "scan" }, "normal").ok).toBe(true);
+    expect(access.tryResolve(`${outsideDir}-other/a.txt`, { kind: "write" }, "normal").ok).toBe(
+      false,
+    );
   });
 });

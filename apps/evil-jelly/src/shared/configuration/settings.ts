@@ -19,6 +19,11 @@ import { parseAndValidateJsonc } from "../foundation/jsonc";
 import { getWorkspaceRoot } from "../fs-policy/workspace-context";
 import { resolveGlobalJellyDir } from "../globalPath";
 import { resolveWorkspaceScopePaths } from "../workspaceScope";
+import {
+  type FilePermission,
+  PermissionsSettingsSchema,
+  projectFilePermissions,
+} from "./filePermissions";
 
 export const SETTINGS_FILE_REL_PATH = ".evil-jelly/settings.jsonc";
 export const DOC_MAP_DEFAULT_PATH = ".evil-jelly/doc-map.jsonc";
@@ -66,6 +71,7 @@ const SettingsFileSchema = z
       .strict()
       .optional(),
     skills: SkillsSettingsSchema.optional(),
+    permissions: PermissionsSettingsSchema.optional(),
     // Parsed by the MCP domain, which owns the one strict server-definition schema.
     mcp: z.unknown().optional(),
   })
@@ -98,6 +104,8 @@ export interface ResolvedSettings {
     enabled: boolean;
     overrides: Readonly<Record<string, { readonly enabled: boolean }>>;
   };
+  /** User-owned grants for this exact project. Workspace settings cannot grant permissions. */
+  filePermissions: readonly FilePermission[];
   /** Raw layer carrier. MCP owns validation, defaulting, and whole-server replacement. */
   mcp: {
     user: { readonly path: string; readonly value: unknown };
@@ -174,6 +182,7 @@ export function getSettings(): ResolvedSettings {
         ...workspaceFile.skills?.overrides,
       }),
     },
+    filePermissions: projectFilePermissions(userFile.permissions, root),
     mcp: {
       user: { path: userPath, value: userFile.mcp },
       workspace: { path: workspacePath, value: workspaceFile.mcp },

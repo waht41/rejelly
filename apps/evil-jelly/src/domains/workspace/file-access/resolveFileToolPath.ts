@@ -22,25 +22,5 @@ export async function resolveFileToolPath(
   const agentFileAccess = getAgentFileAccess();
   const host = tryGetBinding();
   const mode = host?.getAgentMode?.() ?? "normal";
-  const first = agentFileAccess.tryResolve(userPath, access, mode);
-  if (first.ok) {
-    return first;
-  }
-  if (!first.approval || !host) {
-    return { ok: false, error: first.error };
-  }
-
-  const decision = await host.confirmTool({
-    type: "fs_outside_access",
-    access: first.approval.access,
-    targetPath: first.approval.targetPath,
-    grantRoot: first.approval.grantRoot,
-  });
-  if (decision.action !== "accept") {
-    return { ok: false, error: `Access outside workspace denied: ${first.approval.targetPath}` };
-  }
-
-  agentFileAccess.approveExternalAccess(first.approval.access, first.approval.grantRoot);
-  const second = agentFileAccess.tryResolve(userPath, access, mode);
-  return second.ok ? second : { ok: false, error: second.error };
+  return agentFileAccess.resolve(userPath, access, mode, host?.confirmTool);
 }

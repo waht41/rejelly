@@ -61,6 +61,12 @@ function createStubHostBindings(
       return { action: "unavailable", reason: "Interactive memory confirmation is unavailable." };
     },
     confirmTool: async (params) => {
+      if (params.type === "fs_write" && params.userSettings) {
+        console.warn(
+          `[${logPrefix}][approval] user settings require interactive confirmation: ${params.filePath}`,
+        );
+        return { action: "reject" };
+      }
       if (autoAcceptWrite) {
         if (params.type === "fs_write") {
           console.log(`[${logPrefix}][approval] auto-accept: ${params.kind} ${params.filePath}`);

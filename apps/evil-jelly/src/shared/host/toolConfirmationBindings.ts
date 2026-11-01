@@ -14,6 +14,12 @@ export interface FsWritePayload {
   reviewCaption?: string;
   /** True when this write targets a path outside the workspace root. */
   outsideWorkspace?: boolean;
+  /** Actual absolute targets, never the batch presentation label. */
+  targetPaths?: string[];
+  /** Recursive directory deletion always requires a separate operation review. */
+  recursiveDelete?: boolean;
+  /** User-level settings changes require one-off human review, never policy/auto acceptance. */
+  userSettings?: boolean;
   /** Declares which follow-up outcomes the caller can handle in this context. */
   supportedActions?: WriteActionType[];
 }
@@ -67,7 +73,7 @@ export type ToolConfirmationRequest =
   | McpCallConfirmationPayload;
 
 export type ToolConfirmationResult =
-  | { action: "accept"; scope?: "once" | "session" | "always" }
+  | { action: "accept"; scope?: "once" | "session" | "always"; fileAccess?: "read" | "read-write" }
   | { action: "reject" }
   | { action: "retry"; feedback: string }
   | { action: "edit"; modifiedContent: string };

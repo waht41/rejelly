@@ -3,6 +3,8 @@
  * terminal prompt/presentation adapters.
  */
 
+import { getAgentFileAccess } from "../../domains/workspace/file-access/agentFileAccess";
+import { getWorkspaceFiles } from "../../shared/fs-policy/workspace-files";
 import type { AgentMode } from "../../shared/host/modeBindings";
 import type {
   FsOutsideAccessPayload,
@@ -140,8 +142,20 @@ function tryAutoAllowFsWrite(
   policy: AutoAllowPolicy,
   getMode: () => AgentMode,
 ): ToolConfirmationResult | null {
+  if (params.recursiveDelete || params.userSettings) return null;
   if (params.outsideWorkspace) {
-    return null;
+    if (!params.targetPaths?.length) return null;
+    const approval = getAgentFileAccess().writeApproval(params.targetPaths);
+    if (!approval) return null;
+    const hasWorkspaceTargets = params.targetPaths.some((target) =>
+      getWorkspaceFiles().isManagedPath(target),
+    );
+    if (hasWorkspaceTargets && getMode() !== "auto" && !policy[params.kind]) return null;
+    recordAutoAllowed(
+      { mode: "policy", basis: `${approval} external read-write` },
+      `[Auto-allowed] ${params.kind} (${approval} directory grant) → ${forNotice(params.filePath)}`,
+    );
+    return { action: "accept" };
   }
   // Inside-workspace fs writes are diff-reviewed, so "auto" mode accepts them. Outside-workspace
   // writes have a wider boundary and stay manually gated.
@@ -166,22 +180,41 @@ async function confirmOutsideAccess(
   params: FsOutsideAccessPayload,
   decision: OperatorDecisionSession,
 ): Promise<ToolConfirmationResult> {
+  const readWrite = params.access === "write";
+  const accessLabel = readWrite ? "read/write" : "read";
   const menuOptions: DecisionOption[] = [
-    { key: "y", label: "Allow", value: "accept" },
-    { key: "n", label: "Reject", value: "reject" },
+    { key: "y", label: "Allow once", value: "accept" },
+    { key: "s", label: "Allow for this session", value: "accept_session" },
+    { key: "A", label: "Always allow for this project", value: "accept_always" },
+    { key: "n", label: "Deny", value: "reject" },
   ];
+  const targetLine =
+    params.targetPath === params.grantRoot ? "" : `\nRequested path: ${params.targetPath}`;
+  const description = readWrite
+    ? "Session and always grants also allow future file changes.\nDeleting directories still requires confirmation."
+    : "Includes reading files, listing directories, and searching.";
   useOutputStore
     .getState()
     .setPhase("awaiting_user", `outside ${params.access} → ${params.targetPath}`);
   const selected = await decision.requestChoice({
-    message: `Allow ${params.access} outside workspace?\n${params.targetPath}\n\nGrant root for this session:\n${params.grantRoot}`,
+    message: `Allow ${accessLabel} access outside this workspace?\n\nDirectory: ${params.grantRoot}${targetLine}\nSession and always grants include subdirectories.\n\n${description}`,
     options: menuOptions,
     cancelValue: "reject",
   });
   useOutputStore.getState().resumeWork("Running…");
-  if (selected === "accept") {
-    attachToolApproval({ mode: "manual", basis: `${params.access} outside workspace` });
-    return { action: "accept" };
+  if (["accept", "accept_session", "accept_always"].includes(selected)) {
+    const scope =
+      selected === "accept" ? "once" : selected === "accept_always" ? "always" : "session";
+    attachToolApproval({
+      mode: "manual",
+      basis: `${scope} ${params.access} outside workspace`,
+      reason: params.grantRoot,
+    });
+    return {
+      action: "accept",
+      scope,
+      fileAccess: readWrite ? "read-write" : "read",
+    };
   }
   return { action: "reject" };
 }
@@ -384,11 +417,21 @@ async function confirmFsWrite(
     supportedActions = ["accept", "reject"],
   } = params;
 
-  const actions = uniqueWriteActions(
-    supportedActions.length > 0 ? supportedActions : ["accept", "reject"],
-  );
-  const menuOptions: DecisionOption[] = actions.map((a) => ACTION_UI_MAP[a]);
-  if (actions.includes("accept") && !params.outsideWorkspace) {
+  const actions: WriteActionType[] = params.userSettings
+    ? ["accept", "reject"]
+    : uniqueWriteActions(supportedActions.length > 0 ? supportedActions : ["accept", "reject"]);
+  const menuOptions: DecisionOption[] = params.userSettings
+    ? [
+        { key: "y", label: "Allow once", value: "accept" },
+        { key: "n", label: "Deny", value: "reject" },
+      ]
+    : actions.map((a) => ACTION_UI_MAP[a]);
+  if (
+    actions.includes("accept") &&
+    !params.userSettings &&
+    !params.outsideWorkspace &&
+    !params.recursiveDelete
+  ) {
     menuOptions.push({
       key: "A",
       label: "Accept all future writes in this session",
@@ -407,13 +450,17 @@ async function confirmFsWrite(
     captionTitle: "Proposed changes",
   });
   const selected = await decision.requestChoice({
-    message: `Allow ${kind}${outsideLabel} ${filePath}?`,
+    message:
+      `Allow ${kind}${outsideLabel} ${filePath}?` +
+      (params.userSettings
+        ? "\nThis changes user-level settings and may affect other projects.\nApproval applies only to these changes."
+        : ""),
     options: menuOptions,
     ...(actions.includes("reject") ? { cancelValue: "reject" } : {}),
   });
   useOutputStore.getState().resumeWork("Running…");
 
-  if (selected === "accept_all_session") {
+  if (selected === "accept_all_session" && !params.userSettings) {
     attachToolApproval({ mode: "manual", basis: kind });
     policy.create = true;
     policy.edit = true;
@@ -439,7 +486,7 @@ async function confirmFsWrite(
   }
 
   if (selected === "accept") {
-    attachToolApproval({ mode: "manual", basis: kind });
+    attachToolApproval({ mode: "manual", basis: params.userSettings ? "user settings" : kind });
     return { action: "accept" };
   }
 

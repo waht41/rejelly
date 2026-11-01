@@ -7,10 +7,13 @@ import fs from "node:fs";
 import fsPromises from "node:fs/promises";
 import path from "node:path";
 import { getErrnoCode } from "../foundation/errno";
-import { isPathInside, isRealPathInside } from "./path-containment";
+import { resolveGlobalJellyDir } from "../globalPath";
+import { isPathInside, isRealPathInside, resolveRealPath } from "./path-containment";
 import { getProjectTempRoot, getWorkspaceRoot } from "./workspace-context";
 import {
   isSensitiveFileName,
+  isSensitiveFsPath,
+  isWriteProtectedFsPath,
   type ScanPath,
   sensitiveFsPathError,
   toGitignorePath,
@@ -40,6 +43,10 @@ export type ResolvedFsPath = {
   rel: string;
   displayPath: string;
   outside: boolean;
+  /** Boundary of an explicitly approved external access, also checked immediately before I/O. */
+  accessRoot?: string;
+  /** File-scoped settings access; its actual changes must be independently reviewed by the host. */
+  userSettings?: boolean;
 };
 
 export type FsResolveResult =
@@ -66,12 +73,14 @@ const DEFAULT_MAX_WORKSPACE_WALK_ENTRIES = 100_000;
 
 export class WorkspaceFiles {
   private readonly rootResolved: string;
+  private readonly rootRealPath: string;
   private readonly scan: WorkspaceScan;
   private readonly tempRoot: string;
   private tempScan: WorkspaceScan | undefined;
 
   constructor(root: string) {
     this.rootResolved = path.resolve(root);
+    this.rootRealPath = resolveRealPath(this.rootResolved) ?? this.rootResolved;
     this.tempRoot = getProjectTempRoot(this.rootResolved);
     this.scan = new WorkspaceScan(this.rootResolved);
   }
@@ -155,6 +164,7 @@ export class WorkspaceFiles {
       rel: path.join(parent.rel, childName),
       displayPath: path.join(parent.displayPath, childName),
       outside: parent.outside,
+      ...(parent.accessRoot ? { accessRoot: parent.accessRoot } : {}),
     };
   }
 
@@ -206,6 +216,13 @@ export class WorkspaceFiles {
           error: "Access denied: Path traversal outside workspace root is not allowed.",
         };
       }
+      if (!temporary && !isRealPathInside(this.rootRealPath, resolved.abs)) {
+        return {
+          ok: false,
+          error:
+            "Access denied: Path resolves outside the workspace. Use its explicit external path for approval.",
+        };
+      }
       if (temporary && !isRealPathInside(this.tempRoot, resolved.abs)) {
         return {
           ok: false,
@@ -252,16 +269,65 @@ export class WorkspaceFiles {
     }
   }
 
+  /** Includes explicit settings paths and aliases to the same physical file. */
+  isUserSettingsPath(absolute: string): boolean {
+    const settingsPath = path.join(resolveGlobalJellyDir(), "settings.jsonc");
+    if (path.relative(settingsPath, absolute) === "") return true;
+    const settingsReal = resolveRealPath(settingsPath);
+    const real = resolveRealPath(absolute);
+    return (
+      settingsReal !== undefined && real !== undefined && path.relative(settingsReal, real) === ""
+    );
+  }
+
+  /** Hard restrictions apply before grants, including to the actual link/junction destination. */
+  agentPathError(absolute: string, kind: FileAccess["kind"]): string | undefined {
+    const real = resolveRealPath(absolute);
+    if (!real) return "Access denied: Cannot resolve the actual filesystem path.";
+    if (isSensitiveFsPath(absolute) || isSensitiveFsPath(real))
+      return sensitiveFsPathError(absolute);
+    if (kind === "write") {
+      const globalRoot = resolveRealPath(resolveGlobalJellyDir()) ?? resolveGlobalJellyDir();
+      if (
+        (isPathInside(globalRoot, real) || isPathInside(real, globalRoot)) &&
+        path.relative(path.join(globalRoot, "settings.jsonc"), real) !== ""
+      ) {
+        return "Access denied: Agent file tools cannot modify or remove user-global Evil Jelly state other than settings.jsonc with user confirmation.";
+      }
+      if (isWriteProtectedFsPath(absolute) || isWriteProtectedFsPath(real)) {
+        return "Access denied: .git metadata and node_modules dependencies are read-only.";
+      }
+    }
+    return undefined;
+  }
+
+  private assertResolvedAccess(resolved: ResolvedFsPath, kind: FileAccess["kind"]): void {
+    if (!resolved.accessRoot && !this.isManagedPath(resolved.abs)) return;
+    const error = this.agentPathError(resolved.abs, kind);
+    if (error) throw new Error(error);
+    if (kind === "write" && this.isUserSettingsPath(resolved.abs) && !resolved.userSettings) {
+      throw new Error("Access denied: User settings changes require explicit user confirmation.");
+    }
+    const root =
+      resolved.accessRoot ??
+      (isPathInside(this.tempRoot, resolved.abs) ? this.tempRoot : this.rootRealPath);
+    if (!isRealPathInside(root, resolved.abs)) {
+      throw new Error("Access denied: Path resolves outside its approved filesystem boundary.");
+    }
+  }
+
   async readFile(relativePath: string): Promise<string> {
     return fsPromises.readFile(this.resolveWorkspacePath(relativePath, { kind: "read" }), "utf-8");
   }
 
   async readResolved(resolved: ResolvedFsPath): Promise<string> {
+    this.assertResolvedAccess(resolved, "read");
     return fsPromises.readFile(resolved.abs, "utf-8");
   }
 
   /** Stream a bounded text source for explicit-file grep without loading the whole file. */
   async *readResolvedLines(resolved: ResolvedFsPath, maxBytes: number): AsyncGenerator<string> {
+    this.assertResolvedAccess(resolved, "read");
     if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
       throw new Error("maxBytes must be a positive safe integer");
     }
@@ -299,6 +365,7 @@ export class WorkspaceFiles {
   }
 
   async readResolvedBinary(resolved: ResolvedFsPath): Promise<Buffer> {
+    this.assertResolvedAccess(resolved, "read");
     return fsPromises.readFile(resolved.abs);
   }
 
@@ -311,6 +378,7 @@ export class WorkspaceFiles {
   }
 
   async writeResolved(resolved: ResolvedFsPath, content: string): Promise<void> {
+    this.assertResolvedAccess(resolved, "write");
     await fsPromises.writeFile(resolved.abs, content, "utf-8");
   }
 
@@ -326,6 +394,10 @@ export class WorkspaceFiles {
   }
 
   async writeNewResolved(resolved: ResolvedFsPath, content: string): Promise<void> {
+    this.assertResolvedAccess(resolved, "write");
+    // Parent creation belongs to the reviewed file write, not a separate directory grant.
+    await fsPromises.mkdir(path.dirname(resolved.abs), { recursive: true });
+    this.assertResolvedAccess(resolved, "write");
     await fsPromises.writeFile(resolved.abs, content, {
       encoding: "utf-8",
       flag: "wx",
@@ -337,6 +409,7 @@ export class WorkspaceFiles {
   }
 
   async statResolved(resolved: ResolvedFsPath) {
+    this.assertResolvedAccess(resolved, "read");
     return fsPromises.stat(resolved.abs);
   }
 
@@ -356,6 +429,7 @@ export class WorkspaceFiles {
     resolved: ResolvedFsPath,
     options: { withFileTypes: true },
   ): Promise<WorkspaceDirEntry[]> {
+    this.assertResolvedAccess(resolved, "scan");
     const raw = await fsPromises.readdir(resolved.abs, options);
     return raw.map((e) => ({
       name: e.name,
@@ -366,6 +440,7 @@ export class WorkspaceFiles {
 
   /** Stream directory entries so bounded consumers can stop without loading the whole directory. */
   async *iterateDirectoryResolved(resolved: ResolvedFsPath): AsyncGenerator<WorkspaceDirEntry> {
+    this.assertResolvedAccess(resolved, "scan");
     const directory = await fsPromises.opendir(resolved.abs, { bufferSize: 1 });
     for await (const entry of directory) {
       yield entry;
@@ -487,13 +562,6 @@ export class WorkspaceFiles {
     return fsPromises.mkdir(this.resolveWorkspacePath(relativeDir, { kind: "write" }), options);
   }
 
-  async mkdirResolved(
-    resolved: ResolvedFsPath,
-    options?: { recursive?: boolean },
-  ): Promise<string | undefined> {
-    return fsPromises.mkdir(resolved.abs, options);
-  }
-
   async deleteEntry(relativePath: string): Promise<void> {
     const resolved = this.tryResolveWorkspacePath(relativePath, { kind: "write" });
     if (!resolved.ok) {
@@ -503,6 +571,7 @@ export class WorkspaceFiles {
   }
 
   async deleteResolved(resolved: ResolvedFsPath): Promise<void> {
+    this.assertResolvedAccess(resolved, "write");
     if (this.isRoot(resolved.abs)) {
       throw new Error("Access denied: refusing to delete a workspace root.");
     }

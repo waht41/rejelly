@@ -1,57 +1,35 @@
 import path from "node:path";
-import { isPathInside } from "../../../shared/fs-policy/path-containment";
+import type { FilePermission } from "../../../shared/configuration/filePermissions";
+import { isPathInside, resolveRealPath } from "../../../shared/fs-policy/path-containment";
 import type { ExternalFileAccess } from "../../../shared/host/toolConfirmationBindings";
 
-function normalizeGrantPath(value: string): string {
-  const resolved = path.resolve(value);
-  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+/** One live session's directory grants, never reconstructed from model history. */
+export class ExternalFileGrants {
+  private readonly grants: FilePermission[] = [];
+
+  find(access: ExternalFileAccess, targetPath: string): FilePermission | undefined {
+    return this.grants.find((grant) => grantCovers(grant, access, targetPath));
+  }
+
+  approve(access: FilePermission["access"], directory: string): void {
+    const real = resolveRealPath(directory);
+    if (!real) throw new Error("Cannot resolve permission directory safely.");
+    this.grants.push({ directory: real, access });
+  }
 }
 
-/** Session-lived grants for paths outside one workspace root. */
-export class ExternalFileGrants {
-  private readonly approvedReadDirs = new Set<string>();
-  private readonly approvedScanDirs = new Set<string>();
-  private readonly approvedWriteDirs = new Set<string>();
-
-  has(access: ExternalFileAccess, targetPath: string): boolean {
-    const dirs =
-      access === "write"
-        ? this.approvedWriteDirs
-        : access === "scan"
-          ? this.approvedScanDirs
-          : this.approvedReadDirs;
-    for (const dir of dirs) {
-      if (isPathInside(dir, targetPath)) {
-        return true;
-      }
-    }
-    if (access === "read") {
-      for (const dir of this.approvedScanDirs) {
-        if (isPathInside(dir, targetPath)) {
-          return true;
-        }
-      }
-      for (const dir of this.approvedWriteDirs) {
-        if (isPathInside(dir, targetPath)) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  approve(access: ExternalFileAccess, dirPath: string): void {
-    const normalized = normalizeGrantPath(dirPath);
-    if (access === "write") {
-      this.approvedWriteDirs.add(normalized);
-      this.approvedReadDirs.add(normalized);
-      return;
-    }
-    if (access === "scan") {
-      this.approvedScanDirs.add(normalized);
-      this.approvedReadDirs.add(normalized);
-      return;
-    }
-    this.approvedReadDirs.add(normalized);
-  }
+/** Both the visible and real path must stay in one grant; links cannot widen its boundary. */
+export function grantCovers(
+  grant: FilePermission,
+  access: ExternalFileAccess,
+  targetPath: string,
+): boolean {
+  const root = path.resolve(grant.directory);
+  const real = resolveRealPath(targetPath);
+  return (
+    (access !== "write" || grant.access === "read-write") &&
+    isPathInside(root, targetPath) &&
+    real !== undefined &&
+    isPathInside(root, real)
+  );
 }

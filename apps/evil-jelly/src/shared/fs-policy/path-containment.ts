@@ -20,18 +20,23 @@ export function isPathInside(parentDir: string, targetPath: string): boolean {
 }
 
 /** Check existing-parent realpaths too, so a missing target cannot escape through a link/junction. */
-export function isRealPathInside(parentDir: string, targetPath: string): boolean {
+export function resolveRealPath(targetPath: string): string | undefined {
   let existing = path.resolve(targetPath);
   const missing: string[] = [];
   while (true) {
     try {
-      return isPathInside(parentDir, path.join(fs.realpathSync.native(existing), ...missing));
+      return path.join(fs.realpathSync.native(existing), ...missing);
     } catch (error) {
-      if (getErrnoCode(error) !== "ENOENT") return false;
+      if (getErrnoCode(error) !== "ENOENT") return undefined;
       const parent = path.dirname(existing);
-      if (parent === existing) return false;
+      if (parent === existing) return undefined;
       missing.unshift(path.basename(existing));
       existing = parent;
     }
   }
+}
+
+export function isRealPathInside(parentDir: string, targetPath: string): boolean {
+  const realPath = resolveRealPath(targetPath);
+  return realPath !== undefined && isPathInside(parentDir, realPath);
 }

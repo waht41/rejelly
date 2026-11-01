@@ -21,6 +21,69 @@ function resetCliStores(): void {
 }
 
 describe("createToolApproval", () => {
+  it.each([
+    ["accept", "once", "read"],
+    ["accept_session", "session", "scan"],
+    ["accept_always", "always", "write"],
+  ] as const)("offers four scope choices for outside %s approval", async (selected, scope, access) => {
+    resetCliStores();
+    const pending = createToolApproval()({
+      type: "fs_outside_access",
+      access,
+      targetPath: "outside/a.md",
+      grantRoot: "outside",
+    });
+    await flushMicrotasks();
+    const prompt = useDecisionStore.getState().decision;
+    expect(prompt).toMatchObject({
+      type: "choice",
+      message: expect.stringContaining(
+        `Allow ${access === "write" ? "read/write" : "read"} access outside this workspace?`,
+      ),
+      options: [
+        { key: "y", label: "Allow once", value: "accept" },
+        { key: "s", label: "Allow for this session", value: "accept_session" },
+        { key: "A", label: "Always allow for this project", value: "accept_always" },
+        { key: "n", label: "Deny", value: "reject" },
+      ],
+    });
+    if (prompt.type === "choice") {
+      expect(prompt.message).toContain("Directory: outside\nRequested path: outside/a.md");
+      expect(prompt.message).toContain("Session and always grants include subdirectories.");
+      expect(prompt.message.includes("Deleting directories still requires confirmation.")).toBe(
+        access === "write",
+      );
+      expect(
+        prompt.message.includes("Includes reading files, listing directories, and searching."),
+      ).toBe(access !== "write");
+    }
+    useDecisionStore.getState().submitChoice(selected);
+    await expect(pending).resolves.toEqual({
+      action: "accept",
+      scope,
+      fileAccess: access === "write" ? "read-write" : "read",
+    });
+  });
+
+  it("denies outside access without repeating the requested directory", async () => {
+    resetCliStores();
+    const pending = createToolApproval()({
+      type: "fs_outside_access",
+      access: "read",
+      targetPath: "outside",
+      grantRoot: "outside",
+    });
+    await flushMicrotasks();
+    const prompt = useDecisionStore.getState().decision;
+    expect(prompt).toMatchObject({ type: "choice" });
+    if (prompt.type === "choice") {
+      expect(prompt.message).toContain("Directory: outside");
+      expect(prompt.message).not.toContain("Requested path:");
+    }
+    useDecisionStore.getState().submitChoice("reject");
+    await expect(pending).resolves.toEqual({ action: "reject" });
+  });
+
   it("serializes concurrent confirmations so retry feedback cannot orphan an earlier prompt", async () => {
     resetCliStores();
     const confirmWrite = createToolApproval();
@@ -155,6 +218,57 @@ describe("createToolApproval", () => {
     expect(edited).toEqual({ action: "accept" });
     expect(deleted).toEqual({ action: "accept" });
     expect(useDecisionStore.getState().decision).toMatchObject({ type: "idle" });
+  });
+
+  it("reviews recursive directory deletes even in auto mode with a session write policy", async () => {
+    resetCliStores();
+    const pending = createToolApproval({
+      getMode: () => "auto",
+      initialAutoAllow: { delete: true },
+    })({
+      type: "fs_write",
+      kind: "delete",
+      filePath: "directory",
+      recursiveDelete: true,
+      unifiedDiff: "delete directory",
+      proposedContent: "",
+    });
+    await flushMicrotasks();
+    const decision = useDecisionStore.getState().decision;
+    expect(decision).toMatchObject({ type: "choice" });
+    if (decision.type === "choice")
+      expect(decision.options.some((option) => option.value === "accept_all_session")).toBe(false);
+    useDecisionStore.getState().submitChoice("reject");
+    await expect(pending).resolves.toEqual({ action: "reject" });
+  });
+
+  it("keeps user settings reviews one-off despite auto mode and session-wide write acceptance", async () => {
+    resetCliStores();
+    const confirmWrite = createToolApproval({
+      getMode: () => "auto",
+      initialAutoAllow: { create: true, edit: true, delete: true },
+    });
+    for (const kind of ["create", "edit", "delete"] as const) {
+      const pending = confirmWrite({
+        type: "fs_write",
+        kind,
+        filePath: "settings.jsonc",
+        userSettings: true,
+        unifiedDiff: "settings diff",
+        proposedContent: "{}",
+        supportedActions: ["accept", "reject", "edit", "retry"],
+      });
+      await flushMicrotasks();
+      expect(useDecisionStore.getState().decision).toMatchObject({
+        type: "choice",
+        options: [
+          { key: "y", label: "Allow once", value: "accept" },
+          { key: "n", label: "Deny", value: "reject" },
+        ],
+      });
+      useDecisionStore.getState().submitChoice("accept");
+      await expect(pending).resolves.toEqual({ action: "accept" });
+    }
   });
 
   it("normal mode still confirms fs writes", async () => {

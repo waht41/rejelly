@@ -21,6 +21,7 @@ import {
   SKILL_RUNTIME_PROVIDER_KEY,
   type SkillRuntimeSnapshot,
 } from "../../domains/skills/agent/skillRuntime";
+import { equipAgentFileAccess } from "../../domains/workspace/file-access/agentFileAccess";
 import type { ConversationAgentProps } from "../../features/unified/conversationRun";
 import { UnifiedAgent } from "../../features/unified/UnifiedAgent";
 import { env } from "../../shared/configuration/env";
@@ -462,6 +463,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
   id: "evil_jelly_cli_router",
   handler: async (props) => {
     await setBinding(props);
+    await equipAgentFileAccess();
     const host = getBinding();
     const session = equipConversationSession(
       {
