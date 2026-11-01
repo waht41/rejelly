@@ -63,7 +63,7 @@ describe("external workspace permissions", () => {
   });
 
   function approvalHost(result: ToolConfirmationResult, mode: "normal" | "auto" = "normal") {
-    const requestChoice = vi.fn(async () => "reject");
+    const requestChoice = vi.fn<OperatorDecisionSession["requestChoice"]>(async () => "reject");
     const surface: OperatorDecisionSession = {
       requestChoice,
       requestManager: async () => {
@@ -264,6 +264,87 @@ describe("external workspace permissions", () => {
     ).toBe(false);
   });
 
+  it.each([
+    "normal",
+    "auto",
+  ] as const)("reviews every user settings mutation in %s mode, including aliases and mixed batches", async (mode) => {
+    const settingsPath = resolveUserSettingsPath();
+    const home = path.dirname(path.dirname(settingsPath));
+    const content = JSON.stringify({
+      audit: { concurrency: 1 },
+      permissions: {
+        projects: {
+          [project]: { filesystem: { allow: [{ directory: home, access: "read-write" }] } },
+        },
+      },
+    });
+    const { host, confirmTool, requestChoice } = approvalHost({ action: "reject" }, mode);
+    await Runtime({
+      run: async () => {
+        await setBinding(host);
+        const access = getAgentFileAccess();
+        access.approveExternalAccess("write", home);
+        const create = createCreateFileTool(host.confirmTool);
+        expect(getSettings().audit.concurrency).toBeUndefined();
+        expect(await create.handler({ targets: [{ filePath: settingsPath, content }] })).toContain(
+          "denied",
+        );
+        expect(fs.existsSync(path.dirname(settingsPath))).toBe(false);
+        requestChoice.mockResolvedValue("accept");
+        expect(await create.handler({ targets: [{ filePath: settingsPath, content }] })).toContain(
+          "Created",
+        );
+        expect(getSettings().audit.concurrency).toBe(1);
+        expect(access.writeApproval([settingsPath])).toBeUndefined();
+
+        const aliasRoot = path.join(project, "global-alias");
+        fs.symlinkSync(path.dirname(settingsPath), aliasRoot, "junction");
+        const alias = path.join(aliasRoot, "settings.jsonc");
+        fs.writeFileSync(path.join(project, "inside.md"), "old");
+        const edit = createEditFileTool(host.confirmTool);
+        const targets = [
+          {
+            filePath: alias,
+            edits: [{ searchBlock: '"concurrency":1', replaceBlock: '"concurrency":2' }],
+          },
+          { filePath: "inside.md", edits: [{ searchBlock: "old", replaceBlock: "new" }] },
+        ];
+        requestChoice.mockResolvedValue("reject");
+        expect(await edit.handler({ targets })).toContain("denied");
+        expect(fs.readFileSync(settingsPath, "utf8")).toBe(content);
+        expect(fs.readFileSync(path.join(project, "inside.md"), "utf8")).toBe("old");
+        requestChoice.mockResolvedValue("accept");
+        expect(await edit.handler({ targets })).toContain("Updated");
+        expect(getSettings().audit.concurrency).toBe(2);
+        expect(fs.readFileSync(path.join(project, "inside.md"), "utf8")).toBe("new");
+
+        const remove = createDeleteFileTool(host.confirmTool);
+        requestChoice.mockResolvedValue("reject");
+        expect(await remove.handler({ targetPaths: [alias] })).toContain("denied");
+        expect(fs.existsSync(settingsPath)).toBe(true);
+        requestChoice.mockResolvedValue("accept");
+        expect(await remove.handler({ targetPaths: [alias] })).toContain("Deleted 1");
+        expect(fs.existsSync(settingsPath)).toBe(false);
+        expect(fs.existsSync(path.dirname(settingsPath))).toBe(true);
+        expect(getSettings().audit.concurrency).toBeUndefined();
+      },
+    });
+    expect(confirmTool).toHaveBeenCalledTimes(6);
+    for (const [request] of confirmTool.mock.calls) {
+      expect(request).toMatchObject({ type: "fs_write", userSettings: true });
+    }
+    expect(requestChoice).toHaveBeenCalledTimes(6);
+    for (const [prompt] of requestChoice.mock.calls) {
+      expect(prompt).toMatchObject({
+        message: expect.stringContaining("may affect other projects"),
+        options: [
+          { key: "y", label: "Allow once", value: "accept" },
+          { key: "n", label: "Deny", value: "reject" },
+        ],
+      });
+    }
+  });
+
   it("fails closed when always cannot be saved, without leaving a session grant", async () => {
     const settingsPath = resolveUserSettingsPath();
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
@@ -276,6 +357,40 @@ describe("external workspace permissions", () => {
     expect(result).toMatchObject({ ok: false, error: expect.stringContaining("busy") });
     expect(access.tryResolve(external, { kind: "write" }, "normal").ok).toBe(false);
     expect(fs.existsSync(settingsPath)).toBe(false);
+  });
+
+  it("does not turn a broad directory grant into settings authority when a junction changes", async () => {
+    const settingsPath = resolveUserSettingsPath();
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(settingsPath, "{}");
+    const policy = new WorkspaceFiles(project);
+    const access = new AgentFileAccess(policy);
+    access.approveExternalAccess("write", base);
+    const alias = path.join(external, "alias");
+    fs.mkdirSync(alias);
+    const resolved = access.tryResolve(
+      path.join(alias, "settings.jsonc"),
+      { kind: "write" },
+      "auto",
+    );
+    if (!resolved.ok) throw new Error(resolved.error);
+    fs.rmdirSync(alias);
+    fs.symlinkSync(path.dirname(settingsPath), alias, "junction");
+    await expect(policy.writeResolved(resolved, "unreviewed")).rejects.toThrow(
+      "explicit user confirmation",
+    );
+    expect(fs.readFileSync(settingsPath, "utf8")).toBe("{}");
+
+    const reviewed = access.tryResolve(
+      path.join(alias, "settings.jsonc"),
+      { kind: "write" },
+      "auto",
+    );
+    if (!reviewed.ok) throw new Error(reviewed.error);
+    fs.rmdirSync(alias);
+    fs.symlinkSync(project, alias, "junction");
+    await expect(policy.writeResolved(reviewed, "retargeted")).rejects.toThrow("boundary");
+    expect(fs.existsSync(path.join(project, "settings.jsonc"))).toBe(false);
   });
 
   it("rejects link escapes, protected destinations and a path retargeted during approval", async () => {
@@ -295,7 +410,8 @@ describe("external workspace permissions", () => {
     for (const file of [
       path.join(external, ".git/config"),
       path.join(external, "node_modules/pkg/a.js"),
-      resolveUserSettingsPath(),
+      path.dirname(resolveUserSettingsPath()),
+      path.join(path.dirname(resolveUserSettingsPath()), "sessions", "history.jsonl"),
     ]) {
       expect(access.tryResolve(file, { kind: "write" }, "auto")).toMatchObject({
         ok: false,

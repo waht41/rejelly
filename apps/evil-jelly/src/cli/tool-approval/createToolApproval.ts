@@ -142,7 +142,7 @@ function tryAutoAllowFsWrite(
   policy: AutoAllowPolicy,
   getMode: () => AgentMode,
 ): ToolConfirmationResult | null {
-  if (params.recursiveDelete) return null;
+  if (params.recursiveDelete || params.userSettings) return null;
   if (params.outsideWorkspace) {
     if (!params.targetPaths?.length) return null;
     const approval = getAgentFileAccess().writeApproval(params.targetPaths);
@@ -417,11 +417,21 @@ async function confirmFsWrite(
     supportedActions = ["accept", "reject"],
   } = params;
 
-  const actions = uniqueWriteActions(
-    supportedActions.length > 0 ? supportedActions : ["accept", "reject"],
-  );
-  const menuOptions: DecisionOption[] = actions.map((a) => ACTION_UI_MAP[a]);
-  if (actions.includes("accept") && !params.outsideWorkspace && !params.recursiveDelete) {
+  const actions: WriteActionType[] = params.userSettings
+    ? ["accept", "reject"]
+    : uniqueWriteActions(supportedActions.length > 0 ? supportedActions : ["accept", "reject"]);
+  const menuOptions: DecisionOption[] = params.userSettings
+    ? [
+        { key: "y", label: "Allow once", value: "accept" },
+        { key: "n", label: "Deny", value: "reject" },
+      ]
+    : actions.map((a) => ACTION_UI_MAP[a]);
+  if (
+    actions.includes("accept") &&
+    !params.userSettings &&
+    !params.outsideWorkspace &&
+    !params.recursiveDelete
+  ) {
     menuOptions.push({
       key: "A",
       label: "Accept all future writes in this session",
@@ -440,13 +450,17 @@ async function confirmFsWrite(
     captionTitle: "Proposed changes",
   });
   const selected = await decision.requestChoice({
-    message: `Allow ${kind}${outsideLabel} ${filePath}?`,
+    message:
+      `Allow ${kind}${outsideLabel} ${filePath}?` +
+      (params.userSettings
+        ? "\nThis changes user-level settings and may affect other projects.\nApproval applies only to these changes."
+        : ""),
     options: menuOptions,
     ...(actions.includes("reject") ? { cancelValue: "reject" } : {}),
   });
   useOutputStore.getState().resumeWork("Running…");
 
-  if (selected === "accept_all_session") {
+  if (selected === "accept_all_session" && !params.userSettings) {
     attachToolApproval({ mode: "manual", basis: kind });
     policy.create = true;
     policy.edit = true;
@@ -472,7 +486,7 @@ async function confirmFsWrite(
   }
 
   if (selected === "accept") {
-    attachToolApproval({ mode: "manual", basis: kind });
+    attachToolApproval({ mode: "manual", basis: params.userSettings ? "user settings" : kind });
     return { action: "accept" };
   }
 

@@ -734,9 +734,16 @@ Host-created grants save real absolute paths. Workspace settings cannot grant or
 permissions. To revoke or narrow an always grant, edit the user allow list and restart Evil Jelly;
 host-created grants take effect immediately. JSONC updates preserve unrelated settings and comments.
 
-Sensitive files, `.git`/`node_modules` writes, and writes/removal affecting user-global Evil Jelly
-state remain protected regardless of grants. File permissions do not grant shell or MCP authority
-and are not an operating-system sandbox for arbitrary shell commands.
+Creating, editing, or deleting user `~/.evil-jelly/settings.jsonc` requires a separate diff review
+with **Allow once** or **Deny**. Auto mode, session-wide write acceptance, and directory grants cannot
+skip this review, including in a mixed batch. No additional directory grant is requested; this
+approval covers only the proposed changes. Background/headless hosts reject these mutations because
+interactive confirmation is unavailable. Choosing Always in a directory prompt still saves that
+specific grant through the host-owned settings interface without a second prompt.
+
+Sensitive files, `.git`/`node_modules` writes, and writes/removal affecting other user-global Evil
+Jelly state remain protected regardless of grants. File permissions do not grant shell or MCP
+authority and are not an operating-system sandbox for arbitrary shell commands.
 
 ### CLI and host responsibilities
 

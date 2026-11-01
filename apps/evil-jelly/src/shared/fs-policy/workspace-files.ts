@@ -45,6 +45,8 @@ export type ResolvedFsPath = {
   outside: boolean;
   /** Boundary of an explicitly approved external access, also checked immediately before I/O. */
   accessRoot?: string;
+  /** File-scoped settings access; its actual changes must be independently reviewed by the host. */
+  userSettings?: boolean;
 };
 
 export type FsResolveResult =
@@ -267,6 +269,17 @@ export class WorkspaceFiles {
     }
   }
 
+  /** Includes explicit settings paths and aliases to the same physical file. */
+  isUserSettingsPath(absolute: string): boolean {
+    const settingsPath = path.join(resolveGlobalJellyDir(), "settings.jsonc");
+    if (path.relative(settingsPath, absolute) === "") return true;
+    const settingsReal = resolveRealPath(settingsPath);
+    const real = resolveRealPath(absolute);
+    return (
+      settingsReal !== undefined && real !== undefined && path.relative(settingsReal, real) === ""
+    );
+  }
+
   /** Hard restrictions apply before grants, including to the actual link/junction destination. */
   agentPathError(absolute: string, kind: FileAccess["kind"]): string | undefined {
     const real = resolveRealPath(absolute);
@@ -275,8 +288,11 @@ export class WorkspaceFiles {
       return sensitiveFsPathError(absolute);
     if (kind === "write") {
       const globalRoot = resolveRealPath(resolveGlobalJellyDir()) ?? resolveGlobalJellyDir();
-      if (isPathInside(globalRoot, real) || isPathInside(real, globalRoot)) {
-        return "Access denied: Agent file tools cannot modify or remove user-global Evil Jelly state.";
+      if (
+        (isPathInside(globalRoot, real) || isPathInside(real, globalRoot)) &&
+        path.relative(path.join(globalRoot, "settings.jsonc"), real) !== ""
+      ) {
+        return "Access denied: Agent file tools cannot modify or remove user-global Evil Jelly state other than settings.jsonc with user confirmation.";
       }
       if (isWriteProtectedFsPath(absolute) || isWriteProtectedFsPath(real)) {
         return "Access denied: .git metadata and node_modules dependencies are read-only.";
@@ -289,6 +305,9 @@ export class WorkspaceFiles {
     if (!resolved.accessRoot && !this.isManagedPath(resolved.abs)) return;
     const error = this.agentPathError(resolved.abs, kind);
     if (error) throw new Error(error);
+    if (kind === "write" && this.isUserSettingsPath(resolved.abs) && !resolved.userSettings) {
+      throw new Error("Access denied: User settings changes require explicit user confirmation.");
+    }
     const root =
       resolved.accessRoot ??
       (isPathInside(this.tempRoot, resolved.abs) ? this.tempRoot : this.rootRealPath);
@@ -375,6 +394,9 @@ export class WorkspaceFiles {
   }
 
   async writeNewResolved(resolved: ResolvedFsPath, content: string): Promise<void> {
+    this.assertResolvedAccess(resolved, "write");
+    // Parent creation belongs to the reviewed file write, not a separate directory grant.
+    await fsPromises.mkdir(path.dirname(resolved.abs), { recursive: true });
     this.assertResolvedAccess(resolved, "write");
     await fsPromises.writeFile(resolved.abs, content, {
       encoding: "utf-8",
@@ -538,14 +560,6 @@ export class WorkspaceFiles {
 
   async mkdir(relativeDir: string, options?: { recursive?: boolean }): Promise<string | undefined> {
     return fsPromises.mkdir(this.resolveWorkspacePath(relativeDir, { kind: "write" }), options);
-  }
-
-  async mkdirResolved(
-    resolved: ResolvedFsPath,
-    options?: { recursive?: boolean },
-  ): Promise<string | undefined> {
-    this.assertResolvedAccess(resolved, "write");
-    return fsPromises.mkdir(resolved.abs, options);
   }
 
   async deleteEntry(relativePath: string): Promise<void> {

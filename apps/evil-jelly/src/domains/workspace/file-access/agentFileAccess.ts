@@ -59,6 +59,8 @@ export class AgentFileAccess {
   }
 
   writeApproval(targetPaths: readonly string[]): "session" | "always" | undefined {
+    if (targetPaths.some((target) => this.workspaceFiles.isUserSettingsPath(target)))
+      return undefined;
     const external = targetPaths.filter((target) => !this.workspaceFiles.isManagedPath(target));
     if (external.length === 0) return undefined;
     const matches = external.map((target) =>
@@ -78,6 +80,15 @@ export class AgentFileAccess {
     const resolved = this.workspaceFiles.classifyPath(userPath);
     const error = this.workspaceFiles.agentPathError(resolved.abs, access.kind);
     if (error) return { ok: false, error };
+    if (access.kind === "write" && this.workspaceFiles.isUserSettingsPath(resolved.abs)) {
+      // Do not grant the global directory. The write tool must review the concrete changes.
+      return {
+        ok: true,
+        ...resolved,
+        accessRoot: resolveRealPath(resolved.abs),
+        userSettings: true,
+      };
+    }
     if (this.workspaceFiles.isManagedPath(resolved.abs)) {
       return this.workspaceFiles.tryResolveWorkspacePath(userPath, access);
     }

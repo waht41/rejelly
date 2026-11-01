@@ -18,6 +18,8 @@ export interface FsWritePayload {
   targetPaths?: string[];
   /** Recursive directory deletion always requires a separate operation review. */
   recursiveDelete?: boolean;
+  /** User-level settings changes require one-off human review, never policy/auto acceptance. */
+  userSettings?: boolean;
   /** Declares which follow-up outcomes the caller can handle in this context. */
   supportedActions?: WriteActionType[];
 }

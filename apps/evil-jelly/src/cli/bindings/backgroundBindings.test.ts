@@ -63,6 +63,22 @@ describe("cli stub host bindings", () => {
     expect(log).toHaveBeenCalledWith("[cli][approval] auto-accept: shell pnpm test");
   });
 
+  it("rejects user settings changes even when background writes are auto-accepted", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const bindings = createBackgroundHostBindings({ autoAcceptWrite: true });
+    await expect(
+      bindings.confirmTool({
+        type: "fs_write",
+        kind: "edit",
+        filePath: "settings.jsonc",
+        targetPaths: ["settings.jsonc"],
+        userSettings: true,
+        unifiedDiff: "settings diff",
+        proposedContent: "{}",
+      }),
+    ).resolves.toEqual({ action: "reject" });
+  });
+
   it("rejects writes and higher-risk shell commands in background headless bindings", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const bindings = createBackgroundHostBindings();

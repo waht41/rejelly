@@ -6,6 +6,7 @@ import path from "node:path";
 import { TextDecoder } from "node:util";
 import type { ToolDefinition } from "@rejelly/core";
 import { z } from "zod";
+import { invalidateSettingsCache } from "../../../shared/configuration/settings";
 import { getErrnoCode } from "../../../shared/foundation/errno";
 import { normalizeNewlines } from "../../../shared/foundation/string";
 import { AGENT_SCRATCH_DIR } from "../../../shared/fs-policy/workspace-context";
@@ -517,6 +518,9 @@ export function createEditFileTool(
           (target) => !policy.isManagedPath(target.resolved.abs),
         ),
         targetPaths: preparedTargets.map((target) => target.resolved.abs),
+        userSettings: preparedTargets.some((target) =>
+          policy.isUserSettingsPath(target.resolved.abs),
+        ),
         supportedActions: isBatch ? BATCH_REFACTOR_WRITE_ACTIONS : REFACTOR_WRITE_ACTIONS,
       });
       if (decision.action === "reject") {
@@ -536,6 +540,7 @@ export function createEditFileTool(
           decision.action === "edit" && i === 0 ? decision.modifiedContent : target.newContent;
         try {
           await policy.writeResolved(target.resolved, contentToWrite);
+          if (target.resolved.userSettings) invalidateSettingsCache();
           appliedPatches.push(makePatch(target.filePath, target.raw, contentToWrite));
           recordAppliedPatches(
             observation,
@@ -642,6 +647,9 @@ export function createCreateFileTool(
           (target) => !policy.isManagedPath(target.resolved.abs),
         ),
         targetPaths: preparedTargets.map((target) => target.resolved.abs),
+        userSettings: preparedTargets.some((target) =>
+          policy.isUserSettingsPath(target.resolved.abs),
+        ),
         supportedActions: isBatch ? BATCH_REFACTOR_WRITE_ACTIONS : REFACTOR_WRITE_ACTIONS,
       });
 
@@ -661,19 +669,8 @@ export function createCreateFileTool(
         const contentToWrite =
           decision.action === "edit" && i === 0 ? decision.modifiedContent : target.newN;
         try {
-          const parentAbs = path.dirname(target.resolved.abs);
-          const parentDisplayPath = path.dirname(target.resolved.displayPath);
-          const parentResolved: ResolvedFsPath = {
-            abs: parentAbs,
-            rel: path.dirname(target.resolved.rel),
-            displayPath: parentDisplayPath,
-            outside: target.resolved.outside,
-            ...(target.resolved.accessRoot ? { accessRoot: target.resolved.accessRoot } : {}),
-          };
-          if (parentResolved.rel !== "." && parentResolved.displayPath !== ".") {
-            await policy.mkdirResolved(parentResolved, { recursive: true });
-          }
           await policy.writeNewResolved(target.resolved, contentToWrite);
+          if (target.resolved.userSettings) invalidateSettingsCache();
           appliedPatches.push(makePatch(target.filePath, "", contentToWrite));
           recordAppliedPatches(
             observation,
@@ -785,6 +782,9 @@ export function createDeleteFileTool(
         ),
         targetPaths: existingTargets.map((target) => target.resolved.abs),
         recursiveDelete: existingTargets.some((target) => target.isDirectory),
+        userSettings: existingTargets.some((target) =>
+          policy.isUserSettingsPath(target.resolved.abs),
+        ),
         supportedActions: BATCH_REFACTOR_WRITE_ACTIONS,
       });
       if (decision.action === "reject") {
@@ -805,6 +805,7 @@ export function createDeleteFileTool(
       for (const { target, patch } of preparedTargets) {
         try {
           await policy.deleteResolved(target.resolved);
+          if (target.resolved.userSettings) invalidateSettingsCache();
           deleted.push(target.filePath);
           appliedPatches.push(patch);
           recordAppliedPatches(
@@ -815,7 +816,7 @@ export function createDeleteFileTool(
               : undefined,
           );
 
-          if (!target.resolved.outside) {
+          if (!target.resolved.outside && !target.resolved.userSettings) {
             const parentRel = path.dirname(target.resolved.rel);
             const removedParents = await policy.pruneEmptyParentsInside(parentRel);
             for (const relPath of removedParents) {

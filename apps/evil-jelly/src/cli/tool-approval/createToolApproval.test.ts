@@ -242,6 +242,35 @@ describe("createToolApproval", () => {
     await expect(pending).resolves.toEqual({ action: "reject" });
   });
 
+  it("keeps user settings reviews one-off despite auto mode and session-wide write acceptance", async () => {
+    resetCliStores();
+    const confirmWrite = createToolApproval({
+      getMode: () => "auto",
+      initialAutoAllow: { create: true, edit: true, delete: true },
+    });
+    for (const kind of ["create", "edit", "delete"] as const) {
+      const pending = confirmWrite({
+        type: "fs_write",
+        kind,
+        filePath: "settings.jsonc",
+        userSettings: true,
+        unifiedDiff: "settings diff",
+        proposedContent: "{}",
+        supportedActions: ["accept", "reject", "edit", "retry"],
+      });
+      await flushMicrotasks();
+      expect(useDecisionStore.getState().decision).toMatchObject({
+        type: "choice",
+        options: [
+          { key: "y", label: "Allow once", value: "accept" },
+          { key: "n", label: "Deny", value: "reject" },
+        ],
+      });
+      useDecisionStore.getState().submitChoice("accept");
+      await expect(pending).resolves.toEqual({ action: "accept" });
+    }
+  });
+
   it("normal mode still confirms fs writes", async () => {
     resetCliStores();
     const confirmWrite = createToolApproval({ getMode: () => "normal" });
