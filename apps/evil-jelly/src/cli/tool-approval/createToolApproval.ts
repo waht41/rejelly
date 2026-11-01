@@ -181,43 +181,30 @@ async function confirmOutsideAccess(
   decision: OperatorDecisionSession,
 ): Promise<ToolConfirmationResult> {
   const readWrite = params.access === "write";
-  const capability = readWrite ? "read/write (including file deletion)" : "read, list and search";
+  const accessLabel = readWrite ? "read/write" : "read";
   const menuOptions: DecisionOption[] = [
     { key: "y", label: "Allow once", value: "accept" },
-    { key: "s", label: `Allow ${capability} for this session`, value: "accept_session" },
-    { key: "A", label: `Always allow ${capability} for this project`, value: "accept_always" },
-    ...(!readWrite
-      ? [
-          { key: "w", label: "Allow read/write for this session", value: "accept_session_write" },
-          {
-            key: "W",
-            label: "Always allow read/write for this project",
-            value: "accept_always_write",
-          },
-        ]
-      : []),
-    { key: "n", label: "Reject", value: "reject" },
+    { key: "s", label: "Allow for this session", value: "accept_session" },
+    { key: "A", label: "Always allow for this project", value: "accept_always" },
+    { key: "n", label: "Deny", value: "reject" },
   ];
+  const targetLine =
+    params.targetPath === params.grantRoot ? "" : `\nRequested path: ${params.targetPath}`;
+  const description = readWrite
+    ? "Session and always grants also allow future file changes.\nDeleting directories still requires confirmation."
+    : "Includes reading files, listing directories, and searching.";
   useOutputStore
     .getState()
     .setPhase("awaiting_user", `outside ${params.access} → ${params.targetPath}`);
   const selected = await decision.requestChoice({
-    message: `Allow ${params.access} outside workspace?\n${params.targetPath}\n\nDirectory for session/always grants (including descendants):\n${params.grantRoot}\n\nRead/write grants skip future file-write reviews. Recursive directory deletion still requires confirmation.`,
+    message: `Allow ${accessLabel} access outside this workspace?\n\nDirectory: ${params.grantRoot}${targetLine}\nSession and always grants include subdirectories.\n\n${description}`,
     options: menuOptions,
     cancelValue: "reject",
   });
   useOutputStore.getState().resumeWork("Running…");
-  if (
-    [
-      "accept",
-      "accept_session",
-      "accept_always",
-      "accept_session_write",
-      "accept_always_write",
-    ].includes(selected)
-  ) {
+  if (["accept", "accept_session", "accept_always"].includes(selected)) {
     const scope =
-      selected === "accept" ? "once" : selected.includes("always") ? "always" : "session";
+      selected === "accept" ? "once" : selected === "accept_always" ? "always" : "session";
     attachToolApproval({
       mode: "manual",
       basis: `${scope} ${params.access} outside workspace`,
@@ -226,7 +213,7 @@ async function confirmOutsideAccess(
     return {
       action: "accept",
       scope,
-      fileAccess: readWrite || selected.endsWith("_write") ? "read-write" : "read",
+      fileAccess: readWrite ? "read-write" : "read",
     };
   }
   return { action: "reject" };

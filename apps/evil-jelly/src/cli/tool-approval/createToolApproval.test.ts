@@ -23,29 +23,65 @@ function resetCliStores(): void {
 describe("createToolApproval", () => {
   it.each([
     ["accept", "once", "read"],
-    ["accept_session", "session", "read"],
-    ["accept_always", "always", "read"],
-    ["accept_session_write", "session", "read-write"],
-    ["accept_always_write", "always", "read-write"],
-  ] as const)("returns explicit directory grant scope for %s", async (selected, scope, fileAccess) => {
+    ["accept_session", "session", "scan"],
+    ["accept_always", "always", "write"],
+  ] as const)("offers four scope choices for outside %s approval", async (selected, scope, access) => {
     resetCliStores();
     const pending = createToolApproval()({
       type: "fs_outside_access",
-      access: "read",
+      access,
       targetPath: "outside/a.md",
       grantRoot: "outside",
     });
     await flushMicrotasks();
-    expect(useDecisionStore.getState().decision).toMatchObject({
+    const prompt = useDecisionStore.getState().decision;
+    expect(prompt).toMatchObject({
       type: "choice",
-      options: expect.arrayContaining([
-        expect.objectContaining({ value: "accept", label: "Allow once" }),
-        expect.objectContaining({ value: "accept_session" }),
-        expect.objectContaining({ value: "accept_always" }),
-      ]),
+      message: expect.stringContaining(
+        `Allow ${access === "write" ? "read/write" : "read"} access outside this workspace?`,
+      ),
+      options: [
+        { key: "y", label: "Allow once", value: "accept" },
+        { key: "s", label: "Allow for this session", value: "accept_session" },
+        { key: "A", label: "Always allow for this project", value: "accept_always" },
+        { key: "n", label: "Deny", value: "reject" },
+      ],
     });
+    if (prompt.type === "choice") {
+      expect(prompt.message).toContain("Directory: outside\nRequested path: outside/a.md");
+      expect(prompt.message).toContain("Session and always grants include subdirectories.");
+      expect(prompt.message.includes("Deleting directories still requires confirmation.")).toBe(
+        access === "write",
+      );
+      expect(
+        prompt.message.includes("Includes reading files, listing directories, and searching."),
+      ).toBe(access !== "write");
+    }
     useDecisionStore.getState().submitChoice(selected);
-    await expect(pending).resolves.toEqual({ action: "accept", scope, fileAccess });
+    await expect(pending).resolves.toEqual({
+      action: "accept",
+      scope,
+      fileAccess: access === "write" ? "read-write" : "read",
+    });
+  });
+
+  it("denies outside access without repeating the requested directory", async () => {
+    resetCliStores();
+    const pending = createToolApproval()({
+      type: "fs_outside_access",
+      access: "read",
+      targetPath: "outside",
+      grantRoot: "outside",
+    });
+    await flushMicrotasks();
+    const prompt = useDecisionStore.getState().decision;
+    expect(prompt).toMatchObject({ type: "choice" });
+    if (prompt.type === "choice") {
+      expect(prompt.message).toContain("Directory: outside");
+      expect(prompt.message).not.toContain("Requested path:");
+    }
+    useDecisionStore.getState().submitChoice("reject");
+    await expect(pending).resolves.toEqual({ action: "reject" });
   });
 
   it("serializes concurrent confirmations so retry feedback cannot orphan an earlier prompt", async () => {
