@@ -20,6 +20,7 @@ import type {
 import { OPENAI_CHAT_STATE_KIND } from "./identity";
 import type { ResponseParams } from "./responses";
 import { streamResponses } from "./responses";
+import { awaitResponseHeaders, withStreamIdleTimeout } from "./streamTimeout";
 import { normalizeOpenAIUsage } from "./usage";
 import {
   injectSchemaToMessages,
@@ -51,6 +52,7 @@ type StreamHandlerOptions = {
   schemaMode?: SchemaMode;
   chatCompletionParams?: ChatCompletionParams;
   requestOption?: RequestOption;
+  streamIdleTimeoutMs?: number;
   modelStreamOption?: ModelStreamOptions;
 };
 
@@ -186,7 +188,13 @@ async function* streamHandler(
   messages: Message[],
   options: StreamHandlerOptions,
 ): AsyncGenerator<StreamEvent> {
-  const { schemaMode = "prompt", chatCompletionParams, requestOption, modelStreamOption } = options;
+  const {
+    schemaMode = "prompt",
+    chatCompletionParams,
+    requestOption,
+    streamIdleTimeoutMs,
+    modelStreamOption,
+  } = options;
 
   const { schema, signal, tools, toolChoice, additionalOptions } = modelStreamOption || {};
   const requestController = new AbortController();
@@ -252,10 +260,12 @@ async function* streamHandler(
   ];
 
   try {
-    const stream = await client.chat.completions.create(params, {
-      ...requestOption,
-      signal: requestSignal,
-    });
+    const stream = await awaitResponseHeaders(
+      client.chat.completions.create(params, {
+        ...requestOption,
+        signal: requestSignal,
+      }),
+    );
 
     const toolCallsMap = new Map<number, { id: string; name: string }>();
     const reasoningDetails = new Map<string, OpenAIReasoningDetail>();
@@ -264,7 +274,11 @@ async function* streamHandler(
     let lastUsage: TokenUsage | undefined;
     let lastFinishReason: FinishReason | undefined;
 
-    for await (const chunk of stream) {
+    for await (const chunk of withStreamIdleTimeout(
+      stream,
+      requestController,
+      streamIdleTimeoutMs,
+    )) {
       if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
       const choice = (chunk as ChatCompletionChunk).choices[0];
@@ -332,6 +346,8 @@ async function* streamHandler(
       }
     }
 
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
     if (reasoningContent.length > 0 || reasoningDetailOrder.length > 0) {
       const completeDetails = reasoningDetailOrder.flatMap((key) => {
         const detail = reasoningDetails.get(key);
@@ -354,6 +370,7 @@ async function* streamHandler(
       ...(lastUsage && { usage: lastUsage }),
     };
   } catch (error) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     wrapAsModelCallError(error, modelId, provider, client.baseURL);
   } finally {
     if (signal) {
@@ -379,6 +396,8 @@ interface OpenAIAdapterBaseConfig {
   calculateCost?: (usage: TokenUsage) => Record<string, number>;
   /** SDK request options. The adapter always owns the abort signal. */
   requestOption?: RequestOption;
+  /** Maximum wait for each SDK protocol event after headers; unset adds no idle deadline. */
+  streamIdleTimeoutMs?: number;
 }
 
 export type OpenAIAdapterConfig = OpenAIAdapterBaseConfig &
@@ -413,6 +432,17 @@ export function createOpenAIAdapter(config: OpenAIAdapterConfig): ModelAdapter {
     throw new Error("@rejelly/adapter-openai: modelId is required");
   }
 
+  if (
+    config.streamIdleTimeoutMs !== undefined &&
+    (!Number.isInteger(config.streamIdleTimeoutMs) ||
+      config.streamIdleTimeoutMs <= 0 ||
+      config.streamIdleTimeoutMs > 2_147_483_647)
+  ) {
+    throw new Error(
+      "@rejelly/adapter-openai: streamIdleTimeoutMs must be a positive 32-bit integer",
+    );
+  }
+
   const client = new OpenAI({ apiKey, baseURL });
 
   return {
@@ -425,6 +455,7 @@ export function createOpenAIAdapter(config: OpenAIAdapterConfig): ModelAdapter {
           schemaMode,
           responseParams: config.responseParams,
           requestOption,
+          streamIdleTimeoutMs: config.streamIdleTimeoutMs,
           modelStreamOption: options,
         });
         return;
@@ -434,6 +465,7 @@ export function createOpenAIAdapter(config: OpenAIAdapterConfig): ModelAdapter {
         schemaMode,
         chatCompletionParams: config.chatCompletionParams,
         requestOption,
+        streamIdleTimeoutMs: config.streamIdleTimeoutMs,
         modelStreamOption: options,
       });
     },

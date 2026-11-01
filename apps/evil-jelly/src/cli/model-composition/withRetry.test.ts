@@ -247,14 +247,17 @@ describe("model composition withRetry", () => {
     expect(calls).toBe(1);
   });
 
-  it("does not retry after any stream event has been yielded", async () => {
+  it.each([
+    "server_error",
+    "timeout",
+  ] as const)("does not retry %s after any stream event has been yielded", async (code) => {
     let calls = 0;
     const adapter: ModelAdapter = {
       id: "test-model",
       stream: async function* () {
         calls += 1;
         yield { type: "text", content: "partial" };
-        throw transientError("server_error");
+        throw transientError(code);
       },
     };
 

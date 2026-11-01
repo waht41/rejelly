@@ -25,6 +25,7 @@ import type {
 } from "openai/resources/responses/responses";
 import type { RequestOption, SchemaMode } from "./adapter";
 import { OPENAI_RESPONSES_STATE_KIND } from "./identity";
+import { awaitResponseHeaders, withStreamIdleTimeout } from "./streamTimeout";
 import { normalizeOpenAIUsage } from "./usage";
 import {
   convertContentToString,
@@ -47,6 +48,7 @@ type ResponsesStreamHandlerOptions = {
   schemaMode?: SchemaMode;
   responseParams?: ResponseParams;
   requestOption?: RequestOption;
+  streamIdleTimeoutMs?: number;
   modelStreamOption?: ModelStreamOptions;
 };
 
@@ -333,7 +335,13 @@ export async function* streamResponses(
   messages: Message[],
   options: ResponsesStreamHandlerOptions,
 ): AsyncGenerator<StreamEvent> {
-  const { schemaMode = "prompt", responseParams, requestOption, modelStreamOption } = options;
+  const {
+    schemaMode = "prompt",
+    responseParams,
+    requestOption,
+    streamIdleTimeoutMs,
+    modelStreamOption,
+  } = options;
   const { schema, signal, tools, toolChoice, additionalOptions } = modelStreamOption ?? {};
   const requestController = new AbortController();
   const onAgentAbort = () => requestController.abort(signal?.reason);
@@ -381,14 +389,20 @@ export async function* streamResponses(
       data: stream,
       response,
       request_id,
-    } = await client.responses
-      .create(params, {
-        ...requestOption,
-        signal: requestController.signal,
-      })
-      .withResponse();
+    } = await awaitResponseHeaders(
+      client.responses
+        .create(params, {
+          ...requestOption,
+          signal: requestController.signal,
+        })
+        .withResponse(),
+    );
 
-    for await (const event of stream as AsyncIterable<ResponseStreamEvent>) {
+    for await (const event of withStreamIdleTimeout(
+      stream as AsyncIterable<ResponseStreamEvent>,
+      requestController,
+      streamIdleTimeoutMs,
+    )) {
       if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
       const compatibleReasoningDelta = getCompatibleReasoningTextDelta(event);

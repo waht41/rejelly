@@ -39,6 +39,22 @@ const model = createOpenAIAdapter({
 });
 ```
 
+#### Response-header and stream idle timeouts
+
+`requestOption.timeout` is the OpenAI SDK's response-header wait budget. For streaming requests it stops counting once HTTP response headers arrive; it is not a total generation deadline. Gateways may delay headers until the first upstream SSE event.
+
+Set `streamIdleTimeoutMs` separately to bound each wait for the next SDK protocol event after headers. It applies to both Chat Completions and Responses, resets on metadata events as well as content, and does not count time spent processing an event in the consumer. It is disabled when omitted. SSE comments alone do not count as SDK protocol events.
+
+```typescript
+const model = createOpenAIAdapter({
+  modelId: 'gpt-5.6-luna',
+  requestOption: { timeout: 300_000, maxRetries: 0 },
+  streamIdleTimeoutMs: 300_000,
+});
+```
+
+Idle timeouts abort the upstream request and are classified as `ModelCallError` with code `timeout`; their message distinguishes a stalled stream from a response-header timeout. User cancellation remains cancellation.
+
 ### Gemini
 
 ```typescript
