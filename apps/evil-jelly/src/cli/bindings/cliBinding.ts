@@ -132,8 +132,8 @@ function createOutputBindings(): ConversationPresentationBindings {
     appendToolOutput: (toolCallId: string, chunk: string) => {
       out().appendToolOutput(toolCallId, chunk);
     },
-    logUserMessage: (message: string) => {
-      out().logUser(message);
+    logUserMessage: (message, presentation) => {
+      out().logUser(message, presentation);
     },
     logAssistantMessage: (message: string) => {
       out().logAssistant(message);
@@ -176,6 +176,7 @@ function createOutputBindings(): ConversationPresentationBindings {
     onTurnStart: () => {
       out().beginTurn();
     },
+    onInputPreparationEnd: () => out().setPreparingInput(null),
   };
 }
 
@@ -210,6 +211,7 @@ function createPromptBindings(options: {
   return {
     getInput,
     restoreWithdrawnInput: (input) => {
+      useOutputStore.getState().setPreparingInput(null);
       useComposerSession.getState().seedDraft(input);
     },
     confirmTool: createToolApproval({

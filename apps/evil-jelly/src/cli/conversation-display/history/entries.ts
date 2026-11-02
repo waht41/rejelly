@@ -1,8 +1,18 @@
+import type { UserMessagePresentation } from "../../../shared/host/presentationBindings";
 import type { DiffBlockDetail, SessionBanner, ToolBlock, Turn } from "./model";
 import type { HistorySequence } from "./sequence";
 
-export function userTurn(sequence: HistorySequence, content: string): Turn {
-  return { id: sequence.nextTurnId("user"), type: "user", content };
+export function userTurn(
+  sequence: HistorySequence,
+  content: string,
+  presentation?: UserMessagePresentation,
+): Turn {
+  return {
+    id: sequence.nextTurnId("user"),
+    type: "user",
+    content,
+    ...(presentation ? { presentation } : {}),
+  };
 }
 
 export function assistantStreamTurn(

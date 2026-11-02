@@ -2,7 +2,14 @@ import { renderToString, Static } from "ink";
 import { createElement } from "react";
 import stringWidth from "string-width";
 import stripAnsi from "strip-ansi";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import wrapAnsi from "wrap-ansi";
+
+vi.mock("wrap-ansi", async (importOriginal) => {
+  const original = await importOriginal<typeof import("wrap-ansi")>();
+  return { default: vi.fn(original.default) };
+});
+
 import { HistoryItem } from "./HistoryItem";
 import type { Turn } from "./model";
 
@@ -63,6 +70,143 @@ describe("HistoryItem user message", () => {
       }
     }
   });
+});
+
+describe("pending input preview", () => {
+  it("previews paste and attachment failures while pending but prints their full source in history", () => {
+    const attachments = [
+      { type: "image" as const, label: "[Image #1]", action: "attach" as const },
+      {
+        type: "file" as const,
+        label: "missing.ts",
+        action: "attach" as const,
+        status: "error" as const,
+      },
+    ];
+    const turn: Turn = {
+      id: "submitted",
+      type: "user",
+      content:
+        "Inspect logs\nprivate paste body\n  -> attach [Image #1]\n  -> attach missing.ts failed",
+      presentation: { summary: "Inspect logs\n[Paste · 30 lines]", attachments },
+    };
+    const output = stripAnsi(
+      renderToString(createElement(HistoryItem, { turn, columns: COLUMNS, userMaxRows: 8 }), {
+        columns: COLUMNS,
+      }),
+    );
+    expect(output).toContain("❯ Inspect logs");
+    expect(output).toContain("[Paste · 30 lines]");
+    expect(output).toContain("Failed: 1/2 attachments · missing.ts");
+    expect(output).not.toContain("… folded");
+    expect(output).not.toContain("private paste body");
+    const committed = renderTurn(turn).join("\n");
+    expect(committed).toContain("private paste body");
+    expect(committed).toContain("attach missing.ts failed");
+    expect(committed).not.toContain("[Paste · 30 lines]");
+    expect(committed).not.toContain("folded");
+  });
+
+  it("uses one separator without blank gaps around the cut in a plan followed by a short request", () => {
+    const content = `计划:\n\n1. First requirement\n\n${Array.from({ length: 12 }, (_, i) => `Middle evidence ${i}`).join("\n")}\n\n\nhello\n\n`;
+    const turn: Turn = { id: "plan", type: "user", content };
+    const output = stripAnsi(
+      renderToString(createElement(HistoryItem, { turn, columns: COLUMNS, userMaxRows: 8 }), {
+        columns: COLUMNS,
+      }),
+    );
+    const lines = output
+      .trimEnd()
+      .split("\n")
+      .map((line) => line.trim());
+    const separator = lines.findIndex((line) => line.includes("rows folded"));
+    expect(output.match(/rows folded/g)).toHaveLength(1);
+    expect(lines[separator]).toMatch(/^─ \d+ rows folded ─+$/);
+    expect(lines[separator - 1]).toBe("1. First requirement");
+    expect(lines[separator + 1]).toBe("hello");
+    expect(lines.at(-1)).toBe("hello");
+    expect(lines.length).toBeLessThanOrEqual(8);
+    expect(turn.content).toBe(content);
+  });
+
+  it("bounds wrapped CJK, emoji, and tabs while retaining a marked beginning and ending", () => {
+    const content = `开始\t${"并发 query 🙂 ".repeat(50)}\n最终问题`;
+    const turn: Turn = {
+      id: "wide",
+      type: "user",
+      content,
+      presentation: { summary: content, attachments: [] },
+    };
+    for (const columns of [20, 40, 80]) {
+      const output = stripAnsi(
+        renderToString(createElement(HistoryItem, { turn, columns, userMaxRows: 8 }), { columns }),
+      );
+      const lines = output.trimEnd().split("\n");
+      expect(lines.length).toBeLessThanOrEqual(8);
+      expect(output).toContain("❯ 开始");
+      expect(output).toContain("最终问题");
+      expect(output.match(/(?:rows|content) folded/g)).toHaveLength(1);
+      expect(output).not.toContain("… folded");
+      expect(output).not.toContain("\t");
+      for (const line of lines) expect(stringWidth(line)).toBeLessThanOrEqual(columns);
+      expect(turn.content).toBe(content);
+    }
+  });
+});
+
+it("bounds layout work before wrapping huge multiline and single-line pending input", () => {
+  const columns = 60;
+  const userMaxRows = 8;
+  for (const middle of ["中🙂\t".repeat(20_000), "middle evidence\r\n".repeat(20_000)]) {
+    const content = `Beginning sentinel\n${middle}\nHidden center sentinel\n${middle}\nEnding sentinel`;
+    const turn: Turn = { id: "huge", type: "user", content };
+    vi.mocked(wrapAnsi).mockClear();
+    const output = stripAnsi(
+      renderToString(createElement(HistoryItem, { turn, columns, userMaxRows }), { columns }),
+    );
+    const wrappedChars = vi
+      .mocked(wrapAnsi)
+      .mock.calls.reduce((sum, [text]) => sum + text.length, 0);
+    expect(wrappedChars).toBeLessThan(4_000);
+    expect(output).toContain("❯ Beginning sentinel");
+    expect(output).toContain("Ending sentinel");
+    expect(output.match(/content folded/g)).toHaveLength(1);
+    expect(output).not.toContain("Hidden center sentinel");
+    expect(output).not.toContain("\t");
+    expect(output.trimEnd().split("\n").length).toBeLessThanOrEqual(userMaxRows);
+    for (const line of output.split("\n")) expect(stringWidth(line)).toBeLessThanOrEqual(columns);
+    expect(turn.content).toBe(content);
+  }
+  const singleLine: Turn = {
+    id: "single-line",
+    type: "user",
+    content: `Beginning sentinel ${"🙂abc中".repeat(20_000)} Ending sentinel`,
+  };
+  vi.mocked(wrapAnsi).mockClear();
+  const singleOutput = stripAnsi(
+    renderToString(createElement(HistoryItem, { turn: singleLine, columns, userMaxRows }), {
+      columns,
+    }),
+  );
+  expect(singleOutput).toContain("Beginning sentinel");
+  expect(singleOutput).toContain("Ending sentinel");
+  expect(singleOutput).toContain("content folded");
+  expect(vi.mocked(wrapAnsi).mock.calls.reduce((sum, [text]) => sum + text.length, 0)).toBeLessThan(
+    1_000,
+  );
+  expect(singleOutput).not.toMatch(
+    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/,
+  );
+  const turn: Turn = {
+    id: "blank-tail",
+    type: "user",
+    content: `Short input${"\n".repeat(20_000)}`,
+  };
+  const output = stripAnsi(
+    renderToString(createElement(HistoryItem, { turn, columns, userMaxRows }), { columns }),
+  );
+  expect(output.match(/Short input/g)).toHaveLength(1);
+  expect(output).not.toContain("folded");
 });
 
 describe("HistoryItem tool headline", () => {

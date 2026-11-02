@@ -5,7 +5,9 @@ import type {
   ReconnectProgress,
   RuntimePhase,
   ToolCallGenerationProgress,
+  UserMessagePresentation,
 } from "../../shared/host/presentationBindings";
+import type { PromptInput } from "../../shared/model/prompt/promptInput";
 import {
   RESUME_VISIBLE_TURNS,
   type TranscriptItem,
@@ -70,6 +72,8 @@ interface OutputState extends RunningToolsState, RuntimeStatusState {
   history: Turn[];
   /** The suffix from this fresh input must stay transient until retention or withdrawal. */
   pendingInput: { turnId: string; historyIndex: number } | null;
+  /** Borrowed presentation-only draft; never durable history or a second resource owner. */
+  preparingInput: PromptInput | null;
   /** Complete current-session tool archive; unlike visible history it is not resume-tail limited. */
   toolHistory: Turn[];
   /**
@@ -95,7 +99,8 @@ interface OutputState extends RunningToolsState, RuntimeStatusState {
   beginTurn: () => void;
   /** After a mid-turn user pause (confirmation), resume the phase that fits: tools running → "tool", else "working". */
   resumeWork: (detail?: string) => void;
-  logUser: (content: string) => void;
+  setPreparingInput: (input: PromptInput | null) => void;
+  logUser: (content: string, presentation?: UserMessagePresentation) => void;
   updateTranscriptTurn: (update: TranscriptTurnUpdate) => void;
   logAssistant: (content: string) => void;
   /** Head the batch a single model call issued; callers filter out single-call rounds. */
@@ -144,6 +149,7 @@ export const useOutputStore = create<OutputState>((set) => ({
   toolHistory: [],
   clearedStaticTurns: [],
   pendingInput: null,
+  preparingInput: null,
   toolCallGeneration: null,
 
   appendStream: (text) => {
@@ -219,9 +225,24 @@ export const useOutputStore = create<OutputState>((set) => ({
       return runtime === state.runtime ? {} : { runtime };
     }),
 
-  logUser: (content) =>
+  setPreparingInput: (preparingInput) =>
+    set((state) =>
+      state.preparingInput === preparingInput
+        ? {}
+        : {
+            preparingInput,
+            // Acknowledge work and its preview in one frame; getInput's working update then becomes
+            // a no-op instead of making the runtime wait behind another redundant UI render.
+            ...(preparingInput
+              ? { runtime: transitionRuntimePhase(state.runtime, "working", "Running…") }
+              : {}),
+          },
+    ),
+
+  logUser: (content, presentation) =>
     set((state) => ({
-      history: [...state.history, userTurn(historySequence, content)],
+      preparingInput: null,
+      history: [...state.history, userTurn(historySequence, content, presentation)],
     })),
 
   updateTranscriptTurn: (update) =>
@@ -366,7 +387,13 @@ export const useOutputStore = create<OutputState>((set) => ({
     clearStreamState();
     assistantSegmentActive = false;
     safeBoundaryOperations.clear();
-    set({ streamBuffer: "", runningTools: [], toolCallGeneration: null, runtime: idleRuntime() });
+    set({
+      streamBuffer: "",
+      runningTools: [],
+      toolCallGeneration: null,
+      runtime: idleRuntime(),
+      preparingInput: null,
+    });
   },
   clearHistory: () => {
     // Turn ids keep counting: they must stay unique across clearedStaticTurns + history.
@@ -382,6 +409,7 @@ export const useOutputStore = create<OutputState>((set) => ({
       ],
       history: [],
       pendingInput: null,
+      preparingInput: null,
       toolHistory: [],
       streamBuffer: "",
       runningTools: [],
@@ -411,6 +439,7 @@ export const useOutputStore = create<OutputState>((set) => ({
     set((state) => ({
       history: [...state.history, ...visibleProjected],
       pendingInput: null,
+      preparingInput: null,
       toolHistory: [...state.toolHistory, ...projected.filter((turn) => turn.type === "tool")],
       streamBuffer: "",
       runningTools: [],
@@ -435,6 +464,7 @@ export function resetOutputSession(): void {
     toolHistory: [],
     clearedStaticTurns: [],
     pendingInput: null,
+    preparingInput: null,
   });
 }
 

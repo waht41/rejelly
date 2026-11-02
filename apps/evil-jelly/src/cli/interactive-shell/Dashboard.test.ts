@@ -4,8 +4,9 @@ import { render } from "ink";
 import { createElement } from "react";
 import stripAnsi from "strip-ansi";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import * as userInputRepository from "../../domains/session/repository/userInputRepository";
 import type { EvilJellyBindings } from "../../shared/host/bindings";
-import { textPromptInput } from "../../shared/model/prompt/promptInput";
+import { type PromptInput, textPromptInput } from "../../shared/model/prompt/promptInput";
 import {
   resetAnswerTranscriptSession,
   useAnswerTranscriptStore,
@@ -17,10 +18,12 @@ import {
   useComposerSession,
 } from "../message-composer/session/composerSession";
 import { useDecisionStore } from "../operator-decision/decisionStore";
+import { resetSubmissionDispatch } from "../submission-dispatch/dispatcher";
 import { createInteractiveRunControl } from "../unified-conversation/interactive/runControl";
 import { runEvilJellyHost } from "../unified-conversation/interactive/runSegment";
 import { copyTextToClipboard } from "./clipboard/clipboardText";
 import { Dashboard } from "./Dashboard";
+import { createInteractiveSubmission } from "./submission";
 
 const mounts = vi.hoisted(() => ({ history: 0 }));
 vi.mock("../conversation-display/history/StaticHistory", async (original) => {
@@ -60,6 +63,7 @@ let output = "";
 let lastFrame = "";
 
 beforeEach(() => {
+  resetSubmissionDispatch();
   resetOutputSession();
   resetAnswerTranscriptSession();
   resetToolTranscriptViewSession();
@@ -85,6 +89,7 @@ afterEach(() => {
   resetAnswerTranscriptSession();
   resetToolTranscriptViewSession();
   resetOutputSession();
+  resetSubmissionDispatch();
 });
 
 function mountDashboard(): void {
@@ -113,6 +118,7 @@ it("removes a withdrawn input without shrinking Static history or hiding the nex
 
   start("withdrawn", "Same question");
   await vi.waitFor(() => expect(lastFrame.match(/Same question/g)).toHaveLength(2));
+  expect(lastFrame.split("\n").map((line) => line.trim())).toContain("Pending input");
   store.logSystem("Interrupted active task.");
   await vi.waitFor(() => expect(lastFrame).toContain("Interrupted active task."));
   store.logSystem("Input withdrawn.");
@@ -120,6 +126,7 @@ it("removes a withdrawn input without shrinking Static history or hiding the nex
   await vi.waitFor(() => {
     expect(lastFrame).toContain("Input withdrawn.");
     expect(lastFrame.match(/Same question/g)).toHaveLength(1);
+    expect(lastFrame.split("\n").map((line) => line.trim())).not.toContain("Pending input");
   });
   expect(lastFrame.match(/Earlier answer/g)).toHaveLength(1);
 
@@ -208,13 +215,247 @@ it("keeps long withdrawable input inside the refreshable viewport", async () => 
   store.beginTurn();
   store.updateTranscriptTurn({ turnId: "long", status: "running", prompt });
   store.logUser(prompt);
-  await vi.waitFor(() => expect(lastFrame).toContain("Pending input row 99"));
-  expect(lastFrame).not.toContain("Pending input row 0");
+  await vi.waitFor(() => {
+    const lines = lastFrame.split("\n").map((line) => line.trim());
+    expect(lines.filter((line) => line === "Pending input")).toHaveLength(1);
+    expect(lines.indexOf("Pending input")).toBeLessThan(lines.indexOf("❯ Pending input row 0"));
+    expect(lastFrame).toContain("❯ Pending input row 0");
+    expect(lastFrame).toContain("Pending input row 99");
+    expect(lastFrame.match(/content folded/g)).toHaveLength(1);
+    expect(lastFrame).not.toContain("… folded");
+  });
+  for (let i = 0; i < 10; i++) store.logSystem(`Preparation notice ${i}`);
+  await vi.waitFor(() => {
+    expect(lastFrame).toContain("❯ Pending input row 0");
+    expect(lastFrame).toContain("Preparation notice 9");
+    expect(lastFrame).toContain("earlier notices");
+  });
   expect(lastFrame.trimEnd().split("\n").length).toBeLessThanOrEqual(stdout.rows);
   store.logSystem("Input withdrawn.");
   store.updateTranscriptTurn({ turnId: "long", status: "interrupted", withdrawn: true });
   await vi.waitFor(() => expect(lastFrame).not.toContain("Pending input row"));
   expect(lastFrame).toContain("Message");
+});
+
+it("previews pending paste, reads its source, and expands it once when assistant output starts", async () => {
+  const store = useOutputStore.getState();
+  const reader = useAnswerTranscriptStore.getState();
+  reader.updateTurn({
+    turnId: "old",
+    prompt: "Old question",
+    answer: "Old answer",
+    status: "completed",
+  });
+  reader.openTranscript();
+  reader.closeTranscript();
+  const paste = Array.from({ length: 30 }, (_, i) => `Original pasted log ${i}`).join("\n");
+  const prompt = `Inspect logs\n${paste}\nFind the cause`;
+  const input = {
+    document: [
+      { type: "text" as const, text: "Inspect logs\n" },
+      { type: "token" as const, kind: "paste" as const, text: paste },
+      { type: "text" as const, text: "\nFind the cause" },
+    ],
+    attachments: [],
+  };
+  let finishReply = () => {};
+  const replyGate = new Promise<void>((resolve) => {
+    finishReply = resolve;
+  });
+  let finishTurn = () => {};
+  const completionGate = new Promise<void>((resolve) => {
+    finishTurn = resolve;
+  });
+  const model: ModelAdapter = {
+    id: "pending-paste",
+    async *stream(): AsyncGenerator<StreamEvent> {
+      await replyGate;
+      yield { type: "text", content: "Inspection started.\n\n" };
+      await completionGate;
+      yield { type: "text", content: "Finished inspection." };
+    },
+  };
+  const inputs = [input, textPromptInput("/exit")];
+  const bindings: EvilJellyBindings = {
+    getInput: async () => inputs.shift() ?? textPromptInput("/exit"),
+    printOut: store.appendStream,
+    logUserMessage: store.logUser,
+    logAssistantMessage: store.logAssistant,
+    logSystemEvent: store.logSystem,
+    logToolBlock: () => {},
+    onTranscriptTurn: (update) => {
+      store.updateTranscriptTurn(update);
+      reader.updateTurn(update);
+    },
+    onTurnStart: store.beginTurn,
+    onPhaseUpdate: store.setPhase,
+    confirmTool: async () => ({ action: "accept" }),
+    requestChoice: async ({ options }) => options[0]?.value ?? "",
+  };
+  mountDashboard();
+  const run = runEvilJellyHost(bindings, {
+    runControl: createInteractiveRunControl(),
+    model,
+    isolateSessionState: true,
+  });
+  try {
+    await vi.waitFor(() => expect(lastFrame).toContain("[Paste · 30 lines]"));
+    expect(lastFrame).not.toContain("Original pasted log");
+    expect(useOutputStore.getState().pendingInput).not.toBeNull();
+    stdin.write("\u0014"); // Ctrl+T keeps the previously selected ended turn.
+    await vi.waitFor(() => expect(lastFrame).toContain("Old answer"));
+    stdin.write("\u001b[C"); // Right: select the running turn.
+    await vi.waitFor(() => expect(lastFrame).toContain("This turn is still running."));
+    stdin.write("p"); // Read the complete original question.
+    await vi.waitFor(() => {
+      expect(lastFrame).toContain("Original pasted log 0");
+      expect(lastFrame).toContain("Running");
+    });
+    expect(useAnswerTranscriptStore.getState().detail).toBe("question");
+    expect(useAnswerTranscriptStore.getState().selectedId).not.toBe("old");
+    stdin.write("c");
+    await vi.waitFor(() => expect(copyTextToClipboard).toHaveBeenLastCalledWith(prompt));
+    stdin.write("\u0014"); // Ctrl+T closes the reader.
+    await vi.waitFor(() => expect(lastFrame).toContain("[Paste · 30 lines]"));
+    expect(lastFrame).not.toContain("Original pasted log");
+    finishReply();
+    await vi.waitFor(() => {
+      expect(lastFrame).toContain("Inspection started.");
+      expect(lastFrame).toContain("Original pasted log 15");
+      expect(lastFrame).not.toContain("[Paste · 30 lines]");
+    });
+    expect(useOutputStore.getState().pendingInput).toBeNull();
+    expect(lastFrame.split("\n").map((line) => line.trim())).not.toContain("Pending input");
+  } finally {
+    finishReply();
+    finishTurn();
+    await run;
+  }
+  await vi.waitFor(() => expect(lastFrame).toContain("Finished inspection."));
+  expect(lastFrame).not.toContain("[Paste · 30 lines]");
+  expect(lastFrame).not.toContain("rows folded");
+  for (const row of [0, 15, 29]) {
+    expect(lastFrame.match(new RegExp(`Original pasted log ${row}\\b`, "g"))).toHaveLength(1);
+  }
+  expect(useOutputStore.getState().history.find((turn) => turn.type === "user")?.content).toBe(
+    prompt,
+  );
+  expect(useAnswerTranscriptStore.getState().entries.at(-1)?.prompt).toBe(prompt);
+  expect(mounts.history).toBe(1);
+});
+
+it.each([
+  "committed",
+  "failed",
+  "withdrawn",
+])("acknowledges Enter before input preparation settles (%s), without prematurely retaining history", async (outcome) => {
+  const store = useOutputStore.getState();
+  const control = createInteractiveRunControl();
+  const submission = createInteractiveSubmission({
+    requestExit() {},
+    requestRunAbort: control.segment.requestAbort,
+  });
+  const paste = Array.from({ length: 30 }, (_, i) => `Preparation paste row ${i}`).join("\n");
+  const input = {
+    document: [
+      { type: "text" as const, text: "Inspect sentinel\n" },
+      { type: "token" as const, kind: "paste" as const, text: paste },
+    ],
+    attachments: [],
+  };
+  let releasePreparation = () => {};
+  const preparation = new Promise<void>((resolve) => {
+    releasePreparation = resolve;
+  });
+  const originalCommit = userInputRepository.commitResolvedUserInput;
+  const commit = vi
+    .spyOn(userInputRepository, "commitResolvedUserInput")
+    .mockImplementation(async (...args) => {
+      await preparation;
+      if (outcome !== "committed") {
+        const error = new Error("Preparation failure sentinel");
+        if (outcome === "withdrawn") error.name = "AbortError";
+        throw error;
+      }
+      return originalCommit(...args);
+    });
+  let finishReply = () => {};
+  const reply = new Promise<void>((resolve) => {
+    finishReply = resolve;
+  });
+  const model: ModelAdapter = {
+    id: "preparation-gated",
+    async *stream(): AsyncGenerator<StreamEvent> {
+      await reply;
+      yield { type: "text", content: "Prepared answer sentinel." };
+    },
+  };
+  let reads = 0;
+  const restored = vi.fn((value: PromptInput) => {
+    store.setPreparingInput(null);
+    useComposerSession.getState().seedDraft(value);
+  });
+  mountDashboard();
+  const run = runEvilJellyHost(
+    {
+      getInput: async () => (reads++ === 0 ? submission.getInput() : textPromptInput("/exit")),
+      printOut: store.appendStream,
+      logUserMessage: store.logUser,
+      logAssistantMessage: store.logAssistant,
+      logSystemEvent: store.logSystem,
+      logToolBlock() {},
+      onTranscriptTurn: store.updateTranscriptTurn,
+      onTurnStart: store.beginTurn,
+      onInputPreparationEnd: () => store.setPreparingInput(null),
+      onPhaseUpdate: store.setPhase,
+      restoreWithdrawnInput: restored,
+      confirmTool: async () => ({ action: "accept" }),
+      requestChoice: async ({ options }) => options[0]?.value ?? "",
+    },
+    { runControl: control, model, isolateSessionState: true },
+  );
+  try {
+    await vi.waitFor(() => expect(reads).toBe(1));
+    useComposerSession.getState().seedDraft(input);
+    await vi.waitFor(() => expect(useComposerSession.getState().draftSeed).toBeNull());
+    stdin.write("\r");
+    await vi.waitFor(() => {
+      expect(lastFrame).toContain("Pending input · preparing…");
+      expect(lastFrame).toContain("❯ Inspect sentinel");
+      expect(lastFrame).toContain("[Paste]");
+      expect(commit).toHaveBeenCalledOnce();
+    });
+    expect(useOutputStore.getState().history).toHaveLength(0);
+    expect(lastFrame).not.toContain("Preparation paste row");
+    releasePreparation();
+    if (outcome === "committed") {
+      await vi.waitFor(() => expect(lastFrame).toContain("[Paste · 30 lines]"));
+      expect(lastFrame).not.toContain("preparing…");
+      expect(lastFrame).not.toContain("Preparation paste row");
+      expect(useOutputStore.getState().pendingInput).not.toBeNull();
+      finishReply();
+    }
+    await run;
+    await vi.waitFor(() => expect(lastFrame).not.toContain("preparing…"));
+    expect(useOutputStore.getState().preparingInput).toBeNull();
+    const users = useOutputStore.getState().history.filter((turn) => turn.type === "user");
+    if (outcome === "committed") {
+      expect(users).toHaveLength(1);
+      expect(users[0]?.content).toContain(paste);
+      await vi.waitFor(() => expect(lastFrame).toContain("Prepared answer sentinel."));
+      expect(lastFrame.match(/Preparation paste row 15\b/g)).toHaveLength(1);
+    } else {
+      expect(users).toHaveLength(0);
+      expect(useOutputStore.getState().pendingInput).toBeNull();
+      if (outcome === "withdrawn") expect(restored).toHaveBeenCalledWith(input);
+      else expect(lastFrame).toContain("Preparation failure sentinel");
+    }
+  } finally {
+    releasePreparation();
+    finishReply();
+    await run;
+    commit.mockRestore();
+  }
 });
 
 it("prepends withdrawn rich input while preserving live text and attachments", async () => {

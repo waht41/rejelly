@@ -32,6 +32,30 @@ evil audit --family clone
 
 Run `evil` to chat, inspect and search code, edit files with diff confirmation, execute commands, and verify changes in one unified session.
 
+### Submitted input previews
+
+Ordinary submissions immediately show a presentation-only `Pending input · preparing…` preview while
+input preparation and durable recording run. It does not enter history or take ownership of attachments;
+failed or withdrawn preparation clears it. Router commands and queued steers keep their existing presentation.
+
+Once prepared, submitted input stays in a bounded preview while it can still be withdrawn, with a
+`Pending input` label above the input block. Long text is explicitly folded rather than silently cropped
+from the top, with one gray separator and no repeated footer. Preview layout measures only bounded
+head/tail windows for very long text and labels the gap `content folded`, rather than measuring the
+whole message just to count hidden terminal rows. Smaller messages retain an exact `N rows folded`
+label. Blank rows adjacent to the cut are omitted; structured paste blocks retain compact labels.
+Attachment counts are shown separately, with failures kept visible.
+
+Folding applies only while input is pending. Once assistant output or tool progress retains the input,
+the complete original message, including paste contents, is printed once into the main scrollback.
+Resumed history also shows complete inputs. Model input and saved session content are unchanged,
+and mid-turn steers retain their existing full-text history presentation.
+
+To read the complete input, open the existing `Ctrl+T` answer browser, select the corresponding
+turn with `Left` / `Right`, and press `p` to view its question, including while the turn is running.
+The question reader includes submitted text, paste contents, and attachment action/failure labels;
+`c` copies the complete text, and `Esc` or `Ctrl+T` returns to the unchanged composer.
+
 ### Reading previous answers
 
 Press `Ctrl+T` or run `/transcript` to open a read-only answer browser. It displays original
@@ -676,7 +700,7 @@ Each `sync.pairs` value is a `[leftGlob, rightGlob]` pair whose `*` / `**` wildc
 
 Evil Jelly runs `@rejelly/core` in real CLI sessions to validate the same Host protocol, toolchain, and optional Review path used by other hosts. It is both a terminal example application and a reference for future Electron or HTTP integrations. Workspace capabilities such as file access, search, unified-diff writes, and command execution live under `src/domains/workspace/`; other domain capabilities include MCP, Memory, Skills, sessions, and web access.
 
-Ink renders completed turns once in `<Static>` history and keeps the current input, streaming output, tool status, and interactive decisions in a transient bottom area. The React tree normally remains mounted for the interactive session; it is temporarily unmounted while an external editor owns the TTY, remounted afterward, and unmounted during disposal. `logUserMessage` records submitted input immediately, avoiding a visual gap before model output begins. A proposed write diff is committed to `<Static>` history before confirmation; after application, the applied diff is also attached to the completed tool-observation block and remains visible in conversation history.
+Ink renders completed turns once in `<Static>` history and keeps the current input, streaming output, tool status, and interactive decisions in a transient bottom area. The React tree normally remains mounted for the interactive session; it is temporarily unmounted while an external editor owns the TTY, remounted afterward, and unmounted during disposal. Ordinary submissions get a transient preparation acknowledgement immediately; `logUserMessage` publishes the input only after preparation and durable recording succeed. A proposed write diff is committed to `<Static>` history before confirmation; after application, the applied diff is also attached to the completed tool-observation block and remains visible in conversation history.
 
 ### Source organization
 

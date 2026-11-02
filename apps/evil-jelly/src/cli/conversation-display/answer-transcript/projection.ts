@@ -1,4 +1,5 @@
 import type { TranscriptItem, TranscriptTurnStatus } from "../../../shared/session/transcript";
+import { formatUserInputDisplay } from "../history/userInputDisplay";
 
 export interface AnswerTranscriptEntry {
   id: string;
@@ -18,7 +19,10 @@ export function buildAnswerTranscript(items: readonly TranscriptItem[]): AnswerT
       if (item.turnStatus) lifecycleKnown.add(item.turnId);
       entries.set(item.turnId, {
         id: item.turnId,
-        prompt: item.content,
+        prompt: formatUserInputDisplay({
+          text: item.content,
+          attachments: item.attachments ?? [],
+        }),
         ...(item.promptSummary === undefined ? {} : { promptSummary: item.promptSummary }),
         answer: existing?.answer ?? "",
         status: item.turnStatus ?? existing?.status ?? "unknown",

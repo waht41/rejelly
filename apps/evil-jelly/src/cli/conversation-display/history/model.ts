@@ -1,3 +1,4 @@
+import type { UserMessagePresentation } from "../../../shared/host/presentationBindings";
 import type {
   ToolApprovalAnnotation,
   ToolObservationDetail,
@@ -31,7 +32,7 @@ export type DiffBlockDetail = {
 };
 
 export type Turn =
-  | { id: string; type: "user"; content: string }
+  | { id: string; type: "user"; content: string; presentation?: UserMessagePresentation }
   /** `oneLine`: a notice, truncated to a single row rather than wrapped. */
   | { id: string; type: "system"; content: string; oneLine?: boolean }
   | { id: string; type: "assistant"; content: string; hidden?: boolean }
