@@ -27,6 +27,39 @@ describe("projectTranscriptItem", () => {
       id: "resume_user-1",
       type: "user",
       content: "inspect these\n  -> read notes.txt",
+      presentation: {
+        summary: "inspect these",
+        attachments: [
+          {
+            action: "read",
+            label: "notes.txt",
+            type: "file",
+            locator: { path: "notes.txt", scope: "workspace" },
+          },
+        ],
+      },
+    });
+  });
+
+  it("restores compact summaries and failures without shortening the original input", () => {
+    const turn = projectTranscriptItem(
+      {
+        id: "pasted",
+        type: "user",
+        turnId: "turn-paste",
+        seq: 1,
+        content: "Inspect\nfull saved paste body",
+        promptSummary: "Inspect\n[Paste · 20 lines]",
+        attachments: [{ type: "file", label: "missing.ts", action: "attach", status: "error" }],
+      },
+      new HistorySequence(),
+    );
+    expect(turn).toMatchObject({
+      content: "Inspect\nfull saved paste body\n  -> attach missing.ts failed",
+      presentation: {
+        summary: "Inspect\n[Paste · 20 lines]",
+        attachments: [expect.objectContaining({ status: "error" })],
+      },
     });
   });
 

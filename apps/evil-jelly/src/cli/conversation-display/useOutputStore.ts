@@ -5,6 +5,7 @@ import type {
   ReconnectProgress,
   RuntimePhase,
   ToolCallGenerationProgress,
+  UserMessagePresentation,
 } from "../../shared/host/presentationBindings";
 import {
   RESUME_VISIBLE_TURNS,
@@ -95,7 +96,7 @@ interface OutputState extends RunningToolsState, RuntimeStatusState {
   beginTurn: () => void;
   /** After a mid-turn user pause (confirmation), resume the phase that fits: tools running → "tool", else "working". */
   resumeWork: (detail?: string) => void;
-  logUser: (content: string) => void;
+  logUser: (content: string, presentation?: UserMessagePresentation) => void;
   updateTranscriptTurn: (update: TranscriptTurnUpdate) => void;
   logAssistant: (content: string) => void;
   /** Head the batch a single model call issued; callers filter out single-call rounds. */
@@ -219,9 +220,9 @@ export const useOutputStore = create<OutputState>((set) => ({
       return runtime === state.runtime ? {} : { runtime };
     }),
 
-  logUser: (content) =>
+  logUser: (content, presentation) =>
     set((state) => ({
-      history: [...state.history, userTurn(historySequence, content)],
+      history: [...state.history, userTurn(historySequence, content, presentation)],
     })),
 
   updateTranscriptTurn: (update) =>

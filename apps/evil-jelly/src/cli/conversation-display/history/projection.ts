@@ -1,17 +1,19 @@
 import type { TranscriptItem } from "../../../shared/session/transcript";
 import type { Turn } from "./model";
 import type { HistorySequence } from "./sequence";
+import { formatUserInputDisplay } from "./userInputDisplay";
 
 export function projectTranscriptItem(item: TranscriptItem, sequence: HistorySequence): Turn {
   switch (item.type) {
     case "user": {
-      const actions = item.attachments?.map(
-        (attachment) => `  -> ${attachment.action} ${attachment.label}`,
-      );
+      const attachments = item.attachments ?? [];
       return {
         id: `resume_${item.id}`,
         type: "user",
-        content: actions?.length ? `${item.content}\n${actions.join("\n")}` : item.content,
+        content: formatUserInputDisplay({ text: item.content, attachments }),
+        ...(item.inputKind !== "steer"
+          ? { presentation: { summary: item.promptSummary ?? item.content, attachments } }
+          : {}),
       };
     }
     case "assistant":

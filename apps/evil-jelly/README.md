@@ -32,6 +32,23 @@ evil audit --family clone
 
 Run `evil` to chat, inspect and search code, edit files with diff confirmation, execute commands, and verify changes in one unified session.
 
+### Submitted input previews
+
+Submitted input stays in a bounded preview while it can still be withdrawn. Long text is explicitly
+folded rather than silently cropped from the top, with one highlighted separator and no repeated
+footer. Blank rows adjacent to the cut are omitted from the preview; structured paste blocks retain
+compact labels. Attachment counts are shown separately, with failures kept visible.
+
+Folding applies only while input is pending. Once assistant output or tool progress retains the input,
+the complete original message, including paste contents, is printed once into the main scrollback.
+Resumed history also shows complete inputs. Model input and saved session content are unchanged,
+and mid-turn steers retain their existing full-text history presentation.
+
+To read the complete input, open the existing `Ctrl+T` answer browser, select the corresponding
+turn with `Left` / `Right`, and press `p` to view its question, including while the turn is running.
+The question reader includes submitted text, paste contents, and attachment action/failure labels;
+`c` copies the complete text, and `Esc` or `Ctrl+T` returns to the unchanged composer.
+
 ### Reading previous answers
 
 Press `Ctrl+T` or run `/transcript` to open a read-only answer browser. It displays original

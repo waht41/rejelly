@@ -132,8 +132,8 @@ function createOutputBindings(): ConversationPresentationBindings {
     appendToolOutput: (toolCallId: string, chunk: string) => {
       out().appendToolOutput(toolCallId, chunk);
     },
-    logUserMessage: (message: string) => {
-      out().logUser(message);
+    logUserMessage: (message, presentation) => {
+      out().logUser(message, presentation);
     },
     logAssistantMessage: (message: string) => {
       out().logAssistant(message);

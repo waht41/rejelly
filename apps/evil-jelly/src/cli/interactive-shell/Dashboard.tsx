@@ -11,7 +11,7 @@ import { hasActiveInterruptibleTask } from "../../shared/task-interruption/taskS
 import { AnswerTranscriptOverlay } from "../conversation-display/answer-transcript/AnswerTranscriptOverlay";
 import { useAnswerTranscriptStore } from "../conversation-display/answer-transcript/viewStore";
 import { AssistantStreamView } from "../conversation-display/assistant-stream/AssistantStreamView";
-import { HistoryItem } from "../conversation-display/history/HistoryItem";
+import { PendingHistory } from "../conversation-display/history/PendingHistory";
 import { StaticHistory } from "../conversation-display/history/StaticHistory";
 import { RunningToolList } from "../conversation-display/running-tools/RunningToolList";
 import { RuntimeStatusLine } from "../conversation-display/runtime-status/RuntimeStatusLine";
@@ -88,7 +88,7 @@ function PendingSubmissionList({
   const textBudget = Math.max(20, Math.min(120, columns - 24));
   return (
     <Box flexDirection="column" marginBottom={1}>
-      <Text dimColor>Pending ({items.length})</Text>
+      <Text dimColor>Queued ({items.length})</Text>
       {visible.map((item) => {
         const attachmentSuffix =
           item.kind === "steer" && item.attachmentCount > 0
@@ -213,21 +213,14 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
       <Box flexDirection="column" display={overlayOpen ? "none" : "flex"}>
         <Box flexDirection="column" marginTop={1} marginBottom={1}>
           <Box ref={topTransientRef} flexDirection="column">
-            {/* Bound the retractable suffix so long input/partial output cannot escape into
-                terminal scrollback before the turn decides whether to withdraw it. */}
+            {/* Stay refreshable until retention/withdrawal, but fold explicitly instead of
+                cropping the complete history suffix from the top. */}
             {pendingTurns.length > 0 ? (
-              <Box
-                flexDirection="column"
-                justifyContent="flex-end"
-                maxHeight={Math.floor(rows / 3)}
-                overflow="hidden"
-              >
-                {pendingTurns.map((turn) => (
-                  <Box key={turn.id} flexDirection="column" flexShrink={0}>
-                    <HistoryItem turn={turn} columns={columns} />
-                  </Box>
-                ))}
-              </Box>
+              <PendingHistory
+                turns={pendingTurns}
+                columns={columns}
+                maxRows={Math.floor(rows / 3)}
+              />
             ) : null}
             {runningTools.length > 0 ? (
               <RunningToolList tools={runningTools} maxTailRows={toolTailRows} />

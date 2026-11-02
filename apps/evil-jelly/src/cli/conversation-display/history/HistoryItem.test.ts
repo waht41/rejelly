@@ -65,6 +65,88 @@ describe("HistoryItem user message", () => {
   });
 });
 
+describe("pending input preview", () => {
+  it("previews paste and attachment failures while pending but prints their full source in history", () => {
+    const attachments = [
+      { type: "image" as const, label: "[Image #1]", action: "attach" as const },
+      {
+        type: "file" as const,
+        label: "missing.ts",
+        action: "attach" as const,
+        status: "error" as const,
+      },
+    ];
+    const turn: Turn = {
+      id: "submitted",
+      type: "user",
+      content:
+        "Inspect logs\nprivate paste body\n  -> attach [Image #1]\n  -> attach missing.ts failed",
+      presentation: { summary: "Inspect logs\n[Paste · 30 lines]", attachments },
+    };
+    const output = stripAnsi(
+      renderToString(createElement(HistoryItem, { turn, columns: COLUMNS, userMaxRows: 8 }), {
+        columns: COLUMNS,
+      }),
+    );
+    expect(output).toContain("❯ Inspect logs");
+    expect(output).toContain("[Paste · 30 lines]");
+    expect(output).toContain("Failed: 1/2 attachments · missing.ts");
+    expect(output).not.toContain("… folded");
+    expect(output).not.toContain("private paste body");
+    const committed = renderTurn(turn).join("\n");
+    expect(committed).toContain("private paste body");
+    expect(committed).toContain("attach missing.ts failed");
+    expect(committed).not.toContain("[Paste · 30 lines]");
+    expect(committed).not.toContain("folded");
+  });
+
+  it("uses one separator without blank gaps around the cut in a plan followed by a short request", () => {
+    const content = `计划:\n\n1. First requirement\n\n${Array.from({ length: 12 }, (_, i) => `Middle evidence ${i}`).join("\n")}\n\n\nhello\n\n`;
+    const turn: Turn = { id: "plan", type: "user", content };
+    const output = stripAnsi(
+      renderToString(createElement(HistoryItem, { turn, columns: COLUMNS, userMaxRows: 8 }), {
+        columns: COLUMNS,
+      }),
+    );
+    const lines = output
+      .trimEnd()
+      .split("\n")
+      .map((line) => line.trim());
+    const separator = lines.findIndex((line) => line.includes("rows folded"));
+    expect(output.match(/rows folded/g)).toHaveLength(1);
+    expect(lines[separator]).toMatch(/^─ \d+ rows folded ─+$/);
+    expect(lines[separator - 1]).toBe("1. First requirement");
+    expect(lines[separator + 1]).toBe("hello");
+    expect(lines.at(-1)).toBe("hello");
+    expect(lines.length).toBeLessThanOrEqual(8);
+    expect(turn.content).toBe(content);
+  });
+
+  it("bounds wrapped CJK, emoji, and tabs while retaining a marked beginning and ending", () => {
+    const content = `开始\t${"并发 query 🙂 ".repeat(50)}\n最终问题`;
+    const turn: Turn = {
+      id: "wide",
+      type: "user",
+      content,
+      presentation: { summary: content, attachments: [] },
+    };
+    for (const columns of [20, 40, 80]) {
+      const output = stripAnsi(
+        renderToString(createElement(HistoryItem, { turn, columns, userMaxRows: 8 }), { columns }),
+      );
+      const lines = output.trimEnd().split("\n");
+      expect(lines.length).toBeLessThanOrEqual(8);
+      expect(output).toContain("❯ 开始");
+      expect(output).toContain("最终问题");
+      expect(output.match(/rows folded/g)).toHaveLength(1);
+      expect(output).not.toContain("… folded");
+      expect(output).not.toContain("\t");
+      for (const line of lines) expect(stringWidth(line)).toBeLessThanOrEqual(columns);
+      expect(turn.content).toBe(content);
+    }
+  });
+});
+
 describe("HistoryItem tool headline", () => {
   it("keeps a long command on one row instead of wrapping it", () => {
     const command = `git -C D:/project/git/benchmark show HEAD:${"results/debug/report".repeat(12)}`;

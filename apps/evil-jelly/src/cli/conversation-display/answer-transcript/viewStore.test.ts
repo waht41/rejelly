@@ -47,6 +47,25 @@ describe("answer transcript", () => {
     expect(buildAnswerTranscript(transcript.slice(0, 2))[0]?.answer).toBe("");
   });
 
+  it("keeps resumed question text and attachment failure details available in full", () => {
+    expect(
+      buildAnswerTranscript([
+        {
+          id: "rich",
+          type: "user",
+          turnId: "rich",
+          seq: 1,
+          content: "Inspect\ncomplete pasted body",
+          promptSummary: "Inspect\n[Paste · 10 lines]",
+          attachments: [{ type: "file", label: "missing.ts", action: "attach", status: "error" }],
+        },
+      ])[0],
+    ).toMatchObject({
+      prompt: "Inspect\ncomplete pasted body\n  -> attach missing.ts failed",
+      promptSummary: "Inspect\n[Paste · 10 lines]",
+    });
+  });
+
   it("labels legacy and interrupted history without inventing a completed answer", () => {
     const items: TranscriptItem[] = [
       { id: "u", type: "user", turnId: "legacy:0:1", seq: 1, content: "Old question" },

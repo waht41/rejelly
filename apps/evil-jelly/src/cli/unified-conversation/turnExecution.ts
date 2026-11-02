@@ -139,11 +139,16 @@ async function commitUserInput(
     runtime.host.onTranscriptTurn?.({
       turnId,
       status: "running",
-      prompt: display.text,
+      prompt: formatUserInputDisplay(display),
       promptSummary: projectFrozenUserInputSummary(frozen),
     });
   }
-  runtime.host.logUserMessage(formatUserInputDisplay(display));
+  runtime.host.logUserMessage(
+    formatUserInputDisplay(display),
+    inputKind === "initial"
+      ? { summary: projectFrozenUserInputSummary(frozen), attachments: display.attachments }
+      : undefined,
+  );
   return { frozen, message };
 }
 

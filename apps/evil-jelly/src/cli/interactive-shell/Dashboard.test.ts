@@ -208,13 +208,129 @@ it("keeps long withdrawable input inside the refreshable viewport", async () => 
   store.beginTurn();
   store.updateTranscriptTurn({ turnId: "long", status: "running", prompt });
   store.logUser(prompt);
-  await vi.waitFor(() => expect(lastFrame).toContain("Pending input row 99"));
-  expect(lastFrame).not.toContain("Pending input row 0");
+  await vi.waitFor(() => {
+    expect(lastFrame).toContain("❯ Pending input row 0");
+    expect(lastFrame).toContain("Pending input row 99");
+    expect(lastFrame.match(/rows folded/g)).toHaveLength(1);
+    expect(lastFrame).not.toContain("… folded");
+  });
+  for (let i = 0; i < 10; i++) store.logSystem(`Preparation notice ${i}`);
+  await vi.waitFor(() => {
+    expect(lastFrame).toContain("❯ Pending input row 0");
+    expect(lastFrame).toContain("Preparation notice 9");
+    expect(lastFrame).toContain("earlier notices");
+  });
   expect(lastFrame.trimEnd().split("\n").length).toBeLessThanOrEqual(stdout.rows);
   store.logSystem("Input withdrawn.");
   store.updateTranscriptTurn({ turnId: "long", status: "interrupted", withdrawn: true });
   await vi.waitFor(() => expect(lastFrame).not.toContain("Pending input row"));
   expect(lastFrame).toContain("Message");
+});
+
+it("previews pending paste, reads its source, and expands it once when assistant output starts", async () => {
+  const store = useOutputStore.getState();
+  const reader = useAnswerTranscriptStore.getState();
+  reader.updateTurn({
+    turnId: "old",
+    prompt: "Old question",
+    answer: "Old answer",
+    status: "completed",
+  });
+  reader.openTranscript();
+  reader.closeTranscript();
+  const paste = Array.from({ length: 30 }, (_, i) => `Original pasted log ${i}`).join("\n");
+  const prompt = `Inspect logs\n${paste}\nFind the cause`;
+  const input = {
+    document: [
+      { type: "text" as const, text: "Inspect logs\n" },
+      { type: "token" as const, kind: "paste" as const, text: paste },
+      { type: "text" as const, text: "\nFind the cause" },
+    ],
+    attachments: [],
+  };
+  let finishReply = () => {};
+  const replyGate = new Promise<void>((resolve) => {
+    finishReply = resolve;
+  });
+  let finishTurn = () => {};
+  const completionGate = new Promise<void>((resolve) => {
+    finishTurn = resolve;
+  });
+  const model: ModelAdapter = {
+    id: "pending-paste",
+    async *stream(): AsyncGenerator<StreamEvent> {
+      await replyGate;
+      yield { type: "text", content: "Inspection started.\n\n" };
+      await completionGate;
+      yield { type: "text", content: "Finished inspection." };
+    },
+  };
+  const inputs = [input, textPromptInput("/exit")];
+  const bindings: EvilJellyBindings = {
+    getInput: async () => inputs.shift() ?? textPromptInput("/exit"),
+    printOut: store.appendStream,
+    logUserMessage: store.logUser,
+    logAssistantMessage: store.logAssistant,
+    logSystemEvent: store.logSystem,
+    logToolBlock: () => {},
+    onTranscriptTurn: (update) => {
+      store.updateTranscriptTurn(update);
+      reader.updateTurn(update);
+    },
+    onTurnStart: store.beginTurn,
+    onPhaseUpdate: store.setPhase,
+    confirmTool: async () => ({ action: "accept" }),
+    requestChoice: async ({ options }) => options[0]?.value ?? "",
+  };
+  mountDashboard();
+  const run = runEvilJellyHost(bindings, {
+    runControl: createInteractiveRunControl(),
+    model,
+    isolateSessionState: true,
+  });
+  try {
+    await vi.waitFor(() => expect(lastFrame).toContain("[Paste · 30 lines]"));
+    expect(lastFrame).not.toContain("Original pasted log");
+    expect(useOutputStore.getState().pendingInput).not.toBeNull();
+    stdin.write("\u0014"); // Ctrl+T keeps the previously selected ended turn.
+    await vi.waitFor(() => expect(lastFrame).toContain("Old answer"));
+    stdin.write("\u001b[C"); // Right: select the running turn.
+    await vi.waitFor(() => expect(lastFrame).toContain("This turn is still running."));
+    stdin.write("p"); // Read the complete original question.
+    await vi.waitFor(() => {
+      expect(lastFrame).toContain("Original pasted log 0");
+      expect(lastFrame).toContain("Running");
+    });
+    expect(useAnswerTranscriptStore.getState().detail).toBe("question");
+    expect(useAnswerTranscriptStore.getState().selectedId).not.toBe("old");
+    stdin.write("c");
+    await vi.waitFor(() => expect(copyTextToClipboard).toHaveBeenLastCalledWith(prompt));
+    stdin.write("\u0014"); // Ctrl+T closes the reader.
+    await vi.waitFor(() => expect(lastFrame).toContain("[Paste · 30 lines]"));
+    expect(lastFrame).not.toContain("Original pasted log");
+    finishReply();
+    await vi.waitFor(() => {
+      expect(lastFrame).toContain("Inspection started.");
+      expect(lastFrame).toContain("Original pasted log 15");
+      expect(lastFrame).not.toContain("[Paste · 30 lines]");
+    });
+    expect(useOutputStore.getState().pendingInput).toBeNull();
+  } finally {
+    finishReply();
+    finishTurn();
+    await run;
+  }
+  await vi.waitFor(() => expect(lastFrame).toContain("Finished inspection."));
+  expect(lastFrame).not.toContain("[Paste · 30 lines]");
+  expect(lastFrame).not.toContain("rows folded");
+  for (const row of [0, 15, 29]) {
+    expect(lastFrame.match(new RegExp(`Original pasted log ${row}\\b`, "g"))).toHaveLength(1);
+  }
+  expect(useOutputStore.getState().history.find((turn) => turn.type === "user")?.content).toBe(
+    prompt,
+  );
+  expect(useAnswerTranscriptStore.getState().entries.at(-1)?.prompt).toBe(prompt);
+  expect(mounts.history).toBe(1);
 });
 
 it("prepends withdrawn rich input while preserving live text and attachments", async () => {
