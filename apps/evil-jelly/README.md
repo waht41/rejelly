@@ -34,9 +34,9 @@ Run `evil` to chat, inspect and search code, edit files with diff confirmation, 
 
 ### Submitted input previews
 
-Submitted input stays in a bounded preview while it can still be withdrawn. Long text is explicitly
-folded rather than silently cropped from the top, with one highlighted separator and no repeated
-footer. Blank rows adjacent to the cut are omitted from the preview; structured paste blocks retain
+Submitted input stays in a bounded preview while it can still be withdrawn, with a `Pending input`
+label above the input block. Long text is explicitly folded rather than silently cropped from the top,
+with one gray separator and no repeated footer. Blank rows adjacent to the cut are omitted from the preview; structured paste blocks retain
 compact labels. Attachment counts are shown separately, with failures kept visible.
 
 Folding applies only while input is pending. Once assistant output or tool progress retains the input,

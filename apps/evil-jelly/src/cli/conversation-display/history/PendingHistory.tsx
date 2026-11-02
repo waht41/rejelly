@@ -14,16 +14,19 @@ export function PendingHistory({
 }) {
   const input = turns[0];
   if (!input) return null;
-  const budget = Math.max(5, maxRows);
+  const budget = Math.max(6, maxRows);
   const notices = turns.slice(1);
-  const capacity = Math.min(2, Math.max(0, budget - 5));
+  const capacity = Math.min(2, Math.max(0, budget - 6));
   const visible = capacity > 0 ? notices.slice(-capacity) : [];
   const hidden = notices.length - visible.length;
   const noticeRows = visible.length + (hidden > 0 ? 1 : 0);
 
   return (
     <Box flexDirection="column" width={columns}>
-      <HistoryItem turn={input} columns={columns} userMaxRows={budget - noticeRows - 1} />
+      <Text color="gray" wrap="truncate-end">
+        Pending input
+      </Text>
+      <HistoryItem turn={input} columns={columns} userMaxRows={budget - noticeRows - 2} />
       {hidden > 0 ? (
         <Text dimColor wrap="truncate-end">
           … {hidden} earlier notices

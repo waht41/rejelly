@@ -88,7 +88,7 @@ export function UserInputPreview({
         </Text>
       ))}
       {preview.omittedRows > 0 ? (
-        <Text bold color="cyan" wrap="truncate-end">
+        <Text bold color="gray" wrap="truncate-end">
           {`─ ${preview.omittedRows} rows folded ${"─".repeat(Math.max(1, width - stringWidth(`─ ${preview.omittedRows} rows folded `)))}`}
         </Text>
       ) : null}

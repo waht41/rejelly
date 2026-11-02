@@ -113,6 +113,7 @@ it("removes a withdrawn input without shrinking Static history or hiding the nex
 
   start("withdrawn", "Same question");
   await vi.waitFor(() => expect(lastFrame.match(/Same question/g)).toHaveLength(2));
+  expect(lastFrame.split("\n").map((line) => line.trim())).toContain("Pending input");
   store.logSystem("Interrupted active task.");
   await vi.waitFor(() => expect(lastFrame).toContain("Interrupted active task."));
   store.logSystem("Input withdrawn.");
@@ -120,6 +121,7 @@ it("removes a withdrawn input without shrinking Static history or hiding the nex
   await vi.waitFor(() => {
     expect(lastFrame).toContain("Input withdrawn.");
     expect(lastFrame.match(/Same question/g)).toHaveLength(1);
+    expect(lastFrame.split("\n").map((line) => line.trim())).not.toContain("Pending input");
   });
   expect(lastFrame.match(/Earlier answer/g)).toHaveLength(1);
 
@@ -209,6 +211,9 @@ it("keeps long withdrawable input inside the refreshable viewport", async () => 
   store.updateTranscriptTurn({ turnId: "long", status: "running", prompt });
   store.logUser(prompt);
   await vi.waitFor(() => {
+    const lines = lastFrame.split("\n").map((line) => line.trim());
+    expect(lines.filter((line) => line === "Pending input")).toHaveLength(1);
+    expect(lines.indexOf("Pending input")).toBeLessThan(lines.indexOf("❯ Pending input row 0"));
     expect(lastFrame).toContain("❯ Pending input row 0");
     expect(lastFrame).toContain("Pending input row 99");
     expect(lastFrame.match(/rows folded/g)).toHaveLength(1);
@@ -315,6 +320,7 @@ it("previews pending paste, reads its source, and expands it once when assistant
       expect(lastFrame).not.toContain("[Paste · 30 lines]");
     });
     expect(useOutputStore.getState().pendingInput).toBeNull();
+    expect(lastFrame.split("\n").map((line) => line.trim())).not.toContain("Pending input");
   } finally {
     finishReply();
     finishTurn();
