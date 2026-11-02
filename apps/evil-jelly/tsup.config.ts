@@ -35,6 +35,11 @@ export default defineConfig({
     // External React consumers would otherwise load another, environment-selected copy.
     "react",
     "zustand",
+    // Skills and the MCP SDK otherwise load large YAML/Zod module trees at startup.
+    // Include Zod subpaths as well so the SDK's v3/v4 compatibility imports are bundled.
+    "yaml",
+    "zod",
+    "zod-to-json-schema",
     "remark-gfm",
     "remark-parse",
     "unified",
