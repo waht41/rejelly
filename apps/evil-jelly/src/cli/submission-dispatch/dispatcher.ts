@@ -25,6 +25,8 @@ export interface SubmissionDispatchPorts {
   restoreDraft: (draft: PromptInput) => void;
   logSystem: (message: string) => void;
   setInputPhase: (phase: "awaiting" | "working") => void;
+  /** Synchronous UI acknowledgement, before runtime preparation or durable recording. */
+  onMainInput?: (input: PromptInput) => void;
 }
 
 export interface SubmissionDispatcher {
@@ -104,6 +106,7 @@ export function createSubmissionDispatcher(
         return;
       }
       if (isAwaitingMainInput()) {
+        ports.onMainInput?.(input);
         enqueueMainInput(input);
         return;
       }
@@ -135,14 +138,17 @@ export function createSubmissionDispatcher(
       if (pendingSeed) {
         pendingSeed = false;
         setAwaitingMainInput(false);
+        const input = textPromptInput((options?.seedLine ?? "").trim());
+        ports.onMainInput?.(input);
         ports.setInputPhase("working");
-        return textPromptInput((options?.seedLine ?? "").trim());
+        return input;
       }
       const pendingSteers = drainSteers();
       if (pendingSteers.length > 0) {
         const [next, ...rest] = pendingSteers;
         for (const input of rest) enqueueMainInput(input);
         setAwaitingMainInput(false);
+        ports.onMainInput?.(next!);
         ports.setInputPhase("working");
         return next!;
       }
@@ -150,6 +156,7 @@ export function createSubmissionDispatcher(
       setAwaitingMainInput(true);
       try {
         const input = await dequeueMainInput();
+        ports.onMainInput?.(input);
         ports.setInputPhase("working");
         return input;
       } finally {

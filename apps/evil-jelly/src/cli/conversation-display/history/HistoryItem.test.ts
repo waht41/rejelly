@@ -2,7 +2,14 @@ import { renderToString, Static } from "ink";
 import { createElement } from "react";
 import stringWidth from "string-width";
 import stripAnsi from "strip-ansi";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import wrapAnsi from "wrap-ansi";
+
+vi.mock("wrap-ansi", async (importOriginal) => {
+  const original = await importOriginal<typeof import("wrap-ansi")>();
+  return { default: vi.fn(original.default) };
+});
+
 import { HistoryItem } from "./HistoryItem";
 import type { Turn } from "./model";
 
@@ -138,13 +145,68 @@ describe("pending input preview", () => {
       expect(lines.length).toBeLessThanOrEqual(8);
       expect(output).toContain("❯ 开始");
       expect(output).toContain("最终问题");
-      expect(output.match(/rows folded/g)).toHaveLength(1);
+      expect(output.match(/(?:rows|content) folded/g)).toHaveLength(1);
       expect(output).not.toContain("… folded");
       expect(output).not.toContain("\t");
       for (const line of lines) expect(stringWidth(line)).toBeLessThanOrEqual(columns);
       expect(turn.content).toBe(content);
     }
   });
+});
+
+it("bounds layout work before wrapping huge multiline and single-line pending input", () => {
+  const columns = 60;
+  const userMaxRows = 8;
+  for (const middle of ["中🙂\t".repeat(20_000), "middle evidence\r\n".repeat(20_000)]) {
+    const content = `Beginning sentinel\n${middle}\nHidden center sentinel\n${middle}\nEnding sentinel`;
+    const turn: Turn = { id: "huge", type: "user", content };
+    vi.mocked(wrapAnsi).mockClear();
+    const output = stripAnsi(
+      renderToString(createElement(HistoryItem, { turn, columns, userMaxRows }), { columns }),
+    );
+    const wrappedChars = vi
+      .mocked(wrapAnsi)
+      .mock.calls.reduce((sum, [text]) => sum + text.length, 0);
+    expect(wrappedChars).toBeLessThan(4_000);
+    expect(output).toContain("❯ Beginning sentinel");
+    expect(output).toContain("Ending sentinel");
+    expect(output.match(/content folded/g)).toHaveLength(1);
+    expect(output).not.toContain("Hidden center sentinel");
+    expect(output).not.toContain("\t");
+    expect(output.trimEnd().split("\n").length).toBeLessThanOrEqual(userMaxRows);
+    for (const line of output.split("\n")) expect(stringWidth(line)).toBeLessThanOrEqual(columns);
+    expect(turn.content).toBe(content);
+  }
+  const singleLine: Turn = {
+    id: "single-line",
+    type: "user",
+    content: `Beginning sentinel ${"🙂abc中".repeat(20_000)} Ending sentinel`,
+  };
+  vi.mocked(wrapAnsi).mockClear();
+  const singleOutput = stripAnsi(
+    renderToString(createElement(HistoryItem, { turn: singleLine, columns, userMaxRows }), {
+      columns,
+    }),
+  );
+  expect(singleOutput).toContain("Beginning sentinel");
+  expect(singleOutput).toContain("Ending sentinel");
+  expect(singleOutput).toContain("content folded");
+  expect(vi.mocked(wrapAnsi).mock.calls.reduce((sum, [text]) => sum + text.length, 0)).toBeLessThan(
+    1_000,
+  );
+  expect(singleOutput).not.toMatch(
+    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/,
+  );
+  const turn: Turn = {
+    id: "blank-tail",
+    type: "user",
+    content: `Short input${"\n".repeat(20_000)}`,
+  };
+  const output = stripAnsi(
+    renderToString(createElement(HistoryItem, { turn, columns, userMaxRows }), { columns }),
+  );
+  expect(output.match(/Short input/g)).toHaveLength(1);
+  expect(output).not.toContain("folded");
 });
 
 describe("HistoryItem tool headline", () => {

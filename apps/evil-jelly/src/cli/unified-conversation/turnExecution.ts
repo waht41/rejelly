@@ -557,6 +557,7 @@ export async function executeConversationTurn(
     runtime.host.onTurnStart?.();
     const committed = await commitUserInput(runtime, turnId, "initial", resolved);
     recoveryStage = "agent";
+    runtime.host.onInputPreparationEnd?.();
     const result = await runCommittedConversationTurn(runtime, {
       turnId,
       userMessage: committed.message,
@@ -566,6 +567,7 @@ export async function executeConversationTurn(
     if (result.status === "withdrawn") restoreWithdrawnInput();
     return result;
   } catch (error) {
+    if (recoveryStage === "preparation") runtime.host.onInputPreparationEnd?.();
     if (recoveryStage === "agent" || !isAbortError(error)) throw error;
     runtime.host.logSystemEvent("Input withdrawn before submission completed.\n");
     restoreWithdrawnInput();

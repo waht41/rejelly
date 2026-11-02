@@ -79,4 +79,6 @@ export interface ConversationPresentationBindings {
    */
   runAtSafeOutputBoundary?: (operation: () => void) => () => void;
   onTurnStart?: () => void;
+  /** Release a transient submission acknowledgement after preparation succeeds or fails. */
+  onInputPreparationEnd?: () => void;
 }

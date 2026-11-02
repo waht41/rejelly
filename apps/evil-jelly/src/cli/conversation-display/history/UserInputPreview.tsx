@@ -7,6 +7,7 @@ import type { UserMessagePresentation } from "../../../shared/host/presentationB
 
 /** Expand before measuring: raw tabs move the terminal cursor outside Ink's cell grid. */
 function expandUserMessageTabs(text: string): string {
+  if (!text.includes("\t")) return text;
   return text
     .split("\n")
     .map((line) => {
@@ -47,32 +48,54 @@ export function UserInputPreview({
   // Only the withdrawable pending view supplies a row budget. Static history must render
   // the original message, including paste bodies, rather than freezing a transient preview.
   const budget = Math.max(3, maxRows ?? Infinity);
+  const pending = maxRows !== undefined;
+  const text = pending ? (presentation?.summary ?? content) : content;
+  const attachments = pending ? attachmentSummary(presentation) : "";
   const preview = useMemo(() => {
-    const pending = maxRows !== undefined;
-    const text = pending ? (presentation?.summary ?? content) : content;
-    const rows = wrapAnsi(`❯ ${expandUserMessageTabs(normalizeNewlines(text))}`, width, {
-      hard: true,
-      trim: false,
-    }).split("\n");
-    const attachments = pending ? attachmentSummary(presentation) : "";
     const bodyBudget = budget - (attachments ? 1 : 0);
-    if (rows.length <= bodyBudget) {
-      return { head: rows, tail: [], omittedRows: 0, attachments };
+    const normalized = normalizeNewlines(text);
+    // Limit expensive cell-width/grapheme layout BEFORE wrapping. Hidden middle content
+    // needs no terminal rows; an exact folded-row count would defeat that bound.
+    const windowChars = Math.max(64, width * bodyBudget);
+    const source = pending ? normalized.trimEnd() : normalized;
+    const bounded = pending && source.length > windowChars * 2;
+    let start = source;
+    let end = source;
+    if (bounded) {
+      start = source.slice(0, windowChars);
+      end = source.slice(-windowChars);
+      // Prefer complete logical lines, but still preview both ends of a huge single line.
+      const headBreak = start.lastIndexOf("\n");
+      const tailBreak = end.indexOf("\n");
+      if (headBreak >= 0) start = start.slice(0, headBreak);
+      if (tailBreak >= 0) end = end.slice(tailBreak + 1);
+      start = start.replace(/[\uD800-\uDBFF]$/, "");
+      end = end.replace(/^[\uDC00-\uDFFF]/, "");
+    }
+    const wrap = (value: string) => wrapAnsi(value, width, { hard: true, trim: false }).split("\n");
+    const rows = wrap(`❯ ${expandUserMessageTabs(start)}`);
+    if (!bounded && rows.length <= bodyBudget) {
+      return { head: rows, tail: [], foldLabel: "", attachments };
     }
 
-    // Reserve one prominent separator. Blank rows touching the cut do not deserve scarce
-    // preview space; trimming them here never changes the original message in history.
+    // Reserve one separator. Blank rows touching the cut do not deserve scarce preview
+    // space; trimming them here never changes the original message in history.
     const shown = bodyBudget - 1;
-    let headEnd = Math.ceil(shown / 2);
+    let headEnd = Math.min(rows.length, Math.ceil(shown / 2));
     while (headEnd > 1 && rows[headEnd - 1]?.trim() === "") headEnd--;
-    let tailEnd = rows.length;
-    while (tailEnd > headEnd && rows[tailEnd - 1]?.trim() === "") tailEnd--;
-    let tailStart = Math.max(headEnd, tailEnd - Math.floor(shown / 2));
-    while (tailStart < tailEnd && rows[tailStart]?.trim() === "") tailStart++;
+    const endingRows = bounded ? wrap(expandUserMessageTabs(end)) : rows;
+    let tailEnd = endingRows.length;
+    const tailFloor = bounded ? 0 : headEnd;
+    while (tailEnd > tailFloor && endingRows[tailEnd - 1]?.trim() === "") tailEnd--;
+    let tailStart = Math.max(tailFloor, tailEnd - Math.floor(shown / 2));
+    while (tailStart < tailEnd && endingRows[tailStart]?.trim() === "") tailStart++;
     const head = rows.slice(0, headEnd);
-    const tail = rows.slice(tailStart, tailEnd);
-    return { head, tail, omittedRows: rows.length - head.length - tail.length, attachments };
-  }, [content, presentation, width, budget, maxRows]);
+    const tail = endingRows.slice(tailStart, tailEnd);
+    const foldLabel = bounded
+      ? "content folded"
+      : `${rows.length - head.length - tail.length} rows folded`;
+    return { head, tail, foldLabel, attachments };
+  }, [text, attachments, width, budget, pending]);
 
   return (
     <Box
@@ -87,9 +110,9 @@ export function UserInputPreview({
           {row || " "}
         </Text>
       ))}
-      {preview.omittedRows > 0 ? (
+      {preview.foldLabel ? (
         <Text bold color="gray" wrap="truncate-end">
-          {`─ ${preview.omittedRows} rows folded ${"─".repeat(Math.max(1, width - stringWidth(`─ ${preview.omittedRows} rows folded `)))}`}
+          {`─ ${preview.foldLabel} ${"─".repeat(Math.max(1, width - stringWidth(`─ ${preview.foldLabel} `)))}`}
         </Text>
       ) : null}
       {preview.tail.map((row, index) => (

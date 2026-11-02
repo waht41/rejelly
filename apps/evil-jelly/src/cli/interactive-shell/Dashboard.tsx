@@ -119,6 +119,7 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
   const { columns, rows } = useWindowSize();
   const history = useOutputStore((s) => s.history);
   const pendingInput = useOutputStore((s) => s.pendingInput);
+  const preparingInput = useOutputStore((s) => s.preparingInput);
   const clearedStaticTurns = useOutputStore((s) => s.clearedStaticTurns);
   const streamBuffer = useOutputStore((s) => s.streamBuffer);
   const runningTools = useOutputStore((s) => s.runningTools);
@@ -215,9 +216,10 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
           <Box ref={topTransientRef} flexDirection="column">
             {/* Stay refreshable until retention/withdrawal, but fold explicitly instead of
                 cropping the complete history suffix from the top. */}
-            {pendingTurns.length > 0 ? (
+            {pendingTurns.length > 0 || preparingInput ? (
               <PendingHistory
                 turns={pendingTurns}
+                preparingInput={preparingInput}
                 columns={columns}
                 maxRows={Math.floor(rows / 3)}
               />

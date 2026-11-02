@@ -176,6 +176,7 @@ function createOutputBindings(): ConversationPresentationBindings {
     onTurnStart: () => {
       out().beginTurn();
     },
+    onInputPreparationEnd: () => out().setPreparingInput(null),
   };
 }
 
@@ -210,6 +211,7 @@ function createPromptBindings(options: {
   return {
     getInput,
     restoreWithdrawnInput: (input) => {
+      useOutputStore.getState().setPreparingInput(null);
       useComposerSession.getState().seedDraft(input);
     },
     confirmTool: createToolApproval({
