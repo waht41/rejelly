@@ -78,9 +78,21 @@ Resumed answers remain available beyond the ten turns printed into the main scro
 interrupted/error output is labelled partial, and legacy turn status is marked unknown. Uncommitted
 stream fragments are not recovered as final answers. New turns do not take over the selected answer.
 
-Opening a reader keeps the composer draft and attachments mounted but pauses editor input. Pending
-approvals take priority and dismiss the reader. `/clear` starts a new session and resets the answer
-archive. Tool results retain their existing `Ctrl+O` / `/expand-tool` entry points.
+The answer browser and the `Ctrl+O` / `/expand-tool` tool browser use the terminal's alternate
+screen in interactive TTY sessions. Closing a browser restores the primary conversation and its
+native scrollback. Browser resize redraws the owned screen from its origin; it does not append
+browser frames to conversation history. Debug, screen-reader, and non-interactive output keep the
+in-place presentation instead.
+
+Opening a reader keeps the composer draft and attachments mounted but pauses editor input. The
+Agent continues running and updating the archives; new primary-screen history is held until the
+reader closes, then printed once. Pending approvals take priority and restore the primary screen
+before displaying the decision. `/clear` starts a new session and resets the answer archive.
+
+Terminal-native find shortcuts and their searchable buffers depend on the terminal emulator.
+They cannot search archive entries that the browser has not painted. Use `/` in the answer browser
+to search its complete saved questions and answers; the tool browser does not yet provide archive
+search.
 
 ### Local Skills
 

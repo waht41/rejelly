@@ -1,13 +1,114 @@
+diff --git a/build/components/App.d.ts b/build/components/App.d.ts
+index d065fb4dd31070e06363f009a125fa650b63ccfb..d0faf64d2c82af5653e4a82a7ae56e201c5dbd9e 100644
+--- a/build/components/App.d.ts
++++ b/build/components/App.d.ts
+@@ -13,8 +13,9 @@ type Props = {
+     readonly setCursorPosition: (position: CursorPosition | undefined) => void;
+     readonly interactive: boolean;
+     readonly renderThrottleMs: number;
++    readonly setAlternateScreen: (enabled: boolean) => void;
+ };
+-declare function App({ children, stdin, stdout, stderr, writeToStdout, writeToStderr, exitOnCtrlC, onExit, onWaitUntilRenderFlush, setCursorPosition, interactive, renderThrottleMs, }: Props): React.ReactNode;
++declare function App({ children, stdin, stdout, stderr, writeToStdout, writeToStderr, exitOnCtrlC, onExit, onWaitUntilRenderFlush, setCursorPosition, interactive, renderThrottleMs, setAlternateScreen, }: Props): React.ReactNode;
+ declare namespace App {
+     var displayName: string;
+ }
+diff --git a/build/components/App.js b/build/components/App.js
+index f8904f9cce9376bdb62caae49cb9642ad3fc72ac..da50f68c0e68696d01465278961a3ebea1c6f572 100644
+--- a/build/components/App.js
++++ b/build/components/App.js
+@@ -17,7 +17,7 @@ const escape = '\u001B';
+ // Root component for all Ink apps
+ // It renders stdin and stdout contexts, so that children can access them if needed
+ // It also handles Ctrl+C exiting and cursor visibility
+-function App({ children, stdin, stdout, stderr, writeToStdout, writeToStderr, exitOnCtrlC, onExit, onWaitUntilRenderFlush, setCursorPosition, interactive, renderThrottleMs, }) {
++function App({ children, stdin, stdout, stderr, writeToStdout, writeToStderr, exitOnCtrlC, onExit, onWaitUntilRenderFlush, setCursorPosition, interactive, renderThrottleMs, setAlternateScreen, }) {
+     const [isFocusEnabled, setIsFocusEnabled] = useState(true);
+     const [activeFocusId, setActiveFocusId] = useState(undefined);
+     // Focusables array is managed internally via setFocusables callback pattern
+@@ -402,7 +402,8 @@ function App({ children, stdin, stdout, stderr, writeToStdout, writeToStderr, ex
+     const appContextValue = useMemo(() => ({
+         exit: handleExit,
+         waitUntilRenderFlush: onWaitUntilRenderFlush,
+-    }), [handleExit, onWaitUntilRenderFlush]);
++        setAlternateScreen,
++    }), [handleExit, onWaitUntilRenderFlush, setAlternateScreen]);
+     const stdinContextValue = useMemo(() => ({
+         stdin,
+         setRawMode: handleSetRawMode,
+diff --git a/build/components/AppContext.d.ts b/build/components/AppContext.d.ts
+index 404381f4ebcbcb9e3f1957360128c6f5afc906fd..affb159b44773fe93be8b384219276722a2de597 100644
+--- a/build/components/AppContext.d.ts
++++ b/build/components/AppContext.d.ts
+@@ -30,6 +30,8 @@ export type Props = {
+     ```
+     */
+     readonly waitUntilRenderFlush: () => Promise<void>;
++    /** Switch buffers before paint; ignored for debug, screen readers and non-TTY output. */
++    readonly setAlternateScreen: (enabled: boolean) => void;
+ };
+ /**
+ `AppContext` is a React context that exposes lifecycle methods for the app.
+@@ -37,5 +39,6 @@ export type Props = {
+ declare const AppContext: import("react").Context<{
+     exit(): void;
+     waitUntilRenderFlush(): Promise<void>;
++    setAlternateScreen(enabled: boolean): void;
+ }>;
+ export default AppContext;
+diff --git a/build/components/AppContext.js b/build/components/AppContext.js
+index 36dea4031c84bc95613629b8d70d685809c179e3..e1bcd1f0475af80edd4862f85c5531b6da07a6ed 100644
+--- a/build/components/AppContext.js
++++ b/build/components/AppContext.js
+@@ -6,6 +6,7 @@ import { createContext } from 'react';
+ const AppContext = createContext({
+     exit() { },
+     async waitUntilRenderFlush() { },
++    setAlternateScreen(_enabled) { },
+ });
+ AppContext.displayName = 'InternalAppContext';
+ export default AppContext;
+diff --git a/build/hooks/use-app.d.ts b/build/hooks/use-app.d.ts
+index c71a0045c408ee8f5d51e77cdd6d57832bf6e0ee..fba757fb04280837c42a6b67f1e46add01184a59 100644
+--- a/build/hooks/use-app.d.ts
++++ b/build/hooks/use-app.d.ts
+@@ -4,5 +4,7 @@ A React hook that returns app lifecycle methods like `exit()` and `waitUntilRend
+ declare const useApp: () => {
+     exit(): void;
+     waitUntilRenderFlush(): Promise<void>;
++    /** Switch buffers in useInsertionEffect, before the committed frame is painted. */
++    setAlternateScreen(enabled: boolean): void;
+ };
+ export default useApp;
+diff --git a/build/ink.d.ts b/build/ink.d.ts
+index dd13ec7bdd2799f4bd32165dc8427073dd15b574..6bdd6125d68be2eb1df69bd301a17b37213143c7 100644
+--- a/build/ink.d.ts
++++ b/build/ink.d.ts
+@@ -120,7 +120,8 @@ export default class Ink {
+     waitUntilRenderFlush(): Promise<void>;
+     clear(): void;
+     patchConsole(): void;
+-    private setAlternateScreen;
++    setAlternateScreen(enabled: boolean): void;
++    private invalidateFrame;
+     private resolveInteractiveOption;
+     private resolveAlternateScreenOption;
+     private shouldSync;
 diff --git a/build/ink.js b/build/ink.js
-index 98ba6eff90db503fbd82fca6a19ef8d82d07ed8e..7d11acf844cb01170a58baeeaf93a0c811adbe1e 100644
+index 98ba6eff90db503fbd82fca6a19ef8d82d07ed8e..820c22057620a7a44381f1560331a77b7eff32c7 100644
 --- a/build/ink.js
 +++ b/build/ink.js
-@@ -261,8 +261,15 @@ export default class Ink {
+@@ -260,9 +260,19 @@ export default class Ink {
+     }
      resized = () => {
          const currentWidth = getWindowSize(this.options.stdout).columns;
-         if (currentWidth < this.lastTerminalWidth) {
+-        if (currentWidth < this.lastTerminalWidth) {
 -            // We clear the screen when decreasing terminal width to prevent duplicate overlapping re-renders.
 -            this.log.clear();
++        if (this.alternateScreen) {
++            this.invalidateFrame();
++        }
++        else if (currentWidth < this.lastTerminalWidth) {
 +            // [evil-jelly patch] Repaint the DYNAMIC frame only (never re-dump fullStaticOutput,
 +            // to keep scrollback intact). log.clear() erased by the stale LOGICAL line count and
 +            // returned to bottom by logical rows too; on narrowing the terminal reflows every
@@ -20,7 +121,7 @@ index 98ba6eff90db503fbd82fca6a19ef8d82d07ed8e..7d11acf844cb01170a58baeeaf93a0c8
              this.lastOutput = '';
              this.lastOutputToRender = '';
          }
-@@ -270,6 +277,37 @@ export default class Ink {
+@@ -270,6 +280,37 @@ export default class Ink {
          this.onRender();
          this.lastTerminalWidth = currentWidth;
      };
@@ -58,7 +159,16 @@ index 98ba6eff90db503fbd82fca6a19ef8d82d07ed8e..7d11acf844cb01170a58baeeaf93a0c8
      resolveExitPromise = () => { };
      rejectExitPromise = () => { };
      unsubscribeExit = () => { };
-@@ -615,6 +653,14 @@ export default class Ink {
+@@ -386,7 +427,7 @@ export default class Ink {
+     };
+     render(node) {
+         const tree = (React.createElement(AccessibilityContext.Provider, { value: { isScreenReaderEnabled: this.isScreenReaderEnabled } },
+-            React.createElement(App, { stdin: this.options.stdin, stdout: this.options.stdout, stderr: this.options.stderr, exitOnCtrlC: this.options.exitOnCtrlC, interactive: this.interactive, renderThrottleMs: this.renderThrottleMs, writeToStdout: this.writeToStdout, writeToStderr: this.writeToStderr, setCursorPosition: this.setCursorPosition, onExit: this.handleAppExit, onWaitUntilRenderFlush: this.waitUntilRenderFlush }, node)));
++            React.createElement(App, { stdin: this.options.stdin, stdout: this.options.stdout, stderr: this.options.stderr, exitOnCtrlC: this.options.exitOnCtrlC, interactive: this.interactive, renderThrottleMs: this.renderThrottleMs, writeToStdout: this.writeToStdout, writeToStderr: this.writeToStderr, setCursorPosition: this.setCursorPosition, onExit: this.handleAppExit, onWaitUntilRenderFlush: this.waitUntilRenderFlush, setAlternateScreen: this.setAlternateScreen }, node)));
+         if (this.options.concurrent) {
+             // Concurrent mode: use updateContainer (async scheduling)
+             reconciler.updateContainer(tree, this.container, null, noop);
+@@ -615,6 +656,14 @@ export default class Ink {
              // Sync lastOutput so that unmount's final onRender
              // sees it as unchanged and log-update skips it
              this.log.sync(this.lastOutputToRender || this.lastOutput + '\n');
@@ -73,7 +183,78 @@ index 98ba6eff90db503fbd82fca6a19ef8d82d07ed8e..7d11acf844cb01170a58baeeaf93a0c8
          }
      }
      patchConsole() {
-@@ -702,11 +748,36 @@ export default class Ink {
+@@ -633,12 +682,37 @@ export default class Ink {
+             }
+         });
+     }
++    // [evil-jelly patch] Called during React's insertion phase, before the new
++    // tree is painted. Keep the React/Static instances alive across buffer changes.
+     setAlternateScreen(enabled) {
+-        this.alternateScreen = this.resolveAlternateScreenOption(enabled, this.interactive);
+-        if (this.alternateScreen) {
+-            this.writeBestEffort(this.options.stdout, ansiEscapes.enterAlternativeScreen);
+-            this.writeBestEffort(this.options.stdout, hideCursorEscape);
++        const next = this.resolveAlternateScreenOption(enabled, this.interactive)
++            && !this.options.debug && !this.isScreenReaderEnabled;
++        if (next === this.alternateScreen || this.isUnmounted || this.isUnmounting) {
++            return;
++        }
++        // Cancel old-buffer writes rather than flushing them into the new buffer.
++        // Only erase the primary transient frame: its Static history stays put.
++        if (!this.alternateScreen) {
++            this.throttledLog.cancel?.();
++            this.log.clear();
+         }
++        this.invalidateFrame();
++        this.alternateScreen = next;
++        this.writeBestEffort(this.options.stdout, next
++            ? ansiEscapes.enterAlternativeScreen
++            : ansiEscapes.exitAlternativeScreen);
++        this.writeBestEffort(this.options.stdout, hideCursorEscape);
++    }
++    // Screen switches and alternate-screen resizes share one invalidation path.
++    invalidateFrame() {
++        this.throttledOnRender?.cancel();
++        this.throttledLog.cancel?.();
++        this.hasPendingThrottledRender = false;
++        this.log.reset();
++        this.log.setCursorPosition(this.cursorPosition);
++        this.lastOutput = '';
++        this.lastOutputToRender = '';
++        this.lastOutputHeight = 0;
+     }
+     resolveInteractiveOption(interactive) {
+         return interactive ?? (!isInCi && Boolean(this.options.stdout.isTTY));
+@@ -684,6 +758,28 @@ export default class Ink {
+     }
+     renderInteractiveFrame(output, outputHeight, staticOutput) {
+         const hasStaticOutput = staticOutput !== '';
++        // [evil-jelly patch] The alternate buffer is an owned viewport, not an
++        // output-flow region. Always repaint from its absolute origin instead of
++        // predicting where the terminal reflowed the previous frame on resize.
++        if (this.alternateScreen) {
++            if (output !== this.lastOutput || this.log.isCursorDirty()) {
++                const sync = this.shouldSync();
++                if (sync) {
++                    this.options.stdout.write(bsu);
++                }
++                this.options.stdout.write(hideCursorEscape + ansiEscapes.cursorTo(0, 0) + ansiEscapes.eraseDown);
++                this.log.reset();
++                this.log.setCursorPosition(this.cursorPosition);
++                this.log(output);
++                if (sync) {
++                    this.options.stdout.write(esu);
++                }
++            }
++            this.lastOutput = output;
++            this.lastOutputToRender = output;
++            this.lastOutputHeight = outputHeight;
++            return;
++        }
+         const isTty = this.options.stdout.isTTY;
+         // Detect fullscreen: output fills or exceeds terminal height.
+         // Only apply when writing to a real TTY — piped output always gets trailing newlines.
+@@ -702,11 +798,36 @@ export default class Ink {
              if (sync) {
                  this.options.stdout.write(bsu);
              }
@@ -113,7 +294,7 @@ index 98ba6eff90db503fbd82fca6a19ef8d82d07ed8e..7d11acf844cb01170a58baeeaf93a0c8
                  this.options.stdout.write(esu);
              }
 diff --git a/build/reconciler.js b/build/reconciler.js
-index 74cb3b8841f1493d1fc3fa889028109d5cc77c0c..ac9007bab26db4741515c469391ddef5cfc6e897 100644
+index 74cb3b8841f1493d1fc3fa889028109d5cc77c0c..762956c4f22d5448e832007d44ef04f3366cbdb2 100644
 --- a/build/reconciler.js
 +++ b/build/reconciler.js
 @@ -6,23 +6,9 @@ import Yoga from 'yoga-layout';

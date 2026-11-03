@@ -1,5 +1,5 @@
 import { Static } from "ink";
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { parseMarkdownBlocks } from "../../terminal-ui/rich-text/markdownParser";
 import {
   needsSyntaxHighlighter,
@@ -38,14 +38,22 @@ function turnSyntaxHighlightRequest(turn: Turn): SyntaxHighlightRequest | undefi
  * revised, so the pending suffix stays withheld instead of flashing as plain
  * text and becoming visually inconsistent with the highlighted replay.
  */
-export function StaticHistory({ turns, columns }: { turns: Turn[]; columns: number }) {
+export function StaticHistory({
+  turns,
+  columns,
+  paused = false,
+}: {
+  turns: Turn[];
+  columns: number;
+  paused?: boolean;
+}) {
   const syntaxHighlighterState = useSyncExternalStore(
     subscribeSyntaxHighlighter,
     syntaxHighlighterSnapshot,
     syntaxHighlighterSnapshot,
   );
   const pendingSyntax = useMemo(() => {
-    if (syntaxHighlighterState === "ready" || syntaxHighlighterState === "unavailable") {
+    if (paused || syntaxHighlighterState === "ready" || syntaxHighlighterState === "unavailable") {
       return undefined;
     }
     for (let index = 0; index < turns.length; index++) {
@@ -53,8 +61,18 @@ export function StaticHistory({ turns, columns }: { turns: Turn[]; columns: numb
       if (request) return { index, request };
     }
     return undefined;
-  }, [turns, syntaxHighlighterState]);
-  const readyTurns = pendingSyntax ? turns.slice(0, pendingSyntax.index) : turns;
+  }, [turns, syntaxHighlighterState, paused]);
+  // Freeze the actual ready prefix, not merely the incoming history: a highlighter
+  // resolving while the reader is open must not release Static output into alt.
+  const primaryTurns = useRef<Turn[]>([]);
+  const readyTurns = paused
+    ? primaryTurns.current
+    : pendingSyntax
+      ? turns.slice(0, pendingSyntax.index)
+      : turns;
+  useLayoutEffect(() => {
+    primaryTurns.current = readyTurns;
+  }, [readyTurns]);
 
   useEffect(() => {
     if (pendingSyntax) {
