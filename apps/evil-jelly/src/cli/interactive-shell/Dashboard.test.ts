@@ -2,6 +2,7 @@ import { PassThrough } from "node:stream";
 import type { ModelAdapter, StreamEvent } from "@rejelly/core";
 import { render } from "ink";
 import { createElement } from "react";
+import stringWidth from "string-width";
 import stripAnsi from "strip-ansi";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as userInputRepository from "../../domains/session/repository/userInputRepository";
@@ -599,6 +600,71 @@ it("stretches the fresh composer divider to terminal width across resize and rea
     stdin.write("\u001b");
     await vi.waitFor(() => expect(dividerWidth()).toBe(72));
   }
+  expect(mounts.history).toBe(1);
+});
+
+it("keeps tool list and detail chrome inside the viewport across width and height changes", async () => {
+  useOutputStore.setState({
+    toolHistory: Array.from({ length: 40 }, (_, index) => ({
+      id: `tool-${index + 1}`,
+      type: "tool" as const,
+      content: "Read a long tool result",
+      tool: {
+        ordinal: index + 1,
+        toolName: "read_file",
+        summary: "Inspect a long tool result with 中文 and a very long path".repeat(3),
+        preview: "Output row 0",
+        fullResult: Array.from({ length: 60 }, (_, row) => `Output row ${row}`).join("\n"),
+        ok: true,
+      },
+    })),
+  });
+  const sizes = [
+    [100, 24],
+    [48, 12],
+    [24, 6],
+    [32, 4],
+    [100, 24],
+  ] as const;
+  const expectFrame = (title: string, footer: string) => {
+    const lines = lastFrame.trimEnd().split("\n");
+    expect(lines).toHaveLength(stdout.rows);
+    expect(lines[0]).toContain(title);
+    expect(lines.at(-1)).toContain(footer);
+    expect(lines.every((line) => stringWidth(line) <= stdout.columns)).toBe(true);
+  };
+
+  mountDashboard();
+  await vi.waitFor(() => expect(lastFrame).toContain("Message"));
+  stdin.write("\u000f"); // Ctrl+O
+  await vi.waitFor(() => expect(lastFrame).toContain("Tool Calls"));
+  stdin.write("\u001b[F"); // End: keep the oldest selected tool visible during resize.
+  await vi.waitFor(() => expect(lastFrame).toContain("40 of 40"));
+  for (const [columns, rows] of sizes) {
+    Object.assign(stdout, { columns, rows });
+    stdout.emit("resize");
+    await vi.waitFor(() => {
+      expectFrame("Tool Calls", "40 of 40");
+      expect(lastFrame).toContain("#1");
+    });
+  }
+
+  stdin.write("\r"); // Detail uses the same height budget as the list.
+  await vi.waitFor(() => expect(lastFrame).toContain("Tool Transcript"));
+  for (const [columns, rows] of sizes) {
+    Object.assign(stdout, { columns, rows });
+    stdout.emit("resize");
+    await vi.waitFor(() => expectFrame("Tool Transcript", "Line "));
+    stdin.write("\u001b[F");
+    await vi.waitFor(() => {
+      expectFrame("Tool Transcript", "Line ");
+      expect(lastFrame).toContain("Output row 59");
+    });
+  }
+  stdin.write("\u001b"); // Back to the same selected list entry.
+  await vi.waitFor(() => expectFrame("Tool Calls", "40 of 40"));
+  stdin.write("\u001b");
+  await vi.waitFor(() => expect(lastFrame).toContain("Message"));
   expect(mounts.history).toBe(1);
 });
 

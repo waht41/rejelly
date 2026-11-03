@@ -4,7 +4,7 @@
  * Esc pops one layer (detail → list → closed); ctrl+o closes from anywhere.
  */
 
-import { Box, Text, useInput, useStdout } from "ink";
+import { Box, Text, useInput, useWindowSize } from "ink";
 import { useEffect, useMemo, useState } from "react";
 import { ListViewport } from "../../terminal-ui/picker/ListViewport";
 import { getVisibleWindow, moveListSelection } from "../../terminal-ui/picker/listNavigation";
@@ -46,17 +46,18 @@ export function ToolTranscriptOverlay() {
   const toolHistory = useOutputStore((s) => s.toolHistory);
   const runningTools = useOutputStore((s) => s.runningTools);
   const closeTranscript = useToolTranscriptViewStore((s) => s.closeTranscript);
-  const { stdout } = useStdout();
-  const rows = stdout?.rows ?? 24;
-  const columns = stdout?.columns ?? 80;
+  const { rows, columns } = useWindowSize();
 
   const toolEntries = useMemo(
     () => buildToolTranscriptEntries(toolHistory, runningTools),
     [runningTools, toolHistory],
   );
-  const listViewportRows = Math.max(4, rows - 3); // reserve 1 for header + 1 gap + 1 status
-  const detailViewportLines = Math.max(4, rows - 3);
-  const pageStep = Math.max(1, Math.floor(listViewportRows * PAGE_SCROLL_FRACTION));
+  // Header and footer each occupy one row; the body has a gap on BOTH sides.
+  // Drop those gaps in short terminals instead of forcing a minimum body height
+  // that pushes the footer off screen. List and detail share the same budget.
+  const gapRows = rows >= 6 ? 1 : 0;
+  const viewportRows = Math.max(0, rows - 2 - gapRows * 2);
+  const pageStep = Math.max(1, Math.floor(viewportRows * PAGE_SCROLL_FRACTION));
 
   const [mode, setMode] = useState<OverlayMode>("list");
   // Bind the initial row synchronously. Waiting for an effect leaves one render where
@@ -85,24 +86,23 @@ export function ToolTranscriptOverlay() {
     () => (selectedEntry ? buildToolTranscriptDetailLines(selectedEntry, columns) : []),
     [columns, selectedEntry],
   );
-  const detailMaxOffset = Math.max(0, detailLines.length - detailViewportLines);
+  const detailMaxOffset = Math.max(0, detailLines.length - viewportRows);
   const anchoredOffset =
     scrollAnchor === null ? -1 : detailLines.findIndex((line) => line.anchor === scrollAnchor);
-  const safeDetailOffset =
-    anchoredOffset >= 0 ? anchoredOffset : Math.min(scrollOffset, detailMaxOffset);
+  const safeDetailOffset = Math.min(
+    anchoredOffset >= 0 ? anchoredOffset : scrollOffset,
+    detailMaxOffset,
+  );
   const moveDetailTo = (offset: number) => {
     const nextOffset = Math.max(0, Math.min(offset, detailMaxOffset));
     setScrollOffset(nextOffset);
     setScrollAnchor(detailLines[nextOffset]?.anchor ?? null);
   };
-  const visibleDetailLines = detailLines.slice(
-    safeDetailOffset,
-    safeDetailOffset + detailViewportLines,
-  );
+  const visibleDetailLines = detailLines.slice(safeDetailOffset, safeDetailOffset + viewportRows);
   const listWindow = getVisibleWindow({
     selectedIndex,
     itemCount: toolEntries.length,
-    visibleRowCount: listViewportRows,
+    visibleRowCount: viewportRows,
   });
 
   useInput((input, key) => {
@@ -164,13 +164,11 @@ export function ToolTranscriptOverlay() {
       return;
     }
     if (key.pageUp || (key.shift && key.tab)) {
-      const detailPageStep = Math.max(1, Math.floor(detailViewportLines * PAGE_SCROLL_FRACTION));
-      moveDetailTo(safeDetailOffset - detailPageStep);
+      moveDetailTo(safeDetailOffset - pageStep);
       return;
     }
     if (key.pageDown) {
-      const detailPageStep = Math.max(1, Math.floor(detailViewportLines * PAGE_SCROLL_FRACTION));
-      moveDetailTo(safeDetailOffset + detailPageStep);
+      moveDetailTo(safeDetailOffset + pageStep);
       return;
     }
     if (key.home) {
@@ -183,65 +181,65 @@ export function ToolTranscriptOverlay() {
     }
   });
 
-  if (mode === "detail" && selectedEntry) {
-    return (
-      <Box flexDirection="column" height={rows} width={columns}>
-        <Box>
-          <Text bold color="cyan">
-            Tool Transcript{" "}
-          </Text>
-          <Text dimColor>(↑↓ pgup/pgdn home/end scroll · Esc back · ctrl+o close)</Text>
-        </Box>
-        <Box flexDirection="column" marginTop={1}>
-          {visibleDetailLines.map((line, i) => (
-            <TranscriptLine key={safeDetailOffset + i} line={line} />
-          ))}
-        </Box>
-        <Box marginTop={1}>
-          <Text dimColor>
-            Line {safeDetailOffset + 1}–{safeDetailOffset + visibleDetailLines.length} of{" "}
-            {detailLines.length}
-          </Text>
-        </Box>
-      </Box>
-    );
-  }
+  const showingDetail = mode === "detail" && selectedEntry !== undefined;
 
   return (
-    <Box flexDirection="column" height={rows} width={columns}>
-      <Box>
-        <Text bold color="cyan">
-          Tool Calls{" "}
-        </Text>
-        <Text dimColor>(↑↓ pgup/pgdn select · Enter open · Esc/ctrl+o close)</Text>
-      </Box>
-      <Box flexDirection="column" marginTop={1}>
-        <ListViewport
-          items={toolEntries}
-          selectedIndex={selectedIndex}
-          getKey={(entry) => entry.id}
-          visibleRows={listViewportRows}
-          empty={<Text dimColor>No tool calls in this session.</Text>}
-          renderItem={(entry, { selected }) => {
-            return (
-              <Text wrap="truncate-end" color={selected ? "cyan" : undefined} inverse={selected}>
-                {selected ? "▸ " : "  "}#{entry.ordinal}{" "}
-                {entry.status === "running" ? "…" : entry.ok ? "✓" : "✗"} {entry.toolName} ·{" "}
-                {entry.summary}
-              </Text>
-            );
-          }}
-        />
-      </Box>
-      <Box marginTop={1}>
-        <Text dimColor>
-          {toolEntries.length > 0
-            ? `${selectedIndex + 1} of ${toolEntries.length}${
-                listWindow.aboveCount > 0 ? ` · ${listWindow.aboveCount} newer above` : ""
-              }${listWindow.belowCount > 0 ? ` · ${listWindow.belowCount} older below` : ""}`
-            : ""}
+    <Box flexDirection="column" height={rows} width={columns} overflow="hidden">
+      <Box height={1} flexShrink={0}>
+        <Text wrap="truncate-end">
+          <Text bold color="cyan">
+            {showingDetail ? "Tool Transcript " : "Tool Calls "}
+          </Text>
+          <Text dimColor>
+            {showingDetail
+              ? "(↑↓ pgup/pgdn home/end scroll · Esc back · ctrl+o close)"
+              : "(↑↓ pgup/pgdn select · Enter open · Esc/ctrl+o close)"}
+          </Text>
         </Text>
       </Box>
+      {viewportRows > 0 ? (
+        <Box
+          flexDirection="column"
+          height={viewportRows}
+          marginY={gapRows}
+          flexShrink={0}
+          overflow="hidden"
+        >
+          {showingDetail ? (
+            visibleDetailLines.map((line, i) => (
+              <TranscriptLine key={safeDetailOffset + i} line={line} />
+            ))
+          ) : (
+            <ListViewport
+              items={toolEntries}
+              selectedIndex={selectedIndex}
+              getKey={(entry) => entry.id}
+              visibleRows={viewportRows}
+              empty={<Text dimColor>No tool calls in this session.</Text>}
+              renderItem={(entry, { selected }) => (
+                <Text wrap="truncate-end" color={selected ? "cyan" : undefined} inverse={selected}>
+                  {selected ? "▸ " : "  "}#{entry.ordinal}{" "}
+                  {entry.status === "running" ? "…" : entry.ok ? "✓" : "✗"} {entry.toolName} ·{" "}
+                  {entry.summary}
+                </Text>
+              )}
+            />
+          )}
+        </Box>
+      ) : null}
+      {rows > 1 ? (
+        <Box height={1} flexShrink={0}>
+          <Text dimColor wrap="truncate-end">
+            {showingDetail
+              ? `Line ${safeDetailOffset + 1}–${safeDetailOffset + visibleDetailLines.length} of ${detailLines.length}`
+              : toolEntries.length > 0
+                ? `${selectedIndex + 1} of ${toolEntries.length}${
+                    listWindow.aboveCount > 0 ? ` · ${listWindow.aboveCount} newer above` : ""
+                  }${listWindow.belowCount > 0 ? ` · ${listWindow.belowCount} older below` : ""}`
+                : ""}
+          </Text>
+        </Box>
+      ) : null}
     </Box>
   );
 }
