@@ -3,8 +3,8 @@
  */
 
 import type { DOMElement } from "ink";
-import { Box, measureElement, Text, useInput, useWindowSize } from "ink";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Box, measureElement, Text, useApp, useInput, useWindowSize } from "ink";
+import { useEffect, useInsertionEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { textPromptInput } from "../../shared/model/prompt/promptInput";
 import { composerProfileEnabled } from "../../shared/profile/selection";
 import { hasActiveInterruptibleTask } from "../../shared/task-interruption/taskStack";
@@ -125,13 +125,21 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
   const runningTools = useOutputStore((s) => s.runningTools);
   const phase = useOutputStore((s) => s.runtime.phase);
 
-  const transcriptOpen = useToolTranscriptViewStore((s) => s.transcriptOpen);
+  const transcriptRequested = useToolTranscriptViewStore((s) => s.transcriptOpen);
   const openTranscript = useToolTranscriptViewStore((s) => s.openTranscript);
   const view = useDecisionStore((state) => state.view);
   const decision = useDecisionStore((state) => state.decision);
+  const transcriptOpen = transcriptRequested && decision.type === "idle";
   const answerRequested = useAnswerTranscriptStore((state) => state.open);
   const answerOpen = answerRequested && !transcriptOpen && decision.type === "idle";
   const overlayOpen = transcriptOpen || answerOpen;
+  const { setAlternateScreen } = useApp();
+  // Switch before Ink's resetAfterCommit paints the new tree. A layout/effect switch
+  // would first paint the reader into primary scrollback (or the prompt into alt).
+  // Ink owns restoration on unmount, including errors and external-process suspension.
+  useInsertionEffect(() => {
+    setAlternateScreen(overlayOpen);
+  }, [overlayOpen, setAlternateScreen]);
   const submitChoice = useDecisionStore((state) => state.submitChoice);
   const cancelChoice = useDecisionStore((state) => state.cancelChoice);
   const submitManager = useDecisionStore((state) => state.submitManager);
@@ -200,14 +208,12 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
     if (input === "t") useAnswerTranscriptStore.getState().openTranscript();
   });
 
-  // Keep <Static> mounted across transcript open/close. Ink's <Static> tracks in instance
-  // state how many items it has already flushed to scrollback; returning only the overlay
-  // unmounts it, and the fresh instance created on close re-emits every history item — which
-  // is appended to fullStaticOutput again and printed a second time. Rendering the overlay as
-  // a sibling keeps the same <Static> instance mounted, so nothing gets re-flushed.
+  // Keep Static and the composer mounted across buffer switches. StaticHistory pauses
+  // primary-screen commits while a reader owns the alternate screen, then flushes only
+  // the new suffix on return. Agent execution and transcript archives keep updating.
   return (
     <>
-      <StaticHistory turns={staticTurns} columns={columns} />
+      <StaticHistory turns={staticTurns} columns={columns} paused={overlayOpen} />
 
       {transcriptOpen ? <ToolTranscriptOverlay /> : null}
       {answerOpen ? <AnswerTranscriptOverlay copyText={copyTextToClipboard} /> : null}

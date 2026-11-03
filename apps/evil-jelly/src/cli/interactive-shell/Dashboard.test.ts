@@ -2,6 +2,7 @@ import { PassThrough } from "node:stream";
 import type { ModelAdapter, StreamEvent } from "@rejelly/core";
 import { render } from "ink";
 import { createElement } from "react";
+import stringWidth from "string-width";
 import stripAnsi from "strip-ansi";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as userInputRepository from "../../domains/session/repository/userInputRepository";
@@ -58,6 +59,7 @@ let instance: ReturnType<typeof render> | undefined;
 let stdin: Input;
 let stdout: PassThrough & { columns: number; rows: number; isTTY: boolean };
 let output = "";
+let rawOutput = "";
 // Ink debug writes the complete Static backlog + dynamic frame on each render. A withdrawn
 // input accidentally flushed to <Static> remains here even if the store later filters it out.
 let lastFrame = "";
@@ -71,10 +73,12 @@ beforeEach(() => {
   useDecisionStore.setState({ decision: { type: "idle" }, view: { type: "none" } });
   mounts.history = 0;
   output = "";
+  rawOutput = "";
   lastFrame = "";
   stdin = new Input();
   stdout = Object.assign(new PassThrough(), { columns: 100, rows: 24, isTTY: true });
   stdout.on("data", (chunk) => {
+    rawOutput += String(chunk);
     lastFrame = stripAnsi(String(chunk));
     output += lastFrame;
   });
@@ -92,14 +96,19 @@ afterEach(() => {
   resetSubmissionDispatch();
 });
 
-function mountDashboard(): void {
+function mountDashboard(
+  interactive = false,
+  options: { interactive?: boolean; isScreenReaderEnabled?: boolean } = {},
+): void {
   instance = render(createElement(Dashboard, { onCtrlCAbort: vi.fn() }), {
     stdin: stdin as unknown as NodeJS.ReadStream,
     stdout: stdout as unknown as NodeJS.WriteStream,
     stderr: new PassThrough() as unknown as NodeJS.WriteStream,
-    debug: true,
+    debug: !interactive,
+    interactive: true,
     exitOnCtrlC: false,
     patchConsole: false,
+    ...options,
   });
 }
 
@@ -602,6 +611,71 @@ it("stretches the fresh composer divider to terminal width across resize and rea
   expect(mounts.history).toBe(1);
 });
 
+it("keeps tool list and detail chrome inside the viewport across width and height changes", async () => {
+  useOutputStore.setState({
+    toolHistory: Array.from({ length: 40 }, (_, index) => ({
+      id: `tool-${index + 1}`,
+      type: "tool" as const,
+      content: "Read a long tool result",
+      tool: {
+        ordinal: index + 1,
+        toolName: "read_file",
+        summary: "Inspect a long tool result with 中文 and a very long path".repeat(3),
+        preview: "Output row 0",
+        fullResult: Array.from({ length: 60 }, (_, row) => `Output row ${row}`).join("\n"),
+        ok: true,
+      },
+    })),
+  });
+  const sizes = [
+    [100, 24],
+    [48, 12],
+    [24, 6],
+    [32, 4],
+    [100, 24],
+  ] as const;
+  const expectFrame = (title: string, footer: string) => {
+    const lines = lastFrame.trimEnd().split("\n");
+    expect(lines).toHaveLength(stdout.rows);
+    expect(lines[0]).toContain(title);
+    expect(lines.at(-1)).toContain(footer);
+    expect(lines.every((line) => stringWidth(line) <= stdout.columns)).toBe(true);
+  };
+
+  mountDashboard();
+  await vi.waitFor(() => expect(lastFrame).toContain("Message"));
+  stdin.write("\u000f"); // Ctrl+O
+  await vi.waitFor(() => expect(lastFrame).toContain("Tool Calls"));
+  stdin.write("\u001b[F"); // End: keep the oldest selected tool visible during resize.
+  await vi.waitFor(() => expect(lastFrame).toContain("40 of 40"));
+  for (const [columns, rows] of sizes) {
+    Object.assign(stdout, { columns, rows });
+    stdout.emit("resize");
+    await vi.waitFor(() => {
+      expectFrame("Tool Calls", "40 of 40");
+      expect(lastFrame).toContain("#1");
+    });
+  }
+
+  stdin.write("\r"); // Detail uses the same height budget as the list.
+  await vi.waitFor(() => expect(lastFrame).toContain("Tool Transcript"));
+  for (const [columns, rows] of sizes) {
+    Object.assign(stdout, { columns, rows });
+    stdout.emit("resize");
+    await vi.waitFor(() => expectFrame("Tool Transcript", "Line "));
+    stdin.write("\u001b[F");
+    await vi.waitFor(() => {
+      expectFrame("Tool Transcript", "Line ");
+      expect(lastFrame).toContain("Output row 59");
+    });
+  }
+  stdin.write("\u001b"); // Back to the same selected list entry.
+  await vi.waitFor(() => expectFrame("Tool Calls", "40 of 40"));
+  stdin.write("\u001b");
+  await vi.waitFor(() => expect(lastFrame).toContain("Message"));
+  expect(mounts.history).toBe(1);
+});
+
 it("keeps the draft, attachments, and Static instance while reader keys own input", async () => {
   const submit = vi.fn();
   useComposerSession.getState().setBackgroundLineHandler(submit);
@@ -638,4 +712,174 @@ it("keeps the draft, attachments, and Static instance while reader keys own inpu
   });
   await vi.waitFor(() => expect(useAnswerTranscriptStore.getState().open).toBe(false));
   await vi.waitFor(() => expect(output).toContain("Approve write?"));
+});
+
+const enterAlternateScreen = "\u001b[?1049h";
+const exitAlternateScreen = "\u001b[?1049l";
+const repaintAlternateScreen = "\u001b[1;1H\u001b[J";
+
+it.each([
+  ["tools", "\u000f", "Tool Calls"],
+  ["answers", "\u0014", "Transcript"],
+])("isolates the %s reader from primary history while output continues and the terminal resizes", async (_name, shortcut, title) => {
+  const store = useOutputStore.getState();
+  store.logAssistant("Primary history sentinel");
+  useComposerSession.getState().seedDraft(textPromptInput("Preserved draft sentinel"));
+  mountDashboard(true);
+  await instance!.waitUntilRenderFlush();
+  await vi.waitFor(() => expect(output).toContain("Preserved draft sentinel"));
+  expect(rawOutput).not.toContain(enterAlternateScreen);
+
+  stdin.write(shortcut);
+  await vi.waitFor(() => {
+    expect(rawOutput).toContain(enterAlternateScreen);
+    expect(rawOutput.slice(rawOutput.indexOf(enterAlternateScreen))).toContain(title);
+  });
+  const readerStart = rawOutput.indexOf(enterAlternateScreen);
+  expect(rawOutput.slice(0, readerStart)).not.toContain(title);
+  expect(rawOutput.slice(readerStart)).not.toContain("Primary history sentinel");
+
+  store.logSystem("Deferred notice sentinel");
+  store.appendStream("Deferred stable paragraph sentinel.\n\nLive tail sentinel");
+  store.logAssistant(
+    "Deferred stable paragraph sentinel.\n\nLive tail sentinel\nDeferred final answer sentinel",
+  );
+  await instance!.waitUntilRenderFlush();
+  expect(
+    useOutputStore
+      .getState()
+      .history.some((turn) => turn.type === "assistant" && turn.content.includes("Deferred final")),
+  ).toBe(true);
+  expect(rawOutput.slice(readerStart)).not.toContain("Deferred notice sentinel");
+  expect(rawOutput.slice(readerStart)).not.toContain("Deferred stable paragraph sentinel");
+  expect(rawOutput.slice(readerStart)).not.toContain("Deferred final answer sentinel");
+
+  for (const [columns, rows] of [
+    [48, 12],
+    [100, 24],
+    [100, 8],
+    [100, 24],
+  ]) {
+    const beforeResize = rawOutput.length;
+    Object.assign(stdout, { columns, rows });
+    stdout.emit("resize");
+    await instance!.waitUntilRenderFlush();
+    expect(rawOutput.slice(beforeResize)).toContain(repaintAlternateScreen);
+    expect(rawOutput.slice(beforeResize)).toContain(title);
+    expect(rawOutput.slice(readerStart)).not.toContain(exitAlternateScreen);
+  }
+  stdin.write("x"); // Reader input must not alter the mounted composer.
+  await instance!.waitUntilRenderFlush();
+  stdin.write(shortcut);
+  await vi.waitFor(() => {
+    expect(rawOutput).toContain(exitAlternateScreen);
+    expect(rawOutput.slice(rawOutput.indexOf(exitAlternateScreen))).toContain(
+      "Deferred final answer sentinel",
+    );
+    expect(output).toContain("Preserved draft sentinel");
+  });
+  await instance!.waitUntilRenderFlush();
+  const readerEnd = rawOutput.indexOf(exitAlternateScreen);
+  const primaryAfter = stripAnsi(rawOutput.slice(readerEnd));
+  expect(primaryAfter).toContain("Deferred notice sentinel");
+  expect(primaryAfter).toContain("Deferred stable paragraph sentinel");
+  expect(primaryAfter).toContain("Preserved draft sentinel");
+  expect(primaryAfter).not.toContain("Preserved draft sentinelx");
+  for (const text of [
+    "Primary history sentinel",
+    "Deferred notice sentinel",
+    "Deferred stable paragraph sentinel",
+    "Deferred final answer sentinel",
+  ]) {
+    expect(stripAnsi(rawOutput).split(text)).toHaveLength(2);
+  }
+  expect(rawOutput.split(enterAlternateScreen)).toHaveLength(2);
+  expect(rawOutput.split(exitAlternateScreen)).toHaveLength(2);
+  expect(rawOutput).not.toContain("\u001b[3J");
+  expect(mounts.history).toBe(1);
+});
+
+it.each([
+  "\u000f",
+  "\u0014",
+])("restores the primary screen before an approval preempts reader %s", async (shortcut) => {
+  mountDashboard(true);
+  await instance!.waitUntilRenderFlush();
+  stdin.write(shortcut);
+  await vi.waitFor(() => expect(rawOutput).toContain(enterAlternateScreen));
+  useOutputStore.getState().logSystem("Notice before approval sentinel");
+  useDecisionStore.setState({
+    decision: { type: "confirm", message: "Approve write sentinel?", defaultYes: false },
+  });
+  await vi.waitFor(() => {
+    expect(rawOutput).toContain(exitAlternateScreen);
+    expect(rawOutput.slice(rawOutput.indexOf(exitAlternateScreen))).toContain(
+      "Approve write sentinel?",
+    );
+  });
+  expect(rawOutput.slice(0, rawOutput.indexOf(exitAlternateScreen))).not.toContain(
+    "Approve write sentinel?",
+  );
+  expect(rawOutput.slice(rawOutput.indexOf(exitAlternateScreen))).toContain(
+    "Notice before approval sentinel",
+  );
+  expect(rawOutput.split(exitAlternateScreen)).toHaveLength(2);
+  expect(mounts.history).toBe(1);
+});
+
+it.each([
+  "unmount",
+  "render error",
+])("restores the primary buffer exactly once on %s with a reader open", async (reason) => {
+  useOutputStore.getState().logAssistant("History before unmount sentinel");
+  mountDashboard(true);
+  await instance!.waitUntilRenderFlush();
+  stdin.write("\u000f");
+  await vi.waitFor(() => expect(rawOutput).toContain(enterAlternateScreen));
+  await instance!.waitUntilRenderFlush();
+  if (reason === "unmount") {
+    instance!.unmount();
+    await instance!.waitUntilExit();
+  } else {
+    const error = new Error("Broken reader sentinel");
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      instance!.rerender(
+        createElement(() => {
+          throw error;
+        }),
+      );
+      await expect(instance!.waitUntilExit()).rejects.toThrow("Broken reader sentinel");
+    } finally {
+      consoleError.mockRestore();
+    }
+  }
+  instance = undefined;
+  expect(rawOutput.split(exitAlternateScreen)).toHaveLength(2);
+  expect(stripAnsi(rawOutput).split("History before unmount sentinel")).toHaveLength(2);
+  expect(rawOutput.slice(rawOutput.indexOf(exitAlternateScreen))).not.toContain("Tool Calls");
+  expect(rawOutput.slice(rawOutput.indexOf(exitAlternateScreen))).toContain("\u001b[?25h");
+});
+
+it.each([
+  { name: "screen reader", options: { isScreenReaderEnabled: true }, tty: true },
+  { name: "non-interactive", options: { interactive: false }, tty: true },
+  { name: "non-TTY", options: {}, tty: false },
+])("keeps $name output on the primary buffer without losing deferred history", async ({
+  options,
+  tty,
+}) => {
+  stdout.isTTY = tty;
+  mountDashboard(true, options);
+  await instance!.waitUntilRenderFlush();
+  useAnswerTranscriptStore.getState().openTranscript();
+  await instance!.waitUntilRenderFlush();
+  useOutputStore.getState().logSystem("Fallback deferred history sentinel");
+  await instance!.waitUntilRenderFlush();
+  expect(rawOutput).not.toContain("Fallback deferred history sentinel");
+  useAnswerTranscriptStore.getState().closeTranscript();
+  await instance!.waitUntilRenderFlush();
+  expect(stripAnsi(rawOutput).split("Fallback deferred history sentinel")).toHaveLength(2);
+  expect(rawOutput).not.toContain(enterAlternateScreen);
+  expect(rawOutput).not.toContain(exitAlternateScreen);
 });
