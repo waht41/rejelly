@@ -82,6 +82,23 @@ describe("stream window measurement", () => {
     expect(measureStreamRows(list, columns)).toBe(renderedRows(list, columns));
   });
 
+  it("fits CJK emphasis by rendered width instead of clipping its source markers", () => {
+    const text = "**连接结束。**日志";
+    const columns = 14;
+    const output = stripAnsi(
+      renderToString(createElement(MarkdownViewer, { text, columns }), { columns }),
+    );
+
+    expect(output).toBe("连接结束。日志");
+    expect(measureStreamRows(text, columns)).toBe(1);
+    expect(createStreamTailWindow({ text, columns, maxRows: 1 })).toEqual({
+      text,
+      clipped: false,
+      forceRaw: false,
+      measuredRows: 1,
+    });
+  });
+
   it("keeps a markdown stream inside the requested row budget", () => {
     const text = [
       "# heading",

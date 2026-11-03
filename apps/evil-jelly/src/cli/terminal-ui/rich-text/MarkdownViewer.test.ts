@@ -7,6 +7,7 @@ import {
   markdownHeadingStyle,
   markdownTableLayout,
   markdownTableRowHeight,
+  StreamMarkdownViewer,
   splitStreamingMarkdown,
   terminalCellWidth,
 } from "./MarkdownViewer";
@@ -301,6 +302,89 @@ describe("MarkdownViewer lists", () => {
 });
 
 describe("inline emphasis from the block AST", () => {
+  it("renders CJK punctuation boundaries in both live and completed messages", () => {
+    const statement = "探针发起TCP连接后，5秒内没有得到“建连完成”的结果，于是本机截止计时结束。";
+    const text = `目前能确认的是：**${statement}**日志中的 \`i/o timeout\` 本身没有说明哪台设备出了问题。`;
+
+    expect(parseMarkdownBlocks(text)).toMatchObject([
+      {
+        type: "paragraph",
+        nodes: [
+          { type: "text", value: "目前能确认的是：" },
+          { type: "strong", children: [{ type: "text", value: statement }] },
+          { type: "text", value: "日志中的 " },
+          { type: "inlineCode", value: "i/o timeout" },
+          { type: "text", value: " 本身没有说明哪台设备出了问题。" },
+        ],
+      },
+    ]);
+    for (const viewer of [MarkdownViewer, StreamMarkdownViewer]) {
+      const output = renderToString(createElement(viewer, { text, columns: 240 }), {
+        columns: 240,
+      });
+      expect(stripAnsi(output)).toBe(
+        `目前能确认的是：${statement}日志中的 i/o timeout 本身没有说明哪台设备出了问题。`,
+      );
+    }
+  });
+
+  it("preserves nested CJK emphasis through headings, lists, quotes, and table cells", () => {
+    const inline = "前文**“粗体 *斜体*”**后文";
+    const text = [
+      `# ${inline}`,
+      "",
+      `- ${inline}`,
+      "",
+      `> ${inline}`,
+      "",
+      "| 内容 |",
+      "| --- |",
+      `| ${inline} |`,
+    ].join("\n");
+    const output = stripAnsi(
+      renderToString(createElement(MarkdownViewer, { text, columns: 80 }), { columns: 80 }),
+    );
+
+    expect(output.match(/前文“粗体 斜体”后文/g)).toHaveLength(4);
+    expect(output).not.toContain("*");
+  });
+
+  it("leaves code, escaped markers, and non-CJK delimiter rules intact", () => {
+    const text = [
+      "`**结束。**正文` 与 \\*\\*结束。\\*\\*正文",
+      "",
+      "```text",
+      "**结束。**正文",
+      "```",
+      "",
+      "foo_bar_baz and **done.**next and **outer *inner*** and ~~removed~~",
+    ].join("\n");
+
+    expect(parseMarkdownBlocks(text)).toMatchObject([
+      {
+        type: "paragraph",
+        nodes: [
+          { type: "inlineCode", value: "**结束。**正文" },
+          { type: "text", value: " 与 **结束。**正文" },
+        ],
+      },
+      { type: "code", language: "text", lines: ["**结束。**正文"] },
+      {
+        type: "paragraph",
+        text: "foo_bar_baz and **done.**next and outer inner and removed",
+        nodes: [
+          { type: "text", value: "foo_bar_baz and **done.**next and " },
+          {
+            type: "strong",
+            children: [{ type: "text", value: "outer " }, { type: "emphasis" }],
+          },
+          { type: "text", value: " and " },
+          { type: "delete", children: [{ type: "text", value: "removed" }] },
+        ],
+      },
+    ]);
+  });
+
   it("renders leading emphasis without reparsing block text", () => {
     const output = renderToString(
       createElement(MarkdownViewer, {
