@@ -1,9 +1,11 @@
+import remarkCjkFriendly from "remark-cjk-friendly/parseOnly";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import { normalizeNewlines } from "../../../shared/foundation/string";
 
-const markdownProcessor = unified().use(remarkParse).use(remarkGfm);
+// Relax CJK emphasis boundaries only during display parsing; keep message source unchanged.
+const markdownProcessor = unified().use(remarkParse).use(remarkGfm).use(remarkCjkFriendly);
 
 type MarkdownRoot = ReturnType<typeof markdownProcessor.parse>;
 type RootContent = MarkdownRoot["children"][number];

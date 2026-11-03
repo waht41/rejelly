@@ -44,6 +44,7 @@
     "micromatch": "^4.0.8",
     "picomatch": "^4.0.4",
     "react": "catalog:",
+    "remark-cjk-friendly": "^2.3.3",
     "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",
     "string-width": "^8.2.0",
