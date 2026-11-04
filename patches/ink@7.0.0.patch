@@ -1,9 +1,20 @@
 diff --git a/build/components/App.d.ts b/build/components/App.d.ts
-index d065fb4dd31070e06363f009a125fa650b63ccfb..d0faf64d2c82af5653e4a82a7ae56e201c5dbd9e 100644
+index d065fb4dd31070e06363f009a125fa650b63ccfb..bb989cad6fead2f2523ca7cb6b3ffa885c014d74 100644
 --- a/build/components/App.d.ts
 +++ b/build/components/App.d.ts
-@@ -13,8 +13,9 @@ type Props = {
-     readonly setCursorPosition: (position: CursorPosition | undefined) => void;
+@@ -1,5 +1,5 @@
+ import React, { type ReactNode } from 'react';
+-import { type CursorPosition } from '../log-update.js';
++import { type CursorPositionSource } from './CursorContext.js';
+ type Props = {
+     readonly children: ReactNode;
+     readonly stdin: NodeJS.ReadStream;
+@@ -10,11 +10,12 @@ type Props = {
+     readonly exitOnCtrlC: boolean;
+     readonly onExit: (errorOrResult?: unknown) => void;
+     readonly onWaitUntilRenderFlush: () => Promise<void>;
+-    readonly setCursorPosition: (position: CursorPosition | undefined) => void;
++    readonly setCursorPosition: (position: CursorPositionSource) => void;
      readonly interactive: boolean;
      readonly renderThrottleMs: number;
 +    readonly setAlternateScreen: (enabled: boolean) => void;
@@ -68,6 +79,26 @@ index 36dea4031c84bc95613629b8d70d685809c179e3..e1bcd1f0475af80edd4862f85c5531b6
  });
  AppContext.displayName = 'InternalAppContext';
  export default AppContext;
+diff --git a/build/components/CursorContext.d.ts b/build/components/CursorContext.d.ts
+index 80d4ab985d372ea3c28bf5a6ddac323b28d49a36..6d580d8898b7b2b783d919d14f423e2fd8e7e1a3 100644
+--- a/build/components/CursorContext.d.ts
++++ b/build/components/CursorContext.d.ts
+@@ -1,11 +1,12 @@
+ import { type CursorPosition } from '../log-update.js';
++/** A resolver is evaluated after the current Yoga layout, before frame output. */
++export type CursorPositionSource = CursorPosition | undefined | (() => CursorPosition | undefined);
+ export type Props = {
+     /**
+     Set the cursor position relative to the Ink output.
+-
+-    Pass `undefined` to hide the cursor.
++    Pass `undefined` to hide the cursor, or a resolver to read the completed layout.
+     */
+-    readonly setCursorPosition: (position: CursorPosition | undefined) => void;
++    readonly setCursorPosition: (position: CursorPositionSource) => void;
+ };
+ declare const CursorContext: import("react").Context<Props>;
+ export default CursorContext;
 diff --git a/build/hooks/use-app.d.ts b/build/hooks/use-app.d.ts
 index c71a0045c408ee8f5d51e77cdd6d57832bf6e0ee..fba757fb04280837c42a6b67f1e46add01184a59 100644
 --- a/build/hooks/use-app.d.ts
@@ -80,11 +111,64 @@ index c71a0045c408ee8f5d51e77cdd6d57832bf6e0ee..fba757fb04280837c42a6b67f1e46add
 +    setAlternateScreen(enabled: boolean): void;
  };
  export default useApp;
+diff --git a/build/hooks/use-cursor.d.ts b/build/hooks/use-cursor.d.ts
+index c97f99e10d3b40088647415089fe4d3fb373e22b..277a61e86a795f465ab656ae5833e47d77e0f13e 100644
+--- a/build/hooks/use-cursor.d.ts
++++ b/build/hooks/use-cursor.d.ts
+@@ -1,12 +1,11 @@
+-import { type CursorPosition } from '../log-update.js';
++import { type CursorPositionSource } from '../components/CursorContext.js';
+ /**
+-A React hook that returns methods to control the terminal cursor position.
+-
+-Setting a cursor position makes the cursor visible at the specified coordinates (relative to the Ink output origin). This is useful for IME (Input Method Editor) support, where the composing character is displayed at the cursor location.
+-
+-Pass `undefined` to hide the cursor.
++Control the terminal cursor relative to the Ink output origin, including for IME.
++Pass a position, `undefined` to hide it, or a resolver that reads the current Yoga
++layout immediately before the frame is painted.
+ */
+ declare const useCursor: () => {
+-    setCursorPosition: (position: CursorPosition | undefined) => void;
++    /** A function reads the current layout at paint time instead of caching old coordinates. */
++    setCursorPosition: (position: CursorPositionSource) => void;
+ };
+ export default useCursor;
 diff --git a/build/ink.d.ts b/build/ink.d.ts
-index dd13ec7bdd2799f4bd32165dc8427073dd15b574..6bdd6125d68be2eb1df69bd301a17b37213143c7 100644
+index dd13ec7bdd2799f4bd32165dc8427073dd15b574..2a07ccc6346eb04244ecd6fdfd97c7f5cda0d03d 100644
 --- a/build/ink.d.ts
 +++ b/build/ink.d.ts
-@@ -120,7 +120,8 @@ export default class Ink {
+@@ -1,5 +1,5 @@
+ import { type ReactNode } from 'react';
+-import { type CursorPosition } from './log-update.js';
++import { type CursorPositionSource } from './components/CursorContext.js';
+ import { type KittyKeyboardOptions } from './kitty-keyboard.js';
+ /**
+ Performance metrics for a render operation.
+@@ -78,11 +78,13 @@ export default class Ink {
+     private readonly options;
+     private readonly log;
+     private cursorPosition;
++    private cursorPositionSource;
+     private readonly throttledLog;
+     private readonly isScreenReaderEnabled;
+     private readonly interactive;
+     private readonly renderThrottleMs;
+     private alternateScreen;
++    private alternateScreenRequested;
+     private isUnmounted;
+     private isUnmounting;
+     private lastOutput;
+@@ -108,7 +110,7 @@ export default class Ink {
+     rejectExitPromise: (reason?: Error) => void;
+     unsubscribeExit: () => void;
+     handleAppExit: (errorOrResult?: unknown) => void;
+-    setCursorPosition: (position: CursorPosition | undefined) => void;
++    setCursorPosition: (position: CursorPositionSource) => void;
+     restoreLastOutput: () => void;
+     calculateLayout: () => void;
+     onRender: () => void;
+@@ -120,7 +122,8 @@ export default class Ink {
      waitUntilRenderFlush(): Promise<void>;
      clear(): void;
      patchConsole(): void;
@@ -95,10 +179,24 @@ index dd13ec7bdd2799f4bd32165dc8427073dd15b574..6bdd6125d68be2eb1df69bd301a17b37
      private resolveAlternateScreenOption;
      private shouldSync;
 diff --git a/build/ink.js b/build/ink.js
-index 98ba6eff90db503fbd82fca6a19ef8d82d07ed8e..820c22057620a7a44381f1560331a77b7eff32c7 100644
+index 98ba6eff90db503fbd82fca6a19ef8d82d07ed8e..f18acd68b9210475c3c8af89a0e9d805489114df 100644
 --- a/build/ink.js
 +++ b/build/ink.js
-@@ -260,9 +260,19 @@ export default class Ink {
+@@ -133,11 +133,13 @@ export default class Ink {
+     options;
+     log;
+     cursorPosition;
++    cursorPositionSource;
+     throttledLog;
+     isScreenReaderEnabled;
+     interactive;
+     renderThrottleMs;
+     alternateScreen;
++    alternateScreenRequested = false;
+     // Ignore last render after unmounting a tree to prevent empty output before exit
+     isUnmounted;
+     isUnmounting;
+@@ -260,9 +262,19 @@ export default class Ink {
      }
      resized = () => {
          const currentWidth = getWindowSize(this.options.stdout).columns;
@@ -121,7 +219,7 @@ index 98ba6eff90db503fbd82fca6a19ef8d82d07ed8e..820c22057620a7a44381f1560331a77b
              this.lastOutput = '';
              this.lastOutputToRender = '';
          }
-@@ -270,6 +280,37 @@ export default class Ink {
+@@ -270,6 +282,37 @@ export default class Ink {
          this.onRender();
          this.lastTerminalWidth = currentWidth;
      };
@@ -159,7 +257,53 @@ index 98ba6eff90db503fbd82fca6a19ef8d82d07ed8e..820c22057620a7a44381f1560331a77b
      resolveExitPromise = () => { };
      rejectExitPromise = () => { };
      unsubscribeExit = () => { };
-@@ -386,7 +427,7 @@ export default class Ink {
+@@ -285,8 +328,11 @@ export default class Ink {
+         this.unmount();
+     };
+     setCursorPosition = (position) => {
+-        this.cursorPosition = position;
+-        this.log.setCursorPosition(position);
++        this.cursorPositionSource = position;
++        if (typeof position !== 'function') {
++            this.cursorPosition = position;
++            this.log.setCursorPosition(position);
++        }
+     };
+     restoreLastOutput = () => {
+         if (!this.interactive) {
+@@ -312,7 +358,30 @@ export default class Ink {
+             this.nextRenderCommit = undefined;
+         }
+         const startTime = performance.now();
+-        const { output, outputHeight, staticOutput } = render(this.rootNode, this.isScreenReaderEnabled);
++        let { output, outputHeight, staticOutput } = render(this.rootNode, this.isScreenReaderEnabled);
++        // [evil-jelly patch] Resolve against this frame's completed Yoga layout.
++        // React layout effects run after resetAfterCommit may already have painted.
++        let cursor = typeof this.cursorPositionSource === 'function'
++            ? this.cursorPositionSource()
++            : this.cursorPositionSource;
++        // [evil-jelly patch] A raw resize can paint before React's window-size
++        // subscription updates its Box constraints. Never emit an overflowing
++        // primary transient frame, even for that intermediate layout. Static
++        // history is separate and must not be cropped or replayed here.
++        if (this.interactive && this.options.stdout.isTTY && !this.alternateScreenRequested
++            && !this.isScreenReaderEnabled) {
++            const maxRows = Math.max(1, getWindowSize(this.options.stdout).rows - 1);
++            if (outputHeight > maxRows) {
++                const start = Math.max(0, Math.min(outputHeight - maxRows, cursor?.y ?? outputHeight));
++                output = output.split('\n').slice(start, start + maxRows).join('\n');
++                outputHeight = maxRows;
++                cursor = cursor ? { ...cursor, y: cursor.y - start } : undefined;
++            }
++        }
++        const columns = this.rootNode.yogaNode.getComputedWidth();
++        this.cursorPosition = cursor && cursor.x >= 0 && cursor.x < columns
++            && cursor.y >= 0 && cursor.y < outputHeight ? { ...cursor } : undefined;
++        this.log.setCursorPosition(this.cursorPosition);
+         this.options.onRender?.({ renderTime: performance.now() - startTime });
+         // If <Static> output isn't empty, it means new children have been added to it
+         const hasStaticOutput = staticOutput && staticOutput !== '\n';
+@@ -386,7 +455,7 @@ export default class Ink {
      };
      render(node) {
          const tree = (React.createElement(AccessibilityContext.Provider, { value: { isScreenReaderEnabled: this.isScreenReaderEnabled } },
@@ -168,7 +312,7 @@ index 98ba6eff90db503fbd82fca6a19ef8d82d07ed8e..820c22057620a7a44381f1560331a77b
          if (this.options.concurrent) {
              // Concurrent mode: use updateContainer (async scheduling)
              reconciler.updateContainer(tree, this.container, null, noop);
-@@ -615,6 +656,14 @@ export default class Ink {
+@@ -615,6 +684,14 @@ export default class Ink {
              // Sync lastOutput so that unmount's final onRender
              // sees it as unchanged and log-update skips it
              this.log.sync(this.lastOutputToRender || this.lastOutput + '\n');
@@ -183,7 +327,7 @@ index 98ba6eff90db503fbd82fca6a19ef8d82d07ed8e..820c22057620a7a44381f1560331a77b
          }
      }
      patchConsole() {
-@@ -633,12 +682,37 @@ export default class Ink {
+@@ -633,12 +710,38 @@ export default class Ink {
              }
          });
      }
@@ -194,6 +338,7 @@ index 98ba6eff90db503fbd82fca6a19ef8d82d07ed8e..820c22057620a7a44381f1560331a77b
 -        if (this.alternateScreen) {
 -            this.writeBestEffort(this.options.stdout, ansiEscapes.enterAlternativeScreen);
 -            this.writeBestEffort(this.options.stdout, hideCursorEscape);
++        this.alternateScreenRequested = enabled;
 +        const next = this.resolveAlternateScreenOption(enabled, this.interactive)
 +            && !this.options.debug && !this.isScreenReaderEnabled;
 +        if (next === this.alternateScreen || this.isUnmounted || this.isUnmounting) {
@@ -225,7 +370,7 @@ index 98ba6eff90db503fbd82fca6a19ef8d82d07ed8e..820c22057620a7a44381f1560331a77b
      }
      resolveInteractiveOption(interactive) {
          return interactive ?? (!isInCi && Boolean(this.options.stdout.isTTY));
-@@ -684,6 +758,28 @@ export default class Ink {
+@@ -684,6 +787,28 @@ export default class Ink {
      }
      renderInteractiveFrame(output, outputHeight, staticOutput) {
          const hasStaticOutput = staticOutput !== '';
@@ -254,7 +399,7 @@ index 98ba6eff90db503fbd82fca6a19ef8d82d07ed8e..820c22057620a7a44381f1560331a77b
          const isTty = this.options.stdout.isTTY;
          // Detect fullscreen: output fills or exceeds terminal height.
          // Only apply when writing to a real TTY — piped output always gets trailing newlines.
-@@ -702,11 +798,36 @@ export default class Ink {
+@@ -702,11 +827,36 @@ export default class Ink {
              if (sync) {
                  this.options.stdout.write(bsu);
              }

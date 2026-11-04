@@ -6,30 +6,22 @@ import { recordComposerCommit } from "../composerProfiler";
 import type { CaretAffinity, WrappedRow } from "./softWrap";
 import { caretCell, wrapRows } from "./softWrap";
 
-interface TextArea {
-  x: number;
-  y: number;
-  width: number;
-}
-
 export interface PromptLayout {
-  /** Stable label+text row measured after Ink completes Yoga layout. */
   rowRef: React.RefObject<DOMElement | null>;
-  /** One shared wrap used by rendering, caret placement, and vertical movement. */
+  /** Complete wrap shared with editing/navigation; the viewport never changes the draft. */
   rows: WrappedRow[];
+  visibleRows: WrappedRow[];
 }
 
 function absoluteOrigin(node: DOMElement): { x: number; y: number } {
   let x = 0;
   let y = 0;
   let current: DOMElement | undefined = node;
-
   while (current) {
     x += current.yogaNode?.getComputedLeft() ?? 0;
     y += current.yogaNode?.getComputedTop() ?? 0;
     current = current.parentNode;
   }
-
   return { x, y };
 }
 
@@ -39,48 +31,65 @@ export function usePromptLayout({
   caretAffinity,
   active = true,
   label,
+  columns,
+  maxRows,
 }: {
   text: string;
   cursor: number;
   caretAffinity: CaretAffinity;
   active?: boolean;
   label: string;
+  columns: number;
+  maxRows: number;
 }): PromptLayout {
   const { setCursorPosition } = useCursor();
   const rowRef = useRef<DOMElement>(null);
-  const [textArea, setTextArea] = useState<TextArea | null>(null);
+  const [, setMounted] = useState(false);
   const labelWidth = stringWidth(`${label || "❯"} `);
-  const rows = wrapRows(text, textArea?.width ?? 0);
+  const rows = wrapRows(text, Math.max(1, columns - labelWidth));
   const caret = caretCell(rows, cursor, caretAffinity);
+  const visibleStart = Math.max(0, caret.row - Math.max(1, maxRows) + 1);
+  const visibleRows = rows.slice(visibleStart, visibleStart + Math.max(1, maxRows));
 
-  setCursorPosition(
-    active && textArea
-      ? { x: textArea.x + caret.col, y: textArea.y + caret.row }
-      : // The first frame has not been measured, so there is no honest caret position yet.
-        undefined,
-  );
-
-  // Ink completes Yoga layout before layout effects. Measure after every commit
-  // because attachments and status rows above the editor can move its absolute
-  // origin without changing any of this hook's direct inputs.
-  useLayoutEffect(() => {
+  // Ink resolves this after the CURRENT Yoga layout, immediately before painting.
+  // Caching an absolute origin in React state paints one frame with the previous
+  // layout's caret whenever tool/context/stream rows above the editor change.
+  setCursorPosition(() => {
     const row = rowRef.current;
-    if (!row) {
-      return;
-    }
+    if (!active || !row?.yogaNode) return undefined;
+    // A raw resize can paint before React receives the new width. Do not position
+    // a caret using a wrap that no longer describes this row's layout.
+    if (row.yogaNode.getComputedWidth() !== columns) return undefined;
     const origin = absoluteOrigin(row);
-    const next: TextArea = {
-      x: origin.x + labelWidth,
-      y: origin.y,
-      width: (row.yogaNode?.getComputedWidth() ?? 0) - labelWidth,
+    const position = {
+      x: Math.min(origin.x + labelWidth + caret.col, origin.x + columns - 1),
+      y: origin.y + caret.row - visibleStart,
     };
-    setTextArea((previous) =>
-      previous?.x === next.x && previous.y === next.y && previous.width === next.width
-        ? previous
-        : next,
-    );
+    let current: DOMElement | undefined = row;
+    while (current) {
+      if (current.style.display === "none") return undefined;
+      const clip = current.nodeName === "ink-root" || current.style.overflow === "hidden";
+      if (clip && current.yogaNode) {
+        const bounds = absoluteOrigin(current);
+        if (
+          position.x < bounds.x ||
+          position.x >= bounds.x + current.yogaNode.getComputedWidth() ||
+          position.y < bounds.y ||
+          position.y >= bounds.y + current.yogaNode.getComputedHeight()
+        )
+          return undefined;
+      }
+      current = current.parentNode;
+    }
+    return position;
+  });
+
+  // Refs attach after Ink's initial paint. Request one safe follow-up paint to
+  // show the caret; subsequent positions need no measurement/state round trip.
+  useLayoutEffect(() => setMounted(true), []);
+  useLayoutEffect(() => {
     recordComposerCommit(cursor, text.length, rows.length);
   });
 
-  return { rowRef, rows };
+  return { rowRef, rows, visibleRows };
 }

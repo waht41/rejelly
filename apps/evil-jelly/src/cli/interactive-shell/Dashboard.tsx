@@ -2,9 +2,8 @@
  * Ink UI: `<Static>` history + transient view + prompt + working stream.
  */
 
-import type { DOMElement } from "ink";
-import { Box, measureElement, Text, useApp, useInput, useWindowSize } from "ink";
-import { useEffect, useInsertionEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Box, Text, useApp, useInput, useWindowSize } from "ink";
+import { useEffect, useInsertionEffect, useMemo, useState } from "react";
 import { textPromptInput } from "../../shared/model/prompt/promptInput";
 import { composerProfileEnabled } from "../../shared/profile/selection";
 import { hasActiveInterruptibleTask } from "../../shared/task-interruption/taskStack";
@@ -42,13 +41,7 @@ import { handleLocalCommand } from "./interactiveCommandBinding";
 import { type CtrlCAbortHandler, useCtrlCAbort } from "./useCtrlCAbort";
 
 const PENDING_SUBMISSION_VISIBLE_ROWS = 3;
-const OUTER_VERTICAL_MARGIN_ROWS = 2;
 const TOOL_TAIL_MAX_ROWS = 8;
-
-interface LayoutRows {
-  topTransient: number;
-  bottomTransient: number;
-}
 
 function truncateOneLine(text: string, maxChars: number): string {
   const oneLine = text.replace(/\s+/g, " ").trim();
@@ -159,37 +152,16 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
       pendingTurns: pendingInput ? history.slice(pendingInput.historyIndex) : [],
     };
   }, [clearedStaticTurns, history, pendingInput]);
-  // The tail window lives inside the measured transient region, so the assistant
-  // stream's budget already shrinks around it. Keep it a modest slice of the
-  // terminal so a short window still leaves room for everything else.
+  // Keep the shared tool tail modest; the parent layout also bounds the complete
+  // dynamic frame, including tool headlines, approvals, and prompt chrome.
   const toolTailRows = Math.max(0, Math.min(TOOL_TAIL_MAX_ROWS, Math.floor(rows / 4)));
   const isAgentWorking = isRuntimeActive(phase, streamBuffer);
   const canShowLinePrompt = decision.type === "idle";
-  const topTransientRef = useRef<DOMElement>(null);
-  const bottomTransientRef = useRef<DOMElement>(null);
-  const [layoutRows, setLayoutRows] = useState<LayoutRows | null>(null);
-
-  useLayoutEffect(() => {
-    const nextRows: LayoutRows = {
-      topTransient: topTransientRef.current ? measureElement(topTransientRef.current).height : 0,
-      bottomTransient: bottomTransientRef.current
-        ? measureElement(bottomTransientRef.current).height
-        : 0,
-    };
-    setLayoutRows((previousRows) =>
-      previousRows &&
-      previousRows.topTransient === nextRows.topTransient &&
-      previousRows.bottomTransient === nextRows.bottomTransient
-        ? previousRows
-        : nextRows,
-    );
-  });
-
-  const nonStreamRows =
-    layoutRows === null
-      ? null
-      : layoutRows.topTransient + layoutRows.bottomTransient + OUTER_VERTICAL_MARGIN_ROWS;
-  const streamBudgetRows = nonStreamRows === null ? 0 : Math.max(0, rows - 1 - nonStreamRows - 1);
+  // Bound the very first frame in Yoga, not a later React commit after measuring it.
+  // Leave one terminal row for log-update's trailing newline. The composer/decision
+  // has priority; refreshable tool/context and stream regions shrink around it.
+  const frameRows = Math.max(1, rows - 1);
+  const gapRows = rows >= 10 ? 1 : 0;
   useCtrlCAbort(onCtrlCAbort);
 
   useEffect(() => subscribePendingSubmissions(setPendingSubmissions), []);
@@ -217,9 +189,23 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
 
       {transcriptOpen ? <ToolTranscriptOverlay /> : null}
       {answerOpen ? <AnswerTranscriptOverlay copyText={copyTextToClipboard} /> : null}
-      <Box flexDirection="column" display={overlayOpen ? "none" : "flex"}>
-        <Box flexDirection="column" marginTop={1} marginBottom={1}>
-          <Box ref={topTransientRef} flexDirection="column">
+      <Box
+        flexDirection="column"
+        display={overlayOpen ? "none" : "flex"}
+        maxHeight={frameRows}
+        overflow="hidden"
+        justifyContent="flex-end"
+      >
+        <Box
+          flexDirection="column"
+          marginTop={gapRows}
+          marginBottom={gapRows}
+          flexShrink={1}
+          minHeight={0}
+          overflow="hidden"
+          justifyContent="flex-end"
+        >
+          <Box flexDirection="column" flexShrink={1} minHeight={0} overflow="hidden">
             {/* Stay refreshable until retention/withdrawal, but fold explicitly instead of
                 cropping the complete history suffix from the top. */}
             {pendingTurns.length > 0 || preparingInput ? (
@@ -237,10 +223,10 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
           <AssistantStreamView
             text={streamBuffer}
             columns={columns}
-            maxRows={streamBudgetRows}
+            maxRows={frameRows}
             visible={isAgentWorking}
           />
-          <Box ref={bottomTransientRef} flexDirection="column">
+          <Box flexDirection="column" flexShrink={0}>
             <DecisionDetail view={view} columns={columns} />
             <Box marginTop={1}>
               <RuntimeStatusLine />
@@ -288,6 +274,7 @@ export function Dashboard({ onCtrlCAbort }: DashboardProps) {
                   <PendingSubmissionList items={pendingSubmissions} columns={columns} />
                   {isAgentWorking ? <Text dimColor> · /stop or Esc to interrupt</Text> : null}
                   <MessageComposer
+                    columns={Math.max(1, columns - 2)}
                     active={!overlayOpen}
                     label=""
                     isAgentRunning={isAgentWorking}

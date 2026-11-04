@@ -27,7 +27,7 @@
  * position come from one list instead of two guesses that drift apart.
  */
 
-import { Box, Text, useStdout } from "ink";
+import { Box, Text, useWindowSize } from "ink";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   MAX_EXPLICIT_MEMORY_REFERENCES,
@@ -61,6 +61,8 @@ export type ClipboardImageReadResult =
 export interface MessageComposerProps {
   /** Keep the draft mounted while a read-only overlay owns the terminal. */
   active?: boolean;
+  /** Available width inside the parent's padding; standalone composers use terminal width. */
+  columns?: number;
   label: string;
   isAgentRunning: boolean;
   hasInterruptibleTask: () => boolean;
@@ -73,6 +75,7 @@ export interface MessageComposerProps {
 
 export function MessageComposer({
   active = true,
+  columns,
   label,
   isAgentRunning,
   hasInterruptibleTask,
@@ -82,8 +85,7 @@ export function MessageComposer({
   onNotice,
   readClipboardImage,
 }: MessageComposerProps) {
-  const { stdout } = useStdout();
-  const [terminalRows, setTerminalRows] = useState(stdout.rows || 24);
+  const { columns: terminalColumns, rows: terminalRows } = useWindowSize();
   const [clipboardImageStatus, setClipboardImageStatus] = useState<string | null>(null);
   const draft = useComposerDraft({ label, onCommand });
   const {
@@ -111,16 +113,9 @@ export function MessageComposer({
     caretAffinity: buf.caretAffinity,
     active,
     label,
+    columns: columns ?? terminalColumns,
+    maxRows: Math.max(1, terminalRows - 8),
   });
-
-  useEffect(() => {
-    const updateRows = () => setTerminalRows(stdout.rows || 24);
-    updateRows();
-    stdout.on("resize", updateRows);
-    return () => {
-      stdout.off("resize", updateRows);
-    };
-  }, [stdout]);
 
   const clearDraft = () => {
     setClipboardImageStatus(null);
@@ -257,7 +252,7 @@ export function MessageComposer({
     (selectedSkills.length > 0 ? selectedSkills.length + 1 : 0) +
     (selectedMcpServers.length > 0 ? selectedMcpServers.length + 1 : 0) +
     (selectedMemories.length > 0 ? selectedMemories.length + 1 : 0) +
-    promptLayout.rows.length;
+    promptLayout.visibleRows.length;
   const suggestionVisibleRows = Math.min(
     MAX_SUGGESTION_ROWS,
     Math.max(MIN_SUGGESTION_ROWS, terminalRows - promptRows - promptChromeRows),
@@ -272,7 +267,7 @@ export function MessageComposer({
       <BufferView
         rowRef={promptLayout.rowRef}
         label={label}
-        rows={promptLayout.rows}
+        rows={promptLayout.visibleRows}
         tokenSpans={buf.tokenSpans}
         placeholder={label || "Message"}
         empty={buf.text.length === 0}

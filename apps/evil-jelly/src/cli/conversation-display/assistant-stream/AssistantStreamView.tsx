@@ -24,7 +24,14 @@ export function AssistantStreamView({
   }
 
   return (
-    <Box flexDirection="column" marginBottom={1}>
+    <Box
+      flexDirection="column"
+      marginBottom={1}
+      flexShrink={1}
+      minHeight={0}
+      overflow="hidden"
+      justifyContent="flex-end"
+    >
       {window.forceRaw ? (
         <Text>{window.text}</Text>
       ) : (
