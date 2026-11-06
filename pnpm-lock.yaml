@@ -93,7 +93,7 @@ catalogs:
 
 patchedDependencies:
   ink@7.0.0:
-    hash: f3c2c9930577dba81f4d3323158bd5a52c407e7a0d1097faaace97525d7653e3
+    hash: a13407dc4e70f5f342b1c71aa09107bf2f6016c1c8789d58e0d98c6bf787cf50
     path: patches/ink@7.0.0.patch
   wrap-ansi@10.0.0:
     hash: 364f4aea4223f1c6dbfe340fdfed7dd4338d2e2974378884844c4a774c5dfba1
@@ -374,7 +374,7 @@ importers:
         version: 7.0.5
       ink:
         specifier: ^7.0.0
-        version: 7.0.0(patch_hash=f3c2c9930577dba81f4d3323158bd5a52c407e7a0d1097faaace97525d7653e3)(@types/react@19.2.8)(react@19.2.3)
+        version: 7.0.0(patch_hash=a13407dc4e70f5f342b1c71aa09107bf2f6016c1c8789d58e0d98c6bf787cf50)(@types/react@19.2.8)(react@19.2.3)
       jsonc-parser:
         specifier: ^3.3.1
         version: 3.3.1
@@ -10398,7 +10398,7 @@ snapshots:
 
   ini@1.3.8: {}
 
-  ink@7.0.0(patch_hash=f3c2c9930577dba81f4d3323158bd5a52c407e7a0d1097faaace97525d7653e3)(@types/react@19.2.8)(react@19.2.3):
+  ink@7.0.0(patch_hash=a13407dc4e70f5f342b1c71aa09107bf2f6016c1c8789d58e0d98c6bf787cf50)(@types/react@19.2.8)(react@19.2.3):
     dependencies:
       '@alcalzone/ansi-tokenize': 0.3.0
       ansi-escapes: 7.3.0

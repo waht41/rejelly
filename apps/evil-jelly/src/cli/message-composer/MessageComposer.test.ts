@@ -68,7 +68,10 @@ it("aligns the caret with pasted tabs and preserves them through collapse, editi
     },
   );
   const caretAt = async (x: number, y = 0) => {
-    await vi.waitFor(() => expect(setCursorPosition).toHaveBeenLastCalledWith({ x, y }));
+    await vi.waitFor(() => {
+      const source = setCursorPosition.mock.lastCall?.[0];
+      expect(typeof source === "function" ? source() : source).toEqual({ x, y });
+    });
   };
   const paste = (text: string) => stdin.write(`\u001b[200~${text}\u001b[201~`);
   const pasted = "\tfirst\n\tsecond\nthird\nfourth\nfifth\nsixth";

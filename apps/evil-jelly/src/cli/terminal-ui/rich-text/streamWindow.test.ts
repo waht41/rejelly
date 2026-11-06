@@ -2,7 +2,7 @@ import { renderToString } from "ink";
 import { createElement } from "react";
 import stripAnsi from "strip-ansi";
 import { describe, expect, it } from "vitest";
-import { MarkdownViewer } from "./MarkdownViewer";
+import { MarkdownViewer, StreamMarkdownViewer } from "./MarkdownViewer";
 import { createStreamTailWindow, measureStreamRows, measureWrappedRows } from "./streamWindow";
 
 describe("stream window measurement", () => {
@@ -80,6 +80,43 @@ describe("stream window measurement", () => {
       "    10. a nested item that wraps too",
     ].join("\n");
     expect(measureStreamRows(list, columns)).toBe(renderedRows(list, columns));
+  });
+
+  it("budgets nested list code blocks and narrow rules by their rendered rows", () => {
+    const samples = [
+      [
+        "- Run this:",
+        "",
+        "  ```text",
+        ...Array.from({ length: 12 }, (_, i) => `  output ${i}`),
+        "  ```",
+      ].join("\n"),
+      [
+        "1. Parent",
+        "   - Child",
+        "",
+        "     ```text",
+        `     ${"long output ".repeat(8)}`,
+        "",
+        "     end",
+        "     ```",
+      ].join("\n"),
+      "---",
+      "Before\n\n---\n\nAfter",
+    ];
+    for (const text of samples) {
+      for (const columns of [10, 20, 60]) {
+        const actualRows = (value: string) =>
+          stripAnsi(
+            renderToString(createElement(StreamMarkdownViewer, { text: value, columns }), {
+              columns,
+            }),
+          ).split("\n").length;
+        expect(measureStreamRows(text, columns)).toBe(actualRows(text));
+        const window = createStreamTailWindow({ text, columns, maxRows: 4 });
+        expect(actualRows(window.text)).toBeLessThanOrEqual(4);
+      }
+    }
   });
 
   it("fits CJK emphasis by rendered width instead of clipping its source markers", () => {

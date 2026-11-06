@@ -56,6 +56,12 @@ turn with `Left` / `Right`, and press `p` to view its question, including while 
 The question reader includes submitted text, paste contents, and attachment action/failure labels;
 `c` copies the complete text, and `Esc` or `Ctrl+T` returns to the unchanged composer.
 
+The main conversation keeps completed history in native scrollback, but bounds its refreshable
+region to the terminal height, including intermediate resize frames. When space is limited,
+transient tool/context and streaming content are clipped before the composer or decision controls.
+Long drafts use a caret-following viewport; navigation and submission still operate on the complete
+draft. These display limits do not truncate saved history, tool records, or model input.
+
 ### Reading previous answers
 
 Press `Ctrl+T` or run `/transcript` to open a read-only answer browser. It displays original

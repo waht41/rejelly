@@ -79,7 +79,22 @@ function measureMarkdownStableRows(markdown: string, columns: number): number {
         marginTop +
         block.items.reduce((total, item) => {
           const chrome = markdownListItemIndent(item) + markdownListItemPrefix(item).length;
-          return total + measureWrappedRows(item.text, Math.max(1, columns - chrome));
+          const itemColumns = Math.max(1, columns - chrome);
+          const codeRows = item.codeBlocks.reduce(
+            (sum, code) =>
+              sum +
+              1 + // Each nested code block has a top margin in the renderer.
+              Math.max(
+                1,
+                code.lines.reduce(
+                  (count, line) =>
+                    count + Math.max(1, measureWrappedRows(line, itemColumns, { wordWrap: false })),
+                  0,
+                ),
+              ),
+            0,
+          );
+          return total + Math.max(1, measureWrappedRows(item.text, itemColumns)) + codeRows;
         }, 0);
       continue;
     }
@@ -137,7 +152,8 @@ function measureMarkdownStableRows(markdown: string, columns: number): number {
       rows += marginTop + codeRows;
       continue;
     }
-    rows += marginTop + 1;
+    // The renderer's rule is forty ASCII cells and wraps in narrow terminals.
+    rows += measureWrappedRows("-".repeat(40), columns);
   }
 
   return rows;

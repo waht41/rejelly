@@ -26,7 +26,9 @@ export function BufferView({
 }: BufferViewProps) {
   return (
     <Box ref={rowRef} flexDirection="row">
-      <Text bold>{label || "❯"} </Text>
+      <Box flexShrink={0}>
+        <Text bold>{label || "❯"} </Text>
+      </Box>
       <Box flexDirection="column">
         {empty ? (
           <Text>

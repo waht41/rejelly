@@ -611,6 +611,108 @@ it("stretches the fresh composer divider to terminal width across resize and rea
   expect(mounts.history).toBe(1);
 });
 
+it.each([
+  false,
+  true,
+])("bounds every transient frame and its painted caret while tools and terminal size change (interactive=%s)", async (interactive) => {
+  useComposerSession.getState().seedDraft(textPromptInput("Frame sentinel"));
+  const frames: Array<{
+    text: string;
+    rows: number;
+    columns: number;
+    caret?: { x: number; y: number };
+  }> = [];
+  let capture = true;
+  stdout.on("data", (chunk) => {
+    const raw = String(chunk);
+    const text = stripAnsi(raw);
+    if (!capture || text.trim().length === 0) return;
+    const lines = text.split("\n");
+    const visibleRows = text.endsWith("\n") ? lines.length - 1 : lines.length;
+    const suffix = raw.replaceAll("\u001b", "ESC").match(/ESC\[(\d+)AESC\[(\d+)GESC\[\?25h$/);
+    frames.push({
+      text,
+      rows: stdout.rows,
+      columns: stdout.columns,
+      caret: suffix ? { x: Number(suffix[2]) - 1, y: visibleRows - Number(suffix[1]) } : undefined,
+    });
+  });
+  mountDashboard(interactive);
+  await vi.waitFor(() => expect(output).toContain("❯ Frame sentinel"));
+  await instance!.waitUntilRenderFlush();
+  useOutputStore.setState({ streamBuffer: "stream words ".repeat(500) });
+  await instance!.waitUntilRenderFlush();
+  const handle = useOutputStore.getState().beginTool({
+    toolName: "run_command",
+    summary: `[Tools] run_command → ${"long-command/".repeat(30)}`,
+  });
+  useOutputStore
+    .getState()
+    .annotateTool(handle.id, { mode: "auto", basis: "read_only", reason: "Inspect output" });
+  useOutputStore
+    .getState()
+    .appendToolOutput(
+      handle.id,
+      Array.from({ length: 20 }, (_, i) => `Tool output ${i}\n`).join(""),
+    );
+  await vi.waitFor(() => expect(output).toContain("Tool output 19"));
+  await instance!.waitUntilRenderFlush();
+  for (const [columns, rows] of [
+    [100, 10],
+    [40, 10],
+    [24, 6],
+    [100, 24],
+  ]) {
+    Object.assign(stdout, { columns, rows });
+    stdout.emit("resize");
+    await instance!.waitUntilRenderFlush();
+  }
+  // Static history is intentionally outside the dynamic-frame budget.
+  capture = false;
+  useOutputStore.getState().logTool({
+    id: handle.id,
+    ordinal: handle.ordinal,
+    toolName: "run_command",
+    summary: "Completed tool sentinel",
+    preview: "ok",
+    fullResult: "ok",
+    ok: true,
+  });
+  await instance!.waitUntilRenderFlush();
+  expect(useOutputStore.getState().toolHistory).toHaveLength(1);
+  expect(frames.length).toBeGreaterThan(4);
+  for (const frame of frames) {
+    expect(frame.text.trimEnd().split("\n").length).toBeLessThanOrEqual(
+      Math.max(1, frame.rows - 1),
+    );
+    for (const line of frame.text.split("\n"))
+      expect(stringWidth(line)).toBeLessThanOrEqual(frame.columns);
+    if (frame.caret) {
+      expect(frame.text.split("\n")[frame.caret.y]).toContain("❯ ");
+      if (frame.text.includes("❯ Frame sentinel")) expect(frame.caret.x).toBe(17);
+    }
+  }
+  if (interactive) expect(frames.some((frame) => frame.caret)).toBe(true);
+  expect(rawOutput).not.toContain("\u001b[3J");
+});
+
+it("keeps a long editable draft visible around the caret without truncating submission", async () => {
+  const submit = vi.fn();
+  useComposerSession.getState().setBackgroundLineHandler(submit);
+  const draft = Array.from({ length: 40 }, (_, index) => `Draft row ${index}`).join("\n");
+  useComposerSession.getState().seedDraft(textPromptInput(draft));
+  mountDashboard();
+  await vi.waitFor(() => expect(lastFrame).toContain("Draft row 39"));
+  expect(lastFrame.trimEnd().split("\n").length).toBeLessThan(stdout.rows);
+  for (let index = 0; index < 39; index++) {
+    stdin.write("\u001b[A"); // Navigate through the complete wrap, not just the visible slice.
+    await instance!.waitUntilRenderFlush();
+  }
+  await vi.waitFor(() => expect(lastFrame).toContain("Draft row 0"));
+  stdin.write("\r");
+  await vi.waitFor(() => expect(submit).toHaveBeenCalledWith(textPromptInput(draft)));
+});
+
 it("keeps tool list and detail chrome inside the viewport across width and height changes", async () => {
   useOutputStore.setState({
     toolHistory: Array.from({ length: 40 }, (_, index) => ({
