@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { utf8Prefix } from "../../shared/foundation/string";
-import { getProjectTempRoot } from "../../shared/fs-policy/workspace-context";
 import { getWorkspaceFiles } from "../../shared/fs-policy/workspace-files";
 import type { ReadWebpageResult } from "./index";
 
@@ -31,7 +30,10 @@ function readingSnapshot(markdown: string): { text: string; wrapped: boolean } {
   return { text: output.join("\n"), wrapped };
 }
 
-export async function renderWebpageOutput(page: ReadWebpageResult): Promise<string> {
+export async function renderWebpageOutput(
+  page: ReadWebpageResult,
+  directory: string,
+): Promise<string> {
   const source = boundedField(page.url, 2048);
   if (!page.markdown.trim()) {
     return `read_webpage got an empty body for ${source} (likely JS-rendered or blocked). Try another source.`;
@@ -48,7 +50,6 @@ export async function renderWebpageOutput(page: ReadWebpageResult): Promise<stri
   let recovery: string;
   try {
     const policy = getWorkspaceFiles();
-    const directory = getProjectTempRoot(policy.getRoot());
     const stem =
       (page.title || "webpage")
         .normalize("NFKC")

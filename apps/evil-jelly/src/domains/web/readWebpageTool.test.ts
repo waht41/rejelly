@@ -13,7 +13,7 @@ import { ListDirTool, ReadFileTool } from "../workspace/read/FileSystemTools";
 import { FuzzySearchTool } from "../workspace/read/FuzzySearchTool";
 import { executeGrepSearch } from "../workspace/read/GrepSearchTool";
 import { createEditFileTool } from "../workspace/write/WriteTools";
-import { ReadWebpageTool } from "./readWebpageTool";
+import { createReadWebpageTool } from "./readWebpageTool";
 import { MAX_WEBPAGE_OUTPUT_BYTES } from "./webpageOutput";
 
 const mocks = vi.hoisted(() => ({ readWebpage: vi.fn(), confirmTool: vi.fn() }));
@@ -36,10 +36,19 @@ const page = {
 };
 let previousRoot: string;
 let workspace: string;
+let webpageDirectory: string;
+let ReadWebpageTool: ReturnType<typeof createReadWebpageTool>;
 beforeEach(async () => {
   previousRoot = getWorkspaceRoot();
   workspace = await fs.mkdtemp(path.join(os.tmpdir(), "evil-webpage-test-"));
   setWorkspaceRoot(workspace);
+  webpageDirectory = path.join(
+    getProjectTempRoot(workspace),
+    "sessions",
+    "webpage-test",
+    "webpage",
+  );
+  ReadWebpageTool = createReadWebpageTool(webpageDirectory);
   mocks.readWebpage.mockReset().mockResolvedValue(page);
   mocks.confirmTool.mockReset().mockResolvedValue({ action: "reject" });
 });
@@ -74,6 +83,23 @@ describe("read_webpage bounded output and project-temp continuation", () => {
     await expect(fs.stat(getProjectTempRoot(workspace))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("keeps snapshots in their owning session without creating a sibling scratch directory", async () => {
+    mocks.readWebpage.mockResolvedValue({ ...page, markdown: "paragraph\n".repeat(6000) });
+    const otherDirectory = path.join(getProjectTempRoot(workspace), "sessions", "other", "webpage");
+    const first = savedPath(String(await ReadWebpageTool.handler({ url: page.url })));
+    const otherTool = createReadWebpageTool(otherDirectory);
+    const second = savedPath(String(await otherTool.handler({ url: page.url })));
+
+    expect(path.dirname(first)).toBe(webpageDirectory);
+    expect(path.dirname(second)).toBe(otherDirectory);
+    await expect(
+      fs.access(path.join(path.dirname(webpageDirectory), "scratch")),
+    ).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(await fs.readFile(first, "utf8")).toBe(await fs.readFile(second, "utf8"));
+  });
+
   it("saves one snapshot that all file tools can use, including an ordinary reviewed write", async () => {
     const markdown = `${"A paragraph with ordinary text.\n".repeat(12000)}TAIL_NEEDLE\n`;
     mocks.readWebpage.mockResolvedValue({ ...page, markdown, truncated: true });
@@ -83,7 +109,7 @@ describe("read_webpage bounded output and project-temp continuation", () => {
     expect(output).toContain("Source fetch truncated: yes");
     expect(output).not.toContain("TAIL_NEEDLE");
     const file = savedPath(output);
-    const root = getProjectTempRoot(workspace);
+    const root = webpageDirectory;
     expect(path.dirname(file)).toBe(root);
     expect(await fs.readFile(file, "utf8")).toBe(markdown);
     expect(await executeGrepSearch("TAIL_NEEDLE", undefined, 1, { directory: file })).toContain(
