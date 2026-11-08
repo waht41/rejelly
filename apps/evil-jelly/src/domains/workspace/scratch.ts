@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { equipResource, expectResource } from "@rejelly/core";
 import { getAgentScratchDir, getWorkspaceRoot } from "../../shared/fs-policy/workspace-context";
 
@@ -22,7 +22,7 @@ export async function equipAgentScratchDir(sessionId?: string): Promise<string> 
   }
   const scratch = await equipResource<AgentScratch>(AGENT_SCRATCH_KEY, {
     create: async () => {
-      const identity = sessionId ?? randomUUID();
+      const identity = sessionId ?? randomBytes(8).toString("hex");
       return {
         workspaceRoot,
         sessionId: identity,

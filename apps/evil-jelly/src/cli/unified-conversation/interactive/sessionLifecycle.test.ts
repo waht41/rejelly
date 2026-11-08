@@ -171,7 +171,11 @@ describe("non-TTY session lifecycle", () => {
     );
     expect(path.basename(directory)).toBe("scratch");
     await expect(fs.access(directory)).rejects.toMatchObject({ code: "ENOENT" });
-    if (durable) expect(directory).toBe(getAgentScratchDir("scratch-first", workspaceRoot));
+    if (durable) {
+      expect(directory).toBe(getAgentScratchDir("scratch-first", workspaceRoot));
+    } else {
+      expect(path.basename(path.dirname(directory))).toMatch(/^[a-f0-9]{16}$/);
+    }
     expect(await fs.readFile(legacyFile, "utf8")).toBe("existing scratch");
 
     const nextModel = createMockModel();
