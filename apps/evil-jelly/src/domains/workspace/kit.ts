@@ -5,7 +5,7 @@
 
 import { augmentTool, equipTool, type ToolDefinition } from "@rejelly/core";
 import { evilJellyToolLoggerMiddleware } from "../../shared/tool-observation/middleware";
-import { RunCommandTool } from "./execute/runCommandTool";
+import { createRunCommandTool } from "./execute/runCommandTool";
 import { equipAgentFileAccess } from "./file-access/agentFileAccess";
 import { ListDirTool, ReadFileTool } from "./read/FileSystemTools";
 import { FuzzySearchTool } from "./read/FuzzySearchTool";
@@ -70,6 +70,6 @@ export async function equipReadOnlyWorkspaceKit(
 }
 
 /** Run shell commands in workspace cwd (tests, typecheck, etc.). */
-export function equipRunCommandKit(): void {
-  equipTool(augmentTool(RunCommandTool, [evilJellyToolLoggerMiddleware]));
+export function equipRunCommandKit(directory: string): void {
+  equipTool(augmentTool(createRunCommandTool(directory), [evilJellyToolLoggerMiddleware]));
 }

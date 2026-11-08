@@ -1,9 +1,8 @@
 import { spawn } from "node:child_process";
-import { truncateOutput } from "./output";
-import { combineCapturedShellOutput, ShellOutputStreamDecoder } from "./shellOutput";
+import { BoundedCommandOutput, type CommandCaptureStats } from "./capturedOutput";
+import { ShellOutputStreamDecoder } from "./shellOutput";
 
 const DEFAULT_TIMEOUT_MS = 180_000;
-const DEFAULT_MAX_CAPTURE_BYTES = 48_000;
 const TERMINATION_GRACE_MS = 3_000;
 const POWERSHELL_UTF8_OUTPUT_PREFIX =
   "try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}\n";
@@ -35,10 +34,6 @@ export function getShellPath(): string {
   return process.platform === "win32" ? "powershell.exe" : (process.env.SHELL ?? "/bin/sh");
 }
 
-export function getShellEnvironmentSummary(): string {
-  return `${process.platform} shell=${getShellPath()}`;
-}
-
 function normalizeExitCode(code: number | string | null | undefined): number | null {
   if (typeof code === "number" && Number.isFinite(code)) {
     return code;
@@ -57,13 +52,14 @@ export interface ExecuteShellCommandOptions {
   cwd: string;
   timeoutMs?: number;
   env?: NodeJS.ProcessEnv;
-  maxCaptureBytes?: number;
   signal?: AbortSignal;
 }
 
 export interface ExecuteShellCommandResult {
   exitCode: number | null;
+  /** Bounded, decoded output in observed stdout/stderr arrival order, not the model preview. */
   output: string;
+  capture: CommandCaptureStats;
   error?: {
     code?: number | string;
     message?: string;
@@ -108,24 +104,12 @@ export async function executeShellCommand(
   onData?: (data: string) => void,
 ): Promise<ExecuteShellCommandResult> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const maxCaptureBytes = options.maxCaptureBytes ?? DEFAULT_MAX_CAPTURE_BYTES;
 
   return new Promise((resolve) => {
-    const stdoutChunks: Buffer[] = [];
-    const stderrChunks: Buffer[] = [];
-    let stdoutBytes = 0;
-    let stderrBytes = 0;
+    const capture = new BoundedCommandOutput();
     const stdoutDecoder = new ShellOutputStreamDecoder();
     const stderrDecoder = new ShellOutputStreamDecoder();
     let outputDecodersFlushed = false;
-    // Captured output goes to the model and is persisted into traces, where
-    // ANSI/VT sequences render as garbage; colors only help the live onData
-    // stream, which keeps receiving raw chunks.
-    const combineCaptured = () =>
-      combineCapturedShellOutput(
-        Buffer.concat(stdoutChunks, stdoutBytes),
-        Buffer.concat(stderrChunks, stderrBytes),
-      );
     let timedOut = false;
     let aborted = false;
     let stopRequested = false;
@@ -151,6 +135,7 @@ export async function executeShellCommand(
       if (data.length === 0) {
         return;
       }
+      capture.append(data);
       onData?.(data);
     };
 
@@ -170,33 +155,15 @@ export async function executeShellCommand(
       stopRequested = true;
       void killProcessTree(child.pid);
       forceFinishTimer = setTimeout(() => {
-        flushOutputDecoders();
-        const combined = combineCaptured();
-        if (timedOut) {
-          finish({
-            exitCode: null,
-            output: truncateOutput(combined || "Command timed out", maxCaptureBytes),
-            error: {
-              code: "ETIMEDOUT",
-              message: "Command timed out",
-              killed: true,
-              signal: "SIGTERM",
-            },
-          });
-          return;
-        }
-        if (aborted) {
-          finish({
-            exitCode: null,
-            output: truncateOutput(combined || "Command aborted", maxCaptureBytes),
-            error: {
-              code: "EABORTED",
-              message: "Command aborted",
-              killed: true,
-              signal: "SIGTERM",
-            },
-          });
-        }
+        finish({
+          exitCode: null,
+          error: {
+            code: timedOut ? "ETIMEDOUT" : "EABORTED",
+            message: timedOut ? "Command timed out" : "Command aborted",
+            killed: true,
+            signal: "SIGTERM",
+          },
+        });
       }, TERMINATION_GRACE_MS);
     }
 
@@ -205,17 +172,21 @@ export async function executeShellCommand(
       startTermination();
     }
 
-    const finish = (result: ExecuteShellCommandResult) => {
-      if (settled) {
-        return;
-      }
+    const finish = (result: Omit<ExecuteShellCommandResult, "output" | "capture">) => {
+      if (settled) return;
+      flushOutputDecoders();
       settled = true;
       clearTimeout(timer);
       if (forceFinishTimer) {
         clearTimeout(forceFinishTimer);
       }
       options.signal?.removeEventListener("abort", onAbort);
-      resolve(result);
+      const captured = capture.snapshot();
+      resolve({
+        ...result,
+        output: captured.text,
+        capture: captured.stats,
+      });
     };
 
     const timer = setTimeout(() => {
@@ -232,56 +203,26 @@ export async function executeShellCommand(
 
     const appendChunk = (target: "stdout" | "stderr", chunk: Buffer) => {
       const decoder = target === "stdout" ? stdoutDecoder : stderrDecoder;
-      if (target === "stdout") {
-        stdoutChunks.push(chunk);
-        stdoutBytes += chunk.length;
-      } else {
-        stderrChunks.push(chunk);
-        stderrBytes += chunk.length;
-      }
-      appendDecoded(decoder.write(chunk));
+      if (!settled) appendDecoded(decoder.write(chunk));
     };
 
     child.stdout?.on("data", (chunk) => appendChunk("stdout", chunk));
     child.stderr?.on("data", (chunk) => appendChunk("stderr", chunk));
 
     child.on("error", (err: NodeJS.ErrnoException) => {
-      flushOutputDecoders();
-      const combined = combineCaptured() || err.message;
       finish({
         exitCode: normalizeExitCode(err.code),
-        output: truncateOutput(combined, maxCaptureBytes),
-        error: {
-          code: err.code,
-          message: err.message,
-        },
+        error: { code: err.code, message: err.message },
       });
     });
 
     child.on("close", (code, signal) => {
-      flushOutputDecoders();
-      const combined = combineCaptured();
-
-      if (timedOut) {
+      if (timedOut || aborted) {
         finish({
           exitCode: normalizeExitCode(code),
-          output: truncateOutput(combined || "Command timed out", maxCaptureBytes),
           error: {
-            code: "ETIMEDOUT",
-            message: "Command timed out",
-            killed: true,
-            signal: signal ?? "SIGTERM",
-          },
-        });
-        return;
-      }
-      if (aborted) {
-        finish({
-          exitCode: normalizeExitCode(code),
-          output: truncateOutput(combined || "Command aborted", maxCaptureBytes),
-          error: {
-            code: "EABORTED",
-            message: "Command aborted",
+            code: timedOut ? "ETIMEDOUT" : "EABORTED",
+            message: timedOut ? "Command timed out" : "Command aborted",
             killed: true,
             signal: signal ?? "SIGTERM",
           },
@@ -290,24 +231,21 @@ export async function executeShellCommand(
       }
 
       const normalized = normalizeExitCode(code);
-      if (normalized === 0) {
-        finish({
-          exitCode: 0,
-          output: truncateOutput(combined || "(no output)", maxCaptureBytes),
-        });
-        return;
-      }
-
       finish({
         exitCode: normalized,
-        output: truncateOutput(combined, maxCaptureBytes),
-        error: {
-          code: code ?? undefined,
-          message:
-            combined.length > 0 ? undefined : `Command failed with exit code ${String(code)}`,
-          killed: signal != null,
-          signal: signal ?? undefined,
-        },
+        ...(normalized === 0
+          ? {}
+          : {
+              error: {
+                code: code ?? undefined,
+                message:
+                  capture.totalBytes > 0
+                    ? undefined
+                    : `Command failed with exit code ${String(code)}`,
+                killed: signal != null,
+                signal: signal ?? undefined,
+              },
+            }),
       });
     });
   });

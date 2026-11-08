@@ -7,12 +7,14 @@ import { getContextSignal } from "@rejelly/core";
 import { z } from "zod";
 import { getWorkspaceFiles } from "../../../shared/fs-policy/workspace-files";
 import { getBinding } from "../../../shared/host/context";
+import { renderPseudoXmlElement } from "../../../shared/model/prompt/pseudoXml";
 import { registerInterruptibleTask } from "../../../shared/task-interruption/taskStack";
 import {
   getActiveToolCall,
   recordActiveToolOutcome,
 } from "../../../shared/tool-observation/invocationContext";
-import { executeShellCommand, getShellEnvironmentSummary } from "./executeShellCommand";
+import { executeShellCommand } from "./executeShellCommand";
+import { getCommandOutcome, renderCommandOutput } from "./output";
 
 const runCommandParameters = z.object({
   command: z
@@ -88,99 +90,98 @@ function mergeAbortSignals(...signals: Array<AbortSignal | undefined>): {
   };
 }
 
-export const RunCommandTool: ToolDefinition<typeof runCommandParameters> = {
-  name: "run_command",
-  description:
-    "Run a shell command in workspace root by default (tests, tsc, lint). " +
-    "Use cwd to execute in another directory. " +
-    "Commands run through the host platform shell; on Windows this is PowerShell syntax, not cmd.exe or Unix sh syntax. " +
-    "Prefer this for Agent-selected verification and targeted checks after edits.",
-  parameters: runCommandParameters,
-  handler: async ({ command, cwd, timeoutMs, declaredSafety, reason }) => {
-    const policy = getWorkspaceFiles();
-    const resolvedCwdPath = policy.classifyPath(cwd ?? ".");
-    try {
-      const stat = await policy.statResolved(resolvedCwdPath);
-      if (!stat.isDirectory()) {
-        recordActiveToolOutcome({ outcome: "failed", failureKind: "cwd_not_directory" });
-        return `Command cwd is not a directory: ${resolvedCwdPath.displayPath}`;
-      }
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      recordActiveToolOutcome({ outcome: "failed", failureKind: "cwd_inspection_failed" });
-      return `Failed to inspect command cwd: ${message}`;
-    }
-    const resolvedCwd = resolvedCwdPath.abs;
-    const host = getBinding();
-
-    const decision = await host.confirmTool({
-      type: "shell_command",
-      command,
-      cwd,
-      declaredSafety,
-      reason,
-      supportedActions: ["accept", "reject"],
-    });
-    if (decision.action !== "accept") {
-      recordActiveToolOutcome({ outcome: "denied", failureKind: "user_denied" });
-      return "Command execution denied by user.";
-    }
-    const contextSignal = getContextSignal();
-    const localAbortController = new AbortController();
-    const unregisterTask = registerInterruptibleTask({
-      type: "tool_execution",
-      name: `run_command: ${command.slice(0, 60)}`,
-      abort: (reason) => {
-        if (!localAbortController.signal.aborted) {
-          localAbortController.abort(new Error(reason));
+export function createRunCommandTool(
+  directory: string,
+): ToolDefinition<typeof runCommandParameters> {
+  return {
+    name: "run_command",
+    description:
+      "Run a shell command in workspace root by default (tests, tsc, lint). " +
+      "Use cwd to execute in another directory. " +
+      "Commands run through the host platform shell; on Windows this is PowerShell syntax, not cmd.exe or Unix sh syntax. " +
+      "Prefer this for Agent-selected verification and targeted checks after edits. " +
+      "Returns an XML-like envelope with execution metadata and untrusted command output. " +
+      "Large output is truncated; when saved-path is present, inspect it with grep or ranged read_file. " +
+      "capture-truncated indicates output was discarded and cannot be recovered.",
+    parameters: runCommandParameters,
+    handler: async ({ command, cwd, timeoutMs, declaredSafety, reason }) => {
+      const policy = getWorkspaceFiles();
+      const resolvedCwdPath = policy.classifyPath(cwd ?? ".");
+      try {
+        const stat = await policy.statResolved(resolvedCwdPath);
+        if (!stat.isDirectory()) {
+          recordActiveToolOutcome({ outcome: "failed", failureKind: "cwd_not_directory" });
+          return renderPseudoXmlElement(
+            "tool_notice",
+            `Command cwd is not a directory: ${resolvedCwdPath.displayPath}`,
+            {
+              status: "failed",
+              reason: "cwd_not_directory",
+            },
+          );
         }
-      },
-    });
-    const mergedAbort = mergeAbortSignals(contextSignal, localAbortController.signal);
-    // Live output goes to this call's slot in the host's transient tail view, not
-    // to printOut — that is the assistant's stream, and anything written there is
-    // committed to scrollback in full and rendered as if the model had said it.
-    // With no handle or no live view the chunks are simply dropped; the collapsed
-    // block still carries the whole result.
-    const toolCall = getActiveToolCall();
-    const onOutput =
-      toolCall && host.appendToolOutput
-        ? (chunk: string) => host.appendToolOutput?.(toolCall.id, chunk)
-        : undefined;
-    const result = await executeShellCommand(
-      {
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        recordActiveToolOutcome({ outcome: "failed", failureKind: "cwd_inspection_failed" });
+        return renderPseudoXmlElement("tool_notice", `Failed to inspect command cwd: ${message}`, {
+          status: "failed",
+          reason: "cwd_inspection_failed",
+        });
+      }
+      const resolvedCwd = resolvedCwdPath.abs;
+      const host = getBinding();
+
+      const decision = await host.confirmTool({
+        type: "shell_command",
         command,
-        cwd: resolvedCwd,
-        timeoutMs,
-        signal: mergedAbort.signal,
-      },
-      onOutput,
-    ).finally(() => {
-      mergedAbort.dispose();
-      unregisterTask();
-    });
-    if (result.error?.code === "EABORTED") {
-      recordActiveToolOutcome({ outcome: "aborted", exitCode: null, failureKind: "user_abort" });
-      const output = result.output?.trim().length ? result.output : "(no output)";
-      return `exitCode=null status=aborted\n${output}\nCommand aborted by user (/stop or Esc).`;
-    }
-    if (result.error?.code === "ETIMEDOUT") {
-      recordActiveToolOutcome({
-        outcome: "timed_out",
-        exitCode: null,
-        failureKind: "hard_timeout",
+        cwd,
+        declaredSafety,
+        reason,
+        supportedActions: ["accept", "reject"],
       });
-      const output = result.output?.trim().length ? result.output : "(no output)";
-      return `exitCode=null status=timed_out ${getShellEnvironmentSummary()}\n${output}\nCommand exceeded the hard timeout and its process tree was terminated.`;
-    }
-    const status = result.exitCode === 0 ? "ok" : "failed";
-    recordActiveToolOutcome({
-      outcome: result.exitCode === 0 ? "succeeded" : "failed",
-      exitCode: result.exitCode,
-      ...(result.exitCode === 0 ? {} : { failureKind: "nonzero_exit" }),
-    });
-    const exitCode = result.exitCode === null ? "null" : String(result.exitCode);
-    const head = `exitCode=${exitCode} status=${status} ${getShellEnvironmentSummary()}\n`;
-    return head + result.output;
-  },
-};
+      if (decision.action !== "accept") {
+        recordActiveToolOutcome({ outcome: "denied", failureKind: "user_denied" });
+        return renderPseudoXmlElement("tool_notice", "Command execution denied by user.", {
+          status: "denied",
+          reason: "user_denied",
+        });
+      }
+      const contextSignal = getContextSignal();
+      const localAbortController = new AbortController();
+      const unregisterTask = registerInterruptibleTask({
+        type: "tool_execution",
+        name: `run_command: ${command.slice(0, 60)}`,
+        abort: (reason) => {
+          if (!localAbortController.signal.aborted) {
+            localAbortController.abort(new Error(reason));
+          }
+        },
+      });
+      const mergedAbort = mergeAbortSignals(contextSignal, localAbortController.signal);
+      // Live output goes to this call's slot in the host's transient tail view, not
+      // to printOut — that is the assistant's stream, and anything written there is
+      // committed to scrollback in full and rendered as if the model had said it.
+      // With no handle or no live view the chunks are simply dropped; the collapsed
+      // block still carries the bounded preview and any saved-output reference.
+      const toolCall = getActiveToolCall();
+      const onOutput =
+        toolCall && host.appendToolOutput
+          ? (chunk: string) => host.appendToolOutput?.(toolCall.id, chunk)
+          : undefined;
+      const result = await executeShellCommand(
+        {
+          command,
+          cwd: resolvedCwd,
+          timeoutMs,
+          signal: mergedAbort.signal,
+        },
+        onOutput,
+      ).finally(() => {
+        mergedAbort.dispose();
+        unregisterTask();
+      });
+      recordActiveToolOutcome(getCommandOutcome(result));
+      return renderCommandOutput(result, directory);
+    },
+  };
+}

@@ -226,7 +226,25 @@ commands writing there directly must create the directory as needed. Scratch fil
 working material, not durable session attachments or project deliverables. This release does not add automatic expiry
 or exit cleanup, and leaves existing `.evil-jelly/tmp` files untouched. Long webpage snapshots use
 `webpage/` beside `scratch/` under the same session directory, created only when a snapshot is saved.
-Existing project-level snapshots are left untouched. Command output handling is unchanged.
+Existing project-level snapshots are left untouched.
+
+`run_command` keeps at most 8 MiB of decoded UTF-8 output across stdout and stderr in memory,
+retaining the first and last 4 MiB in observed arrival order. Excess middle output is discarded,
+while both pipes continue to be drained. After completion (including failure, timeout, or abort),
+results exceeding the inline preview are saved under the same session's `commands/` directory;
+short results create no files. Saved logs report total, retained, and omitted capture bytes. They
+are not necessarily complete logs: capture loss is irreversible, and pathological lines are
+wrapped to support `grep` and ranged `read_file`. Save failures preserve the command outcome and
+report that only the preview is available. Tool responses and saved logs use the same XML-like
+renderer as `read_file`: execution `status`, `exit-code`, result `reason`, capture statistics and
+`saved-path` are envelope attributes, not command text. Inline results use `content="preview"`
+and `preview-truncated`; saved logs use `content="snapshot"` and `snapshot-long-lines-wrapped`.
+`capture-truncated` independently reports irreversible capture loss. Bodies contain untrusted
+command output and labeled Evil Jelly truncation markers; host errors use separate `tool_notice`
+elements. Attribute values are escaped and closing-tag collisions select a stable alternate tag.
+These delimiters indicate provenance, not a security boundary.
+This bounds capture storage, not UI/headless live-output queues or total process memory, and adds
+no automatic cleanup or durable attachment guarantee.
 
 ### Durable sessions
 

@@ -27,7 +27,7 @@ describe("truncateOutput", () => {
 
     expect(lines).toHaveLength(3);
     expect(lines[0]).toBe("before");
-    expect(lines[1]).toContain("[LINE TRUNCATED FOR AGENT:");
+    expect(lines[1]).toContain("[evil-jelly: line truncated for preview (");
     expect(Buffer.byteLength(lines[1], "utf8")).toBeLessThanOrEqual(MAX_OUTPUT_LINE_BYTES);
     expect(lines[2]).toBe("after");
     expect(out).not.toContain(TRUNCATED_FOR_AGENT_MARKER);
@@ -42,8 +42,8 @@ describe("truncateLongLines", () => {
 
     expect(out).toContain("\r\n");
     expect(lines[1]).toBe("short");
-    expect(lines[0]).toContain("[LINE TRUNCATED FOR AGENT:");
-    expect(lines[2]).toContain("[LINE TRUNCATED FOR AGENT:");
+    expect(lines[0]).toContain("[evil-jelly: line truncated for preview (");
+    expect(lines[2]).toContain("[evil-jelly: line truncated for preview (");
     expect(lines.every((line) => Buffer.byteLength(line, "utf8") <= 64)).toBe(true);
     expect(out).not.toContain("�");
   });
