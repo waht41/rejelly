@@ -21,7 +21,11 @@ import { isKnownSessionEvent } from "../../../domains/session/model/sessionEvent
 import { openSessionRecorder } from "../../../domains/session/recorder/sessionRecorder";
 import { resumeSession } from "../../../domains/session/repository/sessionStore";
 import { isCompactionBridgeMessage } from "../../../shared/conversation/compactionMessages";
-import { setWorkspaceRoot } from "../../../shared/fs-policy/workspace-context";
+import {
+  getAgentScratchDir,
+  getProjectTempRoot,
+  setWorkspaceRoot,
+} from "../../../shared/fs-policy/workspace-context";
 import type { EvilJellyBindings } from "../../../shared/host/bindings";
 import { messageContentToText } from "../../../shared/model/message/content";
 import { projectFrozenUserInputMessage } from "../../../shared/model/prompt/frozenUserInput";
@@ -69,6 +73,18 @@ function createMemoryBindings(inputs: Array<string | MemoryInput>): EvilJellyBin
   };
 }
 
+function scratchPaths(model: ReturnType<typeof createMockModel>): string[] {
+  return model.calls.all().map(({ messages }) => {
+    const instruction = messages
+      .filter(isInstructionMessage)
+      .map((message) => messageContentToText(message.content))
+      .join("\n");
+    const match = /^Agent Scratch Dir: (.+)$/m.exec(instruction);
+    if (!match?.[1]) throw new Error("Model request is missing its scratch directory.");
+    return match[1];
+  });
+}
+
 describe("non-TTY session lifecycle", () => {
   let tmpDir: string;
   let sessionsRoot: string;
@@ -94,6 +110,7 @@ describe("non-TTY session lifecycle", () => {
     restoreEnv("OPENAI_CONTEXT_WINDOW", originalContextWindow);
     setWorkspaceRoot(process.cwd());
     resetInterruptibleTaskStack("test cleanup");
+    await fs.rm(getProjectTempRoot(workspaceRoot), { recursive: true, force: true });
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -114,6 +131,61 @@ describe("non-TTY session lifecycle", () => {
     await expect(
       fs.access(resolveV3SessionPath(workspaceRoot, "untouched", { sessionsRoot })),
     ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.access(getProjectTempRoot(workspaceRoot))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it.each([
+    false,
+    true,
+  ])("isolates scratch across conversations and keeps it stable across turns (durable=%s)", async (durable) => {
+    const legacyFile = path.join(workspaceRoot, ".evil-jelly", "tmp", "keep.txt");
+    await fs.mkdir(path.dirname(legacyFile), { recursive: true });
+    await fs.writeFile(legacyFile, "existing scratch");
+    const model = createMockModel();
+    model.sequence([
+      { type: "text", content: "First reply." },
+      { type: "text", content: "Second reply." },
+    ]);
+    const options = durable
+      ? {
+          sessionId: "scratch-first",
+          sessionStartMode: "new" as const,
+          session: { enabled: true as const, appVersion: "1.0.0", sessionsRoot },
+        }
+      : {};
+    await runEvilJellyHost(createMemoryBindings(["First task", "Second task", "/exit"]), {
+      runControl: createInteractiveRunControl(),
+      model: model.adapter,
+      ...options,
+    });
+
+    const paths = scratchPaths(model);
+    expect(paths).toHaveLength(2);
+    const directory = paths[0]!;
+    expect(paths[1]).toBe(directory);
+    expect(path.isAbsolute(directory)).toBe(true);
+    expect(path.dirname(path.dirname(directory))).toBe(
+      path.join(getProjectTempRoot(workspaceRoot), "sessions"),
+    );
+    expect(path.basename(directory)).toBe("scratch");
+    await expect(fs.access(directory)).rejects.toMatchObject({ code: "ENOENT" });
+    if (durable) expect(directory).toBe(getAgentScratchDir("scratch-first", workspaceRoot));
+    expect(await fs.readFile(legacyFile, "utf8")).toBe("existing scratch");
+
+    const nextModel = createMockModel();
+    nextModel.sequence([{ type: "text", content: "New conversation." }]);
+    await runEvilJellyHost(createMemoryBindings(["New task", "/exit"]), {
+      runControl: createInteractiveRunControl(),
+      model: nextModel.adapter,
+      ...options,
+      ...(durable ? { sessionId: "scratch-second" } : {}),
+    });
+    const nextDirectory = scratchPaths(nextModel)[0]!;
+    expect(nextDirectory).not.toBe(directory);
+    await expect(fs.access(nextDirectory)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.access(directory)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("persists a tool turn, manual compaction, resume, and a continued turn", async () => {
@@ -278,6 +350,10 @@ describe("non-TTY session lifecycle", () => {
             ),
         ),
     ).toBe(true);
+
+    const expectedScratch = getAgentScratchDir("lifecycle", workspaceRoot);
+    expect(new Set(scratchPaths(firstModel))).toEqual(new Set([expectedScratch]));
+    expect(scratchPaths(secondModel)).toEqual([expectedScratch]);
 
     const stored = await readSessionEvents(workspaceRoot, "lifecycle", { sessionsRoot });
     expect(stored.meta).toMatchObject({ type: "session_meta", sessionId: "lifecycle" });

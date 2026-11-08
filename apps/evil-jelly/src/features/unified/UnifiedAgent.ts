@@ -36,6 +36,7 @@ import { materializeMessageHistory } from "../../domains/session/repository/sess
 import { equipSkillKit } from "../../domains/skills/agent/equipSkillKit";
 import { equipWebResearchKit } from "../../domains/web/kit";
 import { equipReadOnlyWorkspaceKit, equipRunCommandKit } from "../../domains/workspace/kit";
+import { equipAgentScratchDir } from "../../domains/workspace/scratch";
 import { buildWorkspaceRuleInstructionBlock } from "../../domains/workspace/workspaceRule";
 import {
   createCreateFileTool,
@@ -155,10 +156,12 @@ async function useUnifiedPrompts(props: ConversationAgentProps): Promise<void> {
   const [artifacts] = equipMemory<Record<string, string>>(UNIFIED_TOOL_ARTIFACTS_KEY, {});
   const artifactSummary = formatArtifactSummaryForInstruction(artifacts);
   const workspaceRuleBlock = await buildWorkspaceRuleInstructionBlock();
+  const scratchDir = await equipAgentScratchDir(props.sessionId);
 
   equipSystem(buildUnifiedSystemPrompt({ workspaceRuleBlock }));
   equipInstruction(
     buildUnifiedInstruction({
+      scratchDir,
       artifactSummary,
       useTerminalUserReplyRule: shouldUseTerminalUserReplyRule(props.replySurface),
     }),

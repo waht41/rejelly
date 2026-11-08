@@ -5,7 +5,6 @@ import { workspaceBucket } from "../workspaceBucket";
 import { isPathInside } from "./path-containment";
 
 export const EVIL_JELLY_STATE_DIR = ".evil-jelly";
-export const AGENT_SCRATCH_DIR = `${EVIL_JELLY_STATE_DIR}/tmp`;
 
 /** The project's system-temp workspace uses the same bucket identity as session storage. */
 export function getProjectTempRoot(workspaceRoot = getWorkspaceRoot()): string {
@@ -14,6 +13,14 @@ export function getProjectTempRoot(workspaceRoot = getWorkspaceRoot()): string {
     "evil-jelly",
     workspaceBucket(workspaceRoot),
   );
+}
+
+/** Session-owned disposable files, separate from durable history and other tool outputs. */
+export function getAgentScratchDir(sessionId: string, workspaceRoot = getWorkspaceRoot()): string {
+  if (!sessionId || sessionId === "." || sessionId === ".." || /[/\\:]/.test(sessionId)) {
+    throw new Error("Scratch session id must be a single path component.");
+  }
+  return path.join(getProjectTempRoot(workspaceRoot), "sessions", sessionId, "scratch");
 }
 
 let workspaceRoot = path.resolve(process.cwd());

@@ -1,9 +1,21 @@
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { resolveWorkspaceCwd } from "./workspace-context";
+import { getAgentScratchDir, resolveWorkspaceCwd } from "./workspace-context";
 
 describe("workspace context", () => {
+  it.each([
+    "",
+    ".",
+    "..",
+    "../other",
+    "nested/session",
+    "nested\\session",
+    "C:other",
+  ])("rejects scratch session ids that are not single path components: %s", (sessionId) => {
+    expect(() => getAgentScratchDir(sessionId)).toThrow("single path component");
+  });
+
   it("resolves workspace-scoped cwd and refuses escapes", () => {
     const root = path.join(os.tmpdir(), `evil-jelly-workspace-context-${Date.now()}`);
 
