@@ -18,7 +18,7 @@ const runCommandParameters = z.object({
   command: z
     .string()
     .min(1)
-    .max(8000)
+    .max(20_000)
     .describe("Single shell command to execute (e.g. pnpm install dayjs, pnpm run lint)."),
   cwd: z
     .string()
