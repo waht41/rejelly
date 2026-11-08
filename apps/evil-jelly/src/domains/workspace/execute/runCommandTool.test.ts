@@ -196,6 +196,33 @@ describe("RunCommandTool output and cwd policy", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it.each([
+    ["pnpm verify", "pnpm-verify"],
+    ["git diff -- src/file.ts", "git-diff-src-file-ts"],
+    ["TOKEN=secret pnpm verify", "TOKEN-secret-pnpm-verify"],
+    ["  & 'C:\\tools\\node.exe' --version", "C-tools-node-exe-version"],
+    ["git    diff\n--stat", "git-diff-stat"],
+    [";|&<>\"'...", "command"],
+    [`${"a".repeat(40)} secret`, "a".repeat(40)],
+  ])("names snapshots from the sanitized command prefix (%s)", async (command, prefix) => {
+    hostBindingMock.current = createTestHostBindings({ mode: "normal" });
+    const output = "line\n".repeat(10000);
+    const bytes = Buffer.byteLength(output);
+    executeShellCommandMock.mockResolvedValue({
+      exitCode: 0,
+      output,
+      capture: { totalBytes: bytes, retainedBytes: bytes, omittedBytes: 0 },
+    });
+    const write = vi.spyOn(getWorkspaceFiles(), "writeNewResolved").mockResolvedValue(undefined);
+    const result = String(
+      await RunCommandTool.handler({ command, declaredSafety: "read_only", reason: "log naming" }),
+    );
+    const file = write.mock.calls[0]![0].abs;
+    expect(path.dirname(file)).toBe(directory);
+    expect(path.basename(file)).toMatch(new RegExp(`^${prefix}-[a-f0-9]{16}\\.log$`));
+    expect(commandEnvelope(result).attributes).toContain(`saved-path="${file}"`);
+  });
+
   it("saves a readable bounded snapshot and reports irreversible capture loss", async () => {
     hostBindingMock.current = createTestHostBindings({ mode: "normal" });
     const capture = new BoundedCommandOutput();

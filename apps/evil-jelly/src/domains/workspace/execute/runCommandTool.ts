@@ -181,7 +181,7 @@ export function createRunCommandTool(
         unregisterTask();
       });
       recordActiveToolOutcome(getCommandOutcome(result));
-      return renderCommandOutput(result, directory);
+      return renderCommandOutput(result, directory, command);
     },
   };
 }

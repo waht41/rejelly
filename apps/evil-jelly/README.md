@@ -232,7 +232,12 @@ Existing project-level snapshots are left untouched.
 retaining the first and last 4 MiB in observed arrival order. Excess middle output is discarded,
 while both pipes continue to be drained. After completion (including failure, timeout, or abort),
 results exceeding the inline preview are saved under the same session's `commands/` directory;
-short results create no files. Saved logs report total, retained, and omitted capture bytes. They
+short results create no files. Log names use `<command-prefix>-<16-random-hex-digits>.log`, such as
+`pnpm-verify-7a92bc103f64e8d5.log`. The prefix comes from the first 40 command characters after
+leading whitespace is removed: runs of non-ASCII-alphanumeric characters become hyphens, and
+edge hyphens are removed. An empty prefix falls back to `command`. This is filename sanitization,
+not redaction: argument or environment values near the start of a command can appear in filenames.
+Saved logs report total, retained, and omitted capture bytes. They
 are not necessarily complete logs: capture loss is irreversible, and pathological lines are
 wrapped to support `grep` and ranged `read_file`. Save failures preserve the command outcome and
 report that only the preview is available. Tool responses and saved logs use the same XML-like

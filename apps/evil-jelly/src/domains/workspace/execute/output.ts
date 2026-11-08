@@ -101,10 +101,21 @@ export function getCommandOutcome(
   };
 }
 
+/** A readable filename label, not a shell parser or secret redactor. */
+function commandLogPrefix(command: string): string {
+  const prefix = command
+    .trimStart()
+    .slice(0, 40)
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return prefix || "command";
+}
+
 /** Save only after execution completes, and only when the inline preview loses content. */
 export async function renderCommandOutput(
   result: ExecuteShellCommandResult,
   directory: string,
+  command: string,
 ): Promise<string> {
   const outcome = getCommandOutcome(result);
   const attributes: Record<string, string> = {
@@ -144,7 +155,10 @@ export async function renderCommandOutput(
     };
     try {
       const policy = getWorkspaceFiles();
-      const file = path.join(directory, `${randomBytes(8).toString("hex")}.log`);
+      const file = path.join(
+        directory,
+        `${commandLogPrefix(command)}-${randomBytes(8).toString("hex")}.log`,
+      );
       await policy.writeNewResolved(
         policy.classifyPath(file),
         renderPseudoXmlElement("command_output", snapshot.text, {
