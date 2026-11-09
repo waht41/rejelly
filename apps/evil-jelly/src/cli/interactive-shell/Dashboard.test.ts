@@ -41,6 +41,10 @@ vi.mock("../conversation-display/history/StaticHistory", async (original) => {
   };
 });
 vi.mock("./clipboard/clipboardText", () => ({ copyTextToClipboard: vi.fn(async () => {}) }));
+// Shell probing has dedicated coverage; rendering tests must not wait for a real interpreter.
+vi.mock("../../domains/workspace/execute/commandShell", () => ({
+  getCommandShell: () => ({ path: "/bin/sh", kind: "posix" }),
+}));
 
 class Input extends PassThrough {
   isTTY = true;
