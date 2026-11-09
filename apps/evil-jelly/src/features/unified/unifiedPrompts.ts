@@ -1,6 +1,6 @@
 import { arch, platform, release } from "node:os";
 import { getShellPath } from "../../domains/workspace/execute/executeShellCommand";
-import { AGENT_SCRATCH_DIR, getWorkspaceRoot } from "../../shared/fs-policy/workspace-context";
+import { getWorkspaceRoot } from "../../shared/fs-policy/workspace-context";
 import { PromptBuilder } from "../../shared/model/prompt/builder";
 import { TERMINAL_USER_REPLY_RULE, TERMINAL_USER_REPLY_RULE_TITLE } from "./outputSurface";
 
@@ -73,7 +73,7 @@ export function buildUnifiedSystemPrompt(options?: { workspaceRuleBlock: string 
   );
   builder.addList(
     [
-      "Use edit_file for existing files, create_file for new files, and delete_file for removals. Prefer batching related edits into one reviewable change. Keep disposable scripts and intermediate files under the agent scratch directory.",
+      "Use edit_file for existing files, create_file for new files, and delete_file for removals. Prefer batching related edits into one reviewable change. Keep disposable scripts and intermediate files in the Agent Scratch Dir provided in Environment.",
       "Report verification faithfully: state failures and skipped checks, and never imply that an unrun or failing check passed.",
     ],
     { title: "EDITING AND VERIFICATION:", style: "numbered" },
@@ -94,6 +94,7 @@ export function buildUnifiedSystemPrompt(options?: { workspaceRuleBlock: string 
 }
 
 export function buildUnifiedInstruction(params: {
+  scratchDir: string;
   artifactSummary: string;
   useTerminalUserReplyRule?: boolean;
 }): string {
@@ -105,7 +106,7 @@ export function buildUnifiedInstruction(params: {
       : getShellPath();
   const builder = new PromptBuilder();
   builder.addBlock(
-    `## Environment\nWorkspace Root: ${getWorkspaceRoot()}\nAgent Scratch Dir: ${AGENT_SCRATCH_DIR}\nCurrent OS: ${currentOs}\nShell: ${shellNote}`,
+    `## Environment\nWorkspace Root: ${getWorkspaceRoot()}\nAgent Scratch Dir: ${params.scratchDir}\nCurrent OS: ${currentOs}\nShell: ${shellNote}`,
   );
   builder.when(params.useTerminalUserReplyRule, (b) =>
     b.addBlock(`${TERMINAL_USER_REPLY_RULE_TITLE}:\n${TERMINAL_USER_REPLY_RULE}`),

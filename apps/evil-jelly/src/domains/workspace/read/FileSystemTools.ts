@@ -8,7 +8,6 @@ import {
   fileLocatorAttributes,
   fileLocatorFromResolved,
 } from "../../../shared/fs-policy/file-locator";
-import { AGENT_SCRATCH_DIR } from "../../../shared/fs-policy/workspace-context";
 import {
   getWorkspaceFiles,
   type ResolvedFsPath,
@@ -109,7 +108,7 @@ export const ListDirTool: ToolDefinition<typeof listDirParameters> = {
     "Respects workspace root .gitignore and always hides bulky/tool dirs by default. " +
     `Inspects at most ${MAX_DIRECTORY_SCAN_ENTRIES} directory entries normally, or ${MAX_IGNORED_DIRECTORY_SCAN_ENTRIES} with includeIgnored, across the entire call (including skipped entries). ` +
     "Use includeIgnored to explore ignored directories, including node_modules, .pnpm, dist, and build. Link names are shown but never followed. " +
-    `${AGENT_SCRATCH_DIR}/ is the agent scratch directory for temporary files. ` +
+    "Use the Agent Scratch Dir provided in Environment for temporary files. " +
     "Use depth > 1 to scan layout faster.",
   parameters: listDirParameters,
   handler: async ({ dirPath, depth, includeIgnored }) => {
@@ -315,7 +314,7 @@ export const ReadFileTool: ToolDefinition<typeof readFileParameters> = {
     "Returns one XML-like <file> envelope per result while leaving each file body unchanged. " +
     'An unchanged result may be returned as <file ... status="unchanged" reference="previous-read" /> when the identical prior result is still in context. ' +
     "Pass { path, offset, limit } entries to read a line range from files too large to read whole, or around a known line; range metadata is in the envelope attributes and is not added to the body. " +
-    `${AGENT_SCRATCH_DIR}/ is the agent scratch directory for temporary files.`,
+    "Use the Agent Scratch Dir provided in Environment for temporary files.",
   parameters: readFileParameters,
   handler: async ({ filePaths }) => {
     const policy = getWorkspaceFiles();

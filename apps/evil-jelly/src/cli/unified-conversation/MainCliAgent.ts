@@ -22,6 +22,7 @@ import {
   type SkillRuntimeSnapshot,
 } from "../../domains/skills/agent/skillRuntime";
 import { equipAgentFileAccess } from "../../domains/workspace/file-access/agentFileAccess";
+import { equipAgentScratchDir } from "../../domains/workspace/scratch";
 import type { ConversationAgentProps } from "../../features/unified/conversationRun";
 import { UnifiedAgent } from "../../features/unified/UnifiedAgent";
 import { env } from "../../shared/configuration/env";
@@ -464,6 +465,7 @@ export const MainCliAgent = createAgent<MainCliAgentProps, void>({
   handler: async (props) => {
     await setBinding(props);
     await equipAgentFileAccess();
+    await equipAgentScratchDir(props.sessionId);
     const host = getBinding();
     const session = equipConversationSession(
       {

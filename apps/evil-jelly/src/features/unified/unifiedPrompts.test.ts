@@ -1,7 +1,10 @@
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildUnifiedInstruction, buildUnifiedSystemPrompt } from "./unifiedPrompts";
 
 const buildDefaultSystemPrompt = () => buildUnifiedSystemPrompt({ workspaceRuleBlock: "" });
+const scratchDir = path.join(os.tmpdir(), "evil-jelly-prompt-scratch");
 
 describe("buildUnifiedSystemPrompt", () => {
   it("builds the application framework in a stable order", () => {
@@ -49,12 +52,24 @@ describe("buildUnifiedSystemPrompt", () => {
 });
 
 describe("buildUnifiedInstruction", () => {
+  it("puts the resolved scratch path only in dynamic Environment context", () => {
+    const instruction = buildUnifiedInstruction({ scratchDir, artifactSummary: "" });
+    const system = buildDefaultSystemPrompt();
+
+    expect(instruction).toContain(`Agent Scratch Dir: ${scratchDir}`);
+    expect(system).toContain("Agent Scratch Dir provided in Environment");
+    expect(system).not.toContain(scratchDir);
+    expect(system).not.toContain(".evil-jelly/tmp");
+  });
+
   it("adds terminal reply guidance only to terminal instructions", () => {
     const terminalInstruction = buildUnifiedInstruction({
+      scratchDir,
       artifactSummary: "",
       useTerminalUserReplyRule: true,
     });
     const documentInstruction = buildUnifiedInstruction({
+      scratchDir,
       artifactSummary: "",
       useTerminalUserReplyRule: false,
     });
@@ -65,8 +80,9 @@ describe("buildUnifiedInstruction", () => {
   });
 
   it("mentions artifact recovery only when artifacts are present", () => {
-    const withoutArtifacts = buildUnifiedInstruction({ artifactSummary: "" });
+    const withoutArtifacts = buildUnifiedInstruction({ scratchDir, artifactSummary: "" });
     const withArtifacts = buildUnifiedInstruction({
+      scratchDir,
       artifactSummary: "- artifact_1234: truncated output",
     });
 

@@ -9,7 +9,6 @@ import { z } from "zod";
 import { invalidateSettingsCache } from "../../../shared/configuration/settings";
 import { getErrnoCode } from "../../../shared/foundation/errno";
 import { normalizeNewlines } from "../../../shared/foundation/string";
-import { AGENT_SCRATCH_DIR } from "../../../shared/fs-policy/workspace-context";
 import {
   getWorkspaceFiles,
   type ResolvedFsPath,
@@ -176,7 +175,7 @@ const singleFileCreateSchema = z.object({
   filePath: z
     .string()
     .describe(
-      `Path to create; parent directories are created when missing. Use ${AGENT_SCRATCH_DIR}/ for temporary scripts and intermediate files.`,
+      "Path to create; parent directories are created when missing. Use the Agent Scratch Dir provided in Environment for temporary scripts and intermediate files.",
     ),
   content: z.string().describe("Full file contents (UTF-8)."),
 });
@@ -573,7 +572,8 @@ export function createCreateFileTool(
 ): ToolDefinition<typeof createFileParameters> {
   return {
     name: "create_file",
-    description: `Create one or many new files with given UTF-8 content. Fails if any file already exists. Use ${AGENT_SCRATCH_DIR}/ for temporary scripts and intermediate files. User must approve the unified diff first.`,
+    description:
+      "Create one or many new files with given UTF-8 content. Fails if any file already exists. Use the Agent Scratch Dir provided in Environment for temporary scripts and intermediate files. User must approve the unified diff first.",
     parameters: createFileParameters,
     handler: async (input) => {
       const policy = getWorkspaceFiles();

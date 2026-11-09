@@ -3,7 +3,7 @@ import fsPromises from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { AGENT_SCRATCH_DIR } from "./workspace-context";
+import { getAgentScratchDir, getProjectTempRoot } from "./workspace-context";
 import { WorkspaceFiles } from "./workspace-files";
 
 function createPolicy(): WorkspaceFiles {
@@ -174,15 +174,27 @@ describe("WorkspaceFiles", () => {
     expect(hit.error).toContain("run_command");
   });
 
-  it("allows the dedicated agent scratch directory inside the state dir", () => {
-    const root = path.join(os.tmpdir(), `evil-jelly-fs-policy-${Date.now()}-${Math.random()}`);
-    fs.mkdirSync(root, { recursive: true });
-    fs.writeFileSync(path.join(root, ".gitignore"), ".evil-jelly/\n", "utf-8");
-    const policy = new WorkspaceFiles(root);
-
-    expect(
-      policy.tryResolveWorkspacePath(`${AGENT_SCRATCH_DIR}/probe.txt`, { kind: "write" }).ok,
-    ).toBe(true);
+  it("reads and writes session scratch files without opening the surrounding system temp", async () => {
+    const policy = createPolicy();
+    const directory = getAgentScratchDir("scratch-session", policy.getRoot());
+    const file = path.join(directory, "probe.txt");
+    try {
+      await expect(fsPromises.access(directory)).rejects.toMatchObject({ code: "ENOENT" });
+      const resolved = policy.tryResolveWorkspacePath(file, { kind: "write" });
+      if (!resolved.ok) throw new Error(resolved.error);
+      await policy.writeNewResolved(resolved, "scratch content");
+      expect(await policy.readFile(file)).toBe("scratch content");
+      expect(policy.tryResolveWorkspacePath(directory).ok).toBe(true);
+      expect(policy.tryResolveWorkspacePath(path.join(os.tmpdir(), "other.txt")).ok).toBe(false);
+      expect(
+        policy.tryResolveWorkspacePath(
+          getAgentScratchDir("scratch-session", `${policy.getRoot()}-other`),
+          { kind: "write" },
+        ).ok,
+      ).toBe(false);
+    } finally {
+      await fsPromises.rm(getProjectTempRoot(policy.getRoot()), { recursive: true, force: true });
+    }
   });
 
   it("uses root .gitignore as dynamic hidden guard", () => {

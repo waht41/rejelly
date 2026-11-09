@@ -212,6 +212,21 @@ the model. Use the code to apply the corresponding repair:
 | `skill.resource.invalid` | Make the resource resolve to a readable regular file under `references/` or `assets/`. |
 | `skill.resource.limit-exceeded` | Keep at most 256 resources per Skill and nesting at no more than 8 directory levels; excess inventory is omitted. |
 
+### Agent scratch files
+
+Disposable scripts and intermediate files use a session-specific directory outside the repository:
+`<system-temp>/evil-jelly/<workspace-bucket>/sessions/<session-id>/scratch/`. The model receives its
+absolute path as `Agent Scratch Dir` in Environment; file tools use that path directly, without
+shell-variable expansion. Ordinary file-write and command approvals still apply.
+
+The path stays stable across turns and durable-session resumes. Ephemeral and replay conversations
+receive separate random scratch identities. Allocating the path or preparing a model prompt does
+not create the directory. `create_file` creates missing parent directories on its first write; shell
+commands writing there directly must create the directory as needed. Scratch files are temporary
+working material, not durable session attachments or project deliverables. This release does not add automatic expiry
+or exit cleanup, and leaves existing `.evil-jelly/tmp` files untouched. Webpage snapshots and command
+output handling are unchanged.
+
 ### Durable sessions
 
 Interactive conversations are saved locally and can be continued with `evil --resume` or the in-session `/resume` command. Sessions are scoped to the active workspace, and the picker shows the most recently updated sessions for that workspace.
