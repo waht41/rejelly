@@ -1,6 +1,7 @@
 import type { ContentPart, Message } from "@rejelly/core";
 import { copyFrozenUserInputOrigin } from "../../../shared/model/prompt/frozenUserInput";
 import { SESSION_BLOB_SCHEME } from "../../../shared/session/blobContract";
+import { copyMessageToolOutcome } from "../../../shared/tool-observation/messageOutcome";
 import { readSessionBlob, type SessionBlobStoreOptions } from "../journal/sessionBlobStore";
 import {
   getSessionImageBlobMetadata,
@@ -41,7 +42,9 @@ export async function materializeMessageImageBlobs(
     });
     changed = true;
   }
-  return changed ? copyFrozenUserInputOrigin(message, { ...message, content }) : message;
+  return changed
+    ? copyMessageToolOutcome(message, copyFrozenUserInputOrigin(message, { ...message, content }))
+    : message;
 }
 
 export async function materializeMessageHistory(

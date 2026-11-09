@@ -2,7 +2,7 @@
  * Tests for withToolLogger: captures result, calls logToolBlock, stringifies objects, truncates preview.
  */
 
-import type { ToolContext } from "@rejelly/core";
+import { AbortError, type ToolContext } from "@rejelly/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EvilJellyBindings } from "../host/bindings";
 import { textPromptInput } from "../model/prompt/promptInput";
@@ -175,6 +175,22 @@ describe("withToolLogger", () => {
       outcome: "failed",
       exitCode: 1,
       failureKind: "nonzero_exit",
+    });
+  });
+
+  it("records thrown aborts as interrupted executions rather than ordinary failures", async () => {
+    const bindings = createMockBindings();
+    mockGetBinding.mockReturnValue(bindings);
+    const error = new AbortError("interrupted");
+    await expect(
+      withToolLogger().handler!({ toolName: "run_command", input: {} } as ToolContext, async () => {
+        throw error;
+      }),
+    ).rejects.toBe(error);
+    expect(bindings.toolBlocks[0]).toMatchObject({
+      ok: false,
+      outcome: "aborted",
+      failureKind: "handler_abort",
     });
   });
 

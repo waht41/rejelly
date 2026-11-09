@@ -36,7 +36,7 @@ export class ShellOutputStreamDecoder {
     if (utf8Status === "invalid") {
       return this.flushPendingWithEncoding("gb18030");
     }
-    if (this.pendingBytes < WINDOWS_ENCODING_SAMPLE_BYTES || utf8Status === "incomplete") {
+    if (this.pendingBytes < WINDOWS_ENCODING_SAMPLE_BYTES) {
       return "";
     }
 

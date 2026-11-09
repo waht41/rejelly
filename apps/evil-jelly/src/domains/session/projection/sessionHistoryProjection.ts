@@ -15,6 +15,8 @@ import {
   type TranscriptItem,
   tailTranscriptByInitialTurns,
 } from "../../../shared/session/transcript";
+import { registerMessageToolOutcome } from "../../../shared/tool-observation/messageOutcome";
+import type { ToolExecutionOutcomeRecord } from "../../../shared/tool-observation/model";
 import { getLegacyUserInputDisplay } from "../model/frozenUserInput";
 import type { SessionBudgetData, ToolObservationRecordedEvent } from "../model/sessionEvents";
 import type { SessionContextTokenAnchor, SessionRecoveryCandidate } from "../model/sessionTypes";
@@ -140,12 +142,19 @@ export function buildLatestRecoveryCandidate(
   };
 }
 
+interface ReplayedToolOutcome {
+  message?: StoredSessionMessage;
+  outcome?: ToolExecutionOutcomeRecord;
+  ownerReported?: boolean;
+}
+
 export function buildStoredActiveContext(replay: PreparedSessionReplay): StoredSessionMessage[] {
   // message_recorded grows the current model context, while context_compacted resets only this
   // projection. Transcript construction below continues reading the original message events.
   let messages: StoredSessionMessage[] = [];
   const openTurns = new Set<string>();
   let needsRecovery = false;
+  const toolBatches = new Map<string, Map<string, ReplayedToolOutcome>>();
 
   for (const event of replay.events) {
     if (
@@ -156,13 +165,33 @@ export function buildStoredActiveContext(replay: PreparedSessionReplay): StoredS
     switch (event.type) {
       case "legacy_snapshot":
         messages = [...event.messages];
+        toolBatches.clear();
         break;
-      case "message_recorded":
-        messages.push(event.message);
+      case "message_recorded": {
+        // Keep host-only associations local to this projection, not the shared replay input.
+        const message = event.message.role === "tool" ? { ...event.message } : event.message;
+        messages.push(message);
+        if (message.role === "assistant") {
+          const batch = new Map<string, ReplayedToolOutcome>();
+          const duplicates = new Set<string>();
+          for (const call of message.tool_calls ?? []) {
+            if (batch.has(call.id)) duplicates.add(call.id);
+            batch.set(call.id, {});
+          }
+          for (const id of duplicates) batch.delete(id);
+          toolBatches.set(event.turnId, batch);
+        } else if (message.role === "tool" && message.tool_call_id) {
+          const slot = toolBatches.get(event.turnId)?.get(message.tool_call_id);
+          if (slot) {
+            slot.message = message;
+            if (slot.outcome) registerMessageToolOutcome(message, slot.outcome);
+          }
+        }
         if (event.source.kind === "user_input" && event.source.inputKind === "initial") {
           openTurns.add(event.turnId);
         }
         break;
+      }
       case "user_input_recorded":
         messages.push(event.runtimeMessage);
         if (event.inputKind === "initial") {
@@ -171,8 +200,25 @@ export function buildStoredActiveContext(replay: PreparedSessionReplay): StoredS
         break;
       case "context_compacted":
         messages = [...event.replacementHistory];
+        toolBatches.clear();
         break;
+      case "tool_observation_recorded":
+      case "tool_call_completed": {
+        if (!event.turnId || !event.outcome) break;
+        const slot = toolBatches.get(event.turnId)?.get(event.toolCallId);
+        if (!slot || (slot.ownerReported && event.type === "tool_call_completed")) break;
+        // The owner observation is authoritative; completion is the fallback projection.
+        slot.ownerReported = event.type === "tool_observation_recorded";
+        slot.outcome = {
+          outcome: event.outcome,
+          ...(event.exitCode !== undefined ? { exitCode: event.exitCode } : {}),
+          ...(event.failureKind ? { failureKind: event.failureKind } : {}),
+        };
+        if (slot.message) registerMessageToolOutcome(slot.message, slot.outcome);
+        break;
+      }
       case "turn_completed":
+        toolBatches.delete(event.turnId);
         openTurns.delete(event.turnId);
         if (event.status !== "completed" && !event.inputWithdrawn) {
           needsRecovery = true;

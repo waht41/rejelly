@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { executeShellCommand, getShellEnvironmentSummary } from "./executeShellCommand";
+import { executeShellCommand, getShellPath } from "./executeShellCommand";
 import {
   combineCapturedShellOutput,
   decodeShellOutput,
@@ -15,13 +15,20 @@ function makeNodeCommand(jsCode: string): string {
 }
 
 describe("executeShellCommand", () => {
-  it("reports the host shell environment for command result headers", () => {
-    const summary = getShellEnvironmentSummary();
-    expect(summary).toContain(process.platform);
-    expect(summary).toContain("shell=");
-    if (process.platform === "win32") {
-      expect(summary).toContain("powershell.exe");
-    }
+  it("reports the host shell path for command result attributes", () => {
+    expect(getShellPath()).toBe(
+      process.platform === "win32" ? "powershell.exe" : (process.env.SHELL ?? "/bin/sh"),
+    );
+  });
+
+  it("does not mix host placeholders into an empty command body", async () => {
+    const result = await executeShellCommand({
+      command: makeNodeCommand("void 0;"),
+      cwd: process.cwd(),
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toBe("");
+    expect(result.capture.totalBytes).toBe(0);
   });
 
   it("runs through the host shell, preserves arguments, and streams both output channels", async () => {
@@ -53,6 +60,34 @@ describe("executeShellCommand", () => {
     expect(captured).toBe("green plain\nworld");
   });
 
+  it("drains both pipes beyond a shared capture budget and keeps their head and tail", async () => {
+    let streamedBytes = 0;
+    const result = await executeShellCommand(
+      {
+        command: makeNodeCommand(
+          "process.stdout.write('STDOUT_HEAD\\n'); process.stdout.write(Buffer.alloc(6*1024*1024,120),()=>{process.stderr.write(Buffer.alloc(6*1024*1024,121),()=>process.stderr.write('\\nSTDERR_TAIL\\n'))});",
+        ),
+        cwd: process.cwd(),
+      },
+      (chunk) => {
+        streamedBytes += Buffer.byteLength(chunk, "utf8");
+      },
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.capture.totalBytes).toBe(streamedBytes);
+    expect(result.capture.totalBytes).toBeGreaterThan(12 * 1024 * 1024);
+    expect(result.capture.retainedBytes).toBe(8 * 1024 * 1024);
+    expect(result.capture.omittedBytes).toBe(
+      result.capture.totalBytes - result.capture.retainedBytes,
+    );
+    expect(result.output.startsWith("STDOUT_HEAD\n")).toBe(true);
+    expect(result.output).toContain(
+      `[evil-jelly: ${result.capture.omittedBytes} UTF-8 bytes omitted by capture limit]`,
+    );
+    expect(result.output.endsWith("STDERR_TAIL\n")).toBe(true);
+  });
+
   it("returns non-zero exit code for failed command", async () => {
     const result = await executeShellCommand({
       command: makeNodeCommand("process.stderr.write('boom'); process.exit(7);"),
@@ -75,6 +110,19 @@ describe("executeShellCommand", () => {
 
     expect(decoder.write(bytes.subarray(0, 2))).toBe("");
     expect(decoder.write(bytes.subarray(2))).toBe(expected);
+    expect(decoder.end()).toBe("");
+  });
+
+  it("bounds the encoding sample even if every chunk ends with an incomplete UTF-8 character", () => {
+    const decoder = new ShellOutputStreamDecoder(true);
+    expect(decoder.write(Buffer.from([0xe7]))).toBe("");
+    const continuation = Buffer.concat([
+      Buffer.from([0x95, 0x8c]),
+      Buffer.from("界".repeat(100)),
+      Buffer.from([0xe7]),
+    ]);
+    expect(decoder.write(continuation)).toBe("界".repeat(101));
+    expect(decoder.write(Buffer.from([0x95, 0x8c]))).toBe("界");
     expect(decoder.end()).toBe("");
   });
 

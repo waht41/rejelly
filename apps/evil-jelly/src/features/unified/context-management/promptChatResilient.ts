@@ -7,6 +7,10 @@ import {
 } from "@rejelly/core/policy";
 import type { z } from "zod";
 import type { SessionMessageSink } from "../../../shared/session/recorderPort";
+import {
+  copyMessageToolOutcome,
+  type ToolOutcomeCollector,
+} from "../../../shared/tool-observation/messageOutcome";
 import type { TurnProgressEvent } from "../conversationRun";
 import type { PromptChatCompactionConfig, PromptTokenUsageReader } from "./compaction";
 import {
@@ -55,6 +59,7 @@ export interface PromptChatResilientOptions<TSchema extends z.ZodTypeAny = z.Zod
   /** Evil-owned per-model-call usage observer; avoids widening Core's policy result API. */
   promptTokenUsage?: PromptTokenUsageReader;
   sessionRecorder?: SessionMessageSink;
+  toolOutcomes?: ToolOutcomeCollector;
   turnId?: string;
   onTurnProgress?: (event: TurnProgressEvent) => void;
   onModelRetryCheckpoint?: (history: Message[]) => void;
@@ -88,8 +93,11 @@ export const promptChatResilient = createAgentPolicy({
       ctx.span.setAttribute("schema", jsonSchema);
     }
 
+    const inputMessages = [...ctx.messages, ...customMessages];
     const runtime = ctx.fork({
-      messages: normalizeMessages([...ctx.messages, ...customMessages]),
+      messages: normalizeMessages(inputMessages).map((message, index) =>
+        copyMessageToolOutcome(inputMessages[index], message),
+      ),
     });
     const equippedMessageCount = runtime.messages.length - customMessages.length;
     const initialTokenAnchor = options?.initialTokenAnchor;
@@ -116,6 +124,7 @@ export const promptChatResilient = createAgentPolicy({
         : {}),
       promptTokenUsage: options?.promptTokenUsage,
       sessionRecorder: options?.sessionRecorder,
+      toolOutcomes: options?.toolOutcomes,
       turnId: options?.turnId,
       onTurnProgress: options?.onTurnProgress,
       onModelRetryCheckpoint: options?.onModelRetryCheckpoint,

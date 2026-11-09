@@ -19,6 +19,11 @@ import {
   getFrozenUserInputOrigin,
   registerFrozenUserInputOrigin,
 } from "../../shared/model/prompt/frozenUserInput";
+import {
+  getMessageToolOutcome,
+  registerMessageToolOutcome,
+} from "../../shared/tool-observation/messageOutcome";
+import type { ToolExecutionOutcomeRecord } from "../../shared/tool-observation/model";
 import { combineSessionBudget } from "./budget";
 import type { TurnRecoveryState } from "./turnRecovery";
 
@@ -55,6 +60,7 @@ export interface ConversationSession {
 interface MessageSnapshot {
   message: Message;
   imageBlobs: SessionImageBlobMap;
+  toolOutcome?: ToolExecutionOutcomeRecord;
   origin?: FrozenUserInputV1;
 }
 
@@ -65,15 +71,18 @@ type RecoverySnapshot = Omit<TurnRecoveryState, "userMessage" | "retryHistory"> 
 
 function snapshotMessage(message: Message): MessageSnapshot {
   const origin = getFrozenUserInputOrigin(message);
+  const toolOutcome = getMessageToolOutcome(message);
   return {
     message,
     imageBlobs: getSessionImageBlobMetadata(message),
+    ...(toolOutcome ? { toolOutcome } : {}),
     ...(origin ? { origin } : {}),
   };
 }
 
 function restoreMessage(snapshot: MessageSnapshot): Message {
   const message = registerRuntimeSessionImageBlobs(snapshot.message, snapshot.imageBlobs);
+  if (snapshot.toolOutcome) registerMessageToolOutcome(message, snapshot.toolOutcome);
   return snapshot.origin ? registerFrozenUserInputOrigin(message, snapshot.origin) : message;
 }
 

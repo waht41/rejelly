@@ -1,6 +1,6 @@
 /** Observe equipped tool calls and project their lifecycle to the configured runtime bindings. */
 
-import type { ToolContext, ToolMiddleware } from "@rejelly/core";
+import { isAbortError, type ToolContext, type ToolMiddleware } from "@rejelly/core";
 import { getBinding } from "../host/context";
 import {
   runWithToolDetailSlot,
@@ -76,8 +76,8 @@ export function withToolLogger(): ToolMiddleware {
             preview: message.slice(0, 400),
             fullResult: message,
             ok: false,
-            outcome: "failed",
-            failureKind: "handler_error",
+            outcome: isAbortError(error) ? "aborted" : "failed",
+            failureKind: isAbortError(error) ? "handler_abort" : "handler_error",
           });
           throw error;
         }

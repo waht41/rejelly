@@ -14,6 +14,10 @@ import {
 import { appendMessageContentSuffix } from "../../../shared/model/message/content";
 import { modelFailureYielded } from "../../../shared/model/modelFailureProgress";
 import type { SessionMessageSink } from "../../../shared/session/recorderPort";
+import {
+  copyMessageToolOutcome,
+  type ToolOutcomeCollector,
+} from "../../../shared/tool-observation/messageOutcome";
 import type { TurnProgressEvent } from "../conversationRun";
 import {
   DEFAULT_COMPACTION_MAX_ROUNDS,
@@ -42,6 +46,7 @@ export interface ToolCallLoopPolicySnapshot {
   initialTokenAnchor?: PromptTokenAnchor;
   promptTokenUsage?: PromptTokenUsageReader;
   sessionRecorder?: SessionMessageSink;
+  toolOutcomes?: ToolOutcomeCollector;
   turnId?: string;
   onTurnProgress?: (event: TurnProgressEvent) => void;
   onModelRetryCheckpoint?: (history: Message[]) => void;
@@ -156,10 +161,11 @@ class CompactionController {
     }
 
     const lastIndex = deltaMessages.length - 1;
-    deltaMessages[lastIndex] = {
-      ...deltaMessages[lastIndex],
-      content: appendMessageContentSuffix(deltaMessages[lastIndex].content, compaction.warnHint),
-    };
+    const message = deltaMessages[lastIndex];
+    deltaMessages[lastIndex] = copyMessageToolOutcome(message, {
+      ...message,
+      content: appendMessageContentSuffix(message.content, compaction.warnHint),
+    });
   }
 }
 
@@ -283,7 +289,9 @@ export async function runResilientToolCallLoopPolicy<T = unknown>(
 
       const toolRuntime = dispatchRuntime.fork({ messages: compaction.messages(deltaMessages) });
       snapshot.onTurnProgress?.("tool_execution_started");
+      snapshot.toolOutcomes?.beginBatch(result.calls);
       const toolOutputs = await executeTools(result.calls, { runtime: toolRuntime });
+      snapshot.toolOutcomes?.attach(toolOutputs);
       deltaMessages.push(...toolOutputs);
       if (snapshot.sessionRecorder && snapshot.turnId) {
         await snapshot.sessionRecorder.recordMessages(
