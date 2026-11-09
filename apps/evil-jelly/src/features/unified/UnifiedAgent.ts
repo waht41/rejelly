@@ -3,6 +3,7 @@
  * through tools when useful.
  */
 
+import path from "node:path";
 import {
   augmentTool,
   createAgent,
@@ -112,7 +113,8 @@ async function useUnifiedTools(props: ConversationAgentProps): Promise<void> {
   equipRunCommandKit();
   // Ad-hoc web lookups (web_search + read_webpage) during normal coding/chat. INV-0009 §2: the kit
   // may be equipped on UnifiedAgent; the standalone research agent stays the fan-out-ready unit.
-  equipWebResearchKit();
+  const scratchDir = await equipAgentScratchDir(props.sessionId);
+  equipWebResearchKit({ webpageDirectory: path.join(path.dirname(scratchDir), "webpage") });
   useArtifact();
   if (memoryRuntime) {
     equipMemoryKit({

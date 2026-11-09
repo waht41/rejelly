@@ -224,8 +224,9 @@ receive separate random scratch identities. Allocating the path or preparing a m
 not create the directory. `create_file` creates missing parent directories on its first write; shell
 commands writing there directly must create the directory as needed. Scratch files are temporary
 working material, not durable session attachments or project deliverables. This release does not add automatic expiry
-or exit cleanup, and leaves existing `.evil-jelly/tmp` files untouched. Webpage snapshots and command
-output handling are unchanged.
+or exit cleanup, and leaves existing `.evil-jelly/tmp` files untouched. Long webpage snapshots use
+`webpage/` beside `scratch/` under the same session directory, created only when a snapshot is saved.
+Existing project-level snapshots are left untouched. Command output handling is unchanged.
 
 ### Durable sessions
 
