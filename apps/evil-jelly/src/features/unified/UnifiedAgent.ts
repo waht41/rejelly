@@ -46,6 +46,7 @@ import {
 } from "../../domains/workspace/write/WriteTools";
 import { getBinding } from "../../shared/host/context";
 import { recordAppliedToolDiff } from "../../shared/tool-observation/invocationContext";
+import { ToolOutcomeCollector } from "../../shared/tool-observation/messageOutcome";
 import { evilJellyToolLoggerMiddleware } from "../../shared/tool-observation/middleware";
 import { equipToolObservationRecorder } from "../../shared/tool-observation/persistence";
 import type {
@@ -217,25 +218,32 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
       props.sessionRecorder,
     );
     const turnId = props.turnId;
-    await equipToolObservationRecorder(
-      recordToolObservation && turnId
-        ? {
-            record: (toolCallId, block) =>
-              recordToolObservation(turnId, toolCallId, {
-                toolName: block.toolName,
-                summary: block.summary,
-                args: block.args,
-                detail: block.detail,
-                metrics: block.metrics,
-                approval: block.approval,
-                ok: block.ok,
-                ...(block.outcome ? { outcome: block.outcome } : {}),
-                ...(block.exitCode !== undefined ? { exitCode: block.exitCode } : {}),
-                ...(block.failureKind ? { failureKind: block.failureKind } : {}),
-              }),
-          }
-        : undefined,
-    );
+    const toolOutcomes = new ToolOutcomeCollector();
+    await equipToolObservationRecorder({
+      record: async (toolCallId, block) => {
+        const outcome = block.outcome
+          ? {
+              outcome: block.outcome,
+              ...(block.exitCode !== undefined ? { exitCode: block.exitCode } : {}),
+              ...(block.failureKind ? { failureKind: block.failureKind } : {}),
+            }
+          : undefined;
+        // Capture before awaiting persistence, including sessions with no durable recorder.
+        if (outcome) toolOutcomes.record(toolCallId, outcome);
+        if (recordToolObservation && turnId) {
+          await recordToolObservation(turnId, toolCallId, {
+            toolName: block.toolName,
+            summary: block.summary,
+            args: block.args,
+            detail: block.detail,
+            metrics: block.metrics,
+            approval: block.approval,
+            ok: block.ok,
+            ...outcome,
+          });
+        }
+      },
+    });
     await useUnifiedTools(props);
     await useUnifiedPrompts(props);
     equipMcpCatalog();
@@ -263,6 +271,7 @@ export const UnifiedAgent = createAgent<ConversationAgentProps, ConversationAgen
         initialTokenAnchor: props.initialTokenAnchor,
         promptTokenUsage,
         sessionRecorder: props.sessionRecorder,
+        toolOutcomes,
         turnId: props.turnId,
         onTurnProgress: props.onTurnProgress,
         onModelRetryCheckpoint: props.onModelRetryCheckpoint,

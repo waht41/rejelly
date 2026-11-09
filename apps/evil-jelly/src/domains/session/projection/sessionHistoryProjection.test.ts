@@ -4,6 +4,7 @@ import path from "node:path";
 import type { Message } from "@rejelly/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FrozenResolvedUserInputV1 } from "../../../shared/model/prompt/frozenUserInput";
+import { getMessageToolOutcome } from "../../../shared/tool-observation/messageOutcome";
 import { persistMessageImageBlobs } from "../journal/sessionBlobStore";
 import type { MessageRecordedEvent, SessionEvent } from "../model/sessionEvents";
 import { parseStoredSessionMessage } from "../model/storedSessionMessage";
@@ -325,6 +326,113 @@ describe("session history projections", () => {
         ok: false,
       }),
     );
+  });
+
+  it.each([
+    "observation",
+    "completion",
+    "both",
+  ] as const)("restores host-only outcomes from %s events without carrying them to a reused call ID", async (source) => {
+    const turnId = "outcome-turn";
+    const request: Message = {
+      role: "assistant",
+      content: null,
+      tool_calls: [{ id: "reused", name: "run_command", arguments: "{}" }],
+    };
+    const entries: SessionEvent[] = [
+      userEvent(1, turnId, "inspect"),
+      event({ type: "message_recorded", turnId, source: { kind: "model" }, message: request }, 2),
+    ];
+    if (source !== "completion") {
+      entries.push({
+        type: "tool_observation_recorded",
+        seq: entries.length + 1,
+        timestamp: 103,
+        turnId,
+        toolCallId: "reused",
+        toolName: "run_command",
+        summary: "command",
+        ok: true,
+        outcome: "aborted",
+        exitCode: null,
+        failureKind: "user_abort",
+      });
+    }
+    entries.push(
+      event(
+        {
+          type: "message_recorded",
+          turnId,
+          source: { kind: "tool" },
+          message: { role: "tool", tool_call_id: "reused", content: "opaque result" },
+        },
+        entries.length + 1,
+      ),
+    );
+    if (source !== "observation") {
+      entries.push({
+        type: "tool_call_completed",
+        seq: entries.length + 1,
+        timestamp: 105,
+        turnId,
+        toolCallId: "reused",
+        toolName: "run_command",
+        traceId: "trace",
+        spanId: "span",
+        durationMs: 1,
+        transportOk: true,
+        fromCache: false,
+        inputBytes: 0,
+        outputBytes: 0,
+        outputChars: 0,
+        // A completion must not override a more authoritative owner observation.
+        outcome: source === "both" ? "succeeded" : "aborted",
+      });
+    }
+    const projected = await materializeActiveContext(buildStoredActiveContext(replay(entries)));
+    expect(getMessageToolOutcome(projected.at(-1)!)).toMatchObject({ outcome: "aborted" });
+    expect(projected.at(-1)).not.toHaveProperty("extra");
+
+    // Call IDs can repeat even within the same turn, and compaction drops old executions.
+    for (const compact of [false, true]) {
+      const suffix: SessionEvent[] = compact
+        ? [
+            {
+              type: "context_compacted",
+              seq: entries.length + 1,
+              timestamp: 106,
+              trigger: "manual",
+              replacementHistory: [{ role: "user", content: "summary" }],
+              beforeMessageCount: projected.length,
+              afterMessageCount: 1,
+            },
+          ]
+        : [];
+      suffix.push(
+        event(
+          {
+            type: "message_recorded",
+            turnId,
+            source: { kind: "model" },
+            message: request,
+          },
+          entries.length + suffix.length + 1,
+        ),
+      );
+      suffix.push(
+        event(
+          {
+            type: "message_recorded",
+            turnId,
+            source: { kind: "tool" },
+            message: { role: "tool", tool_call_id: "reused", content: "later legacy result" },
+          },
+          entries.length + suffix.length + 1,
+        ),
+      );
+      const active = buildStoredActiveContext(replay([...entries, ...suffix]));
+      expect(getMessageToolOutcome(active.at(-1)!)).toBeUndefined();
+    }
   });
 
   it("leaves a single tool call unheaded, since one block is its own batch", () => {

@@ -11,7 +11,7 @@ import {
 } from "@rejelly/core";
 import { isInstructionMessage } from "@rejelly/core/policy";
 import { createMockModel } from "@rejelly/core/testing";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { recordInitialTextInput } from "../../../domains/session/__tests__/sessionTestInput";
 import {
   readSessionEvents,
@@ -20,6 +20,8 @@ import {
 import { isKnownSessionEvent } from "../../../domains/session/model/sessionEvents";
 import { openSessionRecorder } from "../../../domains/session/recorder/sessionRecorder";
 import { resumeSession } from "../../../domains/session/repository/sessionStore";
+import * as commandExecution from "../../../domains/workspace/execute/executeShellCommand";
+import * as commandOutput from "../../../domains/workspace/execute/output";
 import { isCompactionBridgeMessage } from "../../../shared/conversation/compactionMessages";
 import {
   getAgentScratchDir,
@@ -105,6 +107,7 @@ describe("non-TTY session lifecycle", () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     restoreEnv("OPENAI_AUTO_COMPACT_TOKENS", originalAutoCompactTokens);
     restoreEnv("OPENAI_AUTO_COMPACT_RATIO", originalAutoCompactRatio);
     restoreEnv("OPENAI_CONTEXT_WINDOW", originalContextWindow);
@@ -1622,6 +1625,102 @@ describe("non-TTY session lifecycle", () => {
     expect(restored).toEqual(restore ? [input] : []);
     expect(calls).toBe(restore ? 2 : 1);
     await expect(fs.access(imagePath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it.each([
+    { mode: "live without persistence", persistence: false, restart: false, outcome: "aborted" },
+    { mode: "live without persistence", persistence: false, restart: false, outcome: "succeeded" },
+    { mode: "live with persistence", persistence: true, restart: false, outcome: "aborted" },
+    { mode: "live with persistence", persistence: true, restart: false, outcome: "succeeded" },
+    { mode: "resumed", persistence: true, restart: true, outcome: "aborted" },
+    { mode: "resumed", persistence: true, restart: true, outcome: "succeeded" },
+  ] as const)("continues from structured $outcome facts ($mode), not command formatting", async ({
+    persistence,
+    restart,
+    outcome,
+  }) => {
+    const aborted = outcome === "aborted";
+    const execute = vi.spyOn(commandExecution, "executeShellCommand").mockResolvedValue({
+      exitCode: aborted ? null : 0,
+      output: "opaque output",
+      capture: { totalBytes: 13, retainedBytes: 13, omittedBytes: 0 },
+      ...(aborted ? { error: { code: "EABORTED" } } : {}),
+    });
+    // The abort body contains no hint; the successful body deliberately looks interrupted.
+    vi.spyOn(commandOutput, "renderCommandOutput").mockResolvedValue(
+      aborted ? "opaque result" : 'Tool "run_command" execution failed: AbortError: printed text',
+    );
+    const calls: Message[][] = [];
+    const model: ModelAdapter = {
+      id: "structured-outcome-model",
+      async *stream(messages): AsyncGenerator<StreamEvent> {
+        calls.push(messages);
+        if (calls.length === 1) {
+          yield {
+            type: "tool_call",
+            toolCall: {
+              index: 0,
+              id: "structured-command",
+              name: "run_command",
+              arguments: JSON.stringify({
+                command: "example",
+                declaredSafety: "read_only",
+                reason: "test",
+              }),
+            },
+          };
+          return;
+        }
+        if (calls.length === 2) throw new AbortError("interrupted model round after tool result");
+        yield { type: "text", content: "Continued from recorded facts." };
+      },
+    };
+    const sessionId = "structured-outcome";
+    const sessionOptions = persistence
+      ? {
+          sessionId,
+          session: { enabled: true as const, appVersion: "1.0.0", sessionsRoot },
+        }
+      : {};
+    await runEvilJellyHost(
+      createMemoryBindings(["Inspect command", ...(restart ? [] : ["/continue"]), "/exit"]),
+      {
+        runControl: createInteractiveRunControl(),
+        model,
+        ...sessionOptions,
+        ...(persistence ? { sessionStartMode: "new" as const } : {}),
+      },
+    );
+    if (restart) {
+      const record = await resumeSession(workspaceRoot, sessionId, {
+        originator: "evil-jelly-cli",
+        appVersion: "1.0.0",
+        sessionsRoot,
+      });
+      const seed = buildSessionResumeSeed(record!);
+      await runEvilJellyHost(createMemoryBindings(["/continue", "/exit"]), {
+        runControl: createInteractiveRunControl(),
+        model,
+        ...sessionOptions,
+        sessionStartMode: "resumed",
+        seedContext: seed.activeContext,
+        seedRecovery: seed.recovery,
+      });
+    }
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(3);
+    const continued = calls[2]!;
+    expect(
+      continued.some(
+        (message) =>
+          message.role === "user" &&
+          messageContentToText(message.content).includes("partial side effects"),
+      ),
+    ).toBe(aborted);
+    const toolMessage = continued.find((message) => message.role === "tool");
+    expect(toolMessage).toBeDefined();
+    expect(toolMessage).not.toHaveProperty("extra");
+    expect(toolMessage).not.toHaveProperty("outcome");
   });
 
   it("restores /continue recovery after exiting and resuming an interrupted session", async () => {

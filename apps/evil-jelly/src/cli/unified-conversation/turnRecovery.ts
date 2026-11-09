@@ -2,6 +2,7 @@ import type { Message } from "@rejelly/core";
 import { UNKNOWN_TOOL_OUTCOME_CONTENT } from "../../domains/session/projection/sessionRecovery";
 import { INTERRUPTED_TOOL_OUTPUT_CONTENT } from "../../features/unified/context-management/interruptedDelta";
 import { messageContentToText } from "../../shared/model/message/content";
+import { getMessageToolOutcome } from "../../shared/tool-observation/messageOutcome";
 
 export type TurnRecoveryStatus = "failed" | "interrupted";
 export type TurnRecoveryStage = "preparation" | "agent";
@@ -43,6 +44,8 @@ export type TurnExecutionResult =
 const TRANSIENT_CONTINUE_PROMPT =
   "Continue the previous task using the available conversation and tool history. Verify the current state before repeating any action.";
 
+const INTERRUPTED_CONTINUE_PROMPT = `${TRANSIENT_CONTINUE_PROMPT} A tool execution was interrupted or its outcome is unknown; partial side effects may have occurred.`;
+
 export function recoveryActivityWarning(activity: TurnToolActivity): string {
   switch (activity) {
     case "none":
@@ -56,6 +59,16 @@ export function recoveryActivityWarning(activity: TurnToolActivity): string {
     case "unknown":
       return " A tool outcome may be unknown; verify current state before repeating actions.";
   }
+}
+
+/** Only inspect the outer envelope, never status-looking text printed by the command. */
+function isAbortedCommandOutput(content: string): boolean {
+  const opening = /^<command_output(?:-[a-f0-9]{8}(?:-\d+)?)?( [^>\n]*)>\n/.exec(content);
+  return (
+    opening !== null &&
+    opening[1]!.includes(' status="aborted"') &&
+    opening[1]!.includes(' reason="user_abort"')
+  );
 }
 
 /** Only add an instruction when the committed history does not already express how to continue. */
@@ -73,15 +86,22 @@ export function continuationPromptForHistory(history: readonly Message[]): strin
   for (let index = history.length - 1; index >= 0; index--) {
     const message = history[index];
     if (message.role !== "tool") break;
+    const outcome = getMessageToolOutcome(message);
+    if (outcome) {
+      if (outcome.outcome === "aborted") return INTERRUPTED_CONTINUE_PROMPT;
+      // Known execution facts take precedence over status-looking result text.
+      continue;
+    }
     const content = messageContentToText(message.content);
     if (
       content === INTERRUPTED_TOOL_OUTPUT_CONTENT ||
       content === UNKNOWN_TOOL_OUTCOME_CONTENT ||
+      isAbortedCommandOutput(content) ||
       (content.startsWith("exitCode=null status=aborted\n") &&
         content.endsWith("Command aborted by user (/stop or Esc).")) ||
       /^Tool "[^"]+" execution failed: AbortError:/.test(content)
     ) {
-      return `${TRANSIENT_CONTINUE_PROMPT} A tool execution was interrupted or its outcome is unknown; partial side effects may have occurred.`;
+      return INTERRUPTED_CONTINUE_PROMPT;
     }
   }
   return undefined;

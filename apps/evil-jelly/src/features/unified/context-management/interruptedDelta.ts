@@ -1,5 +1,6 @@
 import type { Message } from "@rejelly/core";
 import { normalizeMessages } from "@rejelly/core/policy";
+import { copyMessageToolOutcome } from "../../../shared/tool-observation/messageOutcome";
 
 export const INTERRUPTED_TOOL_OUTPUT_CONTENT = "[Tool execution interrupted by user]";
 
@@ -32,7 +33,9 @@ export function sanitizeInterruptedDelta(deltaMessages: Message[]): Message[] {
   }
 
   appendInterruptedToolOutputs(sanitized, pendingToolCallCounts);
-  return normalizeMessages(sanitized);
+  return normalizeMessages(sanitized).map((message, index) =>
+    copyMessageToolOutcome(sanitized[index], message),
+  );
 }
 
 function appendInterruptedToolOutputs(
