@@ -43,7 +43,6 @@ vi.mock("../../../shared/host/context", () => ({
 
 vi.mock("./executeShellCommand", () => ({
   executeShellCommand: executeShellCommandMock,
-  getShellPath: () => "test shell",
 }));
 
 import { BoundedCommandOutput } from "./capturedOutput";
@@ -133,15 +132,10 @@ describe("RunCommandTool output and cwd policy", () => {
     });
     const envelope = commandEnvelope(captured.result);
     expect(envelope.body).toBe("command text");
-    expect(envelope.attributes).toContain(`status="${status}"`);
-    expect(envelope.attributes).toContain(`exit-code="${exitCode}"`);
-    expect(envelope.attributes).toContain('content="preview"');
-    expect(envelope.attributes).toContain('preview-truncated="false"');
-    expect(envelope.attributes).toContain('capture-truncated="false"');
-    expect(envelope.attributes).toContain('shell="test shell"');
-    if (outcome.failureKind)
-      expect(envelope.attributes).toContain(`reason="${outcome.failureKind}"`);
-    else expect(envelope.attributes).not.toContain("reason=");
+    expect(envelope.attributes).toBe(
+      `status="${status}" exit-code="${exitCode}"` +
+        (outcome.failureKind ? ` reason="${outcome.failureKind}"` : ""),
+    );
     expect(captured.result).not.toContain("approval reason");
     expect(captured.result).not.toContain("Evil Jelly tool metadata;");
     expect(captured.outcome).toEqual(outcome);
@@ -170,19 +164,19 @@ describe("RunCommandTool output and cwd policy", () => {
     const file = path.join(directory, filename!);
     const inline = commandEnvelope(result);
     const saved = commandEnvelope(await fs.readFile(file, "utf8"));
-    expect(inline.attributes).toContain('content="preview"');
+    expect(inline.attributes).not.toContain("content=");
     expect(inline.attributes).toContain('preview-truncated="true"');
     expect(inline.attributes).toContain(`saved-path="${file.replaceAll("&", "&amp;")}"`);
     expect(saved.attributes).toContain('content="snapshot"');
     expect(saved.attributes).not.toContain("preview-truncated=");
-    expect(saved.attributes).toContain('snapshot-long-lines-wrapped="false"');
+    expect(saved.attributes).not.toContain("snapshot-long-lines-wrapped=");
     expect(saved.body).toBe(output);
     for (const envelope of [inline, saved]) {
       expect(envelope.attributes).toContain('status="failed"');
       expect(envelope.attributes).toContain('exit-code="2"');
       expect(envelope.attributes).toContain('reason="nonzero_exit"');
-      expect(envelope.attributes).toContain('capture-truncated="false"');
-      expect(envelope.attributes).toContain(`capture-total-bytes="${bytes}"`);
+      expect(envelope.attributes).not.toContain("capture-");
+      expect(envelope.attributes).not.toContain("snapshot-long-lines-wrapped=");
       expect(envelope.body).not.toContain("Capture bytes (");
     }
     const found = await executeGrepSearch("TAIL_NEEDLE", undefined, 0, { directory: file });
@@ -264,6 +258,36 @@ describe("RunCommandTool output and cwd policy", () => {
     );
     expect(read).toContain("界😀");
     expect(read).not.toContain("Error:");
+  });
+
+  it("reports capture loss independently when the retained output fits the inline preview", async () => {
+    hostBindingMock.current = createTestHostBindings({ mode: "normal" });
+    executeShellCommandMock.mockResolvedValue({
+      exitCode: 0,
+      output: "retained output",
+      capture: { totalBytes: 115, retainedBytes: 15, omittedBytes: 100 },
+    });
+    const result = String(
+      await RunCommandTool.handler({
+        command: "example",
+        declaredSafety: "read_only",
+        reason: "capture-only truncation",
+      }),
+    );
+    const [filename] = await fs.readdir(directory);
+    const saved = commandEnvelope(await fs.readFile(path.join(directory, filename!), "utf8"));
+    const inline = commandEnvelope(result);
+    expect(inline.attributes).toContain("saved-path=");
+    expect(saved.attributes).toContain('content="snapshot"');
+    for (const envelope of [inline, saved]) {
+      expect(envelope.attributes).toContain('capture-truncated="true"');
+      expect(envelope.attributes).toContain('capture-total-bytes="115"');
+      expect(envelope.attributes).toContain('capture-retained-bytes="15"');
+      expect(envelope.attributes).toContain('capture-omitted-bytes="100"');
+      expect(envelope.attributes).not.toContain("preview-truncated=");
+      expect(envelope.attributes).not.toContain("snapshot-long-lines-wrapped=");
+      expect(envelope.body).toBe("retained output");
+    }
   });
 
   it("keeps save errors in a separate host notice without changing the command outcome", async () => {

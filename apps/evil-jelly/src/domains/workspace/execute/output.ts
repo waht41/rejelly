@@ -4,7 +4,7 @@ import { utf8Prefix } from "../../../shared/foundation/string";
 import { getWorkspaceFiles } from "../../../shared/fs-policy/workspace-files";
 import { renderPseudoXmlElement } from "../../../shared/model/prompt/pseudoXml";
 import type { ToolExecutionOutcomeRecord } from "../../../shared/tool-observation/model";
-import { type ExecuteShellCommandResult, getShellPath } from "./executeShellCommand";
+import type { ExecuteShellCommandResult } from "./executeShellCommand";
 
 export const TRUNCATED_FOR_AGENT_MARKER = "\n[evil-jelly: output truncated for preview]\n";
 export const MAX_OUTPUT_LINE_BYTES = 16 * 1024;
@@ -118,19 +118,25 @@ export async function renderCommandOutput(
   command: string,
 ): Promise<string> {
   const outcome = getCommandOutcome(result);
+  const capture = result.capture;
+  const captureTruncated = capture.omittedBytes > 0;
   const attributes: Record<string, string> = {
     status: outcome.outcome === "succeeded" ? "ok" : outcome.outcome,
     "exit-code": String(outcome.exitCode),
     ...(outcome.failureKind ? { reason: outcome.failureKind } : {}),
-    platform: process.platform,
-    shell: getShellPath(),
-    "capture-truncated": String(result.capture.omittedBytes > 0),
+    ...(captureTruncated
+      ? {
+          "capture-truncated": "true",
+          "capture-total-bytes": String(capture.totalBytes),
+          "capture-retained-bytes": String(capture.retainedBytes),
+          "capture-omitted-bytes": String(capture.omittedBytes),
+        }
+      : {}),
   };
   const preview = truncateOutput(result.output, MAX_COMMAND_PREVIEW_BYTES);
   const previewTruncated = preview !== result.output;
   const previewAttributes: Record<string, string> = {
-    content: "preview",
-    "preview-truncated": String(previewTruncated),
+    ...(previewTruncated ? { "preview-truncated": "true" } : {}),
   };
   const notices: string[] = [];
   if (outcome.outcome === "failed" && result.error?.message) {
@@ -141,17 +147,11 @@ export async function renderCommandOutput(
     );
   }
 
-  if (previewTruncated || result.capture.omittedBytes > 0) {
-    const stats = result.capture;
-    Object.assign(attributes, {
-      "capture-total-bytes": String(stats.totalBytes),
-      "capture-retained-bytes": String(stats.retainedBytes),
-      "capture-omitted-bytes": String(stats.omittedBytes),
-    });
+  if (previewTruncated || captureTruncated) {
     const snapshot = readingSnapshot(result.output);
     const snapshotAttributes = {
       content: "snapshot",
-      "snapshot-long-lines-wrapped": String(snapshot.wrapped),
+      ...(snapshot.wrapped ? { "snapshot-long-lines-wrapped": "true" } : {}),
     };
     try {
       const policy = getWorkspaceFiles();
@@ -167,7 +167,7 @@ export async function renderCommandOutput(
         }),
       );
       previewAttributes["saved-path"] = file;
-      previewAttributes["snapshot-long-lines-wrapped"] = String(snapshot.wrapped);
+      if (snapshot.wrapped) previewAttributes["snapshot-long-lines-wrapped"] = "true";
     } catch (error) {
       previewAttributes["save-status"] = "failed";
       notices.push(
