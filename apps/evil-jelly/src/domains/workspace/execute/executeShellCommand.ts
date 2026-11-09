@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { BoundedCommandOutput, type CommandCaptureStats } from "./capturedOutput";
+import { getCommandShell } from "./commandShell";
 import { ShellOutputStreamDecoder } from "./shellOutput";
 
 const DEFAULT_TIMEOUT_MS = 180_000;
@@ -17,7 +18,7 @@ interface ShellInvocation {
 function getShellInvocation(command: string): ShellInvocation {
   if (process.platform === "win32") {
     return {
-      file: getShellPath(),
+      file: getCommandShell().path,
       args: [
         "-NoLogo",
         "-NoProfile",
@@ -28,10 +29,6 @@ function getShellInvocation(command: string): ShellInvocation {
     };
   }
   return { file: command, args: [], useShell: true };
-}
-
-export function getShellPath(): string {
-  return process.platform === "win32" ? "powershell.exe" : (process.env.SHELL ?? "/bin/sh");
 }
 
 function normalizeExitCode(code: number | string | null | undefined): number | null {

@@ -228,6 +228,13 @@ or exit cleanup, and leaves existing `.evil-jelly/tmp` files untouched. Long web
 `webpage/` beside `scratch/` under the same session directory, created only when a snapshot is saved.
 Existing project-level snapshots are left untouched.
 
+On Windows, `run_command` prefers PowerShell 7+ (`pwsh.exe`) discovered on PATH. The interpreter
+is probed once on first use with a bounded timeout, and its resolved path is fixed for the process;
+if unavailable or unusable, Windows PowerShell is selected instead. Environment reports the same
+interpreter and its syntax: `&&` and `||` are supported with PowerShell 7+, while Windows PowerShell
+requires semicolon-separated commands instead. Command failures never switch interpreters or replay
+the command. Internal clipboard and terminal helpers retain their own interpreter choices.
+
 `run_command` keeps at most 8 MiB of decoded UTF-8 output across stdout and stderr in memory,
 retaining the first and last 4 MiB in observed arrival order. Excess middle output is discarded,
 while both pipes continue to be drained. After completion (including failure, timeout, or abort),

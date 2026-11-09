@@ -1,7 +1,12 @@
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getCommandShell } from "../../domains/workspace/execute/commandShell";
 import { buildUnifiedInstruction, buildUnifiedSystemPrompt } from "./unifiedPrompts";
+
+vi.mock("../../domains/workspace/execute/commandShell", () => ({
+  getCommandShell: vi.fn(),
+}));
 
 const buildDefaultSystemPrompt = () => buildUnifiedSystemPrompt({ workspaceRuleBlock: "" });
 const scratchDir = path.join(os.tmpdir(), "evil-jelly-prompt-scratch");
@@ -52,6 +57,28 @@ describe("buildUnifiedSystemPrompt", () => {
 });
 
 describe("buildUnifiedInstruction", () => {
+  beforeEach(() => {
+    vi.mocked(getCommandShell).mockReturnValue({ path: "/bin/sh", kind: "posix" });
+  });
+
+  it.each([
+    {
+      shell: { path: "C:\\PowerShell\\7\\pwsh.exe", kind: "pwsh" as const },
+      note: "PowerShell 7+ syntax; && and || are supported",
+    },
+    {
+      shell: { path: "C:\\Windows\\powershell.exe", kind: "windows-powershell" as const },
+      note: "Windows PowerShell syntax; use semicolons instead of && or ||",
+    },
+    { shell: { path: "/bin/zsh", kind: "posix" as const }, note: undefined },
+  ])("reports the selected $shell.kind interpreter and matching syntax", ({ shell, note }) => {
+    vi.mocked(getCommandShell).mockReturnValue(shell);
+    const instruction = buildUnifiedInstruction({ scratchDir, artifactSummary: "" });
+    const shellLine = instruction.split("\n").find((line) => line.startsWith("Shell: "));
+    expect(shellLine).toBe(
+      `Shell: ${shell.path}${note ? ` (${note}; do not assume POSIX utilities are installed)` : ""}`,
+    );
+  });
   it("puts the resolved scratch path only in dynamic Environment context", () => {
     const instruction = buildUnifiedInstruction({ scratchDir, artifactSummary: "" });
     const system = buildDefaultSystemPrompt();

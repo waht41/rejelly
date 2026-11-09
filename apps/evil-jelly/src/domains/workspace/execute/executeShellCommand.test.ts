@@ -1,25 +1,63 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { executeShellCommand, getShellPath } from "./executeShellCommand";
+import { getCommandShell } from "./commandShell";
+import { executeShellCommand } from "./executeShellCommand";
 import {
   combineCapturedShellOutput,
   decodeShellOutput,
   ShellOutputStreamDecoder,
 } from "./shellOutput";
 
+function quotePowerShell(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
 function makeNodeCommand(jsCode: string): string {
   if (process.platform === "win32") {
-    const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
-    return `& ${quote(process.execPath)} -e ${quote(jsCode)}`;
+    return `& ${quotePowerShell(process.execPath)} -e ${quotePowerShell(jsCode)}`;
   }
   return `${JSON.stringify(process.execPath)} -e ${JSON.stringify(jsCode)}`;
 }
 
 describe("executeShellCommand", () => {
-  it("reports the host shell path for command result attributes", () => {
-    expect(getShellPath()).toBe(
-      process.platform === "win32" ? "powershell.exe" : (process.env.SHELL ?? "/bin/sh"),
-    );
-  });
+  it.skipIf(process.platform !== "win32")(
+    "runs the PowerShell version selected for Environment",
+    async () => {
+      const shell = getCommandShell();
+      const result = await executeShellCommand({
+        command: "$PSVersionTable.PSVersion.Major",
+        cwd: process.cwd(),
+      });
+      expect(result.exitCode).toBe(0);
+      const major = Number(result.output.trim());
+      if (shell.kind === "pwsh") expect(major).toBeGreaterThanOrEqual(7);
+      else expect(major).toBe(5);
+    },
+  );
+
+  it.skipIf(process.platform !== "win32")(
+    "preserves script paths and quoted, empty, and Unicode arguments",
+    async () => {
+      const directory = await fs.mkdtemp(path.join(os.tmpdir(), "evil-shell-args-"));
+      try {
+        const script = path.join(directory, "script with spaces.ps1");
+        await fs.writeFile(
+          script,
+          "param([string[]]$Values)\nConvertTo-Json -InputObject $Values -Compress\n",
+          "utf8",
+        );
+        const values = ["", "two words", 'a"b', "a'b", "界😀"];
+        const command = `& ${quotePowerShell(script)} -Values @(${values.map(quotePowerShell).join(", ")})`;
+        const result = await executeShellCommand({ command, cwd: directory });
+        expect(result.exitCode).toBe(0);
+        expect(JSON.parse(result.output.trim())).toEqual(values);
+      } finally {
+        await fs.rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("does not mix host placeholders into an empty command body", async () => {
     const result = await executeShellCommand({

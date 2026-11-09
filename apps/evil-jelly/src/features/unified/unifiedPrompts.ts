@@ -1,5 +1,5 @@
 import { arch, platform, release } from "node:os";
-import { getShellPath } from "../../domains/workspace/execute/executeShellCommand";
+import { getCommandShell } from "../../domains/workspace/execute/commandShell";
 import { getWorkspaceRoot } from "../../shared/fs-policy/workspace-context";
 import { PromptBuilder } from "../../shared/model/prompt/builder";
 import { TERMINAL_USER_REPLY_RULE, TERMINAL_USER_REPLY_RULE_TITLE } from "./outputSurface";
@@ -100,10 +100,11 @@ export function buildUnifiedInstruction(params: {
 }): string {
   const { artifactSummary } = params;
   const currentOs = `${platform()} ${release()} (${arch()})`;
+  const shell = getCommandShell();
   const shellNote =
-    process.platform === "win32"
-      ? `${getShellPath()} (PowerShell syntax; use semicolons instead of cmd.exe && chaining, and do not assume POSIX utilities are installed)`
-      : getShellPath();
+    shell.kind === "posix"
+      ? shell.path
+      : `${shell.path} (${shell.kind === "pwsh" ? "PowerShell 7+ syntax; && and || are supported" : "Windows PowerShell syntax; use semicolons instead of && or ||"}; do not assume POSIX utilities are installed)`;
   const builder = new PromptBuilder();
   builder.addBlock(
     `## Environment\nWorkspace Root: ${getWorkspaceRoot()}\nAgent Scratch Dir: ${params.scratchDir}\nCurrent OS: ${currentOs}\nShell: ${shellNote}`,
