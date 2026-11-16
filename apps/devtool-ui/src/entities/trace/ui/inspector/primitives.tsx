@@ -70,7 +70,7 @@ export function InspectorMetaRow({
 
 /**
  * Scrollable content container for Inspector body
- * Provides flex-1 and overflow-auto for scrollable content
+ * Fills the available height in both block and flex parents so overflow can scroll.
  */
 export function InspectorContent({
   children,
@@ -79,7 +79,7 @@ export function InspectorContent({
   children: ReactNode;
   className?: string;
 }) {
-  return <div className={cn("flex-1 overflow-auto", className)}>{children}</div>;
+  return <div className={cn("h-full min-h-0 flex-1 overflow-auto", className)}>{children}</div>;
 }
 
 /**
