@@ -81,10 +81,15 @@ export function ActionMenuPrompt({
           getKey={(option) => `${option.key}:${option.value}`}
           visibleRows={isLongMenu ? LONG_MENU_VISIBLE_ROWS : undefined}
           renderItem={(option, { selected }) => (
-            <Text color={selected ? "cyan" : undefined} bold={selected}>
+            // The fixed-height viewport budgets one terminal row per option.
+            <Text
+              color={selected ? "cyan" : undefined}
+              bold={selected}
+              wrap={isLongMenu ? "truncate-end" : undefined}
+            >
               {selected ? "▸ " : "  "}
               {option.key ? `[${option.key}] ` : ""}
-              {option.label}
+              {isLongMenu ? option.label.replace(/[\r\n]+/g, " ") : option.label}
             </Text>
           )}
         />
